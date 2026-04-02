@@ -1,21 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Eye, EyeOff } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const { setUser } = useAuth()
+  const { user, setUser } = useAuth()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
+
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [user, navigate])
 
   // ── Color tokens ──────────────────────────────────────────────
   const rightBg     = isLight ? '#f1f5f9'               : '#060B18'
@@ -230,17 +237,28 @@ export default function Login() {
                   <label className="block text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
                     Password
                   </label>
-                  <a href="#" className="text-xs text-[#10B981] hover:underline font-semibold">Forgot?</a>
+                  <Link to={`/forgot-password?email=${encodeURIComponent(email.trim())}`} className="text-xs text-[#10B981] hover:underline font-semibold">
+                    Forgot?
+                  </Link>
                 </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
-                  className="w-full border rounded-xl px-4 py-3.5 placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
+                    className="w-full border rounded-xl px-4 py-3.5 pr-12 placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-[14px] text-[#7A95B8] hover:text-[#10B981] transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
 
               {error && (

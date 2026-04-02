@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Plus, Search, Filter, MoreVertical, Circle, CheckCircle, Clock, XCircle, FileText, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -20,6 +20,7 @@ export default function Tickets() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const isLight = theme === 'light'
   
   const [activeTab, setActiveTab] = useState('all')
@@ -31,12 +32,8 @@ export default function Tickets() {
   const [showViewModal, setShowViewModal] = useState(false)
   const [updateLoading, setUpdateLoading] = useState(false)
   
-  // Create Modal State
-  const [showModal, setShowModal] = useState(false)
-  const [createForm, setCreateForm] = useState({
-    title: '', description: '', serviceType: 'AC Installation', priority: 'Medium', contactPhone: '', preferredDate: ''
-  })
-  const [createLoading, setCreateLoading] = useState(false)
+  // Create Ticket – navigate to full page
+  const openCreate = () => navigate('/tickets/create')
 
   const fetchTickets = async () => {
     try {
@@ -76,36 +73,6 @@ export default function Tickets() {
   useEffect(() => {
     if (user) fetchTickets()
   }, [user])
-
-  const handleCreateTicket = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setCreateLoading(true)
-    try {
-      const token = sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      
-      const res = await fetch(`${apiUrl}/tickets`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(createForm)
-      })
-      
-      if (!res.ok) throw new Error('Failed to create ticket')
-      
-      // Refresh list & close modal
-      await fetchTickets()
-      setShowModal(false)
-      setCreateForm({ title: '', description: '', serviceType: 'AC Installation', priority: 'Medium', contactPhone: '', preferredDate: '' })
-    } catch (err) {
-      console.error('Ticket creation error:', err)
-      alert('Could not create ticket. Please check fields and try again.')
-    } finally {
-      setCreateLoading(false)
-    }
-  }
 
   const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
     setUpdateLoading(true)
@@ -218,58 +185,14 @@ export default function Tickets() {
           <p style={{ color: textMuted }} className="text-sm">Manage and track all customer service requests</p>
         </div>
         <button 
-          onClick={() => setShowModal(true)}
+          onClick={openCreate}
           className="flex items-center gap-2 bg-[#10B981] hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-bold transition-all glow-green-sm text-sm shrink-0"
         >
           <Plus className="w-4 h-4" /> New Ticket
         </button>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="relative w-full max-w-lg rounded-2xl border p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-[#7A95B8] hover:text-[#EF4444] transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 style={{ color: textPrimary }} className="text-xl font-bold mb-4">Request Service</h3>
-            <form onSubmit={handleCreateTicket} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Subject</label>
-                <input required value={createForm.title} onChange={e => setCreateForm({...createForm, title: e.target.value})} className="w-full bg-[#f8fafc] dark:bg-[#0F1A2E] border border-slate-200 dark:border-[#243452] rounded-xl px-4 py-3 text-slate-800 dark:text-white placeholder-[#3A5070]" placeholder="Brief description of issue" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Details</label>
-                <textarea required value={createForm.description} onChange={e => setCreateForm({...createForm, description: e.target.value})} className="w-full bg-[#f8fafc] dark:bg-[#0F1A2E] border border-slate-200 dark:border-[#243452] rounded-xl px-4 py-3 text-slate-800 dark:text-white min-h-[100px]" placeholder="Explain the problem in detail" />
-              </div>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Service Type</label>
-                  <select value={createForm.serviceType} onChange={e => setCreateForm({...createForm, serviceType: e.target.value})} className="w-full bg-[#f8fafc] dark:bg-[#0F1A2E] border border-slate-200 dark:border-[#243452] rounded-xl px-4 py-3 text-slate-800 dark:text-white cursor-pointer">
-                    <option>AC Installation</option>
-                    <option>Cleaning</option>
-                    <option>Repair</option>
-                    <option>Maintenance</option>
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Priority</label>
-                  <select value={createForm.priority} onChange={e => setCreateForm({...createForm, priority: e.target.value})} className="w-full bg-[#f8fafc] dark:bg-[#0F1A2E] border border-slate-200 dark:border-[#243452] rounded-xl px-4 py-3 text-slate-800 dark:text-white cursor-pointer">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                    <option>Critical</option>
-                  </select>
-                </div>
-              </div>
-              <button disabled={createLoading} className={`w-full py-3.5 mt-2 rounded-xl font-bold text-white transition-all ${createLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 glow-green-sm'}`}>
-                {createLoading ? 'Submitting...' : 'Submit Request'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Ticket Details Modal */}
       {showViewModal && selectedTicket && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div style={{ backgroundColor: cardBg, borderColor: border }} className="relative w-full max-w-2xl rounded-2xl border p-8 shadow-2xl animate-in zoom-in-95 duration-200">

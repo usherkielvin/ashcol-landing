@@ -30,9 +30,10 @@ const LOGIN_PUBLIC_PATH = '/login'
 const LANDING_PUBLIC_PATH = '/landing'
 const DASHBOARD_PUBLIC_PATH = '/dashboard'
 const CREATE_ACCOUNT_PUBLIC_PATH = '/create-account'
+const FORGOT_PASSWORD_PUBLIC_PATH = '/forgot-password'
 const SIGNUP_PUBLIC_PATH = '/signup'
 
-const BARE_PUBLIC_PATHS = [LOGIN_PUBLIC_PATH, LANDING_PUBLIC_PATH, CREATE_ACCOUNT_PUBLIC_PATH, SIGNUP_PUBLIC_PATH]
+const BARE_PUBLIC_PATHS = [LOGIN_PUBLIC_PATH, LANDING_PUBLIC_PATH, CREATE_ACCOUNT_PUBLIC_PATH, FORGOT_PASSWORD_PUBLIC_PATH, SIGNUP_PUBLIC_PATH]
 
 function normalizeWebPathname(pathname: string): string {
   if (pathname.startsWith('/(web)/')) {
@@ -65,6 +66,7 @@ function pageTitleFromPathname(pathname: string): { title: string; subtitle: str
     activity:   { title: 'Activity',   subtitle: 'Recent actions and audit trail' },
     profile:    { title: 'Profile',    subtitle: 'Your account information and settings' },
     login:      { title: 'Login',      subtitle: '' },
+    'forgot-password': { title: 'Forgot Password', subtitle: '' },
     landing:    { title: 'Landing',    subtitle: '' },
     'create-account':  { title: 'Create Account',  subtitle: '' },
     'create-ticket':   { title: 'New Ticket',      subtitle: 'Submit a new service request' },

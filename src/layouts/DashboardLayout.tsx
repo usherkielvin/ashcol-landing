@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Outlet, Link, useLocation, Navigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
@@ -42,6 +42,10 @@ export default function DashboardLayout() {
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name ?? 'Dashboard'
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
 
   return (
     <div

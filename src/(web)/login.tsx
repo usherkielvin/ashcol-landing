@@ -343,7 +343,7 @@ export default function WebLoginPage(): React.ReactElement {
 
           {/* Forgot password */}
           <Pressable
-            onPress={() => router.push('/forgot-password' as any)}
+            onPress={() => router.push(email.trim().length > 0 ? `/forgot-password?email=${encodeURIComponent(email.trim())}` : '/forgot-password' as any)}
             disabled={loading}
             style={styles.forgotBtn}
             accessibilityRole="link"
