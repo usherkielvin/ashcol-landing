@@ -293,29 +293,39 @@ export default function Landing() {
           residential and commercial, throughout Metro Manila.
         </p>
 
-        {/* CTA buttons */}
-        <div className="relative flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mb-8">
-          <a
-            href="/create-account"
-            className="flex items-center gap-2 px-8 py-3.5 text-[15px] font-bold text-white bg-[#10B981] rounded-xl w-full sm:w-auto justify-center hover:bg-emerald-500 transition-all glow-green"
-          >
-            Get Started
-          </a>
+        {/* How it works — ABOVE the CTA */}
+        <div className="relative w-full max-w-lg mb-6">
+          <p className="text-[10px] font-bold text-[#3A5070] uppercase tracking-[2px] mb-3">How it works</p>
+          <div className="flex flex-col sm:flex-row items-stretch gap-3">
+            {[
+              { num: '1', label: 'Sign Up',        sub: 'Create your free account' },
+              { num: '2', label: 'Book a Service', sub: 'Pick a date & AC service' },
+              { num: '3', label: 'We Come to You', sub: 'Our team handles the rest' },
+            ].map((step, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center text-center bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-4 py-4 gap-2 hover:border-[#10B981]/40 transition-all">
+                <div className="w-9 h-9 rounded-full bg-[rgba(16,185,129,0.12)] border border-[#10B981]/30 flex items-center justify-center">
+                  <span className="text-[#10B981] font-black text-sm">{step.num}</span>
+                </div>
+                <div>
+                  <div className="text-[13px] font-bold text-[#F0F6FF] mb-0.5">{step.label}</div>
+                  <div className="text-[11px] text-[#3A5070]">{step.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Quick contact strip */}
-        <a
-          href="mailto:headoffice@ashcol.com.ph"
-          className="relative flex items-center gap-3 bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-4 py-3 hover:border-[#10B981] transition-all group w-full sm:w-auto"
-        >
-          <div className="w-8 h-8 rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center text-[#10B981] flex-shrink-0">
-            <Mail className="w-4 h-4" />
-          </div>
-          <p className="text-sm text-[#7A95B8] text-left">
-            Email us: <span className="text-[#10B981] font-bold group-hover:underline">headoffice@ashcol.com.ph</span>{' '}
-            · Mon–Sun, 8 AM–7 PM
-          </p>
-        </a>
+        {/* CTA — below steps */}
+        <div className="relative w-full max-w-lg">
+          <a
+            href="/create-account"
+            className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+          >
+            Book a Service Now
+          </a>
+
+        </div>
+
       </section>
 
 
