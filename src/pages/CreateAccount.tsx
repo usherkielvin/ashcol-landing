@@ -28,8 +28,6 @@ export default function CreateAccount() {
 
   // ── Color tokens ──────────────────────────────────────────────
   const rightBg     = isLight ? '#f1f5f9'               : '#060B18'
-  const cardBg      = isLight ? 'rgba(255,255,255,0.9)'  : 'rgba(10,17,32,0.4)'
-  const cardBorder  = isLight ? '#e2e8f0'                : 'rgba(255,255,255,0.05)'
   const textPrimary = isLight ? '#0f172a'                : '#F0F6FF'
   const textMuted   = isLight ? '#64748b'                : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc'                : 'rgba(15,26,46,0.8)'

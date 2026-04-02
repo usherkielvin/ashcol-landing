@@ -156,6 +156,38 @@ const VALUES = [
   { icon: <Target className="w-5 h-5" />,      title: 'Commitment',      desc: 'We stand behind our work with dedication and accountability.',      color: '#8B5CF6', colorBg: 'rgba(139,92,246,0.12)' },
 ]
 
+function ComingSoonModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative bg-[#060E1A] border border-[#1E2D48] rounded-2xl shadow-2xl max-w-sm w-full p-7 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-[#3A5070] hover:text-white transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <div className="w-14 h-14 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/30 flex items-center justify-center mx-auto mb-4">
+          <Bell className="w-7 h-7 text-[#10B981]" />
+        </div>
+        <h3 className="text-xl font-black text-white mb-2">Coming Soon</h3>
+        <p className="text-[#7A95B8] text-sm leading-relaxed mb-6">
+          The Ashcol mobile app is still in development. We will launch soon on Google Play and the App Store.
+        </p>
+        <button
+          onClick={onClose}
+          className="w-full py-3 rounded-xl bg-[#10B981] hover:bg-emerald-400 text-[#060B18] font-bold text-sm transition-all"
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Landing() {
@@ -163,6 +195,7 @@ export default function Landing() {
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   // Theme tokens
   const t = {
@@ -854,6 +887,8 @@ export default function Landing() {
 
         </div>
       </section>
+
+      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer className="px-4 md:px-11 lg:px-20 pt-10 pb-8" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}` }}>
