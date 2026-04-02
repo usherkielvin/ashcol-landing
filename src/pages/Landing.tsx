@@ -86,8 +86,8 @@ const STATS = [
 const BRANCHES = [
   {
     name: 'Head Office',
-    address: 'Units 4D, 4E & 4F, Genesis Building, 182-A 19th Ave., Brgy. East Rembo, Makati City 1216',
-    tag: 'Makati',
+    address: 'Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City',
+    tag: 'Taguig',
     color: '#10B981',
   },
   {
@@ -110,10 +110,48 @@ const CLIENTS = [
   "South Star Drug", "AXA", "La Verti Residences", "Sheridan Towers", "The Grove by Rockwell",
 ]
 
+const getBrandLogo = (name: string) => {
+  // Map clean names to filenames
+  const fileMap: Record<string, string> = {
+    'Carrier': 'carrier.png',
+    'Daikin': 'daikin.png',
+    'Panasonic': 'panasonic.png',
+    'Samsung': 'samsung.png',
+    'LG': 'lg.png',
+    'Koppel': 'koppel.png',
+    'Mitsubishi Electric': 'mitsubishi.png',
+    'York': 'york.png',
+    'Gree': 'gree.png',
+    'Midea': 'midea.png',
+    'Sharp': 'sharp.png',
+    'Haier': 'haier.png',
+    'TCL': 'tcl.png',
+  }
+  
+  const filename = fileMap[name]
+  if (!filename) return undefined
+  
+  // Use Vite's recommended way for dynamic assets
+  return new URL(`../assets/brands/${filename}`, import.meta.url).href
+}
+
 const BRANDS = [
-  'Carrier', 'Daikin', 'Panasonic', 'Samsung', 'LG', 'Koppel',
-  'Mitsubishi Electric', 'York', 'Gree', 'Midea', 'Sharp', 'Aux',
-  'Haier', 'TCL', 'Fuji-Aire', 'Kolin',
+  { name: 'Carrier',             logo: getBrandLogo('Carrier') },
+  { name: 'Daikin',              logo: getBrandLogo('Daikin') },
+  { name: 'Panasonic',           logo: getBrandLogo('Panasonic') },
+  { name: 'Samsung',             logo: getBrandLogo('Samsung') },
+  { name: 'LG',                  logo: getBrandLogo('LG') },
+  { name: 'Koppel',              logo: getBrandLogo('Koppel') },
+  { name: 'Mitsubishi Electric', logo: getBrandLogo('Mitsubishi Electric') },
+  { name: 'York',                logo: getBrandLogo('York') },
+  { name: 'Gree',                logo: getBrandLogo('Gree') },
+  { name: 'Midea',               logo: getBrandLogo('Midea') },
+  { name: 'Sharp',               logo: getBrandLogo('Sharp') },
+  { name: 'Aux',                 logo: undefined },
+  { name: 'Haier',               logo: getBrandLogo('Haier') },
+  { name: 'TCL',                 logo: getBrandLogo('TCL') },
+  { name: 'Fuji-Aire',           logo: undefined },
+  { name: 'Kolin',               logo: undefined },
 ]
 
 const VALUES = [
@@ -274,17 +312,61 @@ export default function Landing() {
 
         {/* Quick contact strip */}
         <a
-          href="tel:+63277291293"
+          href="mailto:headoffice@ashcol.com.ph"
           className="relative flex items-center gap-3 bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-4 py-3 hover:border-[#10B981] transition-all group w-full sm:w-auto"
         >
           <div className="w-8 h-8 rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center text-[#10B981] flex-shrink-0">
-            <PhoneCall className="w-4 h-4" />
+            <Mail className="w-4 h-4" />
           </div>
           <p className="text-sm text-[#7A95B8] text-left">
-            Call us now: <span className="text-[#10B981] font-bold group-hover:underline">+63 (2) 77291293</span>{' '}
+            Email us: <span className="text-[#10B981] font-bold group-hover:underline">headoffice@ashcol.com.ph</span>{' '}
             · Mon–Sun, 8 AM–7 PM
           </p>
         </a>
+      </section>
+
+      {/* ── Domain Showcase ──────────────────────────────────────────── */}
+      <section className="relative overflow-hidden px-5 md:px-11 lg:px-20 py-16 md:py-20 bg-gradient-to-br from-[#0F1A2E] to-[#060B18] border-t border-[#1E2D48]">
+        <div className="absolute inset-0 orb-green opacity-20 pointer-events-none" />
+        <div className="relative max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+            {/* Image */}
+            <div className="relative rounded-2xl overflow-hidden border border-[#1E2D48] h-80 md:h-96">
+              <img src={showcaseMain} alt="Ashcol Premium AC Services" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#060B18] via-transparent to-transparent" />
+            </div>
+            {/* Copy */}
+            <div className="flex flex-col gap-4">
+              <div className="inline-flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full w-fit">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] inline-block" />
+                <span className="text-[10px] font-bold text-[#10B981] uppercase tracking-widest">ashcolservices.com</span>
+              </div>
+              <h2 className="text-[clamp(1.5rem,4vw,2.2rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
+                Now online at<br className="hidden sm:block" /> <span className="text-[#10B981]">ashcolservices.com</span>
+              </h2>
+              <p className="text-[15px] text-[#7A95B8] leading-relaxed max-w-md">
+                Your trusted connection to premium air conditioning services. Book installations, repairs, and maintenance online—fast, transparent, and always available.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <a
+                  href="https://ashcolservices.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+                >
+                  Visit ashcolservices.com
+                  <ArrowUpRight className="w-4 h-4" />
+                </a>
+                <a
+                  href="/create-account"
+                  className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
+                >
+                  Book a Service
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
@@ -314,7 +396,7 @@ export default function Landing() {
         {/* Header */}
         <div className="flex flex-col items-center text-center gap-4 mb-12">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-            <span className="text-xs">◼</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
             <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR SERVICES</span>
           </div>
           <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
@@ -428,7 +510,7 @@ export default function Landing() {
               <span className="text-[#10B981]">Coleene</span>.
             </p>
             <p className="text-[15px] text-[#7A95B8] leading-relaxed mb-4">
-              Located at Units 4D & 4E, 4/F Genesis Building, 182-A J.P. Rizal Ext., Makati City — the team combines
+              Located at Units 2A & 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City — the team combines
               more than a decade of technical expertise with a deeply personal customer service philosophy.
             </p>
             <p className="text-[15px] text-[#7A95B8] leading-relaxed mb-7">
@@ -439,7 +521,7 @@ export default function Landing() {
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2 bg-[#0F1A2E] border border-[#1E2D48] px-3 py-2 rounded-lg">
                 <MapPin className="w-4 h-4 text-[#10B981]" />
-                <span className="text-[13px] text-[#7A95B8]">Makati City, Metro Manila</span>
+                <span className="text-[13px] text-[#7A95B8]">Taguig City, Metro Manila</span>
               </div>
               <div className="flex items-center gap-2 bg-[#0F1A2E] border border-[#1E2D48] px-3 py-2 rounded-lg">
                 <Calendar className="w-4 h-4 text-[#10B981]" />
@@ -563,10 +645,34 @@ export default function Landing() {
             Carrier to Kolin — our technicians are trained across all major residential and commercial AC brands.
           </p>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 max-w-5xl mx-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 max-w-5xl mx-auto">
           {BRANDS.map((brand, i) => (
-            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-3 py-2.5 text-center hover:border-[#10B981]/40 hover:bg-[#111E33] transition-all">
-              <span className="text-[11px] font-bold text-[#7A95B8] hover:text-[#10B981] transition-colors">{brand}</span>
+            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-2xl p-4 flex flex-col items-center gap-3 hover:border-[#10B981]/40 hover:bg-[#111E33] transition-all group cursor-default">
+              {/* White logo pad */}
+              <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center p-2 shadow-sm flex-shrink-0">
+                {brand.logo ? (
+                  <img
+                    src={brand.logo}
+                    alt={brand.name}
+                    className="max-w-full max-h-full object-contain"
+                    onError={(e) => {
+                      const img = e.currentTarget as HTMLImageElement
+                      img.style.display = 'none'
+                      const pad = img.parentElement!
+                      pad.classList.add('bg-opacity-10')
+                      pad.className = 'w-14 h-14 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)] flex items-center justify-center text-center p-2'
+                      const span = document.createElement('span')
+                      span.textContent = brand.name
+                      span.style.cssText = 'font-size:8px;font-weight:900;color:#10B981;text-align:center;line-height:1.2;padding:2px'
+                      pad.appendChild(span)
+                    }}
+                  />
+                ) : (
+                  /* No logo available — stylized text badge */
+                  <span className="text-[8px] font-black text-[#3A5070] text-center leading-tight tracking-wide uppercase px-1">{brand.name}</span>
+                )}
+              </div>
+              <span className="text-[10px] font-bold text-[#3A5070] group-hover:text-[#7A95B8] transition-colors text-center leading-tight">{brand.name}</span>
             </div>
           ))}
         </div>
@@ -583,7 +689,7 @@ export default function Landing() {
             3 Offices Across Luzon
           </h2>
           <p className="max-w-lg text-[15px] text-[#7A95B8] leading-relaxed">
-            With our head office in Makati and branches in Batangas and Cavite, we're always nearby.
+            With our head office in Taguig and branches in Batangas and Cavite, we're always nearby.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
@@ -606,12 +712,14 @@ export default function Landing() {
               </div>
               {i === 0 && (
                 <a
-                  href="https://maps.google.com/?q=Genesis+Building+182-A+19th+Avenue+East+Rembo+Makati+City"
+                  href="https://maps.app.goo.gl/pPJhEaXBEtxjbNN29"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold transition-colors"
                   style={{ color: branch.color }}
                 >
+                                  <span className="text-[13px] text-[#7A95B8]">Taguig City, Metro Manila</span>
+                              <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</span></div>
                   <ArrowUpRight className="w-3.5 h-3.5" /> View on Google Maps
                 </a>
               )}
@@ -638,10 +746,10 @@ export default function Landing() {
             Request a Service
           </a>
           <a
-            href="tel:+63277291293"
+            href="mailto:headoffice@ashcol.com.ph"
             className="flex items-center justify-center gap-2 px-7 py-3.5 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
           >
-            <PhoneCall className="w-4 h-4" /> Call +63 (2) 77291293
+            <Mail className="w-4 h-4" /> Send an Email
           </a>
         </div>
       </section>
@@ -660,7 +768,7 @@ export default function Landing() {
 
           {/* Quick info */}
           <div className="flex flex-col gap-2 text-[13px] text-[#3A5070]">
-            <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 4D, 4E & 4F, Genesis Building, 182-A 19th Ave, Brgy. East Rembo, Makati City 1216</span></div>
+            <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</span></div>
             <div className="flex items-center gap-2"><PhoneCall className="w-4 h-4 flex-shrink-0" /><span>+63 (2) 77291293 · +63 (917) 7143810</span></div>
             <div className="flex items-center gap-2"><Mail className="w-4 h-4 flex-shrink-0" /><span>headoffice@ashcol.com.ph</span></div>
           </div>

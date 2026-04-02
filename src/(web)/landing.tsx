@@ -415,7 +415,7 @@ export default function WebLandingPage(): React.ReactElement {
               <Text style={{ color: TEXT1, fontWeight: '600' }}>ASHCOL Airconditioning Services Corporation</Text> is a family-run business founded in 2014. The company name "ASHCOL" was formed from the names of the two lovely daughters — <Text style={{ color: GREEN }}>Ashanti</Text> and <Text style={{ color: GREEN }}>Coleene</Text>.
             </Text>
             <Text style={styles.aboutPara}>
-              Located at Units 4D &amp; 4E, 4/F Genesis Building, 182-A J.P. Rizal Ext., Makati City — the team combines more than a decade of technical expertise with a deeply personal customer service philosophy.
+              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City — the team combines more than a decade of technical expertise with a deeply personal customer service philosophy.
             </Text>
             <Text style={styles.aboutPara}>
               Their tagline <Text style={{ color: GREEN, fontStyle: 'italic' }}>"Keeping YOU Cool"</Text> reflects their core belief: give people the comfort they deserve, and you will never have an unhappy customer.
@@ -424,7 +424,7 @@ export default function WebLandingPage(): React.ReactElement {
             <View style={styles.aboutBadgeRow}>
               <View style={styles.aboutBadge}>
                 <Feather name="map-pin" size={13} color={GREEN} />
-                <Text style={styles.aboutBadgeText}>Makati City, Metro Manila</Text>
+                <Text style={styles.aboutBadgeText}>Taguig City, Metro Manila</Text>
               </View>
               <View style={styles.aboutBadge}>
                 <Feather name="calendar" size={13} color={GREEN} />
@@ -502,15 +502,15 @@ export default function WebLandingPage(): React.ReactElement {
             <Feather name="arrow-right" size={16} color="#fff" />
           </Pressable>
           <Pressable
-            onPress={() => Linking.openURL('tel:+63277291293')}
+            onPress={() => Linking.openURL('mailto:headoffice@ashcol.com.ph')}
             style={({ pressed }) => [
               styles.heroBtnSecondary,
               isMobile && { width: '100%', alignItems: 'center' },
               pressed && { opacity: 0.7 },
             ]}
           >
-            <Feather name="phone" size={15} color={GREEN} style={{ marginRight: 8 }} />
-            <Text style={[styles.heroBtnSecondaryText, { color: GREEN }]}>Call +63 (2) 77291293</Text>
+            <Feather name="mail" size={15} color={GREEN} style={{ marginRight: 8 }} />
+            <Text style={[styles.heroBtnSecondaryText, { color: GREEN }]}>Send an Email</Text>
           </Pressable>
         </View>
       </View>
@@ -540,7 +540,7 @@ export default function WebLandingPage(): React.ReactElement {
             <View style={styles.footerInfo}>
               <View style={styles.footerInfoRow}>
                 <Feather name="map-pin" size={13} color={TEXT3} />
-                <Text style={styles.footerInfoText}>Units 4D &amp; 4E, 4/F Genesis Building, 182-A J.P. Rizal Ext., Makati City</Text>
+                <Text style={styles.footerInfoText}>Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</Text>
               </View>
               <View style={styles.footerInfoRow}>
                 <Feather name="phone" size={13} color={TEXT3} />
