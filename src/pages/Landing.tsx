@@ -84,24 +84,17 @@ const STATS = [
 ]
 
 const BRANCHES = [
-  {
-    name: 'Head Office',
-    address: 'Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City',
-    tag: 'Taguig',
-    color: '#10B981',
-  },
-  {
-    name: 'Batangas Branch',
-    address: '012 Laguile, Taal, Batangas',
-    tag: 'Batangas',
-    color: '#3B82F6',
-  },
-  {
-    name: 'Cavite Branch',
-    address: 'Blk 4 & 6 South Square Village, Pasong Kawayan, Gen. Trias, Cavite',
-    tag: 'Cavite',
-    color: '#8B5CF6',
-  },
+  { name: 'Head Office', address: 'Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City', tag: 'Taguig', color: '#10B981', mapUrl: 'https://maps.app.goo.gl/pPJhEaXBEtxjbNN29' },
+  { name: 'Valenzuela Branch', address: 'Valenzuela City, Metro Manila', tag: 'Valenzuela', color: '#6366F1' },
+  { name: 'Batangas Branch', address: '012 Laguile, Taal, Batangas', tag: 'Batangas', color: '#3B82F6' },
+  { name: 'Bulacan Branch', address: 'Bulacan', tag: 'Bulacan', color: '#F59E0B' },
+  { name: 'San Fernando Branch', address: 'San Fernando, Pampanga', tag: 'Pampanga', color: '#14B8A6' },
+  { name: 'Candelaria Branch', address: 'Candelaria, Quezon Province', tag: 'Quezon', color: '#EF4444' },
+  { name: 'Calauan Branch', address: 'Calauan, Laguna', tag: 'Laguna', color: '#8B5CF6' },
+  { name: 'Rodriguez Branch', address: 'Rodriguez, Rizal', tag: 'Rizal', color: '#F97316' },
+  { name: 'Gen. Trias branch', address: 'Blk 4 & 6 South Square Village, Pasong Kawayan, Gen. Trias, Cavite', tag: 'Gen. Trias', color: '#A855F7' },
+  { name: 'Silang Branch', address: 'Silang, Cavite', tag: 'Silang', color: '#EC4899' },
+  { name: 'Dasmariñas Branch', address: 'Dasmariñas, Cavite', tag: 'Dasmariñas', color: '#06B6D4' },
 ]
 
 const CLIENTS = [
@@ -643,15 +636,23 @@ export default function Landing() {
             <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
           </div>
           <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
-            3 Offices Across Luzon
+            11 Branches Across Luzon
           </h2>
           <p className="max-w-lg text-[15px] text-[#7A95B8] leading-relaxed">
-            With our head office in Taguig and branches in Batangas and Cavite, we're always nearby.
+            With our head office in Taguig and branches expanding across Luzon, we're always nearby.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
-          {BRANCHES.map((branch, i) => (
-            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-2xl p-6 transition-all relative overflow-hidden group"
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 max-w-6xl mx-auto">
+          {BRANCHES.map((branch, i) => {
+            const googleMapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.tag + ' ' + branch.address)}`
+            
+            return (
+            <a 
+              key={i} 
+              href={googleMapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-[#0F1A2E] border border-[#1E2D48] rounded-2xl p-6 transition-all relative overflow-hidden group block focus:outline-none"
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = branch.color + '60'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#1E2D48'}
             >
@@ -662,26 +663,21 @@ export default function Landing() {
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider" style={{ backgroundColor: branch.color + '15', color: branch.color }}>{branch.tag}</span>
               </div>
-              <div className="font-bold text-[#F0F6FF] text-[16px] mb-3">{branch.name}</div>
+              <div className="font-bold text-[#F0F6FF] text-[16px] mb-3 group-hover:text-white transition-colors">{branch.name}</div>
               <div className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: branch.color }} />
                 <span className="text-[13px] text-[#7A95B8] leading-relaxed group-hover:text-[#A2B7D0] transition-colors">{branch.address}</span>
               </div>
-              {i === 0 && (
-                <a
-                  href="https://maps.app.goo.gl/pPJhEaXBEtxjbNN29"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold transition-colors"
-                  style={{ color: branch.color }}
-                >
-                                  <span className="text-[13px] text-[#7A95B8]">Taguig City, Metro Manila</span>
-                              <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</span></div>
-                  <ArrowUpRight className="w-3.5 h-3.5" /> View on Google Maps
-                </a>
-              )}
-            </div>
-          ))}
+              
+              <div
+                className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold transition-colors opacity-80 group-hover:opacity-100"
+                style={{ color: branch.color }}
+              >
+                View on Google Maps
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </div>
+            </a>
+          )})}
         </div>
       </section>
 
