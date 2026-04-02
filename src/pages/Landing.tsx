@@ -920,24 +920,6 @@ export default function Landing() {
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
             <a href="/login" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Sign In</a>
             <a href="/create-account" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
-            <div className="text-[11px] font-bold uppercase tracking-widest mt-4 mb-1" style={{ color: t.textMuted }}>Get the App</div>
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center gap-2 text-[13px] hover:text-[#10B981] transition-colors text-left" style={{ color: t.textFaint }}>
-                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 opacity-70" fill="currentColor">
-                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                </svg>
-                iOS App Store
-              </button>
-              <button type="button" onClick={() => setShowComingSoon(true)} className="flex-1 flex items-center gap-2 text-[13px] hover:text-[#10B981] transition-colors text-left" style={{ color: t.textFaint }}>
-                <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none">
-                  <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
-                  <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/>
-                  <path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/>
-                  <path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/>
-                </svg>
-                Android Google Play
-              </button>
-            </div>
           </div>
         </div>
 
