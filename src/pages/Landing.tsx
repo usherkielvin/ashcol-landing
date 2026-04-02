@@ -3,42 +3,8 @@ import {
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Award, Calendar, Clock, Star, MapPin, Check, Camera, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon, Rocket
+  Sun, Moon
 } from 'lucide-react'
-
-function ComingSoonModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="relative bg-[#060E1A] border border-[#1E2D48] rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center"
-        onClick={e => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-[#3A5070] hover:text-white transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="w-16 h-16 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/30 flex items-center justify-center mx-auto mb-5">
-          <Rocket className="w-8 h-8 text-[#10B981]" />
-        </div>
-
-        <h3 className="text-xl font-black text-white mb-2">Coming Soon</h3>
-        <p className="text-[#7A95B8] text-sm leading-relaxed mb-6">
-          The Ashcol mobile app is currently in development. Stay tuned — we'll be launching on Google Play and the App Store soon!
-        </p>
-
-        <button
-          onClick={onClose}
-          className="w-full py-3 rounded-xl bg-[#10B981] hover:bg-emerald-400 text-[#060B18] font-bold text-sm transition-all shadow-lg shadow-[#10B981]/25"
-        >
-          Got it
-        </button>
-      </div>
-    </div>
-  )
-}
 import logoImg from '../assets/ash-logo.jpg'
 import showcaseMain from '../assets/ash.jpg'
 import showcaseSide from '../assets/red.jpg'
@@ -103,8 +69,12 @@ const SERVICES = [
 ]
 
 const CONTACTS = [
+  { icon: <PhoneCall className="w-4 h-4" />, label: 'Customer Hotline',   value: '+63 (2) 77291293',              href: 'tel:+63277291293' },
+  { icon: <Wrench className="w-4 h-4" />,    label: 'Service / Technical', value: '+63 (2) 77541418',              href: 'tel:+63277541418' },
   { icon: <Smartphone className="w-4 h-4" />,label: 'Mobile (Globe)',       value: '+63 (917) 7143810',             href: 'tel:+639177143810' },
+  { icon: <Headset className="w-4 h-4" />,   label: 'Express Assist',       value: '+63 (2) 79590289',              href: 'tel:+63279590289' },
   { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
+  { icon: <Mail className="w-4 h-4" />,      label: 'Service Email',        value: 'ashcol_service@hotmail.com',    href: 'mailto:ashcol_service@hotmail.com' },
 ]
 
 const STATS = [
@@ -193,7 +163,6 @@ export default function Landing() {
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
-  const [showComingSoon, setShowComingSoon] = useState(false)
 
   // Theme tokens
   const t = {
@@ -378,19 +347,19 @@ export default function Landing() {
         {/* How it works — ABOVE the CTA */}
         <div className="relative w-full max-w-lg mb-6">
           <p className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: t.textFaint }}>How it works</p>
-          <div className="flex flex-col sm:flex-row items-stretch gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
               { num: '1', label: 'Sign Up',        sub: 'Create your free account' },
               { num: '2', label: 'Book a Service', sub: 'Pick a date & AC service' },
               { num: '3', label: 'We Come to You', sub: 'Our team handles the rest' },
             ].map((step, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center text-center rounded-xl px-4 py-4 gap-2 transition-all" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-                <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: t.accentBg, border: `1px solid ${t.accent}40` }}>
+              <div key={i} className="flex flex-col items-center text-center rounded-xl px-2 py-3 sm:px-4 sm:py-4 gap-2" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.accentBg, border: `1px solid ${t.accent}40` }}>
                   <span className="font-black text-sm" style={{ color: t.accent }}>{step.num}</span>
                 </div>
                 <div>
-                  <div className="text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{step.label}</div>
-                  <div className="text-[11px]" style={{ color: t.textFaint }}>{step.sub}</div>
+                  <div className="text-[12px] sm:text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{step.label}</div>
+                  <div className="text-[10px] sm:text-[11px] leading-tight" style={{ color: t.textFaint }}>{step.sub}</div>
                 </div>
               </div>
             ))}
@@ -420,75 +389,74 @@ export default function Landing() {
           <div className="absolute -right-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #3B82F6, transparent 70%)', filter: 'blur(40px)' }} />
         </>}
 
-        <div className="relative max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-8">
+        <div className="relative max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-10">
           {/* Left: Text */}
-          <div className="flex-1 text-center lg:text-left">
+          <div className="w-full lg:flex-1 text-center lg:text-left">
             <div className="inline-flex items-center gap-2 bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] px-3 py-1.5 rounded-full mb-4">
               <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
               <span className="text-[10px] font-bold text-[#F59E0B] tracking-[2px]">COMING SOON</span>
             </div>
-            <h2 className="text-[clamp(1.4rem,3vw,2.2rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
+            <h2 className="text-[clamp(1.5rem,3vw,2.2rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
               Book AC services<br />
               <span className="text-[#10B981]">right from the app.</span>
             </h2>
             <p className="text-[14px] leading-relaxed max-w-md mx-auto lg:mx-0 mb-2" style={{ color: t.textMuted }}>
               The <span className="font-semibold" style={{ color: t.text }}>Ashcol Service App</span> lets you submit a service request, track your ticket status in real time, and get notified when a technician is on the way — all from your phone.
             </p>
-            <p className="text-[12px] mb-6" style={{ color: t.textFaint }}>Available for Android &amp; iOS · Free to download</p>
+            <p className="text-[12px] mb-5" style={{ color: t.textFaint }}>Available for Android &amp; iOS · Free to download</p>
 
-            {/* Store Badges */}
-            <div className="flex flex-col sm:flex-row gap-3 items-center justify-center lg:justify-start">
+            {/* Store Badges — full width on mobile, auto on sm+ */}
+            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-center lg:justify-start">
               <button type="button" aria-label="Get it on Google Play"
                 onClick={() => setShowComingSoon(true)}
-                className="flex items-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl group min-w-[180px]"
+                className="flex items-center justify-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
                 style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
               >
-                <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" fill="none">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="none">
                   <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
-                  <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-0.59z" fill="#FBBC04"/>
+                  <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/>
                   <path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/>
                   <path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/>
                 </svg>
                 <div className="text-left">
                   <div className="text-[9px] font-medium leading-none opacity-70">GET IT ON</div>
-                  <div className="text-[15px] font-black leading-tight">Google Play</div>
+                  <div className="text-[14px] font-black leading-tight">Google Play</div>
                 </div>
               </button>
 
               <button type="button" aria-label="Download on the App Store"
                 onClick={() => setShowComingSoon(true)}
-                className="flex items-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl group min-w-[180px]"
+                className="flex items-center justify-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
                 style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
               >
-                <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" fill="currentColor">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="currentColor">
                   <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
                 </svg>
                 <div className="text-left">
                   <div className="text-[9px] font-medium leading-none opacity-70">DOWNLOAD ON THE</div>
-                  <div className="text-[15px] font-black leading-tight">App Store</div>
+                  <div className="text-[14px] font-black leading-tight">App Store</div>
                 </div>
               </button>
             </div>
           </div>
 
           {/* Right: Feature pills */}
-          <div className="flex-1 grid grid-cols-2 gap-3 max-w-sm w-full">
+          <div className="w-full lg:flex-1 grid grid-cols-2 gap-3 lg:max-w-sm">
             {[
               { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation in seconds' },
               { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
               { icon: <Bell className="w-4 h-4" />, title: 'Get Notified', desc: 'Alerts when a technician is assigned or en route' },
             ].map((feat, i) => (
-              <div key={i} className="rounded-xl p-4 transition-all" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
+              <div key={i} className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ backgroundColor: t.accentBg, color: t.accent }}>{feat.icon}</div>
-                <div className="text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{feat.title}</div>
-                <div className="text-[11px]" style={{ color: t.textFaint }}>{feat.desc}</div>
+                <div className="text-[12px] sm:text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{feat.title}</div>
+                <div className="text-[11px] leading-tight" style={{ color: t.textFaint }}>{feat.desc}</div>
               </div>
             ))}
-            {/* Coming Soon card */}
-            <div className="rounded-xl p-4 flex flex-col justify-center items-start transition-all" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
+            <div className="rounded-xl p-3 sm:p-4 flex flex-col justify-center" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
               <div className="flex items-center gap-1.5 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: t.text }} />
-                <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: t.text }}>Coming Soon</span>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-[#10B981]" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Coming Soon</span>
               </div>
               <div className="text-[12px] font-bold mb-0.5" style={{ color: t.text }}>Service App</div>
               <div className="text-[11px]" style={{ color: t.textMuted }}>Launching on Android &amp; iOS</div>
@@ -499,28 +467,28 @@ export default function Landing() {
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
       <div style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        {/* Mobile: horizontal scroll | Desktop: 4-col grid */}
-        <div className="flex md:grid md:grid-cols-4 overflow-x-auto md:overflow-visible gap-0 px-4 md:px-11 lg:px-20 scrollbar-hide">
+        <div className="grid grid-cols-2 md:grid-cols-4">
           {STATS.map((s, i) => (
             <div
               key={i}
-              className="flex-shrink-0 flex flex-col items-center justify-center gap-1.5 py-5 px-6 min-w-[140px] md:min-w-0"
+              className="flex flex-col items-center gap-1 py-5 px-4"
               style={{
-                borderRight: i < 3 ? `1px solid ${t.border}` : undefined,
+                borderRight: i % 2 === 0 ? `1px solid ${t.border}` : undefined,
+                borderBottom: i < 2 ? `1px solid ${t.border}` : undefined,
               }}
             >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: t.accentBg, color: t.accent }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-1" style={{ backgroundColor: t.accentBg, color: t.accent }}>
                 {s.icon}
               </div>
-              <span className="text-[22px] font-black leading-none tracking-tight" style={{ color: t.text }}>{s.value}</span>
-              <span className="text-[10px] font-semibold tracking-[1.5px] uppercase text-center whitespace-nowrap" style={{ color: t.textFaint }}>{s.label}</span>
+              <span className="text-lg font-black tracking-tight" style={{ color: t.text }}>{s.value}</span>
+              <span className="text-[10px] tracking-wide uppercase text-center" style={{ color: t.textFaint }}>{s.label}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── Services ────────────────────────────────────────────────────────── */}
-      <section id="services" ref={servicesRef} className="px-5 md:px-11 lg:px-20 py-20 md:py-24" style={{ backgroundColor: t.bg }}>
+      <section id="services" ref={servicesRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bg }}>
         {/* Header */}
         <div className="flex flex-col items-center text-center gap-4 mb-12">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
@@ -542,7 +510,7 @@ export default function Landing() {
               key={i}
               onMouseEnter={() => setHoveredService(i)}
               onMouseLeave={() => setHoveredService(null)}
-              className="relative rounded-2xl p-6 border overflow-hidden transition-all duration-300 cursor-default"
+              className="relative rounded-2xl p-4 sm:p-6 border overflow-hidden transition-all duration-300 cursor-default"
               style={{
                 borderColor: hoveredService === i ? svc.colorBorder : t.border,
                 boxShadow: hoveredService === i ? `0 16px 48px rgba(0,0,0,0.15)` : 'none',
@@ -575,7 +543,7 @@ export default function Landing() {
       </section>
 
       {/* ── Showcase ────────────────────────────────────────────────────────── */}
-      <section id="showcase" ref={showcaseRef} className="px-5 md:px-11 lg:px-20 py-20 md:py-24" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section id="showcase" ref={showcaseRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col items-center text-center gap-4 mb-12">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
             <Camera className="w-3 h-3 text-[#10B981]" />
@@ -619,7 +587,7 @@ export default function Landing() {
       </section>
 
       {/* ── About Us ────────────────────────────────────────────────────────── */}
-      <section id="about" ref={aboutRef} className="px-5 md:px-11 lg:px-20 py-20 md:py-24" style={{ backgroundColor: t.bg }}>
+      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bg }}>
         <div className="flex flex-col lg:flex-row gap-10 max-w-6xl mx-auto items-start">
           {/* Text side */}
           <div className="flex-1">
@@ -704,7 +672,7 @@ export default function Landing() {
       </section>
 
       {/* ── Core Values ──────────────────────────────────────────────── */}
-      <section className="px-5 md:px-11 lg:px-20 py-16 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col items-center text-center gap-4 mb-10">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
             <ShieldCheck className="w-3 h-3 text-[#10B981]" />
@@ -717,7 +685,7 @@ export default function Landing() {
             Our <span className="font-semibold" style={{ color: t.text }}>mission</span> is to deliver high-quality, cost-effective AC solutions while maintaining a safe and healthy environment. Our <span className="font-semibold" style={{ color: t.text }}>vision</span> is to be the leading AC services provider in the Philippines.
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 max-w-6xl mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 max-w-6xl mx-auto">
           {VALUES.map((v, i) => (
             <div key={i} className="rounded-2xl p-5 flex flex-col gap-3 transition-all hover:shadow-lg group relative overflow-hidden"
               style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
@@ -738,7 +706,7 @@ export default function Landing() {
       </section>
 
       {/* ── Trusted Clients ──────────────────────────────────────────── */}
-      <section id="clients" ref={clientsRef as React.RefObject<HTMLElement>} className="px-5 md:px-11 lg:px-20 py-16 md:py-20" style={{ backgroundColor: t.bg }}>
+      <section id="clients" ref={clientsRef as React.RefObject<HTMLElement>} className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bg }}>
         <div className="flex flex-col items-center text-center gap-4 mb-10">
           <div className="flex items-center gap-2 bg-[rgba(59,130,246,0.1)] border border-[rgba(59,130,246,0.25)] px-3 py-1.5 rounded-full">
             <Briefcase className="w-3 h-3 text-[#3B82F6]" />
@@ -761,7 +729,7 @@ export default function Landing() {
       </section>
 
       {/* ── AC Brands Serviced ───────────────────────────────────────── */}
-      <section className="px-5 md:px-11 lg:px-20 py-14 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section className="px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-5xl mx-auto mb-8">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[3px] mb-1" style={{ color: t.textFaint }}>We Service All Major Brands</p>
@@ -771,7 +739,7 @@ export default function Landing() {
             Carrier to Kolin — our technicians are trained across all major residential and commercial AC brands.
           </p>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 max-w-5xl mx-auto">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 max-w-5xl mx-auto">
           {BRANDS.map((brand, i) => (
             <div key={i} className="rounded-2xl p-4 flex flex-col items-center gap-3 transition-all group cursor-default" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B98140'}
@@ -808,7 +776,7 @@ export default function Landing() {
       </section>
 
       {/* ── Branch Locations ────────────────────────────────────────── */}
-      <section className="px-5 md:px-11 lg:px-20 py-16 md:py-20" style={{ backgroundColor: t.bg }}>
+      <section className="px-4 md:px-11 lg:px-20 py-14 md:py-20" style={{ backgroundColor: t.bg }}>
         <div className="flex flex-col items-center text-center gap-4 mb-10">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
             <MapPin className="w-3 h-3 text-[#10B981]" />
@@ -827,7 +795,7 @@ export default function Landing() {
               href={googleMapUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-2xl p-6 transition-all relative overflow-hidden group block focus:outline-none"
+              className="rounded-2xl p-4 sm:p-6 transition-all relative overflow-hidden group block focus:outline-none"
               style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = branch.color + '60'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
@@ -888,36 +856,53 @@ export default function Landing() {
       </section>
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="px-5 md:px-11 lg:px-20 py-10" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}` }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-8">
+      <footer className="px-4 md:px-11 lg:px-20 pt-10 pb-8" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}` }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-8 max-w-6xl mx-auto">
+
           {/* Brand */}
           <div className="flex items-center gap-3 sm:col-span-2 md:col-span-1">
-            <img src={logoImg} alt="Ashcol" className="w-10 h-10 object-contain rounded-md" />
+            <img src={logoImg} alt="Ashcol" className="w-11 h-11 object-contain rounded-xl flex-shrink-0" />
             <div>
-              <div className="text-[15px] font-bold" style={{ color: t.text }}>Ashcol Airconditioning</div>
-              <div className="text-[12px] italic" style={{ color: t.textFaint }}>"Keeping YOU Cool" since 2014</div>
+              <div className="text-[15px] font-bold leading-tight" style={{ color: t.text }}>Ashcol Airconditioning</div>
+              <div className="text-[12px] italic mt-0.5" style={{ color: t.textFaint }}>"Keeping YOU Cool" since 2014</div>
             </div>
           </div>
 
           {/* Quick info */}
-          <div className="flex flex-col gap-2 text-[13px]" style={{ color: t.textFaint }}>
-            <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</span></div>
-            <div className="flex items-center gap-2"><PhoneCall className="w-4 h-4 flex-shrink-0" /><span>+63 (917) 7143810</span></div>
-            <div className="flex items-center gap-2"><Mail className="w-4 h-4 flex-shrink-0" /><span>headoffice@ashcol.com.ph</span></div>
+          <div className="flex flex-col gap-3 text-[13px]" style={{ color: t.textFaint }}>
+            <div className="flex items-start gap-2.5">
+              <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: t.accent }} />
+              <span className="leading-snug">Units 2A &amp; 2B, 2/F, Genesis Building,<br />182-A 19th Ave, East Rembo, Taguig City</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <PhoneCall className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
+              <span>+63 (2) 77291293 · +63 (917) 7143810</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Mail className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
+              <span className="break-all">headoffice@ashcol.com.ph</span>
+            </div>
           </div>
 
-          {/* Portal links + App links */}
+          {/* Quick Links + App */}
           <div className="flex flex-col gap-2">
-            <div className="text-[12px] font-bold uppercase tracking-wider mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <a href="/login" className="text-[13px] transition-colors hover:underline" style={{ color: t.textFaint }}>Sign In</a>
-            <a href="/create-account" className="text-[13px] transition-colors hover:underline" style={{ color: t.textFaint }}>Create Account</a>
-            <div className="text-[12px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: t.textMuted }}>Get the App</div>
-            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
+            <a href="/login" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Sign In</a>
+            <a href="/create-account" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
+            <div className="text-[11px] font-bold uppercase tracking-widest mt-4 mb-1" style={{ color: t.textMuted }}>Get the App</div>
+            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] hover:text-[#10B981] transition-colors text-left" style={{ color: t.textFaint }}>
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 opacity-70" fill="currentColor">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+              </svg>
               iOS App Store
             </button>
-            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none"><path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/><path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/><path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/><path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/></svg>
+            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] hover:text-[#10B981] transition-colors text-left" style={{ color: t.textFaint }}>
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none">
+                <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
+                <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/>
+                <path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/>
+                <path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/>
+              </svg>
               Android Google Play
             </button>
           </div>
@@ -927,8 +912,6 @@ export default function Landing() {
           © 2026 Ashcol Airconditioning Services Corporation. All rights reserved.
         </div>
       </footer>
-
-      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
     </div>
   )
 }
