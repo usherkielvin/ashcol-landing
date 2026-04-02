@@ -69,12 +69,8 @@ const SERVICES = [
 ]
 
 const CONTACTS = [
-  { icon: <PhoneCall className="w-4 h-4" />, label: 'Customer Hotline',   value: '+63 (2) 77291293',              href: 'tel:+63277291293' },
-  { icon: <Wrench className="w-4 h-4" />,    label: 'Service / Technical', value: '+63 (2) 77541418',              href: 'tel:+63277541418' },
   { icon: <Smartphone className="w-4 h-4" />,label: 'Mobile (Globe)',       value: '+63 (917) 7143810',             href: 'tel:+639177143810' },
-  { icon: <Headset className="w-4 h-4" />,   label: 'Express Assist',       value: '+63 (2) 79590289',              href: 'tel:+63279590289' },
   { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
-  { icon: <Mail className="w-4 h-4" />,      label: 'Service Email',        value: 'ashcol_service@hotmail.com',    href: 'mailto:ashcol_service@hotmail.com' },
 ]
 
 const STATS = [
@@ -911,7 +907,7 @@ export default function Landing() {
             </div>
             <div className="flex items-center gap-2.5">
               <PhoneCall className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
-              <span>+63 (2) 77291293 · +63 (917) 7143810</span>
+              <span>+63 (917) 7143810</span>
             </div>
             <div className="flex items-center gap-2.5">
               <Mail className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
