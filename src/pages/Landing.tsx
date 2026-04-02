@@ -289,8 +289,8 @@ export default function Landing() {
 
         {/* Headline */}
         <h1 className="relative max-w-3xl text-[clamp(1.85rem,7vw,4rem)] font-black text-[#F0F6FF] leading-[1.12] tracking-tight mb-3">
-          Professional AC{' '}
-          <span className="text-[#10B981]">Services you can trust.</span>
+          12+ Years of Expert{' '}
+          <span className="text-[#10B981]">Air Conditioning Services.</span>
         </h1>
 
         <p className="relative text-base italic text-[#7A95B8] font-medium mb-4">"Keeping YOU Cool"</p>
