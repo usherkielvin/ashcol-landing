@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { 
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Award, Calendar, Clock, Star, MapPin, Check, Camera, MessageSquare,
-  Users, ArrowUpRight, Menu, X
+  Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import showcaseMain from '../assets/ash.jpg'
@@ -13,39 +13,67 @@ import showcaseSide from '../assets/red.jpg'
 const SERVICES = [
   {
     icon: <Wrench className="w-6 h-6" />,
-    title: 'Installation',
+    title: 'Installation & Dismantling',
     color: '#10B981',
     colorBg: 'rgba(16,185,129,0.12)',
     colorBorder: 'rgba(16,185,129,0.35)',
-    desc: 'Professional installation of new air conditioning systems for homes and businesses.',
-    items: ['Residential AC Units', 'Commercial Systems', 'Ductless Mini-Splits', 'Heat Pumps'],
+    desc: 'Professional installation and safe dismantling of all air conditioning types for homes, offices, and commercial spaces.',
+    items: ['Residential AC Units', 'Commercial Systems', 'Ductless Mini-Splits', 'Industrial Units'],
   },
   {
     icon: <ConfigIcon className="w-6 h-6" />,
-    title: 'Repair & Maintenance',
+    title: 'Preventive Maintenance',
     color: '#3B82F6',
     colorBg: 'rgba(59,130,246,0.12)',
     colorBorder: 'rgba(59,130,246,0.35)',
-    desc: 'Expert repair and preventive maintenance to keep your system running efficiently.',
-    items: ['Emergency Repairs', 'Preventive Maintenance', 'System Diagnostics', 'Performance Optimisation'],
+    desc: 'Scheduled general cleaning and comprehensive check-ups to keep your unit running at peak efficiency.',
+    items: ['General Cleaning', 'Performance Check-up', 'Filter Replacement', 'Refrigerant Top-up'],
   },
   {
     icon: <TrendingUp className="w-6 h-6" />,
-    title: 'System Upgrades',
+    title: 'Repair & Diagnostics',
     color: '#8B5CF6',
     colorBg: 'rgba(139,92,246,0.12)',
     colorBorder: 'rgba(139,92,246,0.35)',
-    desc: 'Upgrade your existing system for better efficiency, comfort, and energy savings.',
-    items: ['Energy-Efficient Upgrades', 'Smart Thermostats', 'Air Quality Improvements', 'Zoning Systems'],
+    desc: 'Rapid system diagnostics, troubleshooting, and emergency repairs to restore your comfort without delay.',
+    items: ['Emergency Repairs', 'System Diagnostics', 'Board Troubleshooting', 'System Reprogramming'],
+  },
+  {
+    icon: <Wind className="w-6 h-6" />,
+    title: 'Ducting & Ventilation',
+    color: '#06B6D4',
+    colorBg: 'rgba(6,182,212,0.12)',
+    colorBorder: 'rgba(6,182,212,0.35)',
+    desc: 'Custom ducting works and ventilation solutions designed for residential, commercial, and industrial requirements.',
+    items: ['Duct Design & Fabrication', 'Fresh Air Ventilation', 'Exhaust Systems', 'Air Balancing'],
+  },
+  {
+    icon: <Zap className="w-6 h-6" />,
+    title: 'Electrical Works',
+    color: '#F59E0B',
+    colorBg: 'rgba(245,158,11,0.12)',
+    colorBorder: 'rgba(245,158,11,0.35)',
+    desc: 'Complete electrical wiring services for AC units across residential, commercial, and industrial settings.',
+    items: ['Wiring Installation', 'Circuit Breaker Setup', 'Load Balancing', 'Panel Upgrades'],
+  },
+  {
+    icon: <Building2 className="w-6 h-6" />,
+    title: 'Commercial & Industrial',
+    color: '#EF4444',
+    colorBg: 'rgba(239,68,68,0.12)',
+    colorBorder: 'rgba(239,68,68,0.35)',
+    desc: 'Specialized services for large-scale commercial establishments, restaurants, malls, and industrial facilities.',
+    items: ['Chiller Systems', 'VRF/VRV Systems', 'Centralized AC', 'Multi-zone Control'],
   },
 ]
 
 const CONTACTS = [
-  { icon: <PhoneCall className="w-4 h-4" />, label: 'Customer Hotline',   value: '+63 (2) 77291293',       href: 'tel:+63277291293' },
-  { icon: <Wrench className="w-4 h-4" />, label: 'Service / Technical', value: '+63 (2) 77541418',       href: 'tel:+63277541418' },
-  { icon: <Smartphone className="w-4 h-4" />, label: 'Mobile (Globe)',       value: '+63 (917) 7143810',      href: 'tel:+639177143810' },
-  { icon: <Headset className="w-4 h-4" />, label: 'Express Assist',       value: '+63 (2) 79590289',       href: 'tel:+63279590289' },
-  { icon: <Mail className="w-4 h-4" />, label: 'Email',                value: 'headoffice@ashcol.com.ph', href: 'mailto:headoffice@ashcol.com.ph' },
+  { icon: <PhoneCall className="w-4 h-4" />, label: 'Customer Hotline',   value: '+63 (2) 77291293',              href: 'tel:+63277291293' },
+  { icon: <Wrench className="w-4 h-4" />,    label: 'Service / Technical', value: '+63 (2) 77541418',              href: 'tel:+63277541418' },
+  { icon: <Smartphone className="w-4 h-4" />,label: 'Mobile (Globe)',       value: '+63 (917) 7143810',             href: 'tel:+639177143810' },
+  { icon: <Headset className="w-4 h-4" />,   label: 'Express Assist',       value: '+63 (2) 79590289',              href: 'tel:+63279590289' },
+  { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
+  { icon: <Mail className="w-4 h-4" />,      label: 'Service Email',        value: 'ashcol_service@hotmail.com',    href: 'mailto:ashcol_service@hotmail.com' },
 ]
 
 const STATS = [
@@ -55,6 +83,47 @@ const STATS = [
   { value: '10yr+',   label: 'In the Industry',    icon: <Star className="w-5 h-5" /> },
 ]
 
+const BRANCHES = [
+  {
+    name: 'Head Office',
+    address: 'Units 4D, 4E & 4F, Genesis Building, 182-A 19th Ave., Brgy. East Rembo, Makati City 1216',
+    tag: 'Makati',
+    color: '#10B981',
+  },
+  {
+    name: 'Batangas Branch',
+    address: '012 Laguile, Taal, Batangas',
+    tag: 'Batangas',
+    color: '#3B82F6',
+  },
+  {
+    name: 'Cavite Branch',
+    address: 'Blk 4 & 6 South Square Village, Pasong Kawayan, Gen. Trias, Cavite',
+    tag: 'Cavite',
+    color: '#8B5CF6',
+  },
+]
+
+const CLIENTS = [
+  "McDonald's", "Subway", "Mang Inasal", "The Aristocrat", "breadTalk",
+  "Goldilocks", "Kumon", "Sterling Bank of Asia", "Generika Drugstore",
+  "South Star Drug", "AXA", "La Verti Residences", "Sheridan Towers", "The Grove by Rockwell",
+]
+
+const BRANDS = [
+  'Carrier', 'Daikin', 'Panasonic', 'Samsung', 'LG', 'Koppel',
+  'Mitsubishi Electric', 'York', 'Gree', 'Midea', 'Sharp', 'Aux',
+  'Haier', 'TCL', 'Fuji-Aire', 'Kolin',
+]
+
+const VALUES = [
+  { icon: <ShieldCheck className="w-5 h-5" />, title: 'Integrity',       desc: 'We do what is right — always honest, always transparent.',          color: '#10B981', colorBg: 'rgba(16,185,129,0.12)' },
+  { icon: <Star className="w-5 h-5" />,        title: 'Excellence',      desc: 'We hold ourselves to the highest standard in every service.',       color: '#F59E0B', colorBg: 'rgba(245,158,11,0.12)' },
+  { icon: <Users className="w-5 h-5" />,       title: 'Customer Focus',  desc: 'Your comfort is our priority, before and after every job.',         color: '#3B82F6', colorBg: 'rgba(59,130,246,0.12)' },
+  { icon: <Heart className="w-5 h-5" />,       title: 'Teamwork',        desc: 'A collaborative team that delivers consistent results.',            color: '#EF4444', colorBg: 'rgba(239,68,68,0.12)' },
+  { icon: <Target className="w-5 h-5" />,      title: 'Commitment',      desc: 'We stand behind our work with dedication and accountability.',      color: '#8B5CF6', colorBg: 'rgba(139,92,246,0.12)' },
+]
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Landing() {
@@ -62,12 +131,13 @@ export default function Landing() {
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const heroRef    = useRef<HTMLElement>(null)
-  const servicesRef = useRef<HTMLElement>(null)
-  const showcaseRef = useRef<HTMLElement>(null)
-  const aboutRef   = useRef<HTMLElement>(null)
+  const heroRef     = useRef<HTMLElement>(null)
+  const servicesRef  = useRef<HTMLElement>(null)
+  const showcaseRef  = useRef<HTMLElement>(null)
+  const aboutRef    = useRef<HTMLElement>(null)
+  const clientsRef  = useRef<HTMLElement>(null)
 
-  const sectionRefs = { hero: heroRef, services: servicesRef, showcase: showcaseRef, about: aboutRef }
+  const sectionRefs = { hero: heroRef, services: servicesRef, showcase: showcaseRef, about: aboutRef, clients: clientsRef }
 
   // Highlight nav item based on scroll position
   useEffect(() => {
@@ -77,7 +147,7 @@ export default function Landing() {
       },
       { rootMargin: '-40% 0px -55% 0px' }
     )
-    ;[heroRef, servicesRef, showcaseRef, aboutRef].forEach((r) => r.current && observer.observe(r.current))
+    ;[heroRef, servicesRef, showcaseRef, aboutRef, clientsRef].forEach((r) => r.current && observer.observe(r.current))
     return () => observer.disconnect()
   }, [])
 
@@ -89,6 +159,7 @@ export default function Landing() {
   const navLinks = [
     { key: 'services',  label: 'Services' },
     { key: 'showcase',  label: 'Showcase' },
+    { key: 'clients',   label: 'Clients' },
     { key: 'about',     label: 'About Us' },
   ] as const
 
@@ -97,7 +168,7 @@ export default function Landing() {
 
       {/* ── Sticky Navbar + Mobile Dropdown ─────────────────────────── */}
       <div className="sticky top-0 z-50" style={{ backgroundColor: 'rgba(6,11,24,0.92)', borderBottom: '1px solid #1a2844', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
-        <nav className="flex items-center justify-between px-5 md:px-11 lg:px-20 py-4">
+        <nav className="flex items-center justify-between px-4 md:px-11 lg:px-20 py-3.5">
           {/* Brand */}
           <button onClick={() => scrollTo('hero')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
             <img src={logoImg} alt="Ashcol Logo" className="w-10 h-10 object-contain rounded-md" />
@@ -167,35 +238,35 @@ export default function Landing() {
       </div>
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-5 md:px-11 lg:px-20 py-20 md:py-28">
+      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-5 md:px-11 lg:px-20 py-14 md:py-28">
         {/* Glow orbs */}
         <div className="absolute -top-20 -left-32 w-[480px] h-[480px] orb-green pointer-events-none" />
         <div className="absolute top-10 -right-36 w-[380px] h-[380px] orb-blue pointer-events-none" />
 
         {/* Badge */}
-        <div className="relative flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] px-4 py-2 rounded-full mb-8">
-          <span className="w-2 h-2 rounded-full bg-[#10B981] glow-green-sm inline-block" />
-          <span className="text-xs font-bold text-[#10B981] tracking-wide">Ashcol Airconditioning Corporation · Since 2014</span>
+        <div className="relative flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] px-3 py-1.5 rounded-full mb-6">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
+          <span className="text-[10px] sm:text-xs font-bold text-[#10B981] tracking-wide">Ashcol Airconditioning · Since 2014</span>
         </div>
 
         {/* Headline */}
-        <h1 className="relative max-w-3xl text-[clamp(2.2rem,6vw,4rem)] font-black text-[#F0F6FF] leading-[1.1] tracking-tight mb-3">
+        <h1 className="relative max-w-3xl text-[clamp(1.85rem,7vw,4rem)] font-black text-[#F0F6FF] leading-[1.12] tracking-tight mb-3">
           Professional AC{' '}
           <span className="text-[#10B981]">Services you can trust.</span>
         </h1>
 
-        <p className="relative text-lg italic text-[#7A95B8] font-medium mb-5">"Keeping YOU Cool"</p>
+        <p className="relative text-base italic text-[#7A95B8] font-medium mb-4">"Keeping YOU Cool"</p>
 
-        <p className="relative max-w-xl text-base md:text-[17px] text-[#7A95B8] leading-relaxed mb-10">
+        <p className="relative max-w-xl text-[14px] md:text-[17px] text-[#7A95B8] leading-relaxed mb-8">
           Your trusted partner for installation, repair, and maintenance of air conditioning systems —
           residential and commercial, throughout Metro Manila.
         </p>
 
         {/* CTA buttons */}
-        <div className="relative flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mb-10">
+        <div className="relative flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto mb-8">
           <a
             href="/create-account"
-            className="flex items-center gap-2 px-8 py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl w-full sm:w-auto justify-center hover:bg-emerald-500 transition-all glow-green"
+            className="flex items-center gap-2 px-8 py-3.5 text-[15px] font-bold text-white bg-[#10B981] rounded-xl w-full sm:w-auto justify-center hover:bg-emerald-500 transition-all glow-green"
           >
             Get Started
           </a>
@@ -204,12 +275,12 @@ export default function Landing() {
         {/* Quick contact strip */}
         <a
           href="tel:+63277291293"
-          className="relative flex items-center gap-3 bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-5 py-3 hover:border-[#10B981] transition-all group"
+          className="relative flex items-center gap-3 bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-4 py-3 hover:border-[#10B981] transition-all group w-full sm:w-auto"
         >
-          <div className="w-8 h-8 rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center text-[#10B981]">
+          <div className="w-8 h-8 rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center text-[#10B981] flex-shrink-0">
             <PhoneCall className="w-4 h-4" />
           </div>
-          <p className="text-sm text-[#7A95B8]">
+          <p className="text-sm text-[#7A95B8] text-left">
             Call us now: <span className="text-[#10B981] font-bold group-hover:underline">+63 (2) 77291293</span>{' '}
             · Mon–Sun, 8 AM–7 PM
           </p>
@@ -218,19 +289,21 @@ export default function Landing() {
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
       <div className="border-y border-[#1E2D48] bg-[#0C1426] px-5 md:px-11 lg:px-20">
-        <div className="flex flex-wrap">
+        <div className="grid grid-cols-2 md:grid-cols-4">
           {STATS.map((s, i) => (
             <div
               key={i}
-              className={`flex-1 min-w-[120px] flex flex-col items-center gap-1 py-6 px-4 ${
-                i < STATS.length - 1 ? 'border-r border-[#1E2D48]' : ''
-              }`}
+              className={`flex flex-col items-center gap-1 py-5 px-4
+                ${ i % 2 === 0 ? 'border-r border-[#1E2D48]' : '' }
+                ${ i < 2 ? 'border-b md:border-b-0 border-[#1E2D48]' : '' }
+                ${ i < 3 ? 'md:border-r border-[#1E2D48]' : '' }
+              `}
             >
               <div className="w-8 h-8 text-[#10B981] rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center mb-1">
                 {s.icon}
               </div>
-              <span className="text-xl font-black text-[#F0F6FF] tracking-tight">{s.value}</span>
-              <span className="text-[11px] text-[#3A5070] tracking-wide uppercase text-center">{s.label}</span>
+              <span className="text-lg font-black text-[#F0F6FF] tracking-tight">{s.value}</span>
+              <span className="text-[10px] text-[#3A5070] tracking-wide uppercase text-center">{s.label}</span>
             </div>
           ))}
         </div>
@@ -372,6 +445,10 @@ export default function Landing() {
                 <Calendar className="w-4 h-4 text-[#10B981]" />
                 <span className="text-[13px] text-[#7A95B8]">Since 2014</span>
               </div>
+              <div className="flex items-center gap-2 bg-[#0F1A2E] border border-[#1E2D48] px-3 py-2 rounded-lg">
+                <ShieldCheck className="w-4 h-4 text-[#10B981]" />
+                <span className="text-[13px] text-[#7A95B8]">PCAB Licensed Contractor</span>
+              </div>
             </div>
           </div>
 
@@ -417,26 +494,152 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── CTA Banner ──────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-[#0C1426] border-y border-[#1E2D48] px-5 md:px-11 lg:px-20 py-20 md:py-24 flex flex-col items-center text-center">
+      {/* ── Core Values ──────────────────────────────────────────────── */}
+      <section className="bg-[#0C1426] border-y border-[#1E2D48] px-5 md:px-11 lg:px-20 py-16 md:py-20">
+        <div className="flex flex-col items-center text-center gap-4 mb-10">
+          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
+            <ShieldCheck className="w-3 h-3 text-[#10B981]" />
+            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR VALUES</span>
+          </div>
+          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
+            What drives us every day
+          </h2>
+          <p className="max-w-xl text-[15px] text-[#7A95B8] leading-relaxed">
+            Our <span className="text-[#F0F6FF] font-semibold">mission</span> is to deliver high-quality, cost-effective AC solutions while maintaining a safe and healthy environment. Our <span className="text-[#F0F6FF] font-semibold">vision</span> is to be the leading AC services provider in the Philippines.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 max-w-6xl mx-auto">
+          {VALUES.map((v, i) => (
+            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-2xl p-5 flex flex-col gap-3 transition-all hover:shadow-lg group relative overflow-hidden"
+              style={{ ['--hover-border' as string]: v.color }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = v.color + '60'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#1E2D48'}
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: v.color }} />
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: v.colorBg, color: v.color }}>
+                {v.icon}
+              </div>
+              <div>
+                <div className="text-[14px] font-bold text-[#F0F6FF] mb-1.5">{v.title}</div>
+                <div className="text-[12px] text-[#7A95B8] leading-relaxed">{v.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Trusted Clients ──────────────────────────────────────────── */}
+      <section id="clients" ref={clientsRef as React.RefObject<HTMLElement>} className="bg-[#060B18] px-5 md:px-11 lg:px-20 py-16 md:py-20">
+        <div className="flex flex-col items-center text-center gap-4 mb-10">
+          <div className="flex items-center gap-2 bg-[rgba(59,130,246,0.1)] border border-[rgba(59,130,246,0.25)] px-3 py-1.5 rounded-full">
+            <Briefcase className="w-3 h-3 text-[#3B82F6]" />
+            <span className="text-[10px] font-bold text-[#3B82F6] tracking-[2px]">TRUSTED BY</span>
+          </div>
+          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
+            Clients who trust Ashcol
+          </h2>
+          <p className="max-w-lg text-[15px] text-[#7A95B8] leading-relaxed">
+            From fast food chains to banking institutions and luxury residential towers — Ashcol is the trusted AC partner across Metro Manila.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-w-5xl mx-auto">
+          {CLIENTS.map((client, i) => (
+            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-4 py-3 flex items-center gap-2.5 hover:border-[#3B82F6]/40 hover:bg-[#111E33] transition-all group">
+              <Check className="w-3.5 h-3.5 text-[#3B82F6] flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
+              <span className="text-[13px] text-[#7A95B8] font-medium group-hover:text-[#F0F6FF] transition-colors truncate">{client}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── AC Brands Serviced ───────────────────────────────────────── */}
+      <section className="bg-[#0C1426] border-y border-[#1E2D48] px-5 md:px-11 lg:px-20 py-14 md:py-16">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-5xl mx-auto mb-8">
+          <div>
+            <p className="text-[11px] font-bold text-[#3A5070] uppercase tracking-[3px] mb-1">We Service All Major Brands</p>
+            <h3 className="text-[20px] md:text-[24px] font-black text-[#F0F6FF]">16+ AC Brands Supported</h3>
+          </div>
+          <p className="text-[13px] text-[#7A95B8] max-w-xs text-center sm:text-right">
+            Carrier to Kolin — our technicians are trained across all major residential and commercial AC brands.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 max-w-5xl mx-auto">
+          {BRANDS.map((brand, i) => (
+            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-xl px-3 py-2.5 text-center hover:border-[#10B981]/40 hover:bg-[#111E33] transition-all">
+              <span className="text-[11px] font-bold text-[#7A95B8] hover:text-[#10B981] transition-colors">{brand}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Branch Locations ────────────────────────────────────────── */}
+      <section className="bg-[#060B18] px-5 md:px-11 lg:px-20 py-16 md:py-20">
+        <div className="flex flex-col items-center text-center gap-4 mb-10">
+          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
+            <MapPin className="w-3 h-3 text-[#10B981]" />
+            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
+          </div>
+          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
+            3 Offices Across Luzon
+          </h2>
+          <p className="max-w-lg text-[15px] text-[#7A95B8] leading-relaxed">
+            With our head office in Makati and branches in Batangas and Cavite, we're always nearby.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
+          {BRANCHES.map((branch, i) => (
+            <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-2xl p-6 transition-all relative overflow-hidden group"
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = branch.color + '60'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#1E2D48'}
+            >
+              <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: branch.color }} />
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '20', color: branch.color }}>
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider" style={{ backgroundColor: branch.color + '15', color: branch.color }}>{branch.tag}</span>
+              </div>
+              <div className="font-bold text-[#F0F6FF] text-[16px] mb-3">{branch.name}</div>
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: branch.color }} />
+                <span className="text-[13px] text-[#7A95B8] leading-relaxed group-hover:text-[#A2B7D0] transition-colors">{branch.address}</span>
+              </div>
+              {i === 0 && (
+                <a
+                  href="https://maps.google.com/?q=Genesis+Building+182-A+19th+Avenue+East+Rembo+Makati+City"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold transition-colors"
+                  style={{ color: branch.color }}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" /> View on Google Maps
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── CTA Banner ──────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden bg-[#0C1426] border-y border-[#1E2D48] px-5 md:px-11 lg:px-20 py-16 md:py-24 flex flex-col items-center text-center">
         <div className="absolute inset-0 orb-green opacity-30 pointer-events-none" />
-        <img src={logoImg} alt="Ashcol" className="w-16 h-16 object-contain rounded-md mb-6 relative" />
-        <h2 className="relative text-[clamp(1.5rem,4vw,2.5rem)] font-black text-[#F0F6FF] leading-tight tracking-tight mb-4">
+        <img src={logoImg} alt="Ashcol" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
+        <h2 className="relative text-[clamp(1.4rem,4vw,2.5rem)] font-black text-[#F0F6FF] leading-tight tracking-tight mb-3">
           Ready to stay cool?<br />Book a service today.
         </h2>
-        <p className="relative max-w-md text-[15px] text-[#7A95B8] leading-relaxed mb-8">
+        <p className="relative max-w-md text-[14px] md:text-[15px] text-[#7A95B8] leading-relaxed mb-7">
           Residential or commercial — our team is ready to help, 7 days a week.
         </p>
         <div className="relative flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <a
             href="/create-account"
-            className="flex items-center justify-center gap-2 px-8 py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+            className="flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
           >
             Request a Service
           </a>
           <a
             href="tel:+63277291293"
-            className="flex items-center justify-center gap-2 px-7 py-4 text-[15px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
+            className="flex items-center justify-center gap-2 px-7 py-3.5 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
           >
             <PhoneCall className="w-4 h-4" /> Call +63 (2) 77291293
           </a>
@@ -445,9 +648,9 @@ export default function Landing() {
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer className="bg-[#060B18] border-t border-[#1E2D48] px-5 md:px-11 lg:px-20 py-10">
-        <div className="flex flex-col md:flex-row justify-between gap-8 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-8">
           {/* Brand */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 sm:col-span-2 md:col-span-1">
             <img src={logoImg} alt="Ashcol" className="w-10 h-10 object-contain rounded-md" />
             <div>
               <div className="text-[15px] font-bold text-[#F0F6FF]">Ashcol Airconditioning</div>
@@ -457,14 +660,14 @@ export default function Landing() {
 
           {/* Quick info */}
           <div className="flex flex-col gap-2 text-[13px] text-[#3A5070]">
-            <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0" /><span>Units 4D & 4E, 4/F Genesis Building, 182-A J.P. Rizal Ext., Makati City</span></div>
+            <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 4D, 4E & 4F, Genesis Building, 182-A 19th Ave, Brgy. East Rembo, Makati City 1216</span></div>
             <div className="flex items-center gap-2"><PhoneCall className="w-4 h-4 flex-shrink-0" /><span>+63 (2) 77291293 · +63 (917) 7143810</span></div>
             <div className="flex items-center gap-2"><Mail className="w-4 h-4 flex-shrink-0" /><span>headoffice@ashcol.com.ph</span></div>
           </div>
 
           {/* Portal links */}
           <div className="flex flex-col gap-2">
-            <div className="text-[12px] font-bold text-[#7A95B8] uppercase tracking-wider mb-1">Company</div>
+            <div className="text-[12px] font-bold text-[#7A95B8] uppercase tracking-wider mb-1">Quick Links</div>
             <a href="/login" className="text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">Sign In</a>
             <a href="/create-account" className="text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">Create Account</a>
           </div>
