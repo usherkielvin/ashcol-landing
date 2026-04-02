@@ -3,8 +3,42 @@ import {
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Award, Calendar, Clock, Star, MapPin, Check, Camera, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon
+  Sun, Moon, Rocket
 } from 'lucide-react'
+
+function ComingSoonModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative bg-[#060E1A] border border-[#1E2D48] rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-[#3A5070] hover:text-white transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="w-16 h-16 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/30 flex items-center justify-center mx-auto mb-5">
+          <Rocket className="w-8 h-8 text-[#10B981]" />
+        </div>
+
+        <h3 className="text-xl font-black text-white mb-2">Coming Soon</h3>
+        <p className="text-[#7A95B8] text-sm leading-relaxed mb-6">
+          The Ashcol mobile app is currently in development. Stay tuned — we'll be launching on Google Play and the App Store soon!
+        </p>
+
+        <button
+          onClick={onClose}
+          className="w-full py-3 rounded-xl bg-[#10B981] hover:bg-emerald-400 text-[#060B18] font-bold text-sm transition-all shadow-lg shadow-[#10B981]/25"
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
 import logoImg from '../assets/ash-logo.jpg'
 import showcaseMain from '../assets/ash.jpg'
 import showcaseSide from '../assets/red.jpg'
@@ -69,12 +103,8 @@ const SERVICES = [
 ]
 
 const CONTACTS = [
-  { icon: <PhoneCall className="w-4 h-4" />, label: 'Customer Hotline',   value: '+63 (2) 77291293',              href: 'tel:+63277291293' },
-  { icon: <Wrench className="w-4 h-4" />,    label: 'Service / Technical', value: '+63 (2) 77541418',              href: 'tel:+63277541418' },
   { icon: <Smartphone className="w-4 h-4" />,label: 'Mobile (Globe)',       value: '+63 (917) 7143810',             href: 'tel:+639177143810' },
-  { icon: <Headset className="w-4 h-4" />,   label: 'Express Assist',       value: '+63 (2) 79590289',              href: 'tel:+63279590289' },
   { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
-  { icon: <Mail className="w-4 h-4" />,      label: 'Service Email',        value: 'ashcol_service@hotmail.com',    href: 'mailto:ashcol_service@hotmail.com' },
 ]
 
 const STATS = [
@@ -163,6 +193,7 @@ export default function Landing() {
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   // Theme tokens
   const t = {
@@ -407,7 +438,8 @@ export default function Landing() {
 
             {/* Store Badges */}
             <div className="flex flex-col sm:flex-row gap-3 items-center justify-center lg:justify-start">
-              <a href="#" aria-label="Get it on Google Play"
+              <button type="button" aria-label="Get it on Google Play"
+                onClick={() => setShowComingSoon(true)}
                 className="flex items-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl group min-w-[180px]"
                 style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
               >
@@ -421,9 +453,10 @@ export default function Landing() {
                   <div className="text-[9px] font-medium leading-none opacity-70">GET IT ON</div>
                   <div className="text-[15px] font-black leading-tight">Google Play</div>
                 </div>
-              </a>
+              </button>
 
-              <a href="#" aria-label="Download on the App Store"
+              <button type="button" aria-label="Download on the App Store"
+                onClick={() => setShowComingSoon(true)}
                 className="flex items-center gap-3 px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl group min-w-[180px]"
                 style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
               >
@@ -434,7 +467,7 @@ export default function Landing() {
                   <div className="text-[9px] font-medium leading-none opacity-70">DOWNLOAD ON THE</div>
                   <div className="text-[15px] font-black leading-tight">App Store</div>
                 </div>
-              </a>
+              </button>
             </div>
           </div>
 
@@ -465,22 +498,22 @@ export default function Landing() {
       </section>
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
-      <div className="px-5 md:px-11 lg:px-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="grid grid-cols-2 md:grid-cols-4">
+      <div style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+        {/* Mobile: horizontal scroll | Desktop: 4-col grid */}
+        <div className="flex md:grid md:grid-cols-4 overflow-x-auto md:overflow-visible gap-0 px-4 md:px-11 lg:px-20 scrollbar-hide">
           {STATS.map((s, i) => (
             <div
               key={i}
-              className="flex flex-col items-center gap-1 py-5 px-4"
+              className="flex-shrink-0 flex flex-col items-center justify-center gap-1.5 py-5 px-6 min-w-[140px] md:min-w-0"
               style={{
-                borderRight: (i % 2 === 0 || i < 3) ? `1px solid ${t.border}` : undefined,
-                borderBottom: i < 2 ? `1px solid ${t.border}` : undefined,
+                borderRight: i < 3 ? `1px solid ${t.border}` : undefined,
               }}
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-1" style={{ backgroundColor: t.accentBg, color: t.accent }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: t.accentBg, color: t.accent }}>
                 {s.icon}
               </div>
-              <span className="text-lg font-black tracking-tight" style={{ color: t.text }}>{s.value}</span>
-              <span className="text-[10px] tracking-wide uppercase text-center" style={{ color: t.textFaint }}>{s.label}</span>
+              <span className="text-[22px] font-black leading-none tracking-tight" style={{ color: t.text }}>{s.value}</span>
+              <span className="text-[10px] font-semibold tracking-[1.5px] uppercase text-center whitespace-nowrap" style={{ color: t.textFaint }}>{s.label}</span>
             </div>
           ))}
         </div>
@@ -869,7 +902,7 @@ export default function Landing() {
           {/* Quick info */}
           <div className="flex flex-col gap-2 text-[13px]" style={{ color: t.textFaint }}>
             <div className="flex items-start gap-2"><MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City</span></div>
-            <div className="flex items-center gap-2"><PhoneCall className="w-4 h-4 flex-shrink-0" /><span>+63 (2) 77291293 · +63 (917) 7143810</span></div>
+            <div className="flex items-center gap-2"><PhoneCall className="w-4 h-4 flex-shrink-0" /><span>+63 (917) 7143810</span></div>
             <div className="flex items-center gap-2"><Mail className="w-4 h-4 flex-shrink-0" /><span>headoffice@ashcol.com.ph</span></div>
           </div>
 
@@ -879,14 +912,14 @@ export default function Landing() {
             <a href="/login" className="text-[13px] transition-colors hover:underline" style={{ color: t.textFaint }}>Sign In</a>
             <a href="/create-account" className="text-[13px] transition-colors hover:underline" style={{ color: t.textFaint }}>Create Account</a>
             <div className="text-[12px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: t.textMuted }}>Get the App</div>
-            <a href="#" className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
+            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
               <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
               iOS App Store
-            </a>
-            <a href="#" className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
+            </button>
+            <button type="button" onClick={() => setShowComingSoon(true)} className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
               <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none"><path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/><path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/><path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/><path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/></svg>
               Android Google Play
-            </a>
+            </button>
           </div>
         </div>
 
@@ -894,6 +927,8 @@ export default function Landing() {
           © 2026 Ashcol Airconditioning Services Corporation. All rights reserved.
         </div>
       </footer>
+
+      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
     </div>
   )
 }
