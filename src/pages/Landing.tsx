@@ -212,7 +212,7 @@ export default function Landing() {
   ] as const
 
   return (
-    <div className="min-h-screen font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
+    <div className="min-h-screen overflow-x-hidden font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
 
       {/* ── Sticky Navbar ─────────────────────────── */}
       <div
@@ -288,7 +288,7 @@ export default function Landing() {
 
         {/* Mobile dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden px-5 py-4 flex flex-col gap-3" style={{ borderTop: `1px solid ${t.borderNav}` }}>
+          <div className="md:hidden px-4 py-4 flex flex-col gap-3" style={{ borderTop: `1px solid ${t.borderNav}` }}>
             {navLinks.map(({ key, label }) => (
               <button
                 key={key}
@@ -320,7 +320,7 @@ export default function Landing() {
       </div>
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-5 md:px-11 lg:px-20 py-14 md:py-28" style={{ backgroundColor: t.bg }}>
+      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-4 md:px-11 lg:px-20 py-12 md:py-28" style={{ backgroundColor: t.bg }}>
         {/* Glow orbs */}
         <div className="absolute -top-20 -left-32 w-[480px] h-[480px] orb-green pointer-events-none" />
         <div className="absolute top-10 -right-36 w-[380px] h-[380px] orb-blue pointer-events-none" />
@@ -332,14 +332,14 @@ export default function Landing() {
         </div>
 
         {/* Headline */}
-        <h1 className="relative max-w-3xl text-[clamp(1.85rem,7vw,4rem)] font-black leading-[1.12] tracking-tight mb-3" style={{ color: t.text }}>
+        <h1 className="relative max-w-3xl text-[clamp(1.65rem,7vw,4rem)] font-black leading-[1.12] tracking-tight mb-3" style={{ color: t.text }}>
           12+ Years of Expert{' '}
           <span className="text-[#10B981]">Air Conditioning Services.</span>
         </h1>
 
         <p className="relative text-base italic font-medium mb-4" style={{ color: t.textMuted }}>"Keeping YOU Cool"</p>
 
-        <p className="relative max-w-xl text-[14px] md:text-[17px] leading-relaxed mb-8" style={{ color: t.textMuted }}>
+        <p className="relative max-w-xl text-[13px] sm:text-[14px] md:text-[17px] leading-relaxed mb-8" style={{ color: t.textMuted }}>
           Your trusted partner for installation, repair, and maintenance of air conditioning systems —
           residential and commercial, throughout Metro Manila.
         </p>
@@ -382,7 +382,7 @@ export default function Landing() {
 
 
       {/* ── Download the App Banner ────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-5 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section className="relative overflow-hidden px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         {/* Glow accents — only visible in dark mode */}
         {isDark && <>
           <div className="absolute -left-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #10B981, transparent 70%)', filter: 'blur(40px)' }} />
@@ -441,7 +441,7 @@ export default function Landing() {
           </div>
 
           {/* Right: Feature pills */}
-          <div className="w-full lg:flex-1 grid grid-cols-2 gap-3 lg:max-w-sm">
+          <div className="w-full lg:flex-1 grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-sm">
             {[
               { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation in seconds' },
               { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
@@ -543,7 +543,7 @@ export default function Landing() {
       </section>
 
       {/* ── Showcase ────────────────────────────────────────────────────────── */}
-      <section id="showcase" ref={showcaseRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section id="showcase" ref={showcaseRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-24" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col items-center text-center gap-4 mb-12">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
             <Camera className="w-3 h-3 text-[#10B981]" />
@@ -557,7 +557,7 @@ export default function Landing() {
 
         <div className="flex flex-col lg:flex-row gap-5 max-w-6xl mx-auto">
           {/* Main image */}
-          <div className="flex-[2] min-h-[300px] lg:min-h-[450px] rounded-3xl overflow-hidden relative" style={{ border: `1px solid ${t.border}` }}>
+          <div className="flex-[2] min-h-[240px] sm:min-h-[300px] lg:min-h-[450px] rounded-2xl sm:rounded-3xl overflow-hidden relative" style={{ border: `1px solid ${t.border}` }}>
             <img src={showcaseMain} alt="Quality Assurance" className="w-full h-full object-cover" />
             <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/60 to-transparent">
               <span className="text-white text-sm font-bold tracking-widest uppercase">Quality Assurance</span>
@@ -567,7 +567,7 @@ export default function Landing() {
           {/* Side column */}
           <div className="flex-1 flex flex-col gap-5">
             {/* Side image */}
-            <div className="h-[220px] rounded-3xl overflow-hidden relative" style={{ border: `1px solid ${t.border}` }}>
+            <div className="h-[190px] sm:h-[220px] rounded-2xl sm:rounded-3xl overflow-hidden relative" style={{ border: `1px solid ${t.border}` }}>
               <img src={showcaseSide} alt="Service Excellence" className="w-full h-full object-cover" />
               <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
                 <span className="text-white text-sm font-bold tracking-widest uppercase">Service Excellence</span>
@@ -575,7 +575,7 @@ export default function Landing() {
             </div>
 
             {/* Quote box */}
-            <div className="flex-1 rounded-3xl p-6 flex flex-col justify-center gap-3" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
+            <div className="flex-1 rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col justify-center gap-3" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
               <MessageSquare className="w-6 h-6" style={{ color: t.accent }} />
               <p className="text-base leading-relaxed italic" style={{ color: t.text }}>
                 "Providing the right comfort people deserve since 2014."
@@ -587,7 +587,7 @@ export default function Landing() {
       </section>
 
       {/* ── About Us ────────────────────────────────────────────────────────── */}
-      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bg }}>
+      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-24" style={{ backgroundColor: t.bg }}>
         <div className="flex flex-col lg:flex-row gap-10 max-w-6xl mx-auto items-start">
           {/* Text side */}
           <div className="flex-1">
@@ -628,7 +628,7 @@ export default function Landing() {
 
           {/* Contact card */}
           <div className="flex-1 rounded-2xl overflow-hidden" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-            <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: `1px solid ${t.border}` }}>
+            <div className="flex items-center gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${t.border}` }}>
               <Headset className="w-5 h-5" style={{ color: t.accent }} />
               <span className="text-base font-bold" style={{ color: t.text }}>Get in Touch</span>
             </div>
@@ -637,7 +637,7 @@ export default function Landing() {
                 <a
                   key={i}
                   href={c.href}
-                  className="flex items-center gap-4 px-6 py-4 transition-colors group"
+                  className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 transition-colors group"
                   style={{ borderBottom: `1px solid ${t.border}` }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isDark ? '#111E33' : '#EEF7EE'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
@@ -647,17 +647,17 @@ export default function Landing() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: t.textFaint }}>{c.label}</div>
-                    <div className="text-[13px] truncate" style={{ color: t.textMuted }}>{c.value}</div>
+                    <div className="text-[12px] sm:text-[13px] break-words sm:truncate" style={{ color: t.textMuted }}>{c.value}</div>
                   </div>
                   <ArrowUpRight className="w-4 h-4" style={{ color: t.textFaint }} />
                 </a>
               ))}
             </div>
-            <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: `1px solid ${t.border}` }}>
+            <div className="flex items-center gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${t.border}` }}>
               <Clock className="w-4 h-4" style={{ color: t.accent }} />
               <span className="text-[13px]" style={{ color: t.textMuted }}>Open 7 days a week · 8:00 AM – 7:00 PM (Including Holidays)</span>
             </div>
-            <div className="px-6 py-4">
+            <div className="px-4 sm:px-6 py-4">
               <a
                 href="https://www.facebook.com/AshcolCorp"
                 target="_blank"
@@ -672,7 +672,7 @@ export default function Landing() {
       </section>
 
       {/* ── Core Values ──────────────────────────────────────────────── */}
-      <section className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+      <section className="px-4 md:px-11 lg:px-20 py-10 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col items-center text-center gap-4 mb-10">
           <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
             <ShieldCheck className="w-3 h-3 text-[#10B981]" />
@@ -687,7 +687,7 @@ export default function Landing() {
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 max-w-6xl mx-auto">
           {VALUES.map((v, i) => (
-            <div key={i} className="rounded-2xl p-5 flex flex-col gap-3 transition-all hover:shadow-lg group relative overflow-hidden"
+            <div key={i} className="rounded-2xl p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 transition-all hover:shadow-lg group relative overflow-hidden"
               style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = v.color + '60'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
@@ -698,7 +698,7 @@ export default function Landing() {
               </div>
               <div>
                 <div className="text-[14px] font-bold mb-1.5" style={{ color: t.text }}>{v.title}</div>
-                <div className="text-[12px] leading-relaxed" style={{ color: t.textMuted }}>{v.desc}</div>
+                <div className="text-[11px] sm:text-[12px] leading-relaxed" style={{ color: t.textMuted }}>{v.desc}</div>
               </div>
             </div>
           ))}
