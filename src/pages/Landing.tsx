@@ -71,13 +71,6 @@ const CONTACTS = [
   { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
 ]
 
-const STATS = [
-  { value: '2014',    label: 'Established',       icon: <Award className="w-5 h-5" /> },
-  { value: '7 days',  label: 'Open Mon–Sun',       icon: <Calendar className="w-5 h-5" /> },
-  { value: '8am–7pm', label: 'Business Hours',     icon: <Clock className="w-5 h-5" /> },
-  { value: '10yr+',   label: 'In the Industry',    icon: <Star className="w-5 h-5" /> },
-]
-
 const BRANCHES = [
   { name: 'Head Office', address: 'Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City', tag: 'Taguig', color: '#10B981', mapUrl: 'https://maps.app.goo.gl/pPJhEaXBEtxjbNN29' },
   { name: 'Valenzuela Branch', address: 'Valenzuela City, Metro Manila', tag: 'Valenzuela', color: '#6366F1' },
