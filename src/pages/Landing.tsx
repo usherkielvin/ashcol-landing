@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { 
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Award, Calendar, Clock, Star, MapPin, Check, Camera, MessageSquare,
-  Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase
+  Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import showcaseMain from '../assets/ash.jpg'
@@ -318,6 +318,92 @@ export default function Landing() {
         </a>
       </section>
 
+
+
+      {/* ── Download the App Banner ────────────────────────────────────────── */}
+      <section className="relative overflow-hidden bg-gradient-to-r from-[#0A1628] via-[#0D1F38] to-[#0A1628] border-y border-[#1E2D48] px-5 md:px-11 lg:px-20 py-12 md:py-16">
+        {/* Glow accents */}
+        <div className="absolute -left-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #10B981, transparent 70%)', filter: 'blur(40px)' }} />
+        <div className="absolute -right-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #3B82F6, transparent 70%)', filter: 'blur(40px)' }} />
+
+        <div className="relative max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-8">
+          {/* Left: Text */}
+          <div className="flex-1 text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] px-3 py-1.5 rounded-full mb-4">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
+              <span className="text-[10px] font-bold text-[#F59E0B] tracking-[2px]">COMING SOON</span>
+            </div>
+            <h2 className="text-[clamp(1.4rem,3vw,2.2rem)] font-black text-[#F0F6FF] leading-tight tracking-tight mb-3">
+              Book AC services<br />
+              <span className="text-[#10B981]">right from the app.</span>
+            </h2>
+            <p className="text-[14px] text-[#7A95B8] leading-relaxed max-w-md mx-auto lg:mx-0 mb-2">
+              The <span className="text-[#F0F6FF] font-semibold">Ashcol Service App</span> lets you submit a service request, track your ticket status in real time, and get notified when a technician is on the way — all from your phone.
+            </p>
+            <p className="text-[12px] text-[#3A5070] mb-6">Available for Android &amp; iOS · Free to download</p>
+
+            {/* Store Badges */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-center lg:justify-start">
+              {/* Google Play */}
+              <a
+                href="#"
+                aria-label="Get it on Google Play"
+                className="flex items-center gap-3 bg-[#F0F6FF] hover:bg-white text-[#060B18] px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl hover:shadow-black/20 group min-w-[180px]"
+              >
+                <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" fill="none">
+                  <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
+                  <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-0.59z" fill="#FBBC04"/>
+                  <path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/>
+                  <path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/>
+                </svg>
+                <div className="text-left">
+                  <div className="text-[9px] font-medium text-[#374151] leading-none">GET IT ON</div>
+                  <div className="text-[15px] font-black leading-tight">Google Play</div>
+                </div>
+              </a>
+
+              {/* App Store */}
+              <a
+                href="#"
+                aria-label="Download on the App Store"
+                className="flex items-center gap-3 bg-[#F0F6FF] hover:bg-white text-[#060B18] px-5 py-3 rounded-xl font-bold transition-all hover:scale-105 hover:shadow-xl hover:shadow-black/20 group min-w-[180px]"
+              >
+                <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" fill="currentColor">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                </svg>
+                <div className="text-left">
+                  <div className="text-[9px] font-medium text-[#374151] leading-none">DOWNLOAD ON THE</div>
+                  <div className="text-[15px] font-black leading-tight">App Store</div>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          {/* Right: Feature pills */}
+          <div className="flex-1 grid grid-cols-2 gap-3 max-w-sm w-full">
+            {[
+              { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation in seconds' },
+              { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
+              { icon: <Bell className="w-4 h-4" />, title: 'Get Notified', desc: 'Alerts when a technician is assigned or en route' },
+            ].map((feat, i) => (
+              <div key={i} className="bg-[#0F1A2E] border border-[#1E2D48] rounded-xl p-4 hover:border-[#10B981]/40 transition-all">
+                <div className="w-8 h-8 rounded-lg bg-[rgba(16,185,129,0.12)] flex items-center justify-center text-[#10B981] mb-2">{feat.icon}</div>
+                <div className="text-[13px] font-bold text-[#F0F6FF] mb-0.5">{feat.title}</div>
+                <div className="text-[11px] text-[#3A5070]">{feat.desc}</div>
+              </div>
+            ))}
+            {/* Coming Soon card */}
+            <div className="bg-[#0F1A2E] border border-white/20 rounded-xl p-4 flex flex-col justify-center items-start transition-all hover:border-white/40">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span className="text-[10px] font-black text-white uppercase tracking-widest">Coming Soon</span>
+              </div>
+              <div className="text-[12px] font-bold text-[#F0F6FF] mb-0.5">Service App</div>
+              <div className="text-[11px] text-[#7A95B8]">Launching on Android &amp; iOS</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
       <div className="border-y border-[#1E2D48] bg-[#0C1426] px-5 md:px-11 lg:px-20">
@@ -691,19 +777,33 @@ export default function Landing() {
         <p className="relative max-w-md text-[14px] md:text-[15px] text-[#7A95B8] leading-relaxed mb-7">
           Residential or commercial — our team is ready to help, 7 days a week.
         </p>
-        <div className="relative flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <a
-            href="/create-account"
-            className="flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
-          >
-            Request a Service
-          </a>
-          <a
-            href="mailto:headoffice@ashcol.com.ph"
-            className="flex items-center justify-center gap-2 px-7 py-3.5 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
-          >
-            <Mail className="w-4 h-4" /> Send an Email
-          </a>
+        <div className="relative flex flex-col items-center gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <a
+              href="/create-account"
+              className="flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+            >
+              Request a Service
+            </a>
+            <a
+              href="mailto:headoffice@ashcol.com.ph"
+              className="flex items-center justify-center gap-2 px-7 py-3.5 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
+            >
+              <Mail className="w-4 h-4" /> Send an Email
+            </a>
+          </div>
+          {/* App store mini-badges */}
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[11px] text-[#3A5070]">Also available on:</span>
+            <a href="#" className="flex items-center gap-1.5 bg-[#0F1A2E] border border-[#1E2D48] hover:border-[#10B981]/50 px-3 py-1.5 rounded-lg transition-all">
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-[#F0F6FF]" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              <span className="text-[11px] font-semibold text-[#7A95B8]">App Store</span>
+            </a>
+            <a href="#" className="flex items-center gap-1.5 bg-[#0F1A2E] border border-[#1E2D48] hover:border-[#10B981]/50 px-3 py-1.5 rounded-lg transition-all">
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none"><path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/><path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-0.59z" fill="#FBBC04"/><path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/><path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/></svg>
+              <span className="text-[11px] font-semibold text-[#7A95B8]">Google Play</span>
+            </a>
+          </div>
         </div>
       </section>
 
@@ -726,11 +826,20 @@ export default function Landing() {
             <div className="flex items-center gap-2"><Mail className="w-4 h-4 flex-shrink-0" /><span>headoffice@ashcol.com.ph</span></div>
           </div>
 
-          {/* Portal links */}
+          {/* Portal links + App links */}
           <div className="flex flex-col gap-2">
             <div className="text-[12px] font-bold text-[#7A95B8] uppercase tracking-wider mb-1">Quick Links</div>
             <a href="/login" className="text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">Sign In</a>
             <a href="/create-account" className="text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">Create Account</a>
+            <div className="text-[12px] font-bold text-[#7A95B8] uppercase tracking-wider mt-3 mb-1">Get the App</div>
+            <a href="#" className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              iOS App Store
+            </a>
+            <a href="#" className="flex items-center gap-2 text-[13px] text-[#3A5070] hover:text-[#10B981] transition-colors">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="none"><path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/><path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/><path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/><path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/></svg>
+              Android Google Play
+            </a>
           </div>
         </div>
 
