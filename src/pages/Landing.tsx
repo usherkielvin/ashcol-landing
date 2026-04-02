@@ -107,6 +107,9 @@ const getBrandLogo = (name: string) => {
     'Sharp': 'sharp.png',
     'Haier': 'haier.png',
     'TCL': 'tcl.png',
+    'Aux': 'auxaircon.png',
+    'Fuji-Aire': 'fuji.png',
+    'Kolin': 'kolin.png',
   }
   
   const filename = fileMap[name]
@@ -128,11 +131,11 @@ const BRANDS = [
   { name: 'Gree',                logo: getBrandLogo('Gree') },
   { name: 'Midea',               logo: getBrandLogo('Midea') },
   { name: 'Sharp',               logo: getBrandLogo('Sharp') },
-  { name: 'Aux',                 logo: undefined },
   { name: 'Haier',               logo: getBrandLogo('Haier') },
   { name: 'TCL',                 logo: getBrandLogo('TCL') },
-  { name: 'Fuji-Aire',           logo: undefined },
-  { name: 'Kolin',               logo: undefined },
+  { name: 'Aux',                 logo: getBrandLogo('Aux') },
+  { name: 'Fuji-Aire',           logo: getBrandLogo('Fuji-Aire') },
+  { name: 'Kolin',               logo: getBrandLogo('Kolin') },
 ]
 
 const VALUES = [
@@ -924,7 +927,7 @@ export default function Landing() {
       <section className="px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-5xl mx-auto mb-8">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[3px] mb-1" style={{ color: t.textFaint }}>We Service All Major Brands</p>
+            <p className="text-[11px] font-bold uppercase tracking-[3px] mb-1 text-[#10B981]">We Service All Major Brands</p>
             <h3 className="text-[20px] md:text-[24px] font-black" style={{ color: t.text }}>16+ AC Brands Supported</h3>
           </div>
           <p className="text-[13px] max-w-xs text-center sm:text-right" style={{ color: t.textMuted }}>
