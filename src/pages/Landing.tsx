@@ -325,49 +325,6 @@ export default function Landing() {
         </a>
       </section>
 
-      {/* ── Domain Showcase ──────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-5 md:px-11 lg:px-20 py-16 md:py-20 bg-gradient-to-br from-[#0F1A2E] to-[#060B18] border-t border-[#1E2D48]">
-        <div className="absolute inset-0 orb-green opacity-20 pointer-events-none" />
-        <div className="relative max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-            {/* Image */}
-            <div className="relative rounded-2xl overflow-hidden border border-[#1E2D48] h-80 md:h-96">
-              <img src={showcaseMain} alt="Ashcol Premium AC Services" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#060B18] via-transparent to-transparent" />
-            </div>
-            {/* Copy */}
-            <div className="flex flex-col gap-4">
-              <div className="inline-flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full w-fit">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] inline-block" />
-                <span className="text-[10px] font-bold text-[#10B981] uppercase tracking-widest">ashcolservices.com</span>
-              </div>
-              <h2 className="text-[clamp(1.5rem,4vw,2.2rem)] font-black text-[#F0F6FF] leading-tight tracking-tight">
-                Now online at<br className="hidden sm:block" /> <span className="text-[#10B981]">ashcolservices.com</span>
-              </h2>
-              <p className="text-[15px] text-[#7A95B8] leading-relaxed max-w-md">
-                Your trusted connection to premium air conditioning services. Book installations, repairs, and maintenance online—fast, transparent, and always available.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <a
-                  href="https://ashcolservices.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
-                >
-                  Visit ashcolservices.com
-                  <ArrowUpRight className="w-4 h-4" />
-                </a>
-                <a
-                  href="/create-account"
-                  className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-semibold text-[#10B981] bg-[#0F1A2E] border border-[#243452] rounded-xl hover:border-[#10B981] transition-all"
-                >
-                  Book a Service
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ── Stats Bar ───────────────────────────────────────────────────────── */}
       <div className="border-y border-[#1E2D48] bg-[#0C1426] px-5 md:px-11 lg:px-20">
