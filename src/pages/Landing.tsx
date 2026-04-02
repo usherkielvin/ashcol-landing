@@ -1159,23 +1159,22 @@ export default function Landing() {
         <p className="relative max-w-md text-[14px] md:text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
           Residential or commercial — our team is ready to help, 7 days a week.
         </p>
-        <div className="relative flex flex-col items-center gap-4">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+        <div className="relative w-full max-w-lg">
+          <div className="flex flex-row gap-2 sm:gap-3 w-full">
             <a
               href="/create-account"
-              className="flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[180px]"
             >
               Request a Service
             </a>
             <a
               href="mailto:headoffice@ashcol.com.ph"
-              className="flex items-center justify-center gap-2 px-7 py-3.5 text-[14px] font-semibold rounded-xl transition-all"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-7 py-3.5 text-[14px] font-semibold rounded-xl transition-all sm:min-w-[180px]"
               style={{ color: t.accent, backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
             >
-              <Mail className="w-4 h-4" /> Send an Email
+              <Mail className="w-4 h-4" /> <span className="hidden sm:inline">Send an Email</span><span className="sm:hidden">Email</span>
             </a>
           </div>
-
         </div>
       </section>
 
