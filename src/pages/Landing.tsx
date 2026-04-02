@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { 
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
-  Mail, Award, Calendar, Clock, Star, MapPin, Check, MessageSquare,
+  Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
   Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory
 } from 'lucide-react'
