@@ -93,7 +93,7 @@ export default function CreateAccount() {
       const appToken = data.data.token
       const appUser = data.data.user
       
-      sessionStorage.setItem('ashcol-token', appToken)
+      localStorage.setItem('ashcol-token', appToken)
 
       setUser({
         name: appUser.name || email,
@@ -152,7 +152,7 @@ export default function CreateAccount() {
         const appToken = data.data.token
         const appUser = data.data.user
         
-        sessionStorage.setItem('ashcol-token', appToken)
+        localStorage.setItem('ashcol-token', appToken)
 
         setUser({
           name: appUser.name || profile.name || profile.email,
@@ -266,7 +266,7 @@ export default function CreateAccount() {
                   <label className="block text-[12px] font-semibold mb-2" style={{ color: textMuted }}>First Name</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} required
+                    <input type="text" value={firstName} onChange={e => setFirstName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, ''))} required
                       placeholder="Juan"
                       style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
                       className={inputFieldClass}
@@ -277,7 +277,7 @@ export default function CreateAccount() {
                   <label className="block text-[12px] font-semibold mb-2" style={{ color: textMuted }}>Last Name</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} required
+                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, ''))} required
                       placeholder="Dela Cruz"
                       style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
                       className={inputFieldClass}
@@ -304,8 +304,9 @@ export default function CreateAccount() {
                 <label className="block text-[12px] font-semibold mb-2" style={{ color: textMuted }}>Phone Number</label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} required
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))} required
                     placeholder="09170000000"
+                    maxLength={13}
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
                     className={inputFieldClass}
                   />
@@ -417,9 +418,10 @@ export default function CreateAccount() {
                 <input
                   type="text"
                   value={verificationCode}
-                  onChange={e => setVerificationCode(e.target.value)}
+                  onChange={e => setVerificationCode(e.target.value.replace(/[^0-9]/g, ''))}
                   required
                   maxLength={6}
+                  inputMode="numeric"
                   placeholder="— — — — — —"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
                   className="w-full border rounded-xl px-4 py-4 text-center tracking-[10px] text-xl font-black focus:outline-none focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20 transition-all"

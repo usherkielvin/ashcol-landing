@@ -263,9 +263,10 @@ export default function ForgotPassword() {
                   <input
                     type="text"
                     value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
                     required
                     maxLength={6}
+                    inputMode="numeric"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
                     className="w-full border rounded-xl px-4 py-3.5 placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all text-center tracking-[1em] font-mono text-xl"
                     placeholder="------"

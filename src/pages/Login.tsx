@@ -58,12 +58,17 @@ export default function Login() {
 
       const appToken = data.data.token
       const appUser = data.data.user
-      sessionStorage.setItem('ashcol-token', appToken)
+      localStorage.setItem('ashcol-token', appToken)
+
+      const baseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace('/api', '')
+      const pic = appUser.profileImage
+        ? (appUser.profileImage.startsWith('http') ? appUser.profileImage : `${baseUrl}${appUser.profileImage}`)
+        : ''
 
       setUser({
         name: appUser.name || email,
         email: appUser.email || email,
-        picture: appUser.profileImage || '',
+        picture: pic,
         role: appUser.role || 'customer',
         initials: getInitials(appUser.name || email),
       })
@@ -105,12 +110,17 @@ export default function Login() {
 
         const appToken = data.data.token
         const appUser = data.data.user
-        sessionStorage.setItem('ashcol-token', appToken)
+        localStorage.setItem('ashcol-token', appToken)
+
+        const baseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace('/api', '')
+        const pic = appUser.profileImage
+          ? (appUser.profileImage.startsWith('http') ? appUser.profileImage : `${baseUrl}${appUser.profileImage}`)
+          : (profile.picture || '')
 
         setUser({
           name: appUser.name || profile.name || profile.email,
           email: appUser.email || profile.email,
-          picture: appUser.profileImage || profile.picture || '',
+          picture: pic,
           role: appUser.role || 'customer',
           initials: getInitials(appUser.name || profile.name || profile.email),
         })

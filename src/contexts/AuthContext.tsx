@@ -22,7 +22,7 @@ const SESSION_KEY = 'ashcol-user'
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
-      const stored = sessionStorage.getItem(SESSION_KEY)
+      const stored = localStorage.getItem(SESSION_KEY)
       return stored ? JSON.parse(stored) : null
     } catch {
       return null
@@ -32,15 +32,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setUser = (u: AuthUser | null) => {
     setUserState(u)
     if (u) {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(u))
+      localStorage.setItem(SESSION_KEY, JSON.stringify(u))
     } else {
-      sessionStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(SESSION_KEY)
     }
   }
 
   const logout = () => {
     setUser(null)
-    sessionStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem('ashcol-token')
+    sessionStorage.removeItem('ashcol-token')
     window.location.href = '/login'
   }
 

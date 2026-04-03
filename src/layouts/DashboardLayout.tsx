@@ -163,13 +163,6 @@ export default function DashboardLayout() {
               <p className="text-[10px] font-bold uppercase tracking-wider truncate text-[#10B981]">{user?.role ?? 'Unknown'}</p>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[12px] font-semibold transition-all hover:bg-red-500/10 hover:text-red-400"
-            style={{ color: textMuted }}
-          >
-            <LogOut className="w-3.5 h-3.5" /> Sign Out
-          </button>
         </div>
       </aside>
 
