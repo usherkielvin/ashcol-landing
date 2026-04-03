@@ -3,8 +3,9 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { User, Mail, Shield, Camera, LogOut, Phone, KeyRound, Trash2, X, AlertTriangle, Check } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
+import { API_BASE_URL, resolveImageUrl } from '../utils/api'
 
-const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const apiUrl = API_BASE_URL
 const getToken = () => {
   const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
   if (!token) console.warn('[Profile] No auth token found in localStorage or sessionStorage')
@@ -124,8 +125,7 @@ export default function Profile() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Upload failed.')
       const data = await res.json()
       const rawUrl: string = data?.data?.image_url || data?.image_url || ''
-      const baseUrl = apiUrl.replace('/api', '')
-      const fullUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`
+      const fullUrl = resolveImageUrl(rawUrl)
 
       // Persist full URL back to database
       await fetch(`${apiUrl}/user/profile`, {

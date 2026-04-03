@@ -5,6 +5,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Sun, Moon, Eye, EyeOff } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
+import { resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
@@ -60,15 +61,10 @@ export default function Login() {
       const appUser = data.data.user
       localStorage.setItem('ashcol-token', appToken)
 
-      const baseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace('/api', '')
-      const pic = appUser.profileImage
-        ? (appUser.profileImage.startsWith('http') ? appUser.profileImage : `${baseUrl}${appUser.profileImage}`)
-        : ''
-
       setUser({
         name: appUser.name || email,
         email: appUser.email || email,
-        picture: pic,
+        picture: resolveImageUrl(appUser.profileImage),
         role: appUser.role || 'customer',
         initials: getInitials(appUser.name || email),
       })
@@ -112,15 +108,10 @@ export default function Login() {
         const appUser = data.data.user
         localStorage.setItem('ashcol-token', appToken)
 
-        const baseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace('/api', '')
-        const pic = appUser.profileImage
-          ? (appUser.profileImage.startsWith('http') ? appUser.profileImage : `${baseUrl}${appUser.profileImage}`)
-          : (profile.picture || '')
-
         setUser({
           name: appUser.name || profile.name || profile.email,
           email: appUser.email || profile.email,
-          picture: pic,
+          picture: resolveImageUrl(appUser.profileImage) || profile.picture || '',
           role: appUser.role || 'customer',
           initials: getInitials(appUser.name || profile.name || profile.email),
         })
