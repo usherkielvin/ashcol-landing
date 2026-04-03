@@ -235,21 +235,20 @@ export default function DashboardLayout() {
                     style={{ borderColor: headerBg }} />
             </button>
 
-            {/* User Avatar (mobile) */}
-            <div className="md:hidden">
-              {user?.picture ? (
-                <img
-                  src={user.picture}
-                  alt={user.name}
-                  className="w-9 h-9 rounded-full object-cover ring-2 ring-[#10B981]/40"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-sm">
-                  {user?.initials ?? '?'}
-                </div>
-              )}
-            </div>
+            {/* Logout */}
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="p-2.5 rounded-xl transition-all hover:scale-105 hover:text-red-400"
+              style={{
+                color: textMuted,
+                backgroundColor: hoverBg,
+                border: `1px solid ${inputBorder}`,
+              }}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+
           </div>
         </header>
 

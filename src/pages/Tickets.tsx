@@ -11,7 +11,6 @@ interface Ticket {
   serviceType: string
   customerName: string
   status: string
-  priority: string
   createdAt: string
   preferredDate?: string
 }
@@ -170,12 +169,6 @@ export default function Tickets() {
     }
   }
 
-  const getPriorityDot = (priority: string) => {
-    const p = priority.toUpperCase().charAt(0) + priority.slice(1).toLowerCase()
-    const colors: Record<string, string> = { Critical: '#EF4444', High: '#F97316', Medium: '#EAB308', Low: '#22C55E' }
-    return <Circle className="w-2.5 h-2.5" style={{ color: colors[p] ?? '#94a3b8', fill: colors[p] ?? '#94a3b8' }} />
-  }
-
   return (
     <div className="flex flex-col gap-6">
       {/* Header Actions */}
@@ -232,13 +225,6 @@ export default function Tickets() {
 
               <div className="flex flex-col gap-5">
                 <div className="flex gap-6">
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Priority</label>
-                    <div className="flex items-center gap-2 border w-fit px-3 py-1.5 rounded-lg" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0F1A2E' }}>
-                      {getPriorityDot(selectedTicket.priority)}
-                      <span style={{ color: textPrimary }} className="text-xs font-bold uppercase">{selectedTicket.priority}</span>
-                    </div>
-                  </div>
                   <div>
                     <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Service Type</label>
                     <p style={{ color: textPrimary }} className="font-bold">{selectedTicket.serviceType}</p>
@@ -354,7 +340,6 @@ export default function Tickets() {
                 <th style={{ borderColor: border }} className="p-4 pl-6 border-b w-10"></th>
                 <th style={{ borderColor: border }} className="p-4 border-b">Ticket Details</th>
                 <th style={{ borderColor: border }} className="p-4 border-b">Customer</th>
-                <th style={{ borderColor: border }} className="p-4 border-b">Priority</th>
                 <th style={{ borderColor: border }} className="p-4 border-b">Status</th>
                 <th style={{ borderColor: border }} className="p-4 pr-6 border-b text-right">Actions</th>
               </tr>
@@ -362,7 +347,7 @@ export default function Tickets() {
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-[#7A95B8]">
+                  <td colSpan={5} className="p-12 text-center text-[#7A95B8]">
                     Loading tickets...
                   </td>
                 </tr>
@@ -401,12 +386,6 @@ export default function Tickets() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-2 border w-fit px-2 py-1 rounded-md" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0F1A2E' }}>
-                        {getPriorityDot(ticket.priority)}
-                        <span style={{ color: textPrimary }} className="text-xs font-bold">{ticket.priority.toUpperCase()}</span>
-                      </div>
-                    </td>
-                    <td className="p-4">
                       <div
                         style={{ color: statusTheme.color, backgroundColor: statusTheme.background, borderColor: statusTheme.border }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-full border w-fit"
@@ -426,7 +405,7 @@ export default function Tickets() {
               
               {!loading && filteredTickets.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center">
+                  <td colSpan={5} className="p-12 text-center">
                      <div className="flex flex-col items-center justify-center">
                        <FileText className="w-12 h-12 text-slate-300 dark:text-[#3A5070] mb-3" />
                        <h3 style={{ color: textPrimary }} className="text-lg font-bold">No tickets found</h3>
