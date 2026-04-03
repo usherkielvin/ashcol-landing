@@ -5,7 +5,11 @@ import { User, Mail, Shield, Camera, LogOut, Phone, KeyRound, Trash2, X, AlertTr
 import ImageCropModal from '../components/ImageCropModal'
 
 const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+const getToken = () => {
+  const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+  if (!token) console.warn('[Profile] No auth token found in localStorage or sessionStorage')
+  return token
+}
 const authHeaders = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${getToken()}`,

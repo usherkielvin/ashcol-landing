@@ -22,6 +22,11 @@ const SESSION_KEY = 'ashcol-user'
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
+      // Migrate token from sessionStorage to localStorage if needed
+      const oldToken = sessionStorage.getItem('ashcol-token')
+      if (oldToken && !localStorage.getItem('ashcol-token')) {
+        localStorage.setItem('ashcol-token', oldToken)
+      }
       const stored = localStorage.getItem(SESSION_KEY)
       return stored ? JSON.parse(stored) : null
     } catch {
