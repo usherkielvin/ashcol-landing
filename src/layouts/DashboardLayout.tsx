@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, Navigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
-  Settings as ConfigIcon, Bell, Menu, Sun, Moon, LogOut, User, X,
+  Settings as ConfigIcon, Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -20,7 +20,6 @@ export default function DashboardLayout() {
     { name: 'Overview',      path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',       path: '/tickets',   icon: TicketIcon },
     { name: 'Customers',     path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Profile',       path: '/profile',   icon: User,       roles: ['customer'] },
     { name: 'Staff & Roles', path: '/staff',     icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Settings',      path: '/settings',  icon: ConfigIcon, roles: ['admin', 'manager'] },
   ]
@@ -142,9 +141,13 @@ export default function DashboardLayout() {
 
         {/* ── User Profile ───────────────────────────────── */}
         <div className="shrink-0 p-3" style={{ borderTop: `1px solid ${border}` }}>
-          <div
-            className="flex items-center gap-3 p-3 rounded-xl mb-2"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+          <Link
+            to="/profile"
+            onClick={() => setSidebarOpen(false)}
+            className="flex items-center gap-3 p-3 rounded-xl transition-all group"
+            style={{ backgroundColor: inputBg, border: `1px solid ${location.pathname === '/profile' ? '#10B981' : inputBorder}` }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B981'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = location.pathname === '/profile' ? '#10B981' : inputBorder}
           >
             {user?.picture ? (
               <img
@@ -162,7 +165,8 @@ export default function DashboardLayout() {
               <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name ?? 'Guest'}</p>
               <p className="text-[10px] font-bold uppercase tracking-wider truncate text-[#10B981]">{user?.role ?? 'Unknown'}</p>
             </div>
-          </div>
+            <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: textMuted }} />
+          </Link>
         </div>
       </aside>
 

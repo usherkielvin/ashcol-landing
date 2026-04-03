@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { User, Mail, Shield, Camera, LogOut, Phone, KeyRound, Trash2, X, AlertTriangle, Check } from 'lucide-react'
@@ -35,16 +35,31 @@ export default function Profile() {
   const inputText   = isLight ? '#0f172a'    : '#F0F6FF'
 
   // ── Name edit ────────────────────────────────────────────────────────────
-  const [name, setName]           = useState(user?.name || '')
-  const [phone, setPhone]         = useState(user?.phone || '')
+  const [name, setName]               = useState(user?.name || '')
+  const [phone, setPhone]             = useState(user?.phone || '')
   const [nameLoading, setNameLoading] = useState(false)
-  const [nameMsg, setNameMsg]     = useState('')
-  const [nameErr, setNameErr]     = useState('')
+  const [nameMsg, setNameMsg]         = useState('')
+  const [nameErr, setNameErr]         = useState('')
 
   // ── Profile pic ──────────────────────────────────────────────────────────
   const [picLoading, setPicLoading] = useState(false)
   const [picErr, setPicErr]         = useState('')
   const [cropSrc, setCropSrc]       = useState<string | null>(null)
+
+  // Fetch latest profile from backend on mount to ensure phone is populated
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    fetch(`${apiUrl}/user/profile`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return
+        const u = data?.data || data
+        if (u.phone) setPhone(u.phone)
+        if (u.name) setName(u.name)
+      })
+      .catch(() => {})
+  }, [])
 
   // ── Email change ─────────────────────────────────────────────────────────
   const [showEmailModal, setShowEmailModal]   = useState(false)
