@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { MapPin, Navigation } from 'lucide-react'
 import { getRegionNames, getProvinces, getCities, getBarangays } from '../data/phAddress'
 
@@ -18,13 +18,12 @@ interface Props {
   inputBorder: string
   inputText: string
   textMuted: string
-  textPrimary: string
 }
 
 const sel = `w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] appearance-none bg-no-repeat`
 const selBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A95B8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") right 12px center / 12px no-repeat`
 
-export default function PhAddressPicker({ value, onChange, inputBg, inputBorder, inputText, textMuted, textPrimary }: Props) {
+export default function PhAddressPicker({ value, onChange, inputBg, inputBorder, inputText, textMuted }: Props) {
   const [locLoading, setLocLoading] = useState(false)
   const [locErr, setLocErr]         = useState('')
 
@@ -41,6 +40,8 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
     if (field === 'city')     { next.barangay = '' }
     onChange(next)
   }
+
+  const isSecureContext = typeof window !== 'undefined' && window.isSecureContext
 
   const detectLocation = () => {
     if (!navigator.geolocation) return setLocErr('Geolocation not supported.')
@@ -107,15 +108,22 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
   return (
     <div className="flex flex-col gap-3">
 
-      {/* Auto-detect */}
-      <button
-        type="button" onClick={detectLocation} disabled={locLoading}
-        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50 w-fit"
-        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
-      >
-        <Navigation className="w-4 h-4 text-[#10B981]" />
-        {locLoading ? 'Detecting...' : 'Use my current location'}
-      </button>
+      {/* Auto-detect — only shown on secure contexts (https or localhost) */}
+      {isSecureContext ? (
+        <button
+          type="button" onClick={detectLocation} disabled={locLoading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50 w-fit"
+          style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+        >
+          <Navigation className="w-4 h-4 text-[#10B981]" />
+          {locLoading ? 'Detecting...' : 'Use my current location'}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12px]" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#F59E0B' }}>
+          <Navigation className="w-3.5 h-3.5 shrink-0" />
+          Auto-detect unavailable on non-secure connections. Please fill in your address below.
+        </div>
+      )}
       {locErr && <p className="text-xs text-red-400">{locErr}</p>}
 
       {/* Street */}

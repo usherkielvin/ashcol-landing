@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Plus, Minus, MapPin, Calendar, Camera,
+  ArrowLeft, Plus, Minus, Calendar, Camera,
   Search, Check, DollarSign, ChevronDown, ChevronUp, Trash2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -447,7 +447,6 @@ export default function CreateTicket() {
               inputBorder={inputBorder}
               inputText={textPrimary}
               textMuted={textMuted}
-              textPrimary={textPrimary}
             />
           </div>
 

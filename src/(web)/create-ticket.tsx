@@ -2,23 +2,16 @@
  * Web Portal Create Ticket Page
  *
  * Clean form for submitting a new service request.
- * Redirects to /(web)/tickets on success.
+ * Redirects to /tickets on success.
  */
 
-import { Feather } from '@expo/vector-icons'
-import { useRouter } from 'expo-router'
+/// <reference types="vite/client" />
+
+import { Send, AlertCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import React, { useState } from 'react'
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native'
-import { useAuth } from '../../src/contexts/AuthContext'
-import { ticketService } from '../../src/services/api'
+import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,8 +24,10 @@ const SERVICE_TYPES = ['Cleaning', 'Maintenance', 'Repair', 'Installation'] as c
 // ---------------------------------------------------------------------------
 
 export default function WebCreateTicketPage(): React.ReactElement {
-  const router = useRouter()
+  const navigate = useNavigate()
   const { user } = useAuth()
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
 
   const [serviceType, setServiceType] = useState('')
   const [description, setDescription] = useState('')
@@ -54,25 +49,35 @@ export default function WebCreateTicketPage(): React.ReactElement {
     return Object.keys(next).length === 0
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     if (!validate()) return
     setLoading(true)
     setSubmitError(null)
     try {
-      await ticketService.createTicket({
-        title: `${serviceType} service`,
-        description: description.trim(),
-        service_type: serviceType,
-        location: address.trim(),
-        contact_phone: contactPhone.trim() || undefined,
-        preferred_date: preferredDate || undefined,
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+
+      const res = await fetch(`${apiUrl}/tickets`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          title: `${serviceType} service`,
+          description: description.trim(),
+          serviceType: serviceType,
+          location: address.trim(),
+          contactPhone: contactPhone.trim() || undefined,
+          preferredDate: preferredDate || undefined,
+        })
       })
-      router.replace('/(web)/tickets' as any)
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Failed to submit ticket. Please try again.'
+      
+      if (!res.ok) throw new Error('Failed to submit ticket')
+      navigate('/tickets')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to submit ticket. Please try again.'
       setSubmitError(msg)
     } finally {
       setLoading(false)
@@ -80,280 +85,137 @@ export default function WebCreateTicketPage(): React.ReactElement {
   }
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+    <div className="flex-1 overflow-auto pb-10">
+      <div className="max-w-[680px] mx-auto space-y-5">
 
-      {/* ── Service Type ── */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Service Type <Text style={styles.required}>*</Text></Text>
-        <View style={styles.chipRow}>
-          {SERVICE_TYPES.map((s) => (
-            <Pressable
-              key={s}
-              onPress={() => {
-                setServiceType(s)
-                if (errors.serviceType) setErrors((p) => ({ ...p, serviceType: '' }))
-              }}
-              style={[styles.chip, serviceType === s && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, serviceType === s && styles.chipTextActive]}>
+        {/* ── Service Type ── */}
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Service Type <span className="text-red-500">*</span>
+          </label>
+          <div className="flex flex-wrap gap-2.5">
+            {SERVICE_TYPES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  setServiceType(s)
+                  if (errors.serviceType) setErrors((p) => ({ ...p, serviceType: '' }))
+                }}
+                className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all ${
+                  serviceType === s
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-emerald-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                }`}
+              >
                 {s}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        {errors.serviceType ? <Text style={styles.errorText}>{errors.serviceType}</Text> : null}
-      </View>
+              </button>
+            ))}
+          </div>
+          {errors.serviceType && <p className="text-sm text-red-500">{errors.serviceType}</p>}
+        </div>
 
-      {/* ── Description ── */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Description <Text style={styles.required}>*</Text></Text>
-        <TextInput
-          style={[styles.textarea, errors.description ? styles.inputError : null]}
-          placeholder="Describe the issue or service needed…"
-          placeholderTextColor="#CBD5E1"
-          value={description}
-          onChangeText={(v) => {
-            setDescription(v)
-            if (errors.description) setErrors((p) => ({ ...p, description: '' }))
-          }}
-          multiline
-          numberOfLines={5}
-          textAlignVertical="top"
-        />
-        {errors.description ? <Text style={styles.errorText}>{errors.description}</Text> : null}
-      </View>
-
-      {/* ── Service Address ── */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Service Address <Text style={styles.required}>*</Text></Text>
-        <TextInput
-          style={[styles.input, errors.address ? styles.inputError : null]}
-          placeholder="Full address where service is needed"
-          placeholderTextColor="#CBD5E1"
-          value={address}
-          onChangeText={(v) => {
-            setAddress(v)
-            if (errors.address) setErrors((p) => ({ ...p, address: '' }))
-          }}
-        />
-        {errors.address ? <Text style={styles.errorText}>{errors.address}</Text> : null}
-      </View>
-
-      {/* ── Optional fields row ── */}
-      <View style={styles.optionalRow}>
-        {/* Contact Phone */}
-        <View style={[styles.section, styles.halfField]}>
-          <Text style={styles.label}>Contact Phone</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 09123456789"
-            placeholderTextColor="#CBD5E1"
-            value={contactPhone}
-            onChangeText={setContactPhone}
-            keyboardType="phone-pad"
+        {/* ── Description ── */}
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Description <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            className={`w-full min-h-[120px] bg-white dark:bg-gray-800 border-2 rounded-lg px-3.5 py-3 text-sm text-gray-900 dark:text-white placeholder-gray-400 outline-none transition-all ${
+              errors.description ? 'border-red-500' : 'border-gray-200 dark:border-gray-700 focus:border-emerald-500'
+            }`}
+            placeholder="Describe the issue or service needed…"
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value)
+              if (errors.description) setErrors((p) => ({ ...p, description: '' }))
+            }}
           />
-        </View>
+          {errors.description && <p className="text-sm text-red-500">{errors.description}</p>}
+        </div>
 
-        {/* Preferred Date */}
-        <View style={[styles.section, styles.halfField]}>
-          <Text style={styles.label}>Preferred Date</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#CBD5E1"
-            value={preferredDate}
-            onChangeText={setPreferredDate}
+        {/* ── Service Address ── */}
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Service Address <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            className={`w-full h-[46px] bg-white dark:bg-gray-800 border-2 rounded-lg px-3.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 outline-none transition-all ${
+              errors.address ? 'border-red-500' : 'border-gray-200 dark:border-gray-700 focus:border-emerald-500'
+            }`}
+            placeholder="Full address where service is needed"
+            value={address}
+            onChange={(e) => {
+              setAddress(e.target.value)
+              if (errors.address) setErrors((p) => ({ ...p, address: '' }))
+            }}
           />
-        </View>
-      </View>
+          {errors.address && <p className="text-sm text-red-500">{errors.address}</p>}
+        </div>
 
-      {/* ── Submit error ── */}
-      {submitError ? (
-        <View style={styles.errorBanner}>
-          <Feather name="alert-circle" size={15} color="#991B1B" />
-          <Text style={styles.errorBannerText}>{submitError}</Text>
-        </View>
-      ) : null}
+        {/* ── Optional fields row ── */}
+        <div className="flex flex-wrap gap-4">
+          {/* Contact Phone */}
+          <div className="flex-1 min-w-[200px] space-y-2">
+            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Contact Phone</label>
+            <input
+              type="tel"
+              className="w-full h-[46px] bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg px-3.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 outline-none transition-all focus:border-emerald-500"
+              placeholder="e.g. 09123456789"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+            />
+          </div>
 
-      {/* ── Actions ── */}
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-        >
-          <Text style={styles.cancelBtnText}>Cancel</Text>
-        </Pressable>
+          {/* Preferred Date */}
+          <div className="flex-1 min-w-[200px] space-y-2">
+            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Preferred Date</label>
+            <input
+              type="date"
+              className="w-full h-[46px] bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg px-3.5 text-sm text-gray-900 dark:text-white outline-none transition-all focus:border-emerald-500"
+              value={preferredDate}
+              onChange={(e) => setPreferredDate(e.target.value)}
+            />
+          </div>
+        </div>
 
-        <Pressable
-          onPress={handleSubmit}
-          disabled={loading}
-          style={({ pressed }) => [styles.submitBtn, (pressed || loading) && { opacity: 0.8 }]}
-          accessibilityRole="button"
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <>
-              <Feather name="send" size={15} color="#FFFFFF" />
-              <Text style={styles.submitBtnText}>Submit Ticket</Text>
-            </>
-          )}
-        </Pressable>
-      </View>
+        {/* ── Submit error ── */}
+        {submitError && (
+          <div className="flex items-start gap-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3.5">
+            <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-red-700 dark:text-red-300 font-medium">{submitError}</p>
+          </div>
+        )}
 
-    </ScrollView>
+        {/* ── Actions ── */}
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="px-5 py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 transition-all"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-70 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all min-w-[140px] justify-center"
+          >
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>Submit Ticket</span>
+              </>
+            )}
+          </button>
+        </div>
+
+      </div>
+    </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  container: {
-    maxWidth: 680,
-    gap: 4,
-    paddingBottom: 40,
-  },
-
-  section: {
-    gap: 8,
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    letterSpacing: 0.2,
-  },
-  required: {
-    color: '#EF4444',
-  },
-
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-  },
-  chipActive: {
-    borderColor: '#10B981',
-    backgroundColor: '#ECFDF5',
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  chipTextActive: {
-    color: '#059669',
-  },
-
-  input: {
-    height: 46,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    color: '#0F172A',
-    outlineStyle: 'none' as any,
-  },
-  textarea: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#0F172A',
-    minHeight: 120,
-    outlineStyle: 'none' as any,
-  },
-  inputError: {
-    borderColor: '#EF4444',
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#EF4444',
-    marginTop: 2,
-  },
-
-  optionalRow: {
-    flexDirection: 'row',
-    gap: 16,
-    flexWrap: 'wrap',
-  },
-  halfField: {
-    flex: 1,
-    minWidth: 200,
-  },
-
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 8,
-  },
-  errorBannerText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#991B1B',
-    fontWeight: '500',
-  },
-
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelBtn: {
-    paddingVertical: 11,
-    paddingHorizontal: 22,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-  },
-  cancelBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-    backgroundColor: '#10B981',
-    boxShadow: '0 3px 8px rgba(16,185,129,0.25)' as any,
-    minWidth: 140,
-    justifyContent: 'center',
-  },
-  submitBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-})
