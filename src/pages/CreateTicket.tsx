@@ -5,11 +5,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Plus, Minus, Calendar, Camera,
+  ArrowLeft, Plus, Minus, Camera,
   Search, Check, DollarSign, ChevronDown, ChevronUp, Trash2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ function ChipGroup({ options, value, onChange, isLight }: { options: string[]; v
         const active = value === opt
         return (
           <button key={opt} type="button" onClick={() => onChange(active ? '' : opt)}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full border text-sm font-semibold transition-all ${active
+            className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${active
               ? 'bg-[#10B981] border-[#10B981] text-white shadow-sm shadow-[#10B981]/30'
               : isLight ? 'bg-white border-slate-200 text-slate-600 hover:border-[#10B981]/60 hover:text-[#10B981]'
                 : 'bg-[#121720] border-[#2C3440] text-[#A8B1BD] hover:border-[#10B981]/60 hover:text-[#10B981]'}`}
@@ -172,7 +173,8 @@ export default function CreateTicket() {
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const surfaceBg   = isLight ? '#f8fafc' : '#0F1A2E'
 
-  const inputCls = `w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition-all focus:ring-2 focus:ring-[#10B981]/30 focus:border-[#10B981]`
+
+
   const inputSty = { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }
 
   // ─ State ─
@@ -180,13 +182,14 @@ export default function CreateTicket() {
   const [fullName, setFullName] = useState(user?.name || '')
   const [contactPhone, setContactPhone] = useState(user?.phone || '')
   const [address, setAddress] = useState<AddressValue>({
-    region: '', province: '', city: '', barangay: '', street: '', landmark: '',
+    region: '', city: '', barangay: '', street: '', landmark: '',
   })
   const [description, setDescription] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [images, setImages] = useState<{ file: File; url: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
 
   const emptyDetail = (): UnitDetail => ({ brand: '', hp: '', technology: '', subtype: '', feature: '', issueType: '', refrigerant: '', voltage: '', ageRange: '', expandedMore: false })
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([
@@ -256,7 +259,7 @@ export default function CreateTicket() {
       }))
 
       const fullDesc = [description.trim() || 'No additional details provided.', acBits.length ? `AC Details - ${acBits.join('; ')}` : ''].filter(Boolean).join('\n\n')
-      const fullLoc = [address.street, address.barangay, address.city, address.province, address.region]
+      const fullLoc = [address.region, address.city, address.barangay, address.street]
         .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
@@ -298,49 +301,44 @@ export default function CreateTicket() {
   )
 
   return (
-    <div className="flex flex-col gap-0 min-h-full" style={{ backgroundColor: pageBg }}>
-      {/* ── Page header bar ── */}
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="border-b px-6 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/tickets')}
+    <div className="flex flex-col -m-5 md:-m-8 min-h-[calc(100vh-4rem)]" style={{ backgroundColor: pageBg }}>
+
+      {/* ── Top bar ── */}
+      <div style={{ backgroundColor: cardBg, borderColor: border }} className="sticky top-0 z-20 border-b px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button type="button" onClick={() => navigate('/tickets')}
             style={{ borderColor: inputBorder, color: textMuted }}
-            className="p-2 rounded-xl border hover:border-[#10B981] hover:text-[#10B981] transition-all"
+            className="p-2 rounded-xl border hover:border-[#10B981] hover:text-[#10B981] transition-all shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <h2 style={{ color: textPrimary }} className="text-xl font-black tracking-tight">New Service Request</h2>
-            <p style={{ color: textMuted }} className="text-xs mt-0.5">Fill in all required fields to submit your ticket</p>
+          <div className="min-w-0">
+            <h2 style={{ color: textPrimary }} className="text-sm sm:text-lg font-black tracking-tight leading-tight">New Service Request</h2>
+            <p style={{ color: textMuted }} className="text-[10px] hidden sm:block mt-0.5">Fill in all required fields to submit</p>
           </div>
         </div>
-        {/* Sticky price badge */}
-        <div style={{ backgroundColor: isLight ? '#f0fdf4' : '#0F1A2E', borderColor: '#10B981' }} className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl border">
-          <DollarSign className="w-4 h-4 text-[#10B981]" />
-          <div>
-            <p style={{ color: textMuted }} className="text-[10px] font-bold uppercase">Est. Cost</p>
-            <p className="text-lg font-black text-[#10B981] leading-none">₱{price().toLocaleString()}</p>
-          </div>
+        <div style={{ backgroundColor: isLight ? '#f0fdf4' : '#0d1e30', borderColor: '#10B981' }} className="flex items-center gap-2 px-3 py-1.5 rounded-xl border shrink-0">
+          <DollarSign className="w-3.5 h-3.5 text-[#10B981]" />
+          <span className="text-sm font-black text-[#10B981]">₱{price().toLocaleString()}</span>
         </div>
       </div>
 
-      {/* ── Two-column layout ── */}
-      <form onSubmit={handleSubmit} className="flex flex-col xl:flex-row gap-6 p-6 flex-1">
+      {/* ── Body ── */}
+      <form onSubmit={handleSubmit} className="flex flex-col xl:flex-row gap-5 p-4 sm:p-6 xl:p-8 flex-1">
 
-        {/* ── LEFT COLUMN: AC Configuration ── */}
-        <div className="flex-1 flex flex-col gap-5 min-w-0">
+        {/* ══ LEFT: Service config ══ */}
+        <div className="flex-1 flex flex-col gap-4 min-w-0">
 
-          {/* Section 1: Service Type */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6">
+          {/* 1 · Service Type */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5">
             <SectionTitle title="Service Type" step={1} />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {SERVICE_TYPES.map(svc => (
                 <button key={svc} type="button" onClick={() => setSelectedService(svc)}
-                  className={`py-4 rounded-xl border text-sm font-bold transition-all ${selectedService === svc
-                    ? 'bg-[#10B981] border-[#10B981] text-white shadow-lg shadow-[#10B981]/20'
-                    : isLight ? 'bg-white border-slate-200 text-slate-600 hover:border-[#10B981]/60 hover:text-[#10B981]'
-                      : 'bg-[#121720] border-[#2C3440] text-[#A8B1BD] hover:border-[#10B981]/60 hover:text-[#10B981]'}`}
+                  className={`py-3 rounded-xl border text-sm font-bold transition-all ${selectedService === svc
+                    ? 'bg-[#10B981] border-[#10B981] text-white shadow-md shadow-[#10B981]/20'
+                    : isLight ? 'bg-white border-slate-200 text-slate-600 hover:border-[#10B981]/50 hover:text-[#10B981]'
+                      : 'bg-[#121720] border-[#2C3440] text-[#A8B1BD] hover:border-[#10B981]/50 hover:text-[#10B981]'}`}
                 >
                   {svc}
                 </button>
@@ -348,8 +346,8 @@ export default function CreateTicket() {
             </div>
           </div>
 
-          {/* Section 2: AC Units */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6">
+          {/* 2 · AC Units */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5">
             <SectionTitle title="AC Unit Type(s)" step={2} />
             <div className="flex flex-col gap-3">
               {unitTypes.map((unit, uIdx) => {
@@ -421,99 +419,96 @@ export default function CreateTicket() {
           </div>
         </div>
 
-        {/* ── RIGHT COLUMN: Details + Submit ── */}
-        <div className="w-full xl:w-[380px] shrink-0 flex flex-col gap-5">
+        {/* ══ RIGHT: Details sidebar ══ */}
+        <div className="w-full xl:w-[360px] shrink-0 flex flex-col gap-4 xl:sticky xl:top-[57px] xl:self-start xl:max-h-[calc(100vh-57px)] xl:overflow-y-auto">
 
-          {/* Customer Info */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6 flex flex-col gap-4">
+          {/* 3 · Your Info */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3">
             <SectionTitle title="Your Information" step={3} />
             <div>
               <FL label="Full Name" />
-              <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Your name" className={inputCls} style={inputSty} />
+              <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Your name"
+                className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
+                style={inputSty} />
             </div>
             <div>
               <FL label="Contact Phone *" />
-              <input type="tel" required value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="09XX XXX XXXX" className={inputCls} style={inputSty} />
+              <input type="tel" required value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="09XX XXX XXXX"
+                className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
+                style={inputSty} />
             </div>
           </div>
 
-          {/* Location */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6 flex flex-col gap-4">
+          {/* 4 · Location */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3">
             <SectionTitle title="Location" step={4} />
-            <PhAddressPicker
-              value={address}
-              onChange={setAddress}
-              inputBg={inputBg}
-              inputBorder={inputBorder}
-              inputText={textPrimary}
-              textMuted={textMuted}
-            />
+            <PhAddressPicker value={address} onChange={setAddress} inputBg={inputBg} inputBorder={inputBorder} inputText={textPrimary} textMuted={textMuted} />
           </div>
 
-          {/* Schedule & Notes */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6 flex flex-col gap-4">
+          {/* 5 · Schedule & Notes */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3">
             <SectionTitle title="Schedule & Notes" step={5} />
             <div>
               <FL label="Preferred Date" />
-              <div className="relative">
-                <Calendar className="absolute left-3 top-3 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
-                <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} min={new Date().toISOString().slice(0, 10)}
-                  className={`${inputCls} pl-9`} style={{ ...inputSty, colorScheme: isLight ? 'light' : 'dark' }}
-                />
-              </div>
+              <CalendarPicker
+                value={selectedDate}
+                onChange={setSelectedDate}
+                min={new Date().toISOString().slice(0, 10)}
+                isLight={isLight}
+              />
             </div>
             <div>
               <FL label="Additional Notes (optional)" />
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Describe specific issues or requirements..."
-                className={`${inputCls} resize-none`} style={inputSty}
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+                placeholder="Describe specific issues or requirements..."
+                className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] resize-none"
+                style={inputSty}
               />
             </div>
           </div>
 
-          {/* Photos */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6">
+          {/* 6 · Photos */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5">
             <SectionTitle title="Photos (optional, max 2)" step={6} />
             <div className="flex gap-3 flex-wrap">
               {images.map((img, i) => (
-                <div key={i} className="relative w-[88px] h-[88px] rounded-xl overflow-hidden border" style={{ borderColor: inputBorder }}>
+                <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border" style={{ borderColor: inputBorder }}>
                   <img src={img.url} alt="" className="w-full h-full object-cover" />
-                  <button type="button" onClick={() => removeImg(i)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center hover:bg-red-500/80 transition-colors">
-                    <Trash2 className="w-3 h-3 text-white" />
+                  <button type="button" onClick={() => removeImg(i)} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center hover:bg-red-500/80 transition-colors">
+                    <Trash2 className="w-2.5 h-2.5 text-white" />
                   </button>
                 </div>
               ))}
               {images.length < 2 && (
                 <button type="button" onClick={() => fileRef.current?.click()}
                   style={{ borderColor: inputBorder, backgroundColor: surfaceBg }}
-                  className="w-[88px] h-[88px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 hover:border-[#10B981] transition-colors group"
+                  className="w-20 h-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 hover:border-[#10B981] transition-colors group"
                 >
-                  <Camera className="w-6 h-6 text-slate-400 group-hover:text-[#10B981] transition-colors" />
-                  <span className="text-xs text-slate-400 group-hover:text-[#10B981] transition-colors">Add Photo</span>
+                  <Camera className="w-5 h-5 text-slate-400 group-hover:text-[#10B981] transition-colors" />
+                  <span className="text-[10px] text-slate-400 group-hover:text-[#10B981] transition-colors">Add Photo</span>
                 </button>
               )}
               <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={addImage} />
             </div>
           </div>
 
-          {/* Price + Submit */}
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6 flex flex-col gap-4">
-            <div style={{ backgroundColor: isLight ? '#f0fdf4' : '#0F1A2E', borderColor: '#10B981' }} className="flex items-center justify-between px-5 py-4 rounded-xl border">
+          {/* Submit */}
+          <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3">
+            <div style={{ backgroundColor: isLight ? '#f0fdf4' : '#0d1e30', borderColor: '#10B981' }} className="flex items-center justify-between px-4 py-3 rounded-xl border">
               <div>
-                <p style={{ color: textMuted }} className="text-xs font-bold uppercase tracking-wider">Estimated Cost</p>
-                <p style={{ color: textMuted }} className="text-[11px] mt-0.5">Updates as you configure</p>
+                <p style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wider">Estimated Cost</p>
+                <p style={{ color: textMuted }} className="text-[10px] mt-0.5">Updates as you configure</p>
               </div>
-              <div className="flex items-baseline gap-1">
+              <div className="flex items-baseline gap-0.5">
                 <span className="text-xs text-[#10B981] font-bold">₱</span>
                 <span className="text-2xl font-black text-[#10B981]">{price().toLocaleString()}</span>
               </div>
             </div>
-
             <button type="submit" disabled={isSubmitting}
-              className={`w-full py-4 rounded-xl font-bold text-white text-sm transition-all ${isSubmitting ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 shadow-xl shadow-[#10B981]/25'}`}
+              className={`w-full py-3.5 rounded-xl font-bold text-white text-sm transition-all ${isSubmitting ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 shadow-lg shadow-[#10B981]/25'}`}
             >
               {isSubmitting ? 'Submitting...' : 'Submit Service Request'}
             </button>
-
             <button type="button" onClick={() => navigate('/tickets')}
               style={{ borderColor: inputBorder, color: textMuted, backgroundColor: surfaceBg }}
               className="w-full py-3 rounded-xl border font-semibold text-sm hover:opacity-70 transition-opacity"

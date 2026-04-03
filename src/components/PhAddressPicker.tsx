@@ -4,7 +4,6 @@ import { getRegionNames, getProvinces, getCities, getBarangays } from '../data/p
 
 export interface AddressValue {
   region: string
-  province: string
   city: string
   barangay: string
   street: string
@@ -28,16 +27,14 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
   const [locErr, setLocErr]         = useState('')
 
   const regions   = getRegionNames()
-  const provinces = value.region   ? getProvinces(value.region).map(p => p.name)                        : []
-  const cities    = value.province ? getCities(value.region, value.province).map(c => c.name)            : []
-  const barangays = value.city     ? getBarangays(value.region, value.province, value.city)              : []
+  const cities    = value.region ? getCities(value.region, '').map(c => c.name) : []
+  const barangays = value.city   ? getBarangays(value.region, '', value.city)   : []
 
   // Reset downstream when parent changes
   const set = (field: keyof AddressValue, val: string) => {
     const next = { ...value, [field]: val }
-    if (field === 'region')   { next.province = ''; next.city = ''; next.barangay = '' }
-    if (field === 'province') { next.city = ''; next.barangay = '' }
-    if (field === 'city')     { next.barangay = '' }
+    if (field === 'region') { next.city = ''; next.barangay = '' }
+    if (field === 'city')   { next.barangay = '' }
     onChange(next)
   }
 
@@ -62,16 +59,15 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
           const detectedBrgy = a.suburb || a.neighbourhood || a.quarter || ''
           const detectedStreet = [a.house_number, a.road].filter(Boolean).join(' ')
 
-          // Find matching region/province/city in our data
-          let matchedRegion = '', matchedProvince = '', matchedCity = ''
+          // Find matching region/city in our data
+          let matchedRegion = '', matchedCity = ''
           outer: for (const region of getRegionNames()) {
-            for (const prov of getProvinces(region)) {
-              for (const city of getCities(region, prov.name)) {
-                if (city.name.toLowerCase().includes(detectedCity.toLowerCase()) ||
-                    detectedCity.toLowerCase().includes(city.name.toLowerCase())) {
-                  matchedRegion = region; matchedProvince = prov.name; matchedCity = city.name
-                  break outer
-                }
+            const allCities = getCities(region, '')
+            for (const city of allCities) {
+              if (city.name.toLowerCase().includes(detectedCity.toLowerCase()) ||
+                  detectedCity.toLowerCase().includes(city.name.toLowerCase())) {
+                matchedRegion = region; matchedCity = city.name
+                break outer
               }
             }
           }
@@ -79,7 +75,7 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
           // Find matching barangay
           let matchedBrgy = ''
           if (matchedCity && detectedBrgy) {
-            const brgys = getBarangays(matchedRegion, matchedProvince, matchedCity)
+            const brgys = getBarangays(matchedRegion, '', matchedCity)
             matchedBrgy = brgys.find(b =>
               b.toLowerCase().includes(detectedBrgy.toLowerCase()) ||
               detectedBrgy.toLowerCase().includes(b.toLowerCase())
@@ -88,7 +84,6 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
 
           onChange({
             region: matchedRegion,
-            province: matchedProvince,
             city: matchedCity,
             barangay: matchedBrgy,
             street: detectedStreet,
@@ -126,20 +121,6 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
       )}
       {locErr && <p className="text-xs text-red-400">{locErr}</p>}
 
-      {/* Street */}
-      <div>
-        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>
-          House / Unit No. & Street *
-        </label>
-        <input
-          type="text" required value={value.street}
-          onChange={e => set('street', e.target.value)}
-          placeholder="e.g. 123 Rizal St."
-          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
-          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
-        />
-      </div>
-
       {/* Region */}
       <div>
         <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Region *</label>
@@ -149,19 +130,10 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
         </select>
       </div>
 
-      {/* Province */}
-      <div>
-        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Province *</label>
-        <select required value={value.province} onChange={e => set('province', e.target.value)} disabled={!value.region} className={sel} style={{ ...sty, opacity: value.region ? 1 : 0.5 }}>
-          <option value="">Select province</option>
-          {provinces.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-      </div>
-
       {/* City / Municipality */}
       <div>
         <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>City / Municipality *</label>
-        <select required value={value.city} onChange={e => set('city', e.target.value)} disabled={!value.province} className={sel} style={{ ...sty, opacity: value.province ? 1 : 0.5 }}>
+        <select required value={value.city} onChange={e => set('city', e.target.value)} disabled={!value.region} className={sel} style={{ ...sty, opacity: value.region ? 1 : 0.5 }}>
           <option value="">Select city / municipality</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -174,6 +146,20 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
           <option value="">Select barangay</option>
           {barangays.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
+      </div>
+
+      {/* Street */}
+      <div>
+        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>
+          House / Unit No. & Street *
+        </label>
+        <input
+          type="text" required value={value.street}
+          onChange={e => set('street', e.target.value)}
+          placeholder="e.g. 123 Rizal St."
+          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
+          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
+        />
       </div>
 
       {/* Landmark */}
@@ -193,7 +179,7 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
           <MapPin className="w-3.5 h-3.5 text-[#10B981] mt-0.5 shrink-0" />
           <p className="text-[12px] leading-relaxed text-[#10B981]">
-            {[value.street, value.barangay, value.city, value.province].filter(Boolean).join(', ')}
+            {[value.region, value.city, value.barangay, value.street].filter(Boolean).join(', ')}
             {value.landmark ? ` (${value.landmark})` : ''}
           </p>
         </div>

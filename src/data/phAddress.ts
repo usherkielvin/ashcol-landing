@@ -108,10 +108,26 @@ export function getProvinces(regionName: string): Province[] {
   return PH_REGIONS.find(r => r.name === regionName)?.provinces ?? []
 }
 
-export function getCities(regionName: string, provinceName: string): City[] {
+export function getCities(regionName: string, provinceName?: string): City[] {
+  if (!provinceName) {
+    // Return all cities from all provinces in the region
+    const region = PH_REGIONS.find(r => r.name === regionName)
+    if (!region) return []
+    return region.provinces.flatMap(p => p.cities)
+  }
   return getProvinces(regionName).find(p => p.name === provinceName)?.cities ?? []
 }
 
-export function getBarangays(regionName: string, provinceName: string, cityName: string): string[] {
+export function getBarangays(regionName: string, provinceName: string | undefined, cityName: string): string[] {
+  if (!provinceName) {
+    // Search all provinces in the region for the city
+    const region = PH_REGIONS.find(r => r.name === regionName)
+    if (!region) return []
+    for (const province of region.provinces) {
+      const city = province.cities.find(c => c.name === cityName)
+      if (city) return city.barangays
+    }
+    return []
+  }
   return getCities(regionName, provinceName).find(c => c.name === cityName)?.barangays ?? []
 }

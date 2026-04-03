@@ -73,6 +73,15 @@ export default function Tickets() {
     if (user) fetchTickets()
   }, [user])
 
+  // Refresh when coming from create ticket page
+  useEffect(() => {
+    if (searchParams.get('refresh') === 'true') {
+      fetchTickets()
+      // Clean up the URL
+      navigate('/tickets', { replace: true })
+    }
+  }, [searchParams])
+
   const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
     setUpdateLoading(true)
     try {
