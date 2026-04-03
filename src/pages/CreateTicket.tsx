@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface UnitDetail {
@@ -178,40 +179,9 @@ export default function CreateTicket() {
   const [selectedService, setSelectedService] = useState('Cleaning')
   const [fullName, setFullName] = useState(user?.name || '')
   const [contactPhone, setContactPhone] = useState(user?.phone || '')
-  const [location, setLocation]   = useState('')
-  const [landmark, setLandmark]   = useState('')
-  const [locLoading, setLocLoading] = useState(false)
-  const [locErr, setLocErr]         = useState('')
-
-  const detectLocation = () => {
-    if (!navigator.geolocation) return setLocErr('Geolocation not supported by your browser.')
-    setLocLoading(true); setLocErr('')
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-            { headers: { 'Accept-Language': 'en' } }
-          )
-          const data = await res.json()
-          const a = data.address || {}
-          const parts = [
-            a.house_number, a.road, a.suburb || a.neighbourhood,
-            a.city_district || a.quarter, a.city || a.town || a.municipality,
-            a.state,
-          ].filter(Boolean)
-          setLocation(parts.join(', ') || data.display_name || '')
-        } catch {
-          setLocErr('Could not resolve address. Please type it manually.')
-        } finally {
-          setLocLoading(false)
-        }
-      },
-      () => { setLocErr('Location access denied. Please type your address.'); setLocLoading(false) },
-      { timeout: 10000 }
-    )
-  }
+  const [address, setAddress] = useState<AddressValue>({
+    region: '', province: '', city: '', barangay: '', street: '', landmark: '',
+  })
   const [description, setDescription] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [images, setImages] = useState<{ file: File; url: string }[]>([])
@@ -286,7 +256,8 @@ export default function CreateTicket() {
       }))
 
       const fullDesc = [description.trim() || 'No additional details provided.', acBits.length ? `AC Details - ${acBits.join('; ')}` : ''].filter(Boolean).join('\n\n')
-      const fullLoc  = location + (landmark ? `, ${landmark}` : '')
+      const fullLoc = [address.street, address.barangay, address.city, address.province, address.region]
+        .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
@@ -469,35 +440,15 @@ export default function CreateTicket() {
           {/* Location */}
           <div style={{ backgroundColor: cardBg, borderColor: border }} className="rounded-2xl border p-6 flex flex-col gap-4">
             <SectionTitle title="Location" step={4} />
-
-            {/* Auto-detect button */}
-            <button
-              type="button"
-              onClick={detectLocation}
-              disabled={locLoading}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50"
-              style={{ borderColor: inputBorder, color: textMuted, backgroundColor: surfaceBg }}
-            >
-              <MapPin className="w-4 h-4 text-[#10B981]" />
-              {locLoading ? 'Detecting location...' : 'Use my current location'}
-            </button>
-
-            {locErr && <p className="text-xs text-red-400">{locErr}</p>}
-
-            <div>
-              <FL label="Service Address *" />
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 w-4 h-4 text-[#10B981] pointer-events-none" />
-                <textarea required value={location} onChange={e => setLocation(e.target.value)} rows={2}
-                  placeholder="Street, Barangay, City"
-                  className={`${inputCls} pl-9 resize-none`} style={inputSty}
-                />
-              </div>
-            </div>
-            <div>
-              <FL label="Landmark (optional)" />
-              <input value={landmark} onChange={e => setLandmark(e.target.value)} placeholder="e.g., Near SM Mall" className={inputCls} style={inputSty} />
-            </div>
+            <PhAddressPicker
+              value={address}
+              onChange={setAddress}
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              inputText={textPrimary}
+              textMuted={textMuted}
+              textPrimary={textPrimary}
+            />
           </div>
 
           {/* Schedule & Notes */}

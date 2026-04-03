@@ -14,7 +14,7 @@ interface Ticket {
   serviceType: string
   customerName: string
   status: string
-  priority: string
+
   createdAt: string
   location?: string
   preferredDate?: string
