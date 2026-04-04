@@ -75,9 +75,9 @@ const BRANCHES = [
   // ── Head Office ──
   {
     name: 'Head Office',
-    tag: 'Taguig City',
+    tag: 'Taguig',
     color: '#10B981',
-    address: 'Unit 2A & 2B, 2/F Genesis Bldg., 182-A 19th Ave., East Rembo, Taguig City',
+    address: 'Unit 2A & 2B, 2/F Genesis Bldg., 182-A 19th Ave., East Rembo, Taguig',
     phones: ['0917 828 5595', '0917 506 2090', '0998 566 4801', '7729 1293'],
     email: 'headoffice@ashcol.com.ph',
     mapUrl: 'https://maps.app.goo.gl/pPJhEaXBEtxjbNN29',
@@ -802,7 +802,7 @@ export default function Landing() {
               <span style={{ color: t.accent }}>Coleene</span>.
             </p>
             <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
-              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City — the team combines
+              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig — the team combines
               more than a decade of technical expertise with a deeply personal customer service philosophy.
             </p>
             <p className="text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
@@ -811,7 +811,7 @@ export default function Landing() {
               reflects their core belief: give people the comfort they deserve, and you will never have an unhappy customer.
             </p>
             <div className="flex flex-wrap justify-center gap-3">
-              {[{ icon: <MapPin className="w-4 h-4" style={{ color: t.accent }} />, label: 'Taguig City, Metro Manila' },
+              {[{ icon: <MapPin className="w-4 h-4" style={{ color: t.accent }} />, label: 'Taguig, Metro Manila' },
                 { icon: <Calendar className="w-4 h-4" style={{ color: t.accent }} />, label: 'Since 2014' },
                 { icon: <ShieldCheck className="w-4 h-4" style={{ color: t.accent }} />, label: 'PCAB Licensed Contractor' }]
                 .map((badge, i) => (
