@@ -11,6 +11,7 @@ import CreateTicket from './pages/CreateTicket'
 import Customers from './pages/Customers'
 import Staff from './pages/Staff'
 import Profile from './pages/Profile'
+import Branches from './pages/Branches'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/tickets/create" element={<CreateTicket />} />
               <Route path="/create-ticket" element={<CreateTicket />} />
               <Route path="/customers" element={<Customers />} />
+              <Route path="/branches" element={<Branches />} />
               <Route path="/staff" element={<Staff />} />
               <Route path="/profile" element={<Profile />} />
             </Route>

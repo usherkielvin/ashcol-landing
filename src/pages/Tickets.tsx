@@ -37,9 +37,9 @@ export default function Tickets() {
   const fetchTickets = async () => {
     try {
       setLoading(true)
-      const token = sessionStorage.getItem('ashcol-token')
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      
+
       let endpoint = '/tickets'
       if (user?.role?.toLowerCase() === 'customer') endpoint = '/tickets/my'
       if (user?.role?.toLowerCase() === 'employee') endpoint = '/tickets/assigned'
@@ -85,9 +85,9 @@ export default function Tickets() {
   const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
     setUpdateLoading(true)
     try {
-      const token = sessionStorage.getItem('ashcol-token')
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      
+
       const res = await fetch(`${apiUrl}/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 
@@ -115,9 +115,9 @@ export default function Tickets() {
   const handleDeleteTicket = async (ticketId: string) => {
     if (!confirm('Are you sure you want to delete this ticket?')) return
     try {
-      const token = sessionStorage.getItem('ashcol-token')
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      
+
       const res = await fetch(`${apiUrl}/tickets/${ticketId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
