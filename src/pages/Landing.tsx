@@ -1162,8 +1162,8 @@ export default function Landing() {
         <p className="relative max-w-md text-[14px] md:text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
           Residential or commercial — our team is ready to help, 7 days a week.
         </p>
-        <div className="relative w-full max-w-lg">
-          <div className="flex flex-row gap-2 sm:gap-3 w-full">
+        <div className="relative w-full max-w-lg mx-auto">
+          <div className="flex flex-row justify-center gap-2 sm:gap-3 w-full">
             <a
               href="/create-account"
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[180px]"

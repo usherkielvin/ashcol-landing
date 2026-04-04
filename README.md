@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# Web Portal - Capstone Project
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern web portal built for air conditioning service and management. This project serves as a comprehensive platform for handling service tickets, managing staff and customers, and tracking activities across various AC brands.
 
-Currently, two official plugins are available:
+## 🚀 Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend Framework:** [React](https://react.dev/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+- **Build Tool:** [Vite](https://vitejs.dev/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Deployment:** [Vercel](https://vercel.com/)
 
-## React Compiler
+## ✨ Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Authentication System:** Secure login, registration, password recovery, and profile management.
+- **Dashboard:** Overview of system activities and metrics.
+- **Ticket Management:** Create, view, and manage service tickets.
+- **User Management:** 
+  - **Staff/Employees:** Manage employee profiles and assignments.
+  - **Customers:** Handle customer information and service history.
+- **Activity Tracking:** Monitor system events and updates.
+- **Multi-Brand Support:** Dedicated assets and support for major AC brands (Daikin, Carrier, LG, Panasonic, Samsung, etc.).
 
-## Expanding the ESLint configuration
+## 📁 Project Structure
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- `src/pages/` & `src/(web)/` - Application routes and views (Dashboard, Tickets, Login, etc.)
+- `src/components/` - Reusable UI components (Modals, Pickers, etc.)
+- `src/contexts/` - Global state management (Auth, Theme)
+- `src/assets/` - Static files including brand logos and system imagery
+- `src/assets/raw/` - Source/original images kept for reference
+- `src/data/` - Static data like Philippine address structures
+- `src/utils/` - API configurations and utility functions
+- `scripts/` - One-off maintenance and refactor scripts
+- `workspace/` - Local editor workspace files
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 🛠️ Getting Started
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Prerequisites
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables:
+   - Copy `.env.example` to `.env`
+   - Fill in the required configuration values
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+### Building for Production
+
+To create a production build:
+```bash
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The output will be generated in the `dist/` directory.
