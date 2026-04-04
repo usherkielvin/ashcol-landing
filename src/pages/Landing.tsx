@@ -3,7 +3,7 @@ import {
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory
+  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 
@@ -72,17 +72,122 @@ const CONTACTS = [
 ]
 
 const BRANCHES = [
-  { name: 'Head Office', address: 'Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City', tag: 'Taguig', color: '#10B981', mapUrl: 'https://maps.app.goo.gl/pPJhEaXBEtxjbNN29' },
-  { name: 'Valenzuela Branch', address: 'Valenzuela City, Metro Manila', tag: 'Valenzuela', color: '#6366F1' },
-  { name: 'Batangas Branch', address: '012 Laguile, Taal, Batangas', tag: 'Batangas', color: '#3B82F6' },
-  { name: 'Bulacan Branch', address: 'Bulacan', tag: 'Bulacan', color: '#F59E0B' },
-  { name: 'San Fernando Branch', address: 'San Fernando, Pampanga', tag: 'Pampanga', color: '#14B8A6' },
-  { name: 'Candelaria Branch', address: 'Candelaria, Quezon Province', tag: 'Quezon', color: '#EF4444' },
-  { name: 'Calauan Branch', address: 'Calauan, Laguna', tag: 'Laguna', color: '#8B5CF6' },
-  { name: 'Rodriguez Branch', address: 'Rodriguez, Rizal', tag: 'Rizal', color: '#F97316' },
-  { name: 'Gen. Trias branch', address: 'Blk 4 & 6 South Square Village, Pasong Kawayan, Gen. Trias, Cavite', tag: 'Gen. Trias', color: '#A855F7' },
-  { name: 'Silang Branch', address: 'Silang, Cavite', tag: 'Silang', color: '#EC4899' },
-  { name: 'Dasmariñas Branch', address: 'Dasmariñas, Cavite', tag: 'Dasmariñas', color: '#06B6D4' },
+  // ── Head Office ──
+  {
+    name: 'Head Office',
+    tag: 'Taguig City',
+    color: '#10B981',
+    address: 'Unit 2A & 2B, 2/F Genesis Bldg., 182-A 19th Ave., East Rembo, Taguig City',
+    phones: ['0917 828 5595', '0917 506 2090', '0998 566 4801', '7729 1293'],
+    email: 'headoffice@ashcol.com.ph',
+    mapUrl: 'https://maps.app.goo.gl/pPJhEaXBEtxjbNN29',
+    isHQ: true,
+    region: 'Metro Manila',
+  },
+  // ── North / Luzon ──
+  {
+    name: 'Ashcol Valenzuela',
+    tag: 'Valenzuela',
+    color: '#6366F1',
+    address: '0147 M.H. Del Pilar St., Arkong Bato, District 1, Valenzuela City',
+    phones: ['0943 358 4220', '0905 420 1556'],
+    email: 'ashcolnorth@ashcol.com.ph',
+    mapUrl: '',
+    region: 'Metro Manila',
+  },
+  {
+    name: 'Ashcol Bulacan',
+    tag: 'Bulacan',
+    color: '#F59E0B',
+    address: 'Ground Floor, RME Building, Salangan, San Miguel, Bulacan',
+    phones: ['0917 506 2090', '0939 973 3163'],
+    email: 'ashcolbulacan@gmail.com',
+    mapUrl: '',
+    region: 'Bulacan',
+  },
+  {
+    name: 'Ashcol Pampanga',
+    tag: 'Pampanga',
+    color: '#14B8A6',
+    address: 'Unit 202, CitiCorp Building, Brgy. San Isidro, City of San Fernando, Pampanga',
+    phones: ['0917 103 8743'],
+    landline: '045 300 8533',
+    email: 'ashcolpampanga@ashcol.com.ph',
+    mapUrl: '',
+    region: 'Pampanga',
+  },
+  {
+    name: 'Ashcol Rizal',
+    tag: 'Rizal',
+    color: '#F97316',
+    address: '2nd Flr Norika Bldg #70 E. Rodriguez Sr., San Jose Hi-way, Rodriguez, Rizal',
+    phones: ['0917 682 8328', '0920 923 2071'],
+    email: 'ashcolrodriguezrizal@gmail.com',
+    mapUrl: '',
+    region: 'Rizal',
+  },
+  {
+    name: 'Ashcol Laguna',
+    tag: 'Laguna',
+    color: '#8B5CF6',
+    address: 'Purok 4, Kalye Pogi, Bangyas, Calauan, Laguna',
+    phones: ['0999 990 5224', '0949 994 3299'],
+    email: 'ashcolcalauan@gmail.com',
+    mapUrl: '',
+    region: 'Laguna',
+  },
+  {
+    name: 'Ashcol Batangas',
+    tag: 'Batangas',
+    color: '#3B82F6',
+    address: 'Ground Floor, BMI Building, 12 Laguile, Taal, Batangas',
+    phones: ['0998 999 3041', '0919 005 9032'],
+    email: 'ashcolbatangas@ashcol.com.ph',
+    mapUrl: '',
+    region: 'Batangas',
+  },
+  {
+    name: 'Ashcol Candelaria',
+    tag: 'Quezon',
+    color: '#EF4444',
+    address: 'Maharlika Highway, Malabanban Norte, Candelaria, Quezon Province',
+    phones: ['0917 159 6995', '0947 993 9208'],
+    email: 'ashcolcandelaria@gmail.com',
+    mapUrl: '',
+    region: 'Quezon',
+  },
+  // ── Cavite ──
+  {
+    name: 'Ashcol Gen. Trias',
+    tag: 'Gen. Trias, Cavite',
+    color: '#A855F7',
+    address: 'Blk 9 Lot 16, South Square Village, Pasong Kawayan II, General Trias, Cavite',
+    phones: ['0995 014 6891', '0949 307 1625'],
+    email: 'ashcolcavite@ashcol.com.ph',
+    mapUrl: '',
+    region: 'Cavite',
+  },
+  {
+    name: 'Ashcol Dasmariñas',
+    tag: 'Dasmarinas, Cavite',
+    color: '#06B6D4',
+    address: '2/F Unit 5, Blk 94 Lot 5 & 6, Governor\'s Drive, Metro Gate Subd., San Agustin 1, City of Dasmarinas, Cavite',
+    phones: ['0917 505 4925', '0949 994 3299'],
+    landline: '046 413 1726',
+    email: 'ashcoldasma@gmail.com',
+    mapUrl: '',
+    region: 'Cavite',
+  },
+  {
+    name: 'Ashcol Silang',
+    tag: 'Silang, Cavite',
+    color: '#EC4899',
+    address: '2nd Floor, Rheayanelle Building, 9015 Pandan St., Brgy. Puting Kahoy, Sta. Rosa Tagaytay Road, Silang, Cavite',
+    phones: ['0998 577 0421', '0917 714 3810', '0917 505 4925'],
+    email: 'ashcolsouth@ashcol.com.ph',
+    mapUrl: '',
+    region: 'Cavite',
+  },
 ]
 
 const CLIENTS = [
@@ -296,6 +401,83 @@ function ComingSoonModal({ onClose }: { onClose: () => void }) {
         >
           Got it
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── BranchCard ──────────────────────────────────────────────────────────────
+
+type BranchType = {
+  name: string; tag: string; color: string; address: string;
+  phones: string[]; email: string; mapUrl: string;
+  landline?: string; isHQ?: boolean; region?: string;
+}
+type ThemeTokens = Record<string, string>
+
+function BranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden flex flex-col relative h-full w-full"
+      style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
+    >
+      <div className="h-[3px] w-full flex-shrink-0" style={{ background: branch.color }} />
+      <div className="p-4 flex flex-col gap-2.5 flex-1">
+        {/* Header row */}
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '20', color: branch.color }}>
+            <Building2 className="w-3.5 h-3.5" />
+          </div>
+          <div className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: branch.color + '18', color: branch.color }}>{branch.tag}</div>
+          {branch.isHQ && (
+            <span className="ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ backgroundColor: '#10B98120', color: '#10B981', border: '1px solid #10B98140' }}>HQ</span>
+          )}
+        </div>
+
+        <div className="font-bold text-[14px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
+
+        {/* Address */}
+        <div className="flex items-start gap-1.5">
+          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: branch.color }} />
+          <span className="text-[11px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
+        </div>
+
+        {/* Phones */}
+        {branch.phones && branch.phones.length > 0 && (
+          <div className="flex flex-col gap-0.5">
+            {branch.phones.map((p, pi) => (
+              <a key={pi} href={`tel:${p.replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
+                <Phone className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
+                <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{p}</span>
+              </a>
+            ))}
+            {branch.landline && (
+              <a href={`tel:${branch.landline.replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
+                <Phone className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
+                <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.landline} (Landline)</span>
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Email */}
+        {branch.email && (
+          <a href={`mailto:${branch.email}`} className="flex items-center gap-1.5 group">
+            <Mail className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
+            <span className="text-[10px] break-all group-hover:underline" style={{ color: t.textMuted }}>{branch.email}</span>
+          </a>
+        )}
+
+        {/* Map link */}
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-auto flex items-center gap-1 text-[11px] font-semibold opacity-70 hover:opacity-100 transition-opacity"
+          style={{ color: branch.color }}
+        >
+          View on Google Maps <ArrowUpRight className="w-3 h-3" />
+        </a>
       </div>
     </div>
   )
@@ -557,7 +739,91 @@ export default function Landing() {
 
       </section>
 
+      {/* ── Branch Locations (2-row scrollable) ─────────────────────────── */}
+      <section className="py-10 md:py-14" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+        <div className="px-4 md:px-11 lg:px-20 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-3 w-fit">
+              <MapPin className="w-3 h-3 text-[#10B981]" />
+              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
+            </div>
+            <h2 className="text-[clamp(1.4rem,3vw,2.2rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>11 Branches Across Luzon</h2>
+            <p className="text-[14px] mt-1" style={{ color: t.textMuted }}>Head office in Taguig — always nearby wherever you are.</p>
+          </div>
+        </div>
 
+        <div
+          className="overflow-x-auto pb-4 px-4 md:px-11 lg:px-20"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#1E2D48 transparent' }}
+        >
+          {/* ── Unified 2-row grid: clamp makes columns narrower on mobile ── */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateRows: 'repeat(2, 1fr)',
+              gridAutoFlow: 'column',
+              gridAutoColumns: 'clamp(150px, 42vw, 260px)',
+              gap: '10px',
+              width: 'max-content',
+            }}
+          >
+            {BRANCHES.map((branch, i) => {
+              const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
+              return <BranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
+            })}
+          </div>
+        </div>
+      </section>
+
+
+
+
+
+
+      {/* ── About Us ────────────────────────────────────────────────────────── */}
+
+      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-24" style={{ backgroundColor: t.bg }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col items-center text-center mb-10">
+            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-5">
+              <Users className="w-3 h-3 text-[#10B981]" />
+              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">ABOUT US</span>
+            </div>
+            <h2 className="text-[clamp(1.6rem,3.5vw,2.5rem)] font-black leading-tight tracking-tight mb-6" style={{ color: t.text }}>
+              A family business built on trust.
+            </h2>
+          </div>
+          
+          <div className="max-w-4xl mx-auto">
+            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
+              <span className="font-semibold" style={{ color: t.text }}>ASHCOL Airconditioning Services Corporation</span> is a
+              family-run business founded in 2014. The company name "ASHCOL" was formed from the names of the two
+              lovely daughters — <span style={{ color: t.accent }}>Ashanti</span> and{' '}
+              <span style={{ color: t.accent }}>Coleene</span>.
+            </p>
+            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
+              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City — the team combines
+              more than a decade of technical expertise with a deeply personal customer service philosophy.
+            </p>
+            <p className="text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
+              Their tagline{' '}
+              <span className="italic" style={{ color: t.accent }}>"Keeping YOU Cool"</span>{' '}
+              reflects their core belief: give people the comfort they deserve, and you will never have an unhappy customer.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {[{ icon: <MapPin className="w-4 h-4" style={{ color: t.accent }} />, label: 'Taguig City, Metro Manila' },
+                { icon: <Calendar className="w-4 h-4" style={{ color: t.accent }} />, label: 'Since 2014' },
+                { icon: <ShieldCheck className="w-4 h-4" style={{ color: t.accent }} />, label: 'PCAB Licensed Contractor' }]
+                .map((badge, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
+                    {badge.icon}
+                    <span className="text-[13px]" style={{ color: t.textMuted }}>{badge.label}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── Download the App Banner ────────────────────────────────────────── */}
       <section className="relative overflow-hidden px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
@@ -583,7 +849,7 @@ export default function Landing() {
             </p>
             <p className="text-[12px] mb-5" style={{ color: t.textFaint }}>Coming Soon</p>
 
-            {/* Store Badges — full width on mobile, auto on sm+ */}
+            {/* Store Badges */}
             <div className="flex flex-row gap-2 sm:gap-3 items-stretch justify-center lg:justify-start">
               <button type="button" aria-label="Get it on Google Play"
                 onClick={() => setShowComingSoon(true)}
@@ -638,51 +904,6 @@ export default function Landing() {
               </div>
               <div className="text-[12px] font-bold mb-0.5" style={{ color: t.text }}>Service App</div>
               <div className="text-[11px]" style={{ color: t.textMuted }}>Launching on Android &amp; iOS</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── About Us ────────────────────────────────────────────────────────── */}
-
-      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-24" style={{ backgroundColor: t.bg }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-5">
-              <Users className="w-3 h-3 text-[#10B981]" />
-              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">ABOUT US</span>
-            </div>
-            <h2 className="text-[clamp(1.6rem,3.5vw,2.5rem)] font-black leading-tight tracking-tight mb-6" style={{ color: t.text }}>
-              A family business built on trust.
-            </h2>
-          </div>
-          
-          <div className="max-w-4xl mx-auto">
-            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
-              <span className="font-semibold" style={{ color: t.text }}>ASHCOL Airconditioning Services Corporation</span> is a
-              family-run business founded in 2014. The company name "ASHCOL" was formed from the names of the two
-              lovely daughters — <span style={{ color: t.accent }}>Ashanti</span> and{' '}
-              <span style={{ color: t.accent }}>Coleene</span>.
-            </p>
-            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
-              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig City — the team combines
-              more than a decade of technical expertise with a deeply personal customer service philosophy.
-            </p>
-            <p className="text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
-              Their tagline{' '}
-              <span className="italic" style={{ color: t.accent }}>"Keeping YOU Cool"</span>{' '}
-              reflects their core belief: give people the comfort they deserve, and you will never have an unhappy customer.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {[{ icon: <MapPin className="w-4 h-4" style={{ color: t.accent }} />, label: 'Taguig City, Metro Manila' },
-                { icon: <Calendar className="w-4 h-4" style={{ color: t.accent }} />, label: 'Since 2014' },
-                { icon: <ShieldCheck className="w-4 h-4" style={{ color: t.accent }} />, label: 'PCAB Licensed Contractor' }]
-                .map((badge, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-                    {badge.icon}
-                    <span className="text-[13px]" style={{ color: t.textMuted }}>{badge.label}</span>
-                  </div>
-                ))}
             </div>
           </div>
         </div>
@@ -981,55 +1202,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Branch Locations ────────────────────────────────────────── */}
-      <section className="px-4 md:px-11 lg:px-20 py-14 md:py-20" style={{ backgroundColor: t.bg }}>
-        <div className="flex flex-col items-center text-center gap-4 mb-10">
-          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-            <MapPin className="w-3 h-3 text-[#10B981]" />
-            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
-          </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>11 Branches Across Luzon</h2>
-          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>With our head office in Taguig and branches expanding across Luzon, we're always nearby.</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 max-w-6xl mx-auto">
-          {BRANCHES.map((branch, i) => {
-            const googleMapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.tag + ' ' + branch.address)}`
-            
-            return (
-            <a 
-              key={i} 
-              href={googleMapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-2xl p-4 sm:p-6 transition-all relative overflow-hidden group block focus:outline-none"
-              style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = branch.color + '60'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
-            >
-              <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: branch.color }} />
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '20', color: branch.color }}>
-                  <Building2 className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider" style={{ backgroundColor: branch.color + '15', color: branch.color }}>{branch.tag}</span>
-              </div>
-              <div className="font-bold text-[16px] mb-3" style={{ color: t.text }}>{branch.name}</div>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: branch.color }} />
-                <span className="text-[13px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
-              </div>
-              
-              <div
-                className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold transition-colors opacity-80 group-hover:opacity-100"
-                style={{ color: branch.color }}
-              >
-                View on Google Maps
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </div>
-            </a>
-          )})}
-        </div>
-      </section>
+      {/* Branch section removed — now shown as scrollable strip below hero */}
 
       {/* ── Contact Us ────────────────────────────────────────────────────────── */}
       <section id="contact" ref={contactRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
