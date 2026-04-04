@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -13,9 +13,29 @@ import Staff from './pages/Staff'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import { ThemeProvider } from './contexts/ThemeContext'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+
+// Helper component to handle the root path ("/") based on the domain
+function RootRouter() {
+  const { user } = useAuth()
+  
+  // Check if we're on the portal subdomain (e.g. portal.ashcol.com.ph or portal.localhost)
+  // Also allow forcing portal mode via local environment variable or URL parameter
+  const isPortalSubdomain = 
+    window.location.hostname.startsWith('portal.') || 
+    import.meta.env.VITE_IS_PORTAL === 'true' ||
+    new URLSearchParams(window.location.search).get('portal') === 'true'
+  
+  if (isPortalSubdomain) {
+    // If on portal subdomain, go to dashboard if logged in, otherwise login
+    return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />
+  }
+  
+  // Otherwise, show the public landing page
+  return <Landing />
+}
 
 export default function App() {
   return (
@@ -24,7 +44,7 @@ export default function App() {
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Landing />} />
+            <Route path="/" element={<RootRouter />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/create-account" element={<CreateAccount />} />
