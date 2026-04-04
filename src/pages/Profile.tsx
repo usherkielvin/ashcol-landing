@@ -319,7 +319,7 @@ export default function Profile() {
       {tab === 'account' && (
         <div className="flex flex-col gap-0">
 
-          {/* Sign Out */}
+          {/* Logout */}
           <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
             <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: textMuted }}>Session</p>
             <button
@@ -327,7 +327,7 @@ export default function Profile() {
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border font-bold text-sm transition-all hover:border-red-400 hover:text-red-400 hover:bg-red-400/5"
               style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
             >
-              <LogOut className="w-4 h-4" /> Sign Out
+              <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
 

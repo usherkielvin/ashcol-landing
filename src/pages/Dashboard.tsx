@@ -238,8 +238,8 @@ export default function Dashboard() {
               </span>
             )}
             {activeTicket.location && (
-              <span className="flex items-center gap-1.5 text-[12px] truncate max-w-[200px]" style={{ color: textMuted }}>
-                <MapPin className="w-3.5 h-3.5 shrink-0" /> {activeTicket.location}
+              <span className="flex items-center gap-1.5 text-[12px]" style={{ color: textMuted }}>
+                <MapPin className="w-3.5 h-3.5 shrink-0" /> <span className="break-words">{activeTicket.location}</span>
               </span>
             )}
           </div>

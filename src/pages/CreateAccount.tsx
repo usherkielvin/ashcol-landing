@@ -459,7 +459,7 @@ export default function CreateAccount() {
 
           <p className="mt-8 text-center text-[13px] font-medium" style={{ color: textMuted }}>
             Already have an account?{' '}
-            <Link to="/login" className="text-[#10B981] font-bold hover:underline">Sign In</Link>
+            <Link to="/login" className="text-[#10B981] font-bold hover:underline">Login</Link>
           </p>
         </div>
       </div>

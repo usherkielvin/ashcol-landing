@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search, Filter, MoreVertical, Circle, CheckCircle, Clock, XCircle, FileText, X } from 'lucide-react'
+import { Plus, Search, Filter, Trash2, Circle, CheckCircle, Clock, XCircle, FileText, X, Calendar, User, Wrench, Hash, ArrowRight, MoreVertical } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -157,8 +157,10 @@ export default function Tickets() {
     // Search Filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
+      const shortId = `ASH${t.id.substring(t.id.length - 4).toUpperCase()}`
       return t.title.toLowerCase().includes(q) || 
              t.id.toLowerCase().includes(q) || 
+             shortId.toLowerCase().includes(q) ||
              t.customerName?.toLowerCase().includes(q) ||
              t.serviceType?.toLowerCase().includes(q)
     }
@@ -195,124 +197,215 @@ export default function Tickets() {
       </div>
 
 
-      {showViewModal && selectedTicket && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
-          <div style={{ backgroundColor: cardBg, borderColor: border }} className="relative w-full max-w-2xl rounded-2xl border p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <button onClick={() => setShowViewModal(false)} className="absolute top-6 right-6 text-[#7A95B8] hover:text-[#EF4444] transition-colors">
-              <X className="w-6 h-6" />
-            </button>
-            
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-[rgba(16,185,129,0.1)] text-[#10B981] flex items-center justify-center">
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 style={{ color: textPrimary }} className="text-2xl font-bold">{selectedTicket.title}</h3>
-                <p style={{ color: textMuted }} className="text-sm font-mono uppercase">Ticket #{selectedTicket.id.substring(0, 12)}</p>
-              </div>
-            </div>
+      {/* ── Ticket Detail Panel ─────────────────────────────────────────────── */}
+      {showViewModal && selectedTicket && (() => {
+        const st = getStatusStyle(selectedTicket.status)
+        const StatusIcon = st.icon
+        const isCustomer = user?.role?.toLowerCase() === 'customer'
+        const canChangeStatus = !isCustomer
+        return (
+          <div
+            className="fixed inset-0 z-[100] flex items-stretch sm:items-center justify-center p-0 sm:p-4 md:p-6"
+            onClick={() => setShowViewModal(false)}
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-              <div className="flex flex-col gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Description</label>
-                  <p style={{ color: textPrimary }} className="text-sm leading-relaxed bg-[#f8fafc] dark:bg-[#0F1A2E] p-4 rounded-xl border border-[#e2e8f0] dark:border-[#243452]">
-                    {selectedTicket.description || 'No description provided.'}
-                  </p>
-                </div>
-                <div className="flex gap-6">
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Customer</label>
-                    <p style={{ color: textPrimary }} className="font-bold">{selectedTicket.customerName || 'Unknown'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Created On</label>
-                    <p style={{ color: textPrimary }} className="font-bold">{new Date(selectedTicket.createdAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-5">
-                <div className="flex gap-6">
-                  <div>
-                    <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Service Type</label>
-                    <p style={{ color: textPrimary }} className="font-bold">{selectedTicket.serviceType}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#7A95B8] uppercase tracking-wider mb-2">Status</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map((s) => {
-                      const isActive = selectedTicket.status.toUpperCase() === s
-                      const theme = getStatusStyle(s)
-                      return (
-                        <button
-                          key={s}
-                          disabled={updateLoading || user?.role?.toLowerCase() === 'customer' && s !== 'CANCELLED'}
-                          onClick={() => handleUpdateStatus(selectedTicket.id, s)}
-                          style={isActive ? { color: theme.color, backgroundColor: theme.background, borderColor: theme.color } : { color: textMuted, borderColor: border }}
-                          className={`px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all ${isActive ? 'opacity-100' : 'opacity-50 hover:opacity-100'} ${updateLoading ? 'cursor-not-allowed' : ''}`}
-                        >
-                          {s.replace(/_/g, ' ')}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center border-t pt-6" style={{ borderColor: border }}>
-              {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'customer') && (
-                <button 
-                  onClick={() => handleDeleteTicket(selectedTicket.id)}
-                  className="text-red-500 hover:text-red-600 font-bold text-sm transition-colors flex items-center gap-2"
-                >
-                  <MoreVertical className="w-4 h-4" /> Delete Ticket
-                </button>
-              )}
-              <button 
-                onClick={() => setShowViewModal(false)}
-                className="px-8 py-2.5 bg-[#10B981] hover:bg-emerald-500 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-emerald-500/20"
+            {/* Panel */}
+            <div
+              className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-3rem)] sm:max-w-2xl lg:max-w-3xl shadow-2xl overflow-hidden rounded-none sm:rounded-2xl"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* ── Colored accent header ── */}
+              <div
+                className="relative flex-shrink-0 px-6 pt-10 pb-6 overflow-hidden"
+                style={{ background: isLight
+                  ? `linear-gradient(135deg, ${st.background} 0%, #ffffff 100%)`
+                  : `linear-gradient(135deg, ${st.background} 0%, #0A1120 100%)`,
+                  borderBottom: `1px solid ${border}` }}
               >
-                Close View
-              </button>
+                {/* Glow circle */}
+                <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full opacity-20 pointer-events-none"
+                  style={{ background: `radial-gradient(circle, ${st.color}, transparent 70%)` }} />
+
+                {/* Close */}
+                <button
+                  onClick={() => setShowViewModal(false)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-red-500/10"
+                  style={{ color: textMuted }}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                {/* Icon + title */}
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${st.color}25`, color: st.color }}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-black leading-tight mb-1" style={{ color: textPrimary }}>
+                      {selectedTicket.title}
+                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border"
+                        style={{ color: st.color, backgroundColor: st.background, borderColor: st.border }}
+                      >
+                        <StatusIcon className="w-3 h-3" />
+                        {selectedTicket.status.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-[11px] font-mono" style={{ color: textMuted }}>
+                        #ASH{selectedTicket.id.substring(selectedTicket.id.length - 4).toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Scrollable body ── */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+
+                {/* Info grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Customer */}
+                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <User className="w-3 h-3" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Customer</span>
+                    </div>
+                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
+                      {selectedTicket.customerName || 'Unknown'}
+                    </p>
+                  </div>
+
+                  {/* Service type */}
+                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Wrench className="w-3 h-3" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Service</span>
+                    </div>
+                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
+                      {selectedTicket.serviceType || '—'}
+                    </p>
+                  </div>
+
+                  {/* Created */}
+                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Calendar className="w-3 h-3" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Created</span>
+                    </div>
+                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
+                      {new Date(selectedTicket.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+
+                  {/* Preferred date */}
+                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Calendar className="w-3 h-3" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Pref. Date</span>
+                    </div>
+                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
+                      {selectedTicket.preferredDate
+                        ? new Date(selectedTicket.preferredDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : <span style={{ color: textMuted }} className="font-normal text-[12px]">Not specified</span>}
+                    </p>
+                  </div>
+
+                  {/* Ticket ID full */}
+                  <div className="sm:col-span-2 rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Hash className="w-3 h-3" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Ticket ID</span>
+                    </div>
+                    <p className="text-[11px] font-mono break-all" style={{ color: textMuted }}>
+                      ASH{selectedTicket.id.substring(selectedTicket.id.length - 4).toUpperCase()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Description</p>
+                  <div
+                    className="rounded-xl p-4 text-[13px] leading-relaxed min-h-[80px]"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textPrimary }}
+                  >
+                    {selectedTicket.description || <span style={{ color: textMuted }} className="italic">No description provided.</span>}
+                  </div>
+                </div>
+
+                {/* Status controls (non-customer only) */}
+                {canChangeStatus && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Update Status</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => {
+                        const isActive = selectedTicket.status.toUpperCase() === s
+                        const sStyle = getStatusStyle(s)
+                        return (
+                          <button
+                            key={s}
+                            disabled={updateLoading}
+                            onClick={() => handleUpdateStatus(selectedTicket.id, s)}
+                            className="flex items-center justify-between gap-2 px-3.5 py-3 rounded-xl text-[12px] font-bold border transition-all"
+                            style={isActive
+                              ? { color: sStyle.color, backgroundColor: sStyle.background, borderColor: sStyle.color }
+                              : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
+                            }
+                          >
+                            <span>{s.replace(/_/g, ' ')}</span>
+                            {isActive && <ArrowRight className="w-3.5 h-3.5 shrink-0" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Sticky footer ── */}
+              <div
+                className="flex-shrink-0 flex items-center justify-between gap-3 px-6 py-4"
+                style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}
+              >
+                {(user?.role?.toLowerCase() === 'admin' || isCustomer) ? (
+                  <button
+                    onClick={() => handleDeleteTicket(selectedTicket.id)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all hover:bg-red-500/10"
+                    style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                ) : <div />}
+                <button
+                  onClick={() => setShowViewModal(false)}
+                  className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-[#10B981] hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Main Card */}
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="border rounded-2xl flex flex-col overflow-hidden shadow-sm">
-        
-        {/* Toolbar */}
-        <div style={{ borderColor: border }} className="flex flex-col lg:flex-row justify-between items-start lg:items-center p-5 border-b gap-4">
-          
-          {/* Tabs */}
-          <div style={{ borderColor: border, backgroundColor: inputBg }} className="flex p-1 border rounded-xl w-full lg:w-auto overflow-x-auto">
-            {['all', 'active', 'completed'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={activeTab === tab
-                  ? { backgroundColor: tabActiveBg, color: tabActiveText }
-                  : { color: textMuted }
-                }
-                className="px-5 py-2 text-sm font-bold capitalize rounded-lg transition-all shrink-0"
-              >
-                {tab} Tickets
-              </button>
-            ))}
-          </div>
 
-          {/* Search & Filter */}
-          <div className="flex items-center gap-2 w-full lg:w-auto">
+        {/* Toolbar */}
+        <div style={{ borderColor: border }} className="flex flex-col gap-3 p-4 border-b">
+
+          {/* Search & Filter row */}
+          <div className="flex items-center gap-2">
             <div
               style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-              className="flex flex-1 lg:w-64 items-center border rounded-xl px-3 py-2.5 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
+              className="flex flex-1 items-center border rounded-xl px-3 py-2.5 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
             >
-              <Search className="w-4 h-4 mr-2" style={{ color: textMuted }} />
+              <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
                 placeholder="Search tickets..."
@@ -321,29 +414,46 @@ export default function Tickets() {
                 style={{ color: textPrimary }}
                 className="bg-transparent border-none text-sm focus:outline-none w-full placeholder-slate-400"
               />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} style={{ color: textMuted }} className="ml-1 hover:text-[#EF4444] transition-colors shrink-0">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                style={{ color: textMuted }}
-                className="p-2 hover:text-[#EF4444] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
             <button
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-              className="p-2.5 border rounded-xl hover:text-[#10B981] hover:border-[#10B981] transition-colors"
+              className="p-2.5 border rounded-xl hover:text-[#10B981] hover:border-[#10B981] transition-colors shrink-0"
               title="Filter"
             >
               <Filter className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Tabs row */}
+          <div style={{ borderColor: border, backgroundColor: inputBg }} className="flex p-1 border rounded-xl overflow-x-auto">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'active', label: 'Active' },
+              { key: 'completed', label: 'Completed' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                style={activeTab === key
+                  ? { backgroundColor: tabActiveBg, color: tabActiveText }
+                  : { color: textMuted }
+                }
+                className="flex-1 px-3 py-2 text-sm font-bold capitalize rounded-lg transition-all shrink-0 whitespace-nowrap"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+        {/* Desktop Table — hidden on mobile */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
               <tr style={{ backgroundColor: theadBg, color: textMuted }} className="text-xs uppercase tracking-wider font-bold">
                 <th style={{ borderColor: border }} className="p-4 pl-6 border-b w-10"></th>
@@ -356,23 +466,17 @@ export default function Tickets() {
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-[#7A95B8]">
-                    Loading tickets...
-                  </td>
+                  <td colSpan={5} className="p-12 text-center text-[#7A95B8]">Loading tickets...</td>
                 </tr>
               ) : filteredTickets.map((ticket) => {
                 const statusTheme = getStatusStyle(ticket.status)
                 const StatusIcon = statusTheme.icon
-                
                 return (
                   <tr
                     key={ticket.id}
                     style={{ borderColor: border }}
                     className="border-b transition-colors cursor-pointer group"
-                    onClick={() => {
-                      setSelectedTicket(ticket)
-                      setShowViewModal(true)
-                    }}
+                    onClick={() => { setSelectedTicket(ticket); setShowViewModal(true) }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
                   >
@@ -384,7 +488,7 @@ export default function Tickets() {
                     <td className="p-4">
                       <div style={{ color: textPrimary }} className="font-bold mb-1">{ticket.title}</div>
                       <div style={{ color: textMuted }} className="text-xs flex items-center gap-2">
-                        <span className="font-semibold">{ticket.id.substring(0, 8).toUpperCase()}...</span>
+                        <span className="font-semibold">ASH{ticket.id.substring(ticket.id.length - 4).toUpperCase()}</span>
                         <span>•</span>
                         <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
                       </div>
@@ -399,32 +503,82 @@ export default function Tickets() {
                         style={{ color: statusTheme.color, backgroundColor: statusTheme.background, borderColor: statusTheme.border }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-full border w-fit"
                       >
-                         <StatusIcon className="w-3.5 h-3.5" />
+                        <StatusIcon className="w-3.5 h-3.5" />
                         {ticket.status.replace(/_/g, ' ').toUpperCase()}
                       </div>
                     </td>
                     <td className="p-4 pr-6 text-right" onClick={e => e.stopPropagation()}>
-                      <button style={{ color: textMuted }} className="p-2 hover:bg-[#10B981]/10 hover:text-[#10B981] rounded-lg transition-colors group-hover:bg-[#10B981]/5">
+                      <button style={{ color: textMuted }} className="p-2 hover:bg-[#10B981]/10 hover:text-[#10B981] rounded-lg transition-colors">
                         <MoreVertical className="w-4 h-4" />
                       </button>
                     </td>
                   </tr>
                 )
               })}
-              
               {!loading && filteredTickets.length === 0 && (
                 <tr>
                   <td colSpan={5} className="p-12 text-center">
-                     <div className="flex flex-col items-center justify-center">
-                       <FileText className="w-12 h-12 text-slate-300 dark:text-[#3A5070] mb-3" />
-                       <h3 style={{ color: textPrimary }} className="text-lg font-bold">No tickets found</h3>
-                       <p style={{ color: textMuted }} className="text-sm mt-1">There are no {activeTab !== 'all' ? activeTab : ''} tickets to display.</p>
-                     </div>
+                    <div className="flex flex-col items-center justify-center">
+                      <FileText className="w-12 h-12 text-slate-300 dark:text-[#3A5070] mb-3" />
+                      <h3 style={{ color: textPrimary }} className="text-lg font-bold">No tickets found</h3>
+                      <p style={{ color: textMuted }} className="text-sm mt-1">There are no {activeTab !== 'all' ? activeTab : ''} tickets to display.</p>
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card List — shown only on mobile */}
+        <div className="md:hidden">
+          {loading ? (
+            <div className="p-10 text-center text-sm" style={{ color: textMuted }}>Loading tickets...</div>
+          ) : filteredTickets.length === 0 ? (
+            <div className="p-10 flex flex-col items-center justify-center">
+              <FileText className="w-12 h-12 mb-3" style={{ color: textMuted }} />
+              <h3 style={{ color: textPrimary }} className="text-base font-bold">No tickets found</h3>
+              <p style={{ color: textMuted }} className="text-sm mt-1">There are no {activeTab !== 'all' ? activeTab : ''} tickets to display.</p>
+            </div>
+          ) : filteredTickets.map((ticket, idx) => {
+            const statusTheme = getStatusStyle(ticket.status)
+            const StatusIcon = statusTheme.icon
+            return (
+              <div
+                key={ticket.id}
+                style={{ borderColor: border }}
+                className={`flex items-center gap-3 px-4 py-3.5 cursor-pointer active:opacity-70 transition-opacity${idx < filteredTickets.length - 1 ? ' border-b' : ''}`}
+                onClick={() => { setSelectedTicket(ticket); setShowViewModal(true) }}
+              >
+                {/* Icon */}
+                <div className="w-10 h-10 rounded-xl bg-[rgba(16,185,129,0.1)] text-[#10B981] flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div style={{ color: textPrimary }} className="font-bold text-sm truncate">{ticket.title}</div>
+                  <div style={{ color: textMuted }} className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{user?.role?.toLowerCase() === 'customer' ? 'Me' : (ticket.customerName || 'Unknown')}</span>
+                    <span>·</span>
+                    <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+
+                {/* Status badge */}
+                <div
+                  style={{ color: statusTheme.color, backgroundColor: statusTheme.background, borderColor: statusTheme.border }}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-full border shrink-0"
+                >
+                  <StatusIcon className="w-3 h-3" />
+                  <span className="hidden xs:inline">{ticket.status.replace(/_/g, ' ')}</span>
+                </div>
+
+                {/* Chevron */}
+                <ArrowRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

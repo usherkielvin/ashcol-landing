@@ -623,7 +623,7 @@ export default function Landing() {
               className="hidden sm:flex items-center text-sm font-semibold px-3 py-2 rounded-lg transition-all"
               style={{ color: t.textMuted }}
             >
-              Sign In
+              Login
             </a>
 
             {/* Book a Service CTA */}
@@ -665,7 +665,7 @@ export default function Landing() {
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-semibold rounded-lg border transition-all"
                 style={{ color: t.text, borderColor: t.border }}
               >
-                Sign In
+                Login
               </a>
               <a
                 href={getPortalUrl('/create-account')}
@@ -1399,7 +1399,7 @@ export default function Landing() {
           {/* Quick Links + App */}
           <div className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Sign In</a>
+            <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Login</a>
             <a href={getPortalUrl('/create-account')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
           </div>
         </div>

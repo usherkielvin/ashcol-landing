@@ -118,12 +118,12 @@ export default function Login() {
         navigate('/dashboard')
       } catch (err: any) {
         console.error('Google Auth Error:', err)
-        setError(err.message || 'Google sign-in failed. Please try again.')
+        setError(err.message || 'Google login failed. Please try again.')
       } finally {
         setLoading(false)
       }
     },
-    onError: () => setError('Google sign-in was cancelled.'),
+    onError: () => setError('Google login was cancelled.'),
   })
 
   return (
@@ -155,7 +155,7 @@ export default function Login() {
             Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">Back</span><br/>to Ashcol.
           </h2>
           <p className="text-[#A2B7D0] text-lg leading-relaxed drop-shadow-md">
-            Sign in to manage your bookings, track service requests, and stay cool with priority support.
+            Login to manage your bookings, track service requests, and stay cool with priority support.
           </p>
         </div>
       </div>
@@ -196,14 +196,14 @@ export default function Login() {
               Welcome Back
             </h1>
             <p className="text-[14px] text-center max-w-[280px]" style={{ color: textMuted }}>
-              Sign in to access your Ashcol account.
+              Login to access your Ashcol account.
             </p>
           </div>
 
           {/* Desktop heading */}
           <div className="hidden lg:block mb-8">
             <h1 className="text-3xl font-black tracking-tight mb-2" style={{ color: textPrimary }}>
-              Sign in
+              Login
             </h1>
             <p className="text-[15px]" style={{ color: textMuted }}>
               Enter your credentials to continue.
@@ -278,7 +278,7 @@ export default function Login() {
                 }`}
                 style={loading ? { backgroundColor: inputBg, color: textMuted, border: `1px solid ${inputBorder}` } : {}}
               >
-                {loading ? 'Signing in...' : 'Sign In'}
+                {loading ? 'Logging in...' : 'Login'}
               </button>
             </form>
 
@@ -289,7 +289,7 @@ export default function Login() {
               <div className="flex-1 border-t" style={{ borderColor: divBorder }} />
             </div>
 
-            {/* Google Sign-In */}
+            {/* Google Login */}
             <button
               onClick={() => loginWithGoogle()}
               disabled={loading}

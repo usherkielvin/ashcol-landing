@@ -239,7 +239,7 @@ export default function DashboardLayout() {
             {/* Logout */}
             <button
               onClick={logout}
-              title="Sign out"
+              title="Logout"
               className="p-2.5 rounded-xl transition-all hover:scale-105 hover:text-red-400"
               style={{
                 color: textMuted,
