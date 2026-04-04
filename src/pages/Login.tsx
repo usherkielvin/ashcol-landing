@@ -189,9 +189,9 @@ export default function Login() {
 
           {/* Mobile-only logo/header */}
           <div className="flex flex-col items-center mb-8 lg:hidden">
-            <Link to="/" className="hover:scale-105 transition-transform mb-6">
+            <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-6">
               <img src={logoImg} alt="Ashcol Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
-            </Link>
+            </a>
             <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
               Welcome Back
             </h1>

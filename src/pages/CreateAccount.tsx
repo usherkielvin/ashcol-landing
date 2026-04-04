@@ -240,9 +240,9 @@ export default function CreateAccount() {
 
           {/* Mobile logo */}
           <div className="flex flex-col items-center mb-10 lg:hidden">
-            <Link to="/" className="hover:scale-105 transition-transform mb-5">
+            <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-5">
               <img src={logoImg} alt="Ashcol Logo" className="w-14 h-14 object-contain rounded-2xl shadow-[0_0_24px_rgba(16,185,129,0.3)]" />
-            </Link>
+            </a>
             <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>Create Account</h1>
             <p className="text-sm text-center max-w-[260px]" style={{ color: textMuted }}>
               Join Ashcol to access our professional AC services.

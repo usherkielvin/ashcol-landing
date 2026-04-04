@@ -305,6 +305,17 @@ function ComingSoonModal({ onClose }: { onClose: () => void }) {
 
 export default function Landing() {
   const [activeSection, setActiveSection] = useState('hero')
+  
+  // Helper to get portal URL (e.g. portal.ashcol.com.ph or localhost/?portal=true)
+  const getPortalUrl = (path: string) => {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    if (isLocal) {
+      return `${path}?portal=true`
+    }
+    // In production, go to the portal subdomain
+    // We use https explicitly for production
+    return `https://portal.ashcol.com.ph${path}`
+  }
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
@@ -426,7 +437,7 @@ export default function Landing() {
 
             {/* Login link */}
             <a
-              href="/login"
+              href={getPortalUrl('/login')}
               className="hidden sm:flex items-center text-sm font-semibold px-3 py-2 rounded-lg transition-all"
               style={{ color: t.textMuted }}
             >
@@ -435,7 +446,7 @@ export default function Landing() {
 
             {/* Book a Service CTA */}
             <a
-              href="/create-account"
+              href={getPortalUrl('/create-account')}
               className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-lg transition-all glow-green"
               style={{ backgroundColor: t.accent }}
             >
@@ -468,14 +479,14 @@ export default function Landing() {
             ))}
             <div className="flex gap-2 mt-1">
               <a
-                href="/login"
+                href={getPortalUrl('/login')}
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-semibold rounded-lg border transition-all"
                 style={{ color: t.text, borderColor: t.border }}
               >
                 Sign In
               </a>
               <a
-                href="/create-account"
+                href={getPortalUrl('/create-account')}
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all"
                 style={{ backgroundColor: t.accent }}
               >
@@ -536,7 +547,7 @@ export default function Landing() {
         {/* CTA — below steps */}
         <div className="relative w-full max-w-lg">
           <a
-            href="/create-account"
+            href={getPortalUrl('/create-account')}
             className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
           >
             Book a Service Now
@@ -1165,7 +1176,7 @@ export default function Landing() {
         <div className="relative w-full max-w-lg mx-auto">
           <div className="flex flex-row justify-center gap-2 sm:gap-3 w-full">
             <a
-              href="/create-account"
+              href={getPortalUrl('/create-account')}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[180px]"
             >
               Request a Service
@@ -1215,8 +1226,8 @@ export default function Landing() {
           {/* Quick Links + App */}
           <div className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <a href="/login" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Sign In</a>
-            <a href="/create-account" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
+            <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Sign In</a>
+            <a href={getPortalUrl('/create-account')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
           </div>
         </div>
 
