@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MapPin, Navigation } from 'lucide-react'
-import { getRegionNames, getProvinces, getCities, getBarangays } from '../data/phAddress'
+import { getRegionNames, getCities, getBarangays } from '../data/phAddress'
 
 export interface AddressValue {
   region: string
