@@ -6,6 +6,8 @@ import {
   KeyRound, Trash2, X, AlertTriangle, Check, ShieldCheck, MapPin
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
+import PhAddressPicker from '../components/PhAddressPicker'
+import type { AddressValue } from '../components/PhAddressPicker'
 import { API_BASE_URL, resolveImageUrl } from '../utils/api'
 
 const apiUrl = API_BASE_URL
@@ -38,7 +40,13 @@ export default function Profile() {
   // ── Profile info state ────────────────────────────────────────────────────
   const [name, setName]               = useState(user?.name || '')
   const [phone, setPhone]             = useState(user?.phone || '')
-  const [address, setAddress]         = useState(user?.address || '')
+  const [address, setAddress]         = useState<AddressValue>({
+    region: user?.region || '',
+    city: user?.city || '',
+    barangay: user?.barangay || '',
+    street: user?.street || '',
+    landmark: user?.landmark || '',
+  })
   const [nameLoading, setNameLoading] = useState(false)
   const [nameMsg, setNameMsg]         = useState('')
   const [nameErr, setNameErr]         = useState('')
@@ -63,7 +71,7 @@ export default function Profile() {
   const [deleteLoading, setDeleteLoading]     = useState(false)
   const [deleteErr, setDeleteErr]             = useState('')
 
-  // Fetch latest profile on mount
+  // Fetch latest profile on mount and after save
   useEffect(() => {
     if (!getToken()) return
     fetch(`${apiUrl}/user/profile`, { headers: authHeaders() })
@@ -71,9 +79,16 @@ export default function Profile() {
       .then(data => {
         if (!data) return
         const u = data?.data || data
-        if (u.phone) setPhone(u.phone)
-        if (u.address) setAddress(u.address)
-        if (u.name) setName(u.name)
+        if (u.phone !== undefined) setPhone(u.phone || '')
+        if (u.name !== undefined) setName(u.name || '')
+        // Always update address from API, even if empty
+        setAddress({
+          region: u.region || '',
+          city: u.city || '',
+          barangay: u.barangay || '',
+          street: u.street || u.address || '',
+          landmark: u.landmark || '',
+        })
       })
       .catch(() => {})
   }, [])
@@ -83,16 +98,60 @@ export default function Profile() {
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return setNameErr('Name is required.')
+    if (!address.region || !address.city || !address.barangay || !address.street) {
+      return setNameErr('Please complete all required address fields.')
+    }
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
+      const payload = {
+        name: name.trim(),
+        phone: phone.trim(),
+        region: address.region,
+        city: address.city,
+        barangay: address.barangay,
+        street: address.street,
+        landmark: address.landmark,
+      }
+      console.log('Updating profile with address:', payload)
       const res = await fetch(`${apiUrl}/user/profile`, {
         method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim(), address: address.trim() }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to update.')
       const data = await res.json()
       const u = data?.data || data
-      setUser({ ...user!, name: u.name || name.trim(), phone: u.phone || phone.trim(), address: u.address || address.trim(), initials: getInitials(u.name || name.trim()) })
+      console.log('Profile update response:', data)
+      const updatedUser = {
+        ...user!,
+        name: u.name || name.trim(),
+        phone: u.phone || phone.trim(),
+        region: u.region || address.region,
+        city: u.city || address.city,
+        barangay: u.barangay || address.barangay,
+        street: u.street || address.street,
+        landmark: u.landmark || address.landmark,
+        initials: getInitials(u.name || name.trim())
+      }
+      setUser(updatedUser)
+      // Refetch profile to ensure address fields are updated from server
+      fetch(`${apiUrl}/user/profile`, { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return
+          const u = data?.data || data
+          // Use server response if available, otherwise keep current local state
+          setAddress({
+            region: u.region || address.region || '',
+            city: u.city || address.city || '',
+            barangay: u.barangay || address.barangay || '',
+            street: u.street || u.address || address.street || '',
+            landmark: u.landmark || address.landmark || '',
+          })
+        })
+        .catch(() => {
+          // If refetch fails, keep the current address state
+          console.log('Profile refetch failed, keeping local address state')
+        })
       setNameMsg('Profile updated!')
       setTimeout(() => setNameMsg(''), 3000)
     } catch (err: any) {
@@ -274,13 +333,16 @@ export default function Profile() {
 
           {/* Default Address */}
           <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: textMuted }}>
-              <MapPin className="w-3.5 h-3.5" /> Default saved address
+            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3" style={{ color: textMuted }}>
+              <MapPin className="w-3.5 h-3.5" /> Default Address
             </label>
-            <textarea
+            <PhAddressPicker
               value={address}
-              onChange={e => setAddress(e.target.value)}
-              style={inputStyle} className={`${ic} resize-none`} placeholder="e.g. Unit 2A, 182-A 19th Ave., East Rembo, Taguig" rows={2}
+              onChange={setAddress}
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              inputText={inputText}
+              textMuted={textMuted}
             />
           </div>
 

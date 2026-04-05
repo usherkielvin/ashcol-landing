@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search, Filter, Trash2, Circle, CheckCircle, Clock, XCircle, FileText, X, Calendar, User, Wrench, Hash, ArrowRight, MoreVertical } from 'lucide-react'
+import { Plus, Search, Filter, Trash2, Circle, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, MoreVertical, ChevronLeft } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -8,11 +8,73 @@ interface Ticket {
   id: string
   title: string
   description: string
-  serviceType: string
-  customerName: string
+  serviceType?: string
+  service_type?: string
+  customerName?: string
+  customer_name?: string
+  contactPhone?: string
+  contact_phone?: string
+  customer_phone?: string
+  phone?: string
+  location?: any
+  unitType?: string
+  unit_type?: string
+  acDetails?: string
+  ac_details?: string
   status: string
-  createdAt: string
+  createdAt?: string
+  created_at?: string
   preferredDate?: string
+  preferred_date?: string
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function formatLocation(loc: any): string {
+  if (!loc) return '—'
+  if (typeof loc === 'string') {
+    const s = loc.trim()
+    if (!s) return '—'
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try {
+        const p: any = JSON.parse(s)
+        const addr = (p?.address ?? '').trim()
+        const region = (p?.region ?? '').trim()
+        if (addr && region && !addr.toLowerCase().includes(region.toLowerCase())) return `${addr}, ${region}`
+        return addr || region || s
+      } catch { /* fall through */ }
+    }
+    if (/lat|lng|long|latitude|longitude/i.test(s)) return '—'
+    return s
+  }
+  const addr = (loc.address ?? '').trim()
+  const region = (loc.region ?? '').trim()
+  if (addr && region && !addr.toLowerCase().includes(region.toLowerCase())) return `${addr}, ${region}`
+  return addr || region || '—'
+}
+
+function stripEmbeddedAcDetails(desc: string | undefined | null): string {
+  const text = (desc || '').trim()
+  if (!text) return '—'
+  const marker = '\n\nAC Details - '
+  const idx = text.indexOf(marker)
+  return idx === -1 ? text : (text.slice(0, idx).trim() || '—')
+}
+
+function parseAcDetails(ticket: Ticket): any[] {
+  const raw = ticket.acDetails || ticket.ac_details
+  if (!raw || typeof raw !== 'string') return []
+  try {
+    const p = JSON.parse(raw)
+    return Array.isArray(p) ? p : []
+  } catch { return [] }
+}
+
+function getTicketField(ticket: Ticket, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = (ticket as any)[k]
+    if (v && typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return '—'
 }
 
 export default function Tickets() {
@@ -200,141 +262,123 @@ export default function Tickets() {
       {/* ── Ticket Detail Panel ─────────────────────────────────────────────── */}
       {showViewModal && selectedTicket && (() => {
         const st = getStatusStyle(selectedTicket.status)
-        const StatusIcon = st.icon
         const isCustomer = user?.role?.toLowerCase() === 'customer'
+        const isPending = selectedTicket.status.toUpperCase() === 'PENDING'
         const canChangeStatus = !isCustomer
         return (
           <div
             className="fixed inset-0 z-[100] flex items-stretch sm:items-center justify-center p-0 sm:p-4 md:p-6"
             onClick={() => setShowViewModal(false)}
           >
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
-
-            {/* Panel */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <div
-              className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-3rem)] sm:max-w-2xl lg:max-w-3xl shadow-2xl overflow-hidden rounded-none sm:rounded-2xl"
+              className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-3rem)] sm:max-w-xl shadow-2xl overflow-hidden rounded-none sm:rounded-2xl"
               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
               onClick={e => e.stopPropagation()}
             >
-              {/* ── Colored accent header ── */}
-              <div
-                className="relative flex-shrink-0 px-6 pt-10 pb-6 overflow-hidden"
-                style={{ background: isLight
-                  ? `linear-gradient(135deg, ${st.background} 0%, #ffffff 100%)`
-                  : `linear-gradient(135deg, ${st.background} 0%, #0A1120 100%)`,
-                  borderBottom: `1px solid ${border}` }}
-              >
-                {/* Glow circle */}
-                <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full opacity-20 pointer-events-none"
-                  style={{ background: `radial-gradient(circle, ${st.color}, transparent 70%)` }} />
-
-                {/* Close */}
-                <button
-                  onClick={() => setShowViewModal(false)}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-red-500/10"
-                  style={{ color: textMuted }}
-                >
-                  <X className="w-5 h-5" />
+              {/* ── Header bar ── */}
+              <div className="flex-shrink-0 flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0F1A2E' }}>
+                <button onClick={() => setShowViewModal(false)} className="flex items-center gap-1.5 text-[13px] font-semibold transition-opacity hover:opacity-60" style={{ color: textMuted }}>
+                  <ChevronLeft className="w-4 h-4" /> Back
                 </button>
-
-                {/* Icon + title */}
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${st.color}25`, color: st.color }}>
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-black leading-tight mb-1" style={{ color: textPrimary }}>
-                      {selectedTicket.title}
-                    </h3>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border"
-                        style={{ color: st.color, backgroundColor: st.background, borderColor: st.border }}
-                      >
-                        <StatusIcon className="w-3 h-3" />
-                        {selectedTicket.status.replace(/_/g, ' ')}
-                      </span>
-                      <span className="text-[11px] font-mono" style={{ color: textMuted }}>
-                        #ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <span className="text-[12px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Ticket Details</span>
+                <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase" style={{ backgroundColor: st.color, color: '#fff' }}>
+                  {selectedTicket.status.replace(/_/g, ' ')}
+                </span>
               </div>
 
               {/* ── Scrollable body ── */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+              <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
 
-                {/* Info grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Customer */}
-                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <User className="w-3 h-3" style={{ color: textMuted }} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Customer</span>
-                    </div>
-                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
-                      {selectedTicket.customerName || 'Unknown'}
-                    </p>
+                {/* Main info card */}
+                <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${border}`, backgroundColor: cardBg }}>
+                  <div className="px-4 flex flex-col">
+                    {[
+                      { label: 'Ticket ID:', value: `ASH${(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}` },
+                      { label: 'Customer:', value: getTicketField(selectedTicket, 'customerName', 'customer_name') },
+                      { label: 'Phone:',    value: getTicketField(selectedTicket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone') },
+                      { label: 'Address:',  value: formatLocation(selectedTicket.location) },
+                    ].map((row, i, arr) => (
+                      <div key={row.label} className="flex items-start justify-between gap-4 py-3" style={{ borderBottom: i < arr.length - 1 ? `1px solid ${border}` : 'none' }}>
+                        <span className="text-[13px] shrink-0 min-w-[90px]" style={{ color: textMuted }}>{row.label}</span>
+                        <span className="text-[13px] font-semibold text-right leading-snug" style={{ color: textPrimary }}>{row.value}</span>
+                      </div>
+                    ))}
                   </div>
 
-                  {/* Service type */}
-                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Wrench className="w-3 h-3" style={{ color: textMuted }} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Service</span>
-                    </div>
-                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
-                      {selectedTicket.serviceType || '—'}
-                    </p>
+                  {/* Service Details */}
+                  <div className="px-4 pt-3 pb-3" style={{ borderTop: `1px solid ${border}` }}>
+                    <p className="text-[14px] font-black mb-2" style={{ color: '#10B981' }}>Service Details</p>
+                    {[
+                      { label: 'Service Type:',  value: getTicketField(selectedTicket, 'serviceType', 'service_type') },
+                      { label: 'Unit Type:',     value: getTicketField(selectedTicket, 'unitType', 'unit_type') },
+                      { label: 'Other details:', value: stripEmbeddedAcDetails(selectedTicket.description) },
+                    ].map((row, i, arr) => (
+                      <div key={row.label} className="flex items-start justify-between gap-4 py-2" style={{ borderBottom: i < arr.length - 1 ? `1px solid ${border}` : 'none' }}>
+                        <span className="text-[13px] shrink-0 min-w-[100px]" style={{ color: textMuted }}>{row.label}</span>
+                        <span className="text-[13px] font-semibold text-right leading-snug" style={{ color: textPrimary }}>{row.value}</span>
+                      </div>
+                    ))}
                   </div>
 
-                  {/* Created */}
-                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Calendar className="w-3 h-3" style={{ color: textMuted }} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Created</span>
-                    </div>
-                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
-                      {new Date(selectedTicket.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </p>
-                  </div>
+                  {/* AC Configuration */}
+                  {(() => {
+                    const acDetails = parseAcDetails(selectedTicket)
+                    if (!acDetails.length) return null
+                    return (
+                      <div className="px-4 pt-3 pb-3" style={{ borderTop: `1px solid ${border}` }}>
+                        <p className="text-[14px] font-black mb-2" style={{ color: '#10B981' }}>AC Configuration</p>
+                        <div className="flex flex-col gap-2">
+                          {acDetails.map((unit: any, uIdx: number) => {
+                            const unitLabel = unit?.unitType || `Unit ${uIdx + 1}`
+                            const qty = unit?.quantity || 1
+                            const rows = Array.isArray(unit?.details) ? unit.details : []
+                            return (
+                              <div key={uIdx} className="rounded-xl p-3" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)', border: `1px solid ${border}` }}>
+                                <p className="text-[12px] font-black mb-2" style={{ color: textPrimary }}>{unitLabel} x{qty}</p>
+                                {rows.map((d: any, dIdx: number) => {
+                                  const chips: string[] = []
+                                  if (d?.brand) chips.push(`Brand: ${d.brand}`)
+                                  if (d?.hp) chips.push(`HP: ${d.hp}`)
+                                  if (d?.technology) chips.push(`Tech: ${d.technology}`)
+                                  if (d?.subtype) chips.push(`Subtype: ${d.subtype}`)
+                                  if (d?.feature && d.feature !== 'No special feature') chips.push(`Feature: ${d.feature}`)
+                                  if (d?.issueType) chips.push(`Issue: ${d.issueType}`)
+                                  if (d?.refrigerant) chips.push(`Ref: ${d.refrigerant}`)
+                                  if (d?.voltage) chips.push(`Volt: ${d.voltage}`)
+                                  if (d?.ageRange) chips.push(`Age: ${d.ageRange}`)
+                                  return (
+                                    <div key={dIdx} className="rounded-lg p-2.5 mb-1 last:mb-0" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                                      {rows.length > 1 && <p className="text-[11px] font-black mb-1.5" style={{ color: textMuted }}>{unitLabel} #{dIdx + 1}</p>}
+                                      {chips.length ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {chips.map(chip => (
+                                            <span key={chip} className="px-2.5 py-1 rounded-full text-[11px] font-bold border"
+                                              style={{ color: isLight ? '#215531' : '#9FE6B3', backgroundColor: isLight ? '#ECFDF3' : 'rgba(56,180,93,0.14)', borderColor: isLight ? '#BFE7CB' : 'rgba(56,180,93,0.34)' }}>
+                                              {chip}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : <p className="text-[12px]" style={{ color: textMuted }}>No extra details</p>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
 
-                  {/* Preferred date */}
-                  <div className="rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Calendar className="w-3 h-3" style={{ color: textMuted }} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Pref. Date</span>
-                    </div>
-                    <p className="text-[13px] font-bold leading-snug" style={{ color: textPrimary }}>
-                      {selectedTicket.preferredDate
-                        ? new Date(selectedTicket.preferredDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-                        : <span style={{ color: textMuted }} className="font-normal text-[12px]">Not specified</span>}
-                    </p>
-                  </div>
-
-                  {/* Ticket ID full */}
-                  <div className="sm:col-span-2 rounded-xl p-3.5" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Hash className="w-3 h-3" style={{ color: textMuted }} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Ticket ID</span>
-                    </div>
-                    <p className="text-[11px] font-mono break-all" style={{ color: textMuted }}>
-                      ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Description</p>
-                  <div
-                    className="rounded-xl p-4 text-[13px] leading-relaxed min-h-[80px]"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textPrimary }}
-                  >
-                    {selectedTicket.description || <span style={{ color: textMuted }} className="italic">No description provided.</span>}
+                  {/* Preferred Date */}
+                  <div className="px-4 flex items-center justify-between py-3" style={{ borderTop: `1px solid ${border}` }}>
+                    <span className="text-[13px]" style={{ color: textMuted }}>Preferred Date:</span>
+                    <span className="text-[13px] font-semibold" style={{ color: textPrimary }}>
+                      {(selectedTicket.preferredDate || selectedTicket.preferred_date)
+                        ? new Date((selectedTicket.preferredDate || selectedTicket.preferred_date)!).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '—'}
+                    </span>
                   </div>
                 </div>
 
@@ -342,7 +386,7 @@ export default function Tickets() {
                 {canChangeStatus && (
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Update Status</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => {
                         const isActive = selectedTicket.status.toUpperCase() === s
                         const sStyle = getStatusStyle(s)
@@ -367,26 +411,35 @@ export default function Tickets() {
                 )}
               </div>
 
-              {/* ── Sticky footer ── */}
-              <div
-                className="flex-shrink-0 flex items-center justify-between gap-3 px-6 py-4"
-                style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}
-              >
-                {(user?.role?.toLowerCase() === 'admin' || isCustomer) ? (
+              {/* ── Footer ── */}
+              <div className="flex-shrink-0 px-4 py-4" style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
+                {isCustomer && isPending ? (
                   <button
                     onClick={() => handleDeleteTicket(selectedTicket.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all hover:bg-red-500/10"
-                    style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}
+                    className="w-full py-3.5 rounded-2xl text-[15px] font-black text-white transition-all"
+                    style={{ backgroundColor: '#EF4444', boxShadow: '0 8px 24px rgba(239,68,68,0.35)' }}
                   >
-                    <Trash2 className="w-4 h-4" /> Delete
+                    Cancel Ticket
                   </button>
-                ) : <div />}
-                <button
-                  onClick={() => setShowViewModal(false)}
-                  className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-[#10B981] hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
-                >
-                  Done
-                </button>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    {user?.role?.toLowerCase() === 'admin' && (
+                      <button
+                        onClick={() => handleDeleteTicket(selectedTicket.id)}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all hover:bg-red-500/10"
+                        style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}
+                      >
+                        <Trash2 className="w-4 h-4" /> Delete
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowViewModal(false)}
+                      className="ml-auto px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-[#10B981] hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -490,7 +543,7 @@ export default function Tickets() {
                       <div style={{ color: textMuted }} className="text-xs flex items-center gap-2">
                         <span className="font-semibold">ASH{(ticket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}</span>
                         <span>•</span>
-                        <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                        <span>{ticket.createdAt || ticket.created_at ? new Date((ticket.createdAt || ticket.created_at)!).toLocaleDateString() : '—'}</span>
                       </div>
                     </td>
                     <td className="p-4">
@@ -561,7 +614,7 @@ export default function Tickets() {
                   <div style={{ color: textMuted }} className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap">
                     <span>{user?.role?.toLowerCase() === 'customer' ? 'Me' : (ticket.customerName || 'Unknown')}</span>
                     <span>·</span>
-                    <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                    <span>{ticket.createdAt || ticket.created_at ? new Date((ticket.createdAt || ticket.created_at)!).toLocaleDateString() : '—'}</span>
                   </div>
                 </div>
 

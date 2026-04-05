@@ -4,7 +4,12 @@ export interface AuthUser {
   name: string
   email: string
   phone?: string    // User's contact number
-  address?: string  // User's default address
+  address?: string  // Legacy: User's default address (kept for backward compatibility)
+  region?: string   // User's region
+  city?: string     // User's city/municipality
+  barangay?: string // User's barangay
+  street?: string   // User's street address
+  landmark?: string // User's landmark
   picture: string   // Google profile picture URL
   role: string      // e.g. 'Customer', 'Staff', 'Administrator'
   initials: string
