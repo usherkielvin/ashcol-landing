@@ -4,6 +4,7 @@ export interface AuthUser {
   name: string
   email: string
   phone?: string    // User's contact number
+  address?: string  // User's default address
   picture: string   // Google profile picture URL
   role: string      // e.g. 'Customer', 'Staff', 'Administrator'
   initials: string

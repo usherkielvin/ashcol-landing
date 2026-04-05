@@ -3,7 +3,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Mail, Shield, Camera, LogOut, Phone,
-  KeyRound, Trash2, X, AlertTriangle, Check, ShieldCheck
+  KeyRound, Trash2, X, AlertTriangle, Check, ShieldCheck, MapPin
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import { API_BASE_URL, resolveImageUrl } from '../utils/api'
@@ -38,6 +38,7 @@ export default function Profile() {
   // ── Profile info state ────────────────────────────────────────────────────
   const [name, setName]               = useState(user?.name || '')
   const [phone, setPhone]             = useState(user?.phone || '')
+  const [address, setAddress]         = useState(user?.address || '')
   const [nameLoading, setNameLoading] = useState(false)
   const [nameMsg, setNameMsg]         = useState('')
   const [nameErr, setNameErr]         = useState('')
@@ -71,6 +72,7 @@ export default function Profile() {
         if (!data) return
         const u = data?.data || data
         if (u.phone) setPhone(u.phone)
+        if (u.address) setAddress(u.address)
         if (u.name) setName(u.name)
       })
       .catch(() => {})
@@ -85,12 +87,12 @@ export default function Profile() {
     try {
       const res = await fetch(`${apiUrl}/user/profile`, {
         method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+        body: JSON.stringify({ name: name.trim(), phone: phone.trim(), address: address.trim() }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to update.')
       const data = await res.json()
       const u = data?.data || data
-      setUser({ ...user!, name: u.name || name.trim(), phone: u.phone || phone.trim(), initials: getInitials(u.name || name.trim()) })
+      setUser({ ...user!, name: u.name || name.trim(), phone: u.phone || phone.trim(), address: u.address || address.trim(), initials: getInitials(u.name || name.trim()) })
       setNameMsg('Profile updated!')
       setTimeout(() => setNameMsg(''), 3000)
     } catch (err: any) {
@@ -267,6 +269,18 @@ export default function Profile() {
               type="tel" value={phone}
               onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
               style={inputStyle} className={ic} placeholder="09170000000" maxLength={13}
+            />
+          </div>
+
+          {/* Default Address */}
+          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: textMuted }}>
+              <MapPin className="w-3.5 h-3.5" /> Default saved address
+            </label>
+            <textarea
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              style={inputStyle} className={`${ic} resize-none`} placeholder="e.g. Unit 2A, 182-A 19th Ave., East Rembo, Taguig" rows={2}
             />
           </div>
 

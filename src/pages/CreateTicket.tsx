@@ -182,7 +182,7 @@ export default function CreateTicket() {
   const [fullName, setFullName] = useState(user?.name || '')
   const [contactPhone, setContactPhone] = useState(user?.phone || '')
   const [address, setAddress] = useState<AddressValue>({
-    region: '', city: '', barangay: '', street: '', landmark: '',
+    region: '', city: '', barangay: '', street: user?.address || '', landmark: '',
   })
   const [description, setDescription] = useState('')
   const [selectedDate, setSelectedDate] = useState('')

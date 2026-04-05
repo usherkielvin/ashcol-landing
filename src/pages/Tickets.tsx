@@ -157,7 +157,7 @@ export default function Tickets() {
     // Search Filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
-      const shortId = `ASH${t.id.substring(t.id.length - 4).toUpperCase()}`
+      const shortId = `ASH${(t.id || '').replace(/-/g, '').slice(-6).toUpperCase()}`
       return t.title.toLowerCase().includes(q) || 
              t.id.toLowerCase().includes(q) || 
              shortId.toLowerCase().includes(q) ||
@@ -257,7 +257,7 @@ export default function Tickets() {
                         {selectedTicket.status.replace(/_/g, ' ')}
                       </span>
                       <span className="text-[11px] font-mono" style={{ color: textMuted }}>
-                        #ASH{selectedTicket.id.substring(selectedTicket.id.length - 4).toUpperCase()}
+                        #ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -322,7 +322,7 @@ export default function Tickets() {
                       <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Ticket ID</span>
                     </div>
                     <p className="text-[11px] font-mono break-all" style={{ color: textMuted }}>
-                      ASH{selectedTicket.id.substring(selectedTicket.id.length - 4).toUpperCase()}
+                      ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}
                     </p>
                   </div>
                 </div>
@@ -488,7 +488,7 @@ export default function Tickets() {
                     <td className="p-4">
                       <div style={{ color: textPrimary }} className="font-bold mb-1">{ticket.title}</div>
                       <div style={{ color: textMuted }} className="text-xs flex items-center gap-2">
-                        <span className="font-semibold">ASH{ticket.id.substring(ticket.id.length - 4).toUpperCase()}</span>
+                        <span className="font-semibold">ASH{(ticket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}</span>
                         <span>•</span>
                         <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
                       </div>
