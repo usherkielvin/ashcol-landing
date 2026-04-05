@@ -1,20 +1,31 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Settings as ConfigIcon, Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2
+  ChevronRight, Building2, UserCircle, ChevronDown
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import logoImg from '../assets/ash-logo.jpg'
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
   const isLight = theme === 'light'
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const allLinks = [
     { name: 'Overview',      path: '/dashboard', icon: LayoutDashboard },
@@ -38,7 +49,6 @@ export default function DashboardLayout() {
   const textPrimary = isLight ? '#0f172a'              : '#EEF4FF'
   const textMuted   = isLight ? '#64748b'              : '#6B90BE'
   const hoverBg     = isLight ? '#f1f5f9'              : '#0f1e36'
-  const inputBg     = isLight ? '#f8fafc'              : '#0d1b30'
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name ?? 'Dashboard'
@@ -140,35 +150,6 @@ export default function DashboardLayout() {
           })}
         </nav>
 
-        {/* ── User Profile ───────────────────────────────── */}
-        <div className="shrink-0 p-3" style={{ borderTop: `1px solid ${border}` }}>
-          <Link
-            to="/profile"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-xl transition-all group"
-            style={{ backgroundColor: inputBg, border: `1px solid ${location.pathname === '/profile' ? '#10B981' : inputBorder}` }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B981'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = location.pathname === '/profile' ? '#10B981' : inputBorder}
-          >
-            {user?.picture ? (
-              <img
-                src={user.picture}
-                alt={user.name}
-                className="w-9 h-9 rounded-full object-cover ring-2 ring-[#10B981]/40 shrink-0"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-lg">
-                {user?.initials ?? '?'}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name ?? 'Guest'}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wider truncate text-[#10B981]">{user?.role ?? 'Unknown'}</p>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: textMuted }} />
-          </Link>
-        </div>
       </aside>
 
       {/* ── Main Content Area ───────────────────────────── */}
@@ -236,19 +217,75 @@ export default function DashboardLayout() {
                     style={{ borderColor: headerBg }} />
             </button>
 
-            {/* Logout */}
-            <button
-              onClick={logout}
-              title="Logout"
-              className="p-2.5 rounded-xl transition-all hover:scale-105 hover:text-red-400"
-              style={{
-                color: textMuted,
-                backgroundColor: hoverBg,
-                border: `1px solid ${inputBorder}`,
-              }}
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {/* User Profile Dropdown */}
+            <div ref={profileRef} className="relative">
+              <button
+                onClick={() => setProfileOpen(p => !p)}
+                className="flex items-center gap-2.5 pl-1 pr-3 py-1.5 rounded-xl transition-all hover:scale-[1.02]"
+                style={{
+                  backgroundColor: hoverBg,
+                  border: `1px solid ${inputBorder}`,
+                }}
+              >
+                {user?.picture ? (
+                  <img
+                    src={user.picture}
+                    alt={user.name}
+                    className="w-8 h-8 rounded-lg object-cover ring-2 ring-[#10B981]/30"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-xs">
+                    {user?.initials ?? '?'}
+                  </div>
+                )}
+                <span className="text-sm font-semibold hidden sm:block max-w-[80px] truncate" style={{ color: textPrimary }}>
+                  {user?.name?.split(' ')[0] ?? 'Guest'}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+              </button>
+
+              {/* Dropdown */}
+              {profileOpen && (
+                <div
+                  className="absolute right-0 top-[calc(100%+8px)] w-52 rounded-xl shadow-xl z-50 overflow-hidden"
+                  style={{ backgroundColor: sidebarBg, border: `1px solid ${border}` }}
+                >
+                  {/* User info header */}
+                  <div className="px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
+                    <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
+                  </div>
+
+                  <div className="py-1.5">
+                    <Link
+                      to="/profile"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                      style={{ color: textPrimary }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = hoverBg)}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      <UserCircle className="w-4 h-4" style={{ color: '#10B981' }} />
+                      My Account
+                    </Link>
+
+                    <div className="mx-3 my-1" style={{ borderTop: `1px solid ${border}` }} />
+
+                    <button
+                      onClick={() => { setProfileOpen(false); logout() }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
+                      style={{ color: textMuted }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = '#EF4444' }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = textMuted }}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
           </div>
         </header>

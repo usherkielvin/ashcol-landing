@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  User, Mail, Shield, Camera, LogOut, Phone,
-  KeyRound, Trash2, X, AlertTriangle, Check, ShieldCheck, MapPin
+  User, Shield,
+  KeyRound, Trash2, X, AlertTriangle, Check, MapPin, Lock, Eye, Bell
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import PhAddressPicker from '../components/PhAddressPicker'
@@ -16,9 +16,9 @@ const authHeaders = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${getToken()}`,
 })
-const ic = `w-full border rounded-xl px-4 py-3.5 font-medium transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] outline-none text-sm`
+const ic = `w-full border rounded-xl px-4 py-3 font-medium transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] outline-none text-sm`
 
-type Tab = 'profile' | 'account'
+type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications'
 
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
@@ -70,6 +70,14 @@ export default function Profile() {
   const [deleteConfirm, setDeleteConfirm]     = useState('')
   const [deleteLoading, setDeleteLoading]     = useState(false)
   const [deleteErr, setDeleteErr]             = useState('')
+
+  // ── Password change state ────────────────────────────────────────────────
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword]       = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
+  const [passwordErr, setPasswordErr]       = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
 
   // Fetch latest profile on mount and after save
   useEffect(() => {
@@ -239,189 +247,465 @@ export default function Profile() {
     }
   }
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordErr(''); setPasswordSuccess('')
+
+    if (!currentPassword) return setPasswordErr('Current password is required.')
+    if (!newPassword) return setPasswordErr('New password is required.')
+    if (newPassword.length < 8) return setPasswordErr('Password must be at least 8 characters.')
+    if (newPassword !== confirmPassword) return setPasswordErr('Passwords do not match.')
+
+    setPasswordLoading(true)
+    try {
+      const res = await fetch(`${apiUrl}/user/change-password`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to change password.')
+
+      setPasswordSuccess('Password changed successfully!')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setTimeout(() => setPasswordSuccess(''), 3000)
+    } catch (err: any) {
+      setPasswordErr(err.message || 'Could not change password.')
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
   const inputStyle = { backgroundColor: inputBg, borderColor: inputBorder, color: inputText }
 
+  const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
+    { key: 'profile', label: 'Profile', icon: User },
+    { key: 'address', label: 'Addresses', icon: MapPin },
+    { key: 'password', label: 'Change Password', icon: Lock },
+    { key: 'privacy', label: 'Privacy Settings', icon: Eye },
+    { key: 'notifications', label: 'Notifications', icon: Bell },
+  ]
+
   return (
-    <div className="max-w-2xl mx-auto w-full pb-16 px-0" style={{ backgroundColor: pageBg }}>
+    <div className="w-full max-w-5xl mx-auto pb-16" style={{ backgroundColor: pageBg }}>
+      <div className="flex flex-col md:flex-row gap-0 md:gap-6">
 
-      {/* ── Avatar hero ── */}
-      <div
-        className="flex flex-col items-center pt-8 pb-6 px-4 mb-0"
-        style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}
-      >
-        <div className="relative mb-3">
-          {user?.picture ? (
-            <img src={user.picture} alt={user.name}
-              className="w-24 h-24 rounded-full object-cover border-4 border-[#10B981] shadow-lg"
-              referrerPolicy="no-referrer" />
-          ) : (
-            <div className="w-24 h-24 rounded-full bg-[#10B981] flex items-center justify-center text-white font-black text-3xl shadow-lg border-4 border-white/10">
-              {user?.initials ?? '?'}
+        {/* ══════════════════════════════════════════════════════════════════
+            LEFT SIDEBAR
+        ══════════════════════════════════════════════════════════════════ */}
+        <aside className="w-full md:w-56 shrink-0">
+          {/* User avatar + name */}
+          <div className="flex md:flex-col items-center gap-3 md:gap-1 px-4 py-5 md:pt-6 md:pb-5"
+            style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+            <div className="relative shrink-0">
+              {user?.picture ? (
+                <img src={user.picture} alt={user.name}
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#10B981]/40"
+                  referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-xl">
+                  {user?.initials ?? '?'}
+                </div>
+              )}
+            </div>
+            <div className="md:text-center min-w-0">
+              <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#10B981]">
+                <Shield className="w-3 h-3" />{user?.role}
+              </span>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex md:flex-col overflow-x-auto md:overflow-visible"
+            style={{ backgroundColor: cardBg }}>
+            {sidebarLinks.map(({ key, label, icon: Icon }) => {
+              const active = tab === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => setTab(key)}
+                  className={`flex items-center gap-2.5 px-4 py-3 text-sm font-medium transition-all whitespace-nowrap md:w-full text-left
+                    ${active ? 'border-b-2 md:border-b-0 md:border-l-2' : 'border-b-2 md:border-b-0 md:border-l-2 border-transparent'}`}
+                  style={{
+                    color: active ? '#10B981' : textMuted,
+                    borderColor: active ? '#10B981' : 'transparent',
+                    backgroundColor: active ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.06)') : 'transparent',
+                  }}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </button>
+              )
+            })}
+          </nav>
+        </aside>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            RIGHT CONTENT AREA
+        ══════════════════════════════════════════════════════════════════ */}
+        <main className="flex-1 min-w-0">
+
+          {/* ── Tab: Profile ─────────────────────────────────────── */}
+          {tab === 'profile' && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>My Profile</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Manage and protect your account</p>
+              </div>
+
+              <form onSubmit={handleSaveName}>
+                <div className="flex flex-col md:flex-row">
+                  {/* Left: form fields */}
+                  <div className="flex-1 px-6 py-5 space-y-5" style={{ borderRight: `1px solid ${border}` }}>
+
+                    {/* Name row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Name</label>
+                      <input
+                        type="text" required value={name}
+                        onChange={e => setName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, ''))}
+                        style={inputStyle} className={`${ic} flex-1`} placeholder="Juan Dela Cruz"
+                      />
+                    </div>
+
+                    {/* Email row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Email</label>
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="text-sm" style={{ color: textPrimary }}>{user?.email}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setShowEmailModal(true); setEmailStep('input'); setEmailErr(''); setNewEmail(''); setEmailCode('') }}
+                          className="text-[#10B981] text-sm font-semibold hover:underline"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Phone row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
+                      <input
+                        type="tel" value={phone}
+                        onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
+                        style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
+                      />
+                    </div>
+
+                    {/* Role row (read-only) */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Role</label>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                        <Shield className="w-3 h-3" />{user?.role}
+                      </span>
+                    </div>
+
+                    {/* Verified badge */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Status</label>
+                      <p className="text-xs text-[#10B981] flex items-center gap-1 font-semibold">
+                        <Check className="w-3.5 h-3.5" /> Verified Account
+                      </p>
+                    </div>
+
+                    {/* Feedback */}
+                    {(nameErr || nameMsg) && (
+                      <div className="sm:pl-36">
+                        {nameErr && <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2">{nameErr}</p>}
+                        {nameMsg && <p className="text-sm text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl px-4 py-2">{nameMsg}</p>}
+                      </div>
+                    )}
+
+                    {/* Save button */}
+                    <div className="sm:pl-36 pt-1">
+                      <button
+                        type="submit" disabled={nameLoading}
+                        className={`px-8 py-2.5 rounded-lg font-bold text-sm text-white transition-all ${nameLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 hover:shadow-lg hover:shadow-[#10B981]/20'}`}
+                      >
+                        {nameLoading ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right: profile picture */}
+                  <div className="w-full md:w-52 flex flex-col items-center justify-start py-6 px-4 order-first md:order-last">
+                    <div className="relative mb-3">
+                      {user?.picture ? (
+                        <img src={user.picture} alt={user.name}
+                          className="w-24 h-24 rounded-full object-cover border-2 border-[#10B981]/30 shadow-md"
+                          referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-3xl shadow-md">
+                          {user?.initials ?? '?'}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      disabled={picLoading}
+                      className="px-4 py-2 rounded-lg border text-sm font-medium transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50"
+                      style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                    >
+                      {picLoading ? 'Uploading...' : 'Select Image'}
+                    </button>
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePicChange} />
+                    <p className="text-[11px] mt-2 text-center leading-relaxed" style={{ color: textMuted }}>
+                      Max file size: 10 MB<br />Format: JPEG, PNG
+                    </p>
+                    {picErr && <p className="text-xs text-red-400 mt-1 text-center">{picErr}</p>}
+                  </div>
+                </div>
+              </form>
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={picLoading}
-            className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md border transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50"
-            style={{ backgroundColor: cardBg, borderColor: border, color: textMuted }}
-          >
-            <Camera className="w-3.5 h-3.5" />
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePicChange} />
-        </div>
 
-        {picLoading && <p className="text-xs text-[#10B981] mb-1">Uploading...</p>}
-        {picErr    && <p className="text-xs text-red-400 mb-1">{picErr}</p>}
+          {/* ── Tab: Addresses ───────────────────────────────────── */}
+          {tab === 'address' && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>My Addresses</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Manage your default service address</p>
+              </div>
 
-        <h2 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>{user?.name}</h2>
-        <p className="text-sm mb-2" style={{ color: textMuted }}>{user?.email}</p>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[rgba(16,185,129,0.1)] text-[#10B981] text-[11px] font-bold uppercase tracking-wider rounded-full border border-[rgba(16,185,129,0.2)]">
-          <Shield className="w-3 h-3" />{user?.role}
-        </span>
-      </div>
+              <form onSubmit={handleSaveName} className="px-6 py-5">
+                <PhAddressPicker
+                  value={address}
+                  onChange={setAddress}
+                  inputBg={inputBg}
+                  inputBorder={inputBorder}
+                  inputText={inputText}
+                  textMuted={textMuted}
+                />
 
-      {/* ── Tabs ── */}
-      <div className="flex" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-        {([
-          { key: 'profile', label: 'Profile Info', icon: User },
-          { key: 'account', label: 'Account & Security', icon: ShieldCheck },
-        ] as { key: Tab; label: string; icon: any }[]).map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className="flex-1 flex items-center justify-center gap-2 py-3.5 text-[13px] font-bold transition-all border-b-2"
-            style={{
-              color: tab === key ? '#10B981' : textMuted,
-              borderColor: tab === key ? '#10B981' : 'transparent',
-            }}
-          >
-            <Icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{label}</span>
-            <span className="sm:hidden">{key === 'profile' ? 'Profile' : 'Security'}</span>
-          </button>
-        ))}
-      </div>
+                {/* Feedback */}
+                {(nameErr || nameMsg) && (
+                  <div className="mt-4">
+                    {nameErr && <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2">{nameErr}</p>}
+                    {nameMsg && <p className="text-sm text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl px-4 py-2">{nameMsg}</p>}
+                  </div>
+                )}
 
-      {/* ── Tab: Profile Info ── */}
-      {tab === 'profile' && (
-        <form onSubmit={handleSaveName} className="flex flex-col gap-0">
-
-          {/* Name */}
-          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: textMuted }}>
-              <User className="w-3.5 h-3.5" /> Full Name
-            </label>
-            <input
-              type="text" required value={name}
-              onChange={e => setName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, ''))}
-              style={inputStyle} className={ic} placeholder="Juan Dela Cruz"
-            />
-          </div>
-
-          {/* Phone */}
-          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: textMuted }}>
-              <Phone className="w-3.5 h-3.5" /> Phone Number
-            </label>
-            <input
-              type="tel" value={phone}
-              onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
-              style={inputStyle} className={ic} placeholder="09170000000" maxLength={13}
-            />
-          </div>
-
-          {/* Default Address */}
-          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3" style={{ color: textMuted }}>
-              <MapPin className="w-3.5 h-3.5" /> Default Address
-            </label>
-            <PhAddressPicker
-              value={address}
-              onChange={setAddress}
-              inputBg={inputBg}
-              inputBorder={inputBorder}
-              inputText={inputText}
-              textMuted={textMuted}
-            />
-          </div>
-
-          {/* Email (read-only) */}
-          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <label className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2" style={{ color: textMuted }}>
-              <Mail className="w-3.5 h-3.5" /> Email Address
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="email" disabled value={user?.email}
-                style={{ ...inputStyle, opacity: 0.6 }}
-                className={`${ic} cursor-not-allowed flex-1`}
-              />
-              <button
-                type="button"
-                onClick={() => { setShowEmailModal(true); setEmailStep('input'); setEmailErr(''); setNewEmail(''); setEmailCode('') }}
-                className="px-4 rounded-xl text-[12px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981] whitespace-nowrap"
-                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
-              >
-                Change
-              </button>
-            </div>
-            <p className="text-xs text-[#10B981] flex items-center gap-1 font-semibold mt-1.5">
-              <Check className="w-3.5 h-3.5" /> Verified Account
-            </p>
-          </div>
-
-          {/* Feedback */}
-          {(nameErr || nameMsg) && (
-            <div className="px-4 pt-3" style={{ backgroundColor: cardBg }}>
-              {nameErr && <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2">{nameErr}</p>}
-              {nameMsg && <p className="text-sm text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl px-4 py-2">{nameMsg}</p>}
+                <div className="mt-5">
+                  <button
+                    type="submit" disabled={nameLoading}
+                    className={`px-8 py-2.5 rounded-lg font-bold text-sm text-white transition-all ${nameLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 hover:shadow-lg hover:shadow-[#10B981]/20'}`}
+                  >
+                    {nameLoading ? 'Saving...' : 'Save Address'}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
-          {/* Save */}
-          <div className="px-4 pt-4 pb-2" style={{ backgroundColor: cardBg }}>
-            <button
-              type="submit" disabled={nameLoading}
-              className={`w-full py-3.5 rounded-xl font-bold text-sm text-white transition-all ${nameLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500'}`}
-            >
-              {nameLoading ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-      )}
+          {/* ── Tab: Change Password ─────────────────────────────── */}
+          {tab === 'password' && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>Change Password</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Update your password to keep your account secure</p>
+              </div>
 
-      {/* ── Tab: Account & Security ── */}
-      {tab === 'account' && (
-        <div className="flex flex-col gap-0">
+              <form onSubmit={handleChangePassword} className="px-6 py-5 max-w-md">
+                {/* Current password */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>Current Password</label>
+                  <input
+                    type="password" value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)}
+                    style={inputStyle} className={ic} placeholder="Enter current password"
+                  />
+                </div>
 
-          {/* Logout */}
-          <div className="px-4 pt-5 pb-4" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: textMuted }}>Session</p>
-            <button
-              type="button" onClick={logout}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border font-bold text-sm transition-all hover:border-red-400 hover:text-red-400 hover:bg-red-400/5"
-              style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
-            >
-              <LogOut className="w-4 h-4" /> Logout
-            </button>
-          </div>
+                {/* New password */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>New Password</label>
+                  <input
+                    type="password" value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    style={inputStyle} className={ic} placeholder="Enter new password (min 8 chars)"
+                  />
+                </div>
 
-          {/* Danger zone */}
-          <div className="px-4 pt-5 pb-6 mt-2" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-1 text-red-400">Danger Zone</p>
-            <p className="text-xs mb-4" style={{ color: textMuted }}>
-              Permanently delete your account and all associated data. This cannot be undone.
-            </p>
-            <button
-              type="button" onClick={() => setShowDeleteModal(true)}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 font-bold text-sm transition-all"
-            >
-              <Trash2 className="w-4 h-4" /> Delete My Account
-            </button>
-          </div>
-        </div>
-      )}
+                {/* Confirm password */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>Confirm New Password</label>
+                  <input
+                    type="password" value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    style={inputStyle} className={ic} placeholder="Confirm new password"
+                  />
+                </div>
+
+                {/* Feedback */}
+                {(passwordErr || passwordSuccess) && (
+                  <div className="mb-4">
+                    {passwordErr && <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2">{passwordErr}</p>}
+                    {passwordSuccess && <p className="text-sm text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl px-4 py-2">{passwordSuccess}</p>}
+                  </div>
+                )}
+
+                <button
+                  type="submit" disabled={passwordLoading}
+                  className={`px-8 py-2.5 rounded-lg font-bold text-sm text-white transition-all ${passwordLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 hover:shadow-lg hover:shadow-[#10B981]/20'}`}
+                >
+                  {passwordLoading ? 'Changing...' : 'Change Password'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ── Tab: Privacy Settings ────────────────────────────── */}
+          {tab === 'privacy' && (
+            <div className="flex flex-col gap-4">
+              {/* Privacy Options */}
+              <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                  <h2 className="text-lg font-black" style={{ color: textPrimary }}>Privacy Settings</h2>
+                  <p className="text-sm mt-0.5" style={{ color: textMuted }}>Manage your privacy preferences</p>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                  {/* Profile visibility */}
+                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Profile Visibility</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Allow others to see your profile information</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+
+                  {/* Data sharing */}
+                  <div className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Data Analytics</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Share usage data to help improve our services</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Request Account Deletion */}
+              <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid rgba(239,68,68,0.2)` }}>
+                <div className="px-6 pt-5 pb-4 flex items-center gap-2" style={{ borderBottom: `1px solid rgba(239,68,68,0.15)` }}>
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  <h2 className="text-sm font-black text-red-400">Account Deletion</h2>
+                </div>
+                <div className="px-6 py-5">
+                  <p className="text-sm mb-4" style={{ color: textMuted }}>
+                    Request permanent deletion of your account and all associated data. This action cannot be undone.
+                  </p>
+                  <button
+                    type="button" onClick={() => setShowDeleteModal(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 font-semibold text-sm transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" /> Request Account Deletion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Notifications ──────────────────────────────── */}
+          {tab === 'notifications' && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>Notifications</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Choose how you want to be notified</p>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                {/* Email notifications section */}
+                <div className="mb-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: textMuted }}>Email Notifications</h3>
+
+                  {/* Ticket updates */}
+                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Ticket Updates</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Get notified when your ticket status changes</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+
+                  {/* New messages */}
+                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>New Messages</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Get notified when you receive a new message</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+
+                  {/* Promotions */}
+                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Promotions</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Receive offers and promotional content</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Push notifications section */}
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: textMuted }}>Push Notifications</h3>
+
+                  {/* Browser push */}
+                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Browser Notifications</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Show browser push notifications</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+
+                  {/* Sound alerts */}
+                  <div className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Sound Alerts</p>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Play sound when receiving notifications</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
 
       {/* ── Image Crop Modal ── */}
       {cropSrc && (
@@ -492,40 +776,68 @@ export default function Profile() {
 
       {/* ── Delete Account Modal ── */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)}>
           <div
-            className="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6 sm:p-7 shadow-2xl"
+            className="relative w-full max-w-md rounded-2xl shadow-2xl"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="w-10 h-1 rounded-full bg-slate-300 mx-auto mb-5 sm:hidden" />
             <button onClick={() => setShowDeleteModal(false)} className="absolute top-4 right-4" style={{ color: textMuted }}>
               <X className="w-5 h-5" />
             </button>
-            <div className="w-11 h-11 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mb-4">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-            </div>
-            <h3 className="text-base font-black mb-1" style={{ color: textPrimary }}>Delete Account</h3>
-            <p className="text-sm mb-5" style={{ color: textMuted }}>
-              This is <span className="font-bold text-red-400">permanent</span> and cannot be undone. All your data, tickets, and history will be erased.
-            </p>
-            <p className="text-sm font-semibold mb-2" style={{ color: textMuted }}>
-              Type <span className="font-black text-red-400">DELETE</span> to confirm:
-            </p>
-            <input type="text" value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)}
-              placeholder="DELETE" autoFocus style={inputStyle} className={`${ic} mb-4`} />
-            {deleteErr && <p className="text-sm text-red-400 mb-3">{deleteErr}</p>}
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setShowDeleteModal(false)}
-                className="flex-1 py-3 rounded-xl font-bold text-sm border transition-all"
-                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
-                Cancel
-              </button>
-              <button type="button" onClick={handleDeleteAccount}
-                disabled={deleteLoading || deleteConfirm !== 'DELETE'}
-                className="flex-1 py-3 rounded-xl font-bold text-sm text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                {deleteLoading ? 'Deleting...' : 'Delete Account'}
-              </button>
+            
+            <div className="px-8 py-8">
+              {/* Icon */}
+              <div className="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mb-6 mx-auto">
+                <AlertTriangle className="w-8 h-8 text-red-500" />
+              </div>
+
+              {/* Title */}
+              <h2 className="text-2xl font-bold text-center mb-2" style={{ color: textPrimary }}>
+                Request Account Deletion
+              </h2>
+
+              {/* Description */}
+              <p className="text-center mb-6 leading-relaxed" style={{ color: textMuted }}>
+                This action is <span className="font-semibold text-red-500">permanent</span> and cannot be undone. All your data, tickets, and history will be permanently erased.
+              </p>
+
+              {/* Confirmation input */}
+              <div className="mb-6">
+                <p className="text-sm font-medium mb-2 text-center" style={{ color: textMuted }}>
+                  Type <span className="font-bold text-red-500">DELETE</span> to confirm:
+                </p>
+                <input 
+                  type="text" 
+                  value={deleteConfirm} 
+                  onChange={e => setDeleteConfirm(e.target.value)}
+                  placeholder="DELETE" 
+                  autoFocus 
+                  style={inputStyle} 
+                  className={`${ic} text-center font-bold tracking-wider`} 
+                />
+                {deleteErr && <p className="text-sm text-red-400 mt-2 text-center">{deleteErr}</p>}
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 py-3 rounded-xl font-semibold text-sm border transition-all"
+                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleDeleteAccount}
+                  disabled={deleteLoading || deleteConfirm !== 'DELETE'}
+                  className="flex-1 py-3 rounded-xl font-semibold text-sm text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {deleteLoading ? 'Requesting...' : 'Request Deletion'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
