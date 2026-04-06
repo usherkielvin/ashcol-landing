@@ -1,64 +1,83 @@
-# Web Portal - Capstone Project
+# 🌬️ Ashcol Airconditioning Services - Web Portal
 
-A modern web portal built for air conditioning service and management. This project serves as a comprehensive platform for handling service tickets, managing staff and customers, and tracking activities across various AC brands.
+A professional, full-featured web portal for **Ashcol Airconditioning Corporation**. This platform streamlines service management, connecting customers with technical experts for air conditioning installation, maintenance, and repair.
+
+---
 
 ## 🚀 Tech Stack
 
-- **Frontend Framework:** [React](https://react.dev/)
-- **Language:** [TypeScript](https://www.typescriptlang.org/)
-- **Build Tool:** [Vite](https://vitejs.dev/)
-- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Frontend:** [React 19](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/)
+- **Build Tool:** [Vite 8](https://vitejs.dev/)
+- **Styling:** [Tailwind CSS 3](https://tailwindcss.com/)
+- **Icons:** [Lucide React](https://lucide.dev/)
+- **Authentication:** Google OAuth 2.0 & JWT
 - **Deployment:** [Vercel](https://vercel.com/)
 
 ## ✨ Key Features
 
-- **Authentication System:** Secure login, registration, password recovery, and profile management.
-- **Dashboard:** Overview of system activities and metrics.
-- **Ticket Management:** Create, view, and manage service tickets.
-- **User Management:** 
-  - **Staff/Employees:** Manage employee profiles and assignments.
-  - **Customers:** Handle customer information and service history.
-- **Activity Tracking:** Monitor system events and updates.
-- **Multi-Brand Support:** Dedicated assets and support for major AC brands (Daikin, Carrier, LG, Panasonic, Samsung, etc.).
+### 👤 User Roles
+- **Customers:** Book services, track ticket status, and manage their AC units.
+- **Staff/Employees:** View assigned tasks, update ticket progress, and manage service details.
+- **Admin/Managers:** Full system oversight, branch management, and analytics.
+
+### 🎫 Service Management
+- **Smart Ticketing System:** Create detailed service requests for Cleaning, Maintenance, Repair, or Installation.
+- **Unit Tracking:** Detailed tracking of AC units including brand, HP, technology (Inverter/Non-inverter), and age.
+- **Real-time Status:** Track tickets through `PENDING`, `ASSIGNED`, `IN_PROGRESS`, and `COMPLETED` states.
+
+### 🏢 Multi-Branch Support
+- Management of multiple branches including **Head Office (Makati/Taguig)**, **Pampanga**, **Bulacan**, **Rizal**, **Candelaria**, **Dasmarinas**, and **Sta. Rosa**.
+- Branch-specific contact information and service handling.
+
+### 🛡️ Security & UX
+- **Google OAuth Integration:** Quick and secure login options.
+- **Dark/Light Mode:** Full theme support for comfortable viewing in any environment.
+- **Responsive Design:** Fully optimized for desktop, tablet, and mobile devices.
 
 ## 📁 Project Structure
 
-- `src/pages/` & `src/(web)/` - Application routes and views (Dashboard, Tickets, Login, etc.)
-- `src/components/` - Reusable UI components (Modals, Pickers, etc.)
-- `src/contexts/` - Global state management (Auth, Theme)
-- `src/assets/` - Static files including brand logos and system imagery
-- `src/assets/raw/` - Source/original images kept for reference
-- `src/data/` - Static data like Philippine address structures
-- `src/utils/` - API configurations and utility functions
-- `scripts/` - One-off maintenance and refactor scripts
-- `workspace/` - Local editor workspace files
+- `src/pages/` - Main application views (Dashboard, Tickets, Profile, Branches, etc.)
+- `src/components/` - Reusable UI components (Modals, Address Pickers, Calendar Pickers).
+- `src/contexts/` - Global state management for Authentication and Theme.
+- `src/data/` - Static data structures (Philippine addresses, service constants).
+- `src/layouts/` - Shared UI structures like the Dashboard Layout.
 
 ## 🛠️ Getting Started
 
 ### Prerequisites
-
-Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [npm](https://www.npmjs.com/)
 
 ### Installation
 
-1. Clone the repository
-2. Install dependencies:
+1. **Clone the repository:**
+   ```bash
+   git clone [repository-url]
+   ```
+
+2. **Install dependencies:**
    ```bash
    npm install
    ```
-3. Set up environment variables:
-   - Copy `.env.example` to `.env`
-   - Fill in the required configuration values
-4. Start the development server:
+
+3. **Environment Setup:**
+   Create a `.env` file in the root directory:
+   ```env
+   VITE_API_BASE_URL=http://localhost:8080/api
+   VITE_GOOGLE_CLIENT_ID=your_google_client_id
+   ```
+
+4. **Run Development Server:**
    ```bash
    npm run dev
    ```
 
-### Building for Production
+## 🏗️ Building for Production
 
-To create a production build:
 ```bash
 npm run build
 ```
+The production-ready files will be in the `dist/` directory.
 
-The output will be generated in the `dist/` directory.
+---
+© 2026 Ashcol Airconditioning Corporation. All rights reserved.
