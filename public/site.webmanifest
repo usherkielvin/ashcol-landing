@@ -1,0 +1,23 @@
+{
+  "name": "Ashcol Airconditioning Corporation",
+  "short_name": "Ashcol",
+  "description": "Premium AC Installation, Cleaning & Repair Services",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060B18",
+  "theme_color": "#0A1120",
+  "icons": [
+    {
+      "src": "/ashcol-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/ashcol-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
