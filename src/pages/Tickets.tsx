@@ -512,6 +512,9 @@ export default function Tickets() {
                 <th style={{ borderColor: border }} className="p-4 pl-6 border-b w-10"></th>
                 <th style={{ borderColor: border }} className="p-4 border-b">Ticket Details</th>
                 <th style={{ borderColor: border }} className="p-4 border-b">Customer</th>
+                {user?.role?.toLowerCase() !== 'customer' && (
+                  <th style={{ borderColor: border }} className="p-4 border-b">Address</th>
+                )}
                 <th style={{ borderColor: border }} className="p-4 border-b">Status</th>
                 <th style={{ borderColor: border }} className="p-4 pr-6 border-b text-right">Actions</th>
               </tr>
@@ -519,7 +522,7 @@ export default function Tickets() {
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-[#7A95B8]">Loading tickets...</td>
+                  <td colSpan={user?.role?.toLowerCase() !== 'customer' ? 6 : 5} className="p-12 text-center text-[#7A95B8]">Loading tickets...</td>
                 </tr>
               ) : filteredTickets.map((ticket) => {
                 const statusTheme = getStatusStyle(ticket.status)
@@ -547,10 +550,17 @@ export default function Tickets() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <div style={{ color: textPrimary }} className="font-semibold">
+                      <div style={{ color: textPrimary }} className="font-semibold text-sm">
                         {user?.role?.toLowerCase() === 'customer' ? 'Me' : (ticket.customerName || 'Unknown')}
                       </div>
                     </td>
+                    {user?.role?.toLowerCase() !== 'customer' && (
+                      <td className="p-4">
+                        <div style={{ color: textMuted }} className="text-xs leading-relaxed">
+                          {formatLocation(ticket.location) || '—'}
+                        </div>
+                      </td>
+                    )}
                     <td className="p-4">
                       <div
                         style={{ color: statusTheme.color, backgroundColor: statusTheme.background, borderColor: statusTheme.border }}
@@ -570,7 +580,7 @@ export default function Tickets() {
               })}
               {!loading && filteredTickets.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center">
+                  <td colSpan={user?.role?.toLowerCase() !== 'customer' ? 6 : 5} className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <FileText className="w-12 h-12 text-slate-300 dark:text-[#3A5070] mb-3" />
                       <h3 style={{ color: textPrimary }} className="text-lg font-bold">No tickets found</h3>

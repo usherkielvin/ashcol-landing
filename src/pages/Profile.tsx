@@ -55,6 +55,7 @@ export default function Profile() {
   const [picLoading, setPicLoading] = useState(false)
   const [picErr, setPicErr]         = useState('')
   const [cropSrc, setCropSrc]       = useState<string | null>(null)
+  const [picBroken, setPicBroken]   = useState(false)
 
   // ── Email change state ────────────────────────────────────────────────────
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -97,6 +98,13 @@ export default function Profile() {
           street: u.street || u.address || '',
           landmark: u.landmark || '',
         })
+        // Sync picture from server so stale/broken URLs in localStorage are replaced
+        if (u.profileImage !== undefined && user) {
+          const freshUrl = resolveImageUrl(u.profileImage)
+          if (freshUrl !== user.picture) {
+            setUser({ ...user, picture: freshUrl })
+          }
+        }
       })
       .catch(() => {})
   }, [])
@@ -187,11 +195,9 @@ export default function Profile() {
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Upload failed.')
       const data = await res.json()
-      const fullUrl = resolveImageUrl(data?.data?.image_url || data?.image_url || '')
-      await fetch(`${apiUrl}/user/profile`, {
-        method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ profileImage: fullUrl }),
-      })
+      const imagePath = data?.data?.image_url || data?.image_url || ''
+      const fullUrl = resolveImageUrl(imagePath)
+      setPicBroken(false)
       setUser({ ...user!, picture: fullUrl })
     } catch (err: any) {
       setPicErr(err.message || 'Could not upload image.')
@@ -301,10 +307,11 @@ export default function Profile() {
           <div className="flex md:flex-col items-center gap-3 md:gap-1 px-4 py-5 md:pt-6 md:pb-5"
             style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
             <div className="relative shrink-0">
-              {user?.picture ? (
+              {user?.picture && !picBroken ? (
                 <img src={user.picture} alt={user.name}
                   className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#10B981]/40"
-                  referrerPolicy="no-referrer" />
+                  referrerPolicy="no-referrer"
+                  onError={() => setPicBroken(true)} />
               ) : (
                 <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-xl">
                   {user?.initials ?? '?'}
@@ -436,10 +443,11 @@ export default function Profile() {
                   {/* Right: profile picture */}
                   <div className="w-full md:w-52 flex flex-col items-center justify-start py-6 px-4 order-first md:order-last">
                     <div className="relative mb-3">
-                      {user?.picture ? (
+                      {user?.picture && !picBroken ? (
                         <img src={user.picture} alt={user.name}
                           className="w-24 h-24 rounded-full object-cover border-2 border-[#10B981]/30 shadow-md"
-                          referrerPolicy="no-referrer" />
+                          referrerPolicy="no-referrer"
+                          onError={() => setPicBroken(true)} />
                       ) : (
                         <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-3xl shadow-md">
                           {user?.initials ?? '?'}

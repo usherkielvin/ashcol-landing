@@ -14,6 +14,7 @@ import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { NotificationProvider } from './contexts/NotificationContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
@@ -41,6 +42,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <NotificationProvider>
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <BrowserRouter>
           <Routes>
@@ -62,6 +64,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </GoogleOAuthProvider>
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   )

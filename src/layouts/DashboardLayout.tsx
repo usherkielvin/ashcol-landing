@@ -1,27 +1,37 @@
 import { useState, useRef, useEffect } from 'react'
-import { Outlet, Link, useLocation, Navigate } from 'react-router-dom'
+import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Settings as ConfigIcon, Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2, UserCircle, ChevronDown
+  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useNotifications } from '../contexts/NotificationContext'
 import logoImg from '../assets/ash-logo.jpg'
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [navPicBroken, setNavPicBroken] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
+  const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const isLight = theme === 'light'
 
-  // Close profile dropdown on outside click
+  // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
+  useEffect(() => { setNavPicBroken(false) }, [user?.picture])
+
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -93,8 +103,6 @@ export default function DashboardLayout() {
                 alt="Ashcol"
                 className="w-9 h-9 object-contain rounded-lg"
               />
-              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#10B981] rounded-full border-2"
-                   style={{ borderColor: sidebarBg }} />
             </div>
             <div>
               <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>Ashcol</div>
@@ -204,18 +212,78 @@ export default function DashboardLayout() {
             </button>
 
             {/* Notifications */}
-            <button
-              className="relative p-2.5 rounded-xl transition-all hover:scale-105"
-              style={{
-                color: textMuted,
-                backgroundColor: hoverBg,
-                border: `1px solid ${inputBorder}`,
-              }}
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2"
-                    style={{ borderColor: headerBg }} />
-            </button>
+            <div ref={notifRef} className="relative">
+              <button
+                onClick={() => setNotifOpen(p => !p)}
+                className="relative p-2.5 rounded-xl transition-all hover:scale-105"
+                style={{ color: textMuted, backgroundColor: hoverBg, border: `1px solid ${inputBorder}` }}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full border-2 flex items-center justify-center text-white font-bold"
+                    style={{ borderColor: headerBg, fontSize: '9px' }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div
+                  className="absolute right-0 top-[calc(100%+8px)] w-80 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col"
+                  style={{ backgroundColor: isLight ? '#ffffff' : '#0A1120', border: `1px solid ${inputBorder}`, maxHeight: '420px' }}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${inputBorder}` }}>
+                    <span className="text-sm font-bold" style={{ color: textPrimary }}>Notifications</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={() => markAllRead()}
+                        className="flex items-center gap-1 text-xs font-semibold text-[#10B981] hover:underline"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" /> Mark all read
+                      </button>
+                    )}
+                  </div>
+
+                  {/* List */}
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 gap-2">
+                        <Bell className="w-8 h-8 opacity-20" style={{ color: textMuted }} />
+                        <p className="text-xs" style={{ color: textMuted }}>No notifications yet</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <button
+                          key={n.id}
+                          className="w-full text-left px-4 py-3 flex gap-3 transition-colors hover:bg-[#10B981]/5"
+                          style={{ borderBottom: `1px solid ${inputBorder}`, opacity: n.isRead ? 0.6 : 1 }}
+                          onClick={async () => {
+                            if (!n.isRead) await markRead(n.id)
+                            if (n.ticketId) {
+                              setNotifOpen(false)
+                              navigate(`/tickets?id=${n.ticketId}`)
+                            }
+                          }}
+                        >
+                          <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.isRead ? 'bg-transparent' : 'bg-[#10B981]'}`} />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{n.title}</p>
+                            <p className="text-xs leading-relaxed mt-0.5" style={{ color: textMuted }}>{n.message}</p>
+                            <p className="text-[10px] mt-1" style={{ color: textMuted }}>
+                              {n.createdAt ? new Date(n.createdAt).toLocaleString(undefined, {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                                hour: 'numeric', minute: '2-digit', hour12: true
+                              }) : ''}
+                            </p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* User Profile Dropdown */}
             <div ref={profileRef} className="relative">
@@ -227,12 +295,13 @@ export default function DashboardLayout() {
                   border: `1px solid ${inputBorder}`,
                 }}
               >
-                {user?.picture ? (
+                {user?.picture && !navPicBroken ? (
                   <img
                     src={user.picture}
                     alt={user.name}
                     className="w-8 h-8 rounded-lg object-cover ring-2 ring-[#10B981]/30"
                     referrerPolicy="no-referrer"
+                    onError={() => setNavPicBroken(true)}
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-xs">
