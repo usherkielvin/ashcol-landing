@@ -39,7 +39,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeaders() })
       if (!res.ok) return
       const data = await res.json()
-      setNotifications(data?.data || [])
+      const fetched: AppNotification[] = data?.data || []
+      // Preserve any optimistic isRead=true that the server hasn't caught up with yet
+      setNotifications(prev => {
+        const readIds = new Set(prev.filter(n => n.isRead).map(n => n.id))
+        return fetched.map(n => readIds.has(n.id) ? { ...n, isRead: true } : n)
+      })
     } catch {
       // silent
     } finally {
@@ -48,30 +53,38 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [])
 
   const markRead = useCallback(async (id: string) => {
+    // Optimistic update first
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
     try {
-      await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+      const res = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
         method: 'PATCH',
         headers: authHeaders(),
       })
-      setNotifications(prev =>
-        prev.map(n => n.id === id ? { ...n, isRead: true } : n)
-      )
+      // If API fails, revert
+      if (!res.ok) {
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: false } : n))
+      }
     } catch {
-      // silent
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: false } : n))
     }
   }, [])
 
   const markAllRead = useCallback(async () => {
+    // Optimistic update first
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
     try {
-      await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
         method: 'PATCH',
         headers: authHeaders(),
       })
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+      // If API fails, refetch to get real state
+      if (!res.ok) {
+        await fetchNotifications()
+      }
     } catch {
-      // silent
+      await fetchNotifications()
     }
-  }, [])
+  }, [fetchNotifications])
 
   useEffect(() => {
     if (!user) {
