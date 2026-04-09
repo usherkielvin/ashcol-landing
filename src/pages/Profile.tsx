@@ -3,7 +3,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield,
-  KeyRound, Trash2, X, AlertTriangle, Check, MapPin, Lock, Eye, Bell
+  KeyRound, Trash2, X, AlertTriangle, MapPin, Lock, Eye, Bell
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import PhAddressPicker from '../components/PhAddressPicker'
@@ -18,7 +18,7 @@ const authHeaders = () => ({
 })
 const ic = `w-full border rounded-xl px-4 py-3 font-medium transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] outline-none text-sm`
 
-type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications'
+type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users'
 
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
@@ -80,6 +80,12 @@ export default function Profile() {
   const [passwordErr, setPasswordErr]       = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
 
+  // ── User management state (admin only) ────────────────────────────────────
+  const [users, setUsers]                   = useState<any[]>([])
+  const [usersLoading, setUsersLoading]     = useState(false)
+  const [usersErr, setUsersErr]             = useState('')
+  const [roleFilter, setRoleFilter]         = useState('CUSTOMER')
+
   // Fetch latest profile on mount and after save
   useEffect(() => {
     if (!getToken()) return
@@ -109,26 +115,39 @@ export default function Profile() {
       .catch(() => {})
   }, [])
 
+  // Fetch users by role for admin
+  useEffect(() => {
+    if (user?.role !== 'admin' || tab !== 'users') return
+    setUsersLoading(true); setUsersErr('')
+    fetch(`${apiUrl}/user/all?role=${roleFilter}`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : Promise.reject('Failed to fetch'))
+      .then(data => setUsers(data?.data || []))
+      .catch(err => setUsersErr(err.message || 'Failed to load users'))
+      .finally(() => setUsersLoading(false))
+  }, [tab, roleFilter, user?.role])
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return setNameErr('Name is required.')
-    if (!address.region || !address.city || !address.barangay || !address.street) {
+    // Only validate address fields for non-admin users
+    if (user?.role !== 'admin' && (!address.region || !address.city || !address.barangay || !address.street)) {
       return setNameErr('Please complete all required address fields.')
     }
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
-      const payload = {
-        name: name.trim(),
-        phone: phone.trim(),
-        region: address.region,
-        city: address.city,
-        barangay: address.barangay,
-        street: address.street,
-        landmark: address.landmark,
+      // For admin, only send name. For others, send all fields including address.
+      const payload: any = { name: name.trim() }
+      if (user?.role !== 'admin') {
+        payload.phone = phone.trim()
+        payload.region = address.region
+        payload.city = address.city
+        payload.barangay = address.barangay
+        payload.street = address.street
+        payload.landmark = address.landmark
       }
-      console.log('Updating profile with address:', payload)
+      console.log('Updating profile with payload:', payload)
       const res = await fetch(`${apiUrl}/user/profile`, {
         method: 'PATCH', headers: authHeaders(),
         body: JSON.stringify(payload),
@@ -288,11 +307,12 @@ export default function Profile() {
   const inputStyle = { backgroundColor: inputBg, borderColor: inputBorder, color: inputText }
 
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
-    { key: 'profile', label: 'Profile', icon: User },
-    { key: 'address', label: 'Addresses', icon: MapPin },
-    { key: 'password', label: 'Change Password', icon: Lock },
-    { key: 'privacy', label: 'Privacy Settings', icon: Eye },
-    { key: 'notifications', label: 'Notifications', icon: Bell },
+    { key: 'profile' as Tab, label: 'Profile', icon: User },
+    ...(user?.role !== 'admin' ? [{ key: 'address' as Tab, label: 'Addresses', icon: MapPin }] : []),
+    ...(user?.role === 'admin' ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
+    { key: 'password' as Tab, label: 'Change Password', icon: Lock },
+    { key: 'privacy' as Tab, label: 'Privacy Settings', icon: Eye },
+    { key: 'notifications' as Tab, label: 'Notifications', icon: Bell },
   ]
 
   return (
@@ -395,15 +415,17 @@ export default function Profile() {
                       </div>
                     </div>
 
-                    {/* Phone row */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
-                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
-                      <input
-                        type="tel" value={phone}
-                        onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
-                        style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
-                      />
-                    </div>
+                    {/* Phone row (hidden for admin) */}
+                    {user?.role !== 'admin' && (
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                        <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
+                        <input
+                          type="tel" value={phone}
+                          onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
+                          style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
+                        />
+                      </div>
+                    )}
 
                     {/* Role row (read-only) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
@@ -411,14 +433,6 @@ export default function Profile() {
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
                         <Shield className="w-3 h-3" />{user?.role}
                       </span>
-                    </div>
-
-                    {/* Verified badge */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
-                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Status</label>
-                      <p className="text-xs text-[#10B981] flex items-center gap-1 font-semibold">
-                        <Check className="w-3.5 h-3.5" /> Verified Account
-                      </p>
                     </div>
 
                     {/* Feedback */}
@@ -608,23 +622,96 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Request Account Deletion */}
-              <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid rgba(239,68,68,0.2)` }}>
-                <div className="px-6 pt-5 pb-4 flex items-center gap-2" style={{ borderBottom: `1px solid rgba(239,68,68,0.15)` }}>
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <h2 className="text-sm font-black text-red-400">Account Deletion</h2>
+              {/* Request Account Deletion (hidden for admin) */}
+              {user?.role !== 'admin' && (
+                <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid rgba(239,68,68,0.2)` }}>
+                  <div className="px-6 pt-5 pb-4 flex items-center gap-2" style={{ borderBottom: `1px solid rgba(239,68,68,0.15)` }}>
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                    <h2 className="text-sm font-black text-red-400">Account Deletion</h2>
+                  </div>
+                  <div className="px-6 py-5">
+                    <p className="text-sm mb-4" style={{ color: textMuted }}>
+                      Request permanent deletion of your account and all associated data. This action cannot be undone.
+                    </p>
+                    <button
+                      type="button" onClick={() => setShowDeleteModal(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 font-semibold text-sm transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" /> Request Account Deletion
+                    </button>
+                  </div>
                 </div>
-                <div className="px-6 py-5">
-                  <p className="text-sm mb-4" style={{ color: textMuted }}>
-                    Request permanent deletion of your account and all associated data. This action cannot be undone.
-                  </p>
-                  <button
-                    type="button" onClick={() => setShowDeleteModal(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 font-semibold text-sm transition-all"
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: User Management (Admin Only) ───────────────── */}
+          {tab === 'users' && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>User Management</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>View and manage system users</p>
+              </div>
+
+              <div className="px-6 py-5">
+                {/* Role Filter */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium mb-2" style={{ color: textMuted }}>Filter by Role</label>
+                  <select
+                    value={roleFilter}
+                    onChange={e => setRoleFilter(e.target.value)}
+                    style={inputStyle}
+                    className={ic}
                   >
-                    <Trash2 className="w-4 h-4" /> Request Account Deletion
-                  </button>
+                    <option value="CUSTOMER">Customers</option>
+                    <option value="EMPLOYEE">Employees</option>
+                    <option value="MANAGER">Managers</option>
+                  </select>
                 </div>
+
+                {/* Error */}
+                {usersErr && (
+                  <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2 mb-4">{usersErr}</p>
+                )}
+
+                {/* User List */}
+                {usersLoading ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm" style={{ color: textMuted }}>Loading users...</p>
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm" style={{ color: textMuted }}>No users found for this role.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${border}` }}>
+                          <th className="text-left py-3 px-2 font-semibold" style={{ color: textMuted }}>Name</th>
+                          <th className="text-left py-3 px-2 font-semibold" style={{ color: textMuted }}>Email</th>
+                          <th className="text-left py-3 px-2 font-semibold" style={{ color: textMuted }}>Phone</th>
+                          <th className="text-left py-3 px-2 font-semibold" style={{ color: textMuted }}>Role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.map((u: any) => (
+                          <tr key={u.id} style={{ borderBottom: `1px solid ${border}` }}>
+                            <td className="py-3 px-2" style={{ color: textPrimary }}>{u.name || '-'}</td>
+                            <td className="py-3 px-2" style={{ color: textPrimary }}>{u.email || '-'}</td>
+                            <td className="py-3 px-2" style={{ color: textPrimary }}>{u.phone || '-'}</td>
+                            <td className="py-3 px-2">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                                <Shield className="w-3 h-3" />{u.role}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
