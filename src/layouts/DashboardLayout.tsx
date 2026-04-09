@@ -3,8 +3,8 @@ import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-d
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
-  Settings as ConfigIcon, Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck
+  Bell, Menu, Sun, Moon, LogOut, X,
+  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationContext'
@@ -41,9 +41,9 @@ export default function DashboardLayout() {
     { name: 'Overview',      path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',       path: '/tickets',   icon: TicketIcon },
     { name: 'Branches',      path: '/branches',  icon: Building2,  roles: ['admin', 'manager'] },
+    { name: 'Managers',      path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
     { name: 'Customers',     path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Staff & Roles', path: '/staff',     icon: Wrench,     roles: ['admin', 'manager'] },
-    { name: 'Settings',      path: '/settings',  icon: ConfigIcon, roles: ['admin', 'manager'] },
   ]
 
   const navLinks = allLinks.filter(link => {

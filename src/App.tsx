@@ -12,6 +12,7 @@ import Customers from './pages/Customers'
 import Staff from './pages/Staff'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
+import Managers from './pages/Managers'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -58,6 +59,7 @@ export default function App() {
               <Route path="/create-ticket" element={<CreateTicket />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
+              <Route path="/managers" element={<Managers />} />
               <Route path="/staff" element={<Staff />} />
               <Route path="/profile" element={<Profile />} />
             </Route>

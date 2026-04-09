@@ -2,18 +2,28 @@ import { useState, useEffect } from 'react'
 import { Search, MapPin, CheckCircle, XCircle, Users, Tag } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { PUBLIC_BRANCHES } from '../data/branches'
 
 interface Branch {
-  id: string
+  id?: string
   name: string
   location: string
   address: string
-  phone: string
+  phone?: string
   email: string
   is_active: boolean
+  isActive?: boolean
   manager_name?: string
+  managerName?: string
   employee_count?: number
   active_tickets?: number
+  tag?: string
+  color?: string
+  phones?: string[]
+  landline?: string
+  mapUrl?: string
+  region?: string
+  isHQ?: boolean
 }
 
 const ACCENTS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6']
@@ -32,6 +42,8 @@ export default function Branches() {
   const [filterActive, setFilterActive] = useState<boolean | null>(null)
 
   const isAllowed = user?.role?.toLowerCase() === 'manager' || user?.role?.toLowerCase() === 'admin'
+
+  const normalize = (value: string) => value.trim().toLowerCase()
 
   const fetchBranches = async () => {
     if (!isAllowed) {
@@ -56,7 +68,38 @@ export default function Branches() {
       }
       
       const data = await res.json()
-      setBranches(data.data || [])
+      const apiBranches = data.data || []
+      const mergedBranches = PUBLIC_BRANCHES.map((publicBranch) => {
+        const publicName = normalize(publicBranch.name)
+        const publicTag = normalize(publicBranch.tag)
+        const apiBranch = apiBranches.find((apiBranch: Branch) => {
+          const apiName = normalize(apiBranch.name || '')
+          const apiLocation = normalize(apiBranch.location || '')
+          return apiName === publicName || apiName.includes(publicTag) || apiLocation.includes(publicTag)
+        })
+        return {
+          id: apiBranch?.id,
+          name: publicBranch.name,
+          location: apiBranch?.location || publicBranch.tag,
+          address: publicBranch.address,
+          phone: apiBranch?.phone || publicBranch.phones?.[0],
+          phones: publicBranch.phones,
+          landline: publicBranch.landline,
+          email: apiBranch?.email || publicBranch.email,
+          is_active: apiBranch?.is_active ?? apiBranch?.isActive ?? true,
+          isActive: apiBranch?.isActive ?? apiBranch?.is_active ?? true,
+          manager_name: apiBranch?.manager_name,
+          managerName: apiBranch?.managerName,
+          employee_count: apiBranch?.employee_count,
+          active_tickets: apiBranch?.active_tickets,
+          tag: publicBranch.tag,
+          color: publicBranch.color,
+          mapUrl: publicBranch.mapUrl,
+          region: publicBranch.region,
+          isHQ: publicBranch.isHQ,
+        }
+      })
+      setBranches(mergedBranches)
     } catch (err: any) {
       setError(err.message || 'Failed to load branches')
       console.error('Error fetching branches:', err)
@@ -92,13 +135,15 @@ export default function Branches() {
   }
 
   const filteredBranches = branches.filter(b => {
-    if (filterActive !== null && b.is_active !== filterActive) return false
+    const active = b.isActive ?? b.is_active
+    if (filterActive !== null && active !== filterActive) return false
     
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       return b.name.toLowerCase().includes(q) || 
              b.location?.toLowerCase().includes(q) ||
-             b.address?.toLowerCase().includes(q)
+             b.address?.toLowerCase().includes(q) ||
+             b.region?.toLowerCase().includes(q)
     }
     
     return true
@@ -193,9 +238,9 @@ export default function Branches() {
                       <h3 className="font-bold text-lg leading-tight truncate mb-1" style={{ color: textPrimary }}>{branch.name}</h3>
                       <p className="text-sm truncate" style={{ color: textMuted }}>{branch.location}</p>
                     </div>
-                    <div className={`px-2.5 py-1 rounded-full flex items-center gap-1.5 shrink-0 border ${branch.is_active ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'}`}>
-                      {branch.is_active ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{branch.is_active ? 'Active' : 'Inactive'}</span>
+                    <div className={`px-2.5 py-1 rounded-full flex items-center gap-1.5 shrink-0 border ${(branch.isActive ?? branch.is_active) ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'}`}>
+                      {(branch.isActive ?? branch.is_active) ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{(branch.isActive ?? branch.is_active) ? 'Active' : 'Inactive'}</span>
                     </div>
                   </div>
 
@@ -207,10 +252,16 @@ export default function Branches() {
                         <p className="text-sm leading-relaxed" style={{ color: textPrimary }}>{branch.address}</p>
                       </div>
                     )}
-                    {branch.manager_name && (
+                    {branch.phone && (
+                      <div className="flex gap-3 items-center">
+                        <Tag className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                        <p className="text-sm" style={{ color: textPrimary }}><span style={{ color: textMuted }} className="font-normal mr-1">Contact:</span> {branch.phone}</p>
+                      </div>
+                    )}
+                    {(branch.managerName || branch.manager_name) && (
                       <div className="flex gap-3 items-center">
                         <Users className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                        <p className="text-sm font-medium" style={{ color: textPrimary }}><span style={{ color: textMuted }} className="font-normal mr-1">Manager:</span> {branch.manager_name}</p>
+                        <p className="text-sm font-medium" style={{ color: textPrimary }}><span style={{ color: textMuted }} className="font-normal mr-1">Manager:</span> {branch.managerName || branch.manager_name}</p>
                       </div>
                     )}
                   </div>

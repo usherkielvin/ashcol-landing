@@ -311,7 +311,7 @@ export default function Profile() {
     ...(user?.role !== 'admin' ? [{ key: 'address' as Tab, label: 'Addresses', icon: MapPin }] : []),
     ...(user?.role === 'admin' ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
-    { key: 'privacy' as Tab, label: 'Privacy Settings', icon: Eye },
+    ...(user?.role !== 'admin' ? [{ key: 'privacy' as Tab, label: 'Privacy Settings', icon: Eye }] : []),
     { key: 'notifications' as Tab, label: 'Notifications', icon: Bell },
   ]
 
