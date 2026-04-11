@@ -29,8 +29,6 @@ export default function Managers() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Manager | null>(null)
   const [deleting, setDeleting] = useState<Manager | null>(null)
-  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
-  const [deletingAll, setDeletingAll] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -99,6 +97,20 @@ export default function Managers() {
 
   const openEdit = (m: Manager) => { setEditing(m); setForm({ name: m.name, email: m.email, personalEmail: m.personalEmail || '', phone: m.phone, branchId: m.branchId || '' }); setErr(''); setShowModal(true) }
 
+  const handleResetPassword = async () => {
+    if (!editing) return
+    if (!confirm('Reset password for ' + editing.name + '? A new password will be sent to their personal email.')) return
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/managers/${editing.id}/reset-password`, { method: 'POST', headers: authH() })
+      const data = await res.json()
+      if (!res.ok) { setErr(data?.message || 'Failed to reset password.'); return }
+      setErr('')
+      alert('Password reset. New credentials sent to personal email.')
+    } catch { setErr('Network error.') }
+    finally { setSaving(false) }
+  }
+
   const handleSave = async () => {
     if (!form.name || !form.email || !form.personalEmail || !form.phone) { setErr('All fields are required.'); return }
 
@@ -137,21 +149,6 @@ export default function Managers() {
     setDeleting(null); fetchAll()
   }
 
-  const handleDeleteAll = async () => {
-    if (managers.length === 0) return
-    setDeletingAll(true)
-    try {
-      await Promise.all(managers.map(m => 
-        fetch(`${API_BASE_URL}/admin/managers/${m.id}`, { method: 'DELETE', headers: authH() })
-      ))
-      setDeleteAllConfirm(false)
-      fetchAll()
-    } catch {
-      alert('Failed to delete some managers. Please refresh and try again.')
-    } finally {
-      setDeletingAll(false)
-    }
-  }
 
   const filtered = managers.filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase()) || (m.branchName || '').toLowerCase().includes(search.toLowerCase()))
 
@@ -186,18 +183,9 @@ export default function Managers() {
         <div className="flex items-center gap-3">
           <div style={{ backgroundColor: inputBg, borderColor: inputBorder }} className="flex flex-1 max-w-md items-center border rounded-xl px-3 py-2.5 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981]">
             <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search managers..." className="bg-transparent text-sm outline-none w-full placeholder-slate-400" style={{ color: textPrimary }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="bg-transparent text-sm outline-none w-full placeholder-slate-400" style={{ color: textPrimary }} />
           </div>
-          <span className="text-sm whitespace-nowrap" style={{ color: textMuted }}>{filtered.length} manager{filtered.length !== 1 ? 's' : ''}</span>
         </div>
-        {managers.length > 0 && (
-          <button 
-            onClick={() => setDeleteAllConfirm(true)} 
-            className="text-xs font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors"
-          >
-            Delete All ({managers.length})
-          </button>
-        )}
       </div>
 
       {/* Mobile/Tablet Card View */}
@@ -220,7 +208,6 @@ export default function Managers() {
               )}
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate" style={{ color: textPrimary }}>{m.name}</div>
-                <div className="text-xs font-mono mt-0.5 truncate" style={{ color: textMuted }}>{m.id.substring(0, 12)}...</div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => openEdit(m)} className="p-2 rounded-lg hover:bg-[#10B981]/10 hover:text-[#10B981] transition-colors" style={{ color: textMuted }}><Pencil className="w-4 h-4" /></button>
@@ -289,7 +276,6 @@ export default function Managers() {
                       )}
                       <div>
                         <div className="font-bold" style={{ color: textPrimary }}>{m.name}</div>
-                        <div className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>{m.id.substring(0, 12)}...</div>
                       </div>
                     </div>
                   </td>
@@ -343,19 +329,35 @@ export default function Managers() {
             )}
             <div>
               <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Branch</label>
-              <select 
-                value={form.branchId} 
+              <select
+                value={form.branchId}
                 onChange={e => {
                   const branchId = e.target.value
-                  const selectedBranch = branches.find(b => b.id === branchId)
-                  const autoEmail = selectedBranch ? generateEmailFromBranch(selectedBranch.name) : ''
-                  setForm(p => ({ ...p, branchId, email: autoEmail }))
-                }} 
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all" 
+                  if (!editing) {
+                    const selectedBranch = branches.find(b => b.id === branchId)
+                    const autoEmail = selectedBranch ? generateEmailFromBranch(selectedBranch.name) : ''
+                    setForm(p => ({ ...p, branchId, email: autoEmail }))
+                  } else {
+                    setForm(p => ({ ...p, branchId }))
+                  }
+                }}
+                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
               >
                 <option value="">— Select Branch —</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {branches.map(b => {
+                  const isTaken = !!(b.managerId && (!editing || b.managerId !== editing.id))
+                  return (
+                    <option
+                      key={b.id}
+                      value={b.id}
+                      disabled={isTaken}
+                      className={isTaken ? 'opacity-50 italic' : ''}
+                    >
+                      {b.name} {isTaken ? '(Already Assigned)' : ''}
+                    </option>
+                  )
+                })}
               </select>
               {branches.length === 0 && (
                 <p className="text-xs mt-1" style={{ color: loadErr ? '#ef4444' : textMuted }}>
@@ -364,17 +366,18 @@ export default function Managers() {
               )}
             </div>
             <div>
-              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>email {!editing && <span className="normal-case font-normal text-[10px] opacity-70">(auto-filled from branch)</span>}</label>
-              <input 
-                type="email" 
-                value={form.email} 
-                onChange={e => setForm(p => ({ ...p, email: e.target.value }))} 
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all" 
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} 
+              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>email</label>
+              <input
+                type="email"
+                value={form.email}
+                disabled={!!editing}
+                onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
               />
             </div>
             <div>
-              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>personal email <span className="normal-case font-normal text-[10px] opacity-70">(credentials will be sent here)</span></label>
+              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>personal email</label>
               <input 
                 type="email" 
                 value={form.personalEmail} 
@@ -391,6 +394,18 @@ export default function Managers() {
               <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>phone</label>
               <input type="tel" autoComplete="off" data-lpignore="true" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: sanitizePhone(e.target.value) }))} className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
             </div>
+            {editing && (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={saving}
+                  className="w-full border border-amber-500 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-xl py-2.5 text-sm font-bold transition-all disabled:opacity-50"
+                >
+                  Reset Password
+                </button>
+              </div>
+            )}
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)} className="flex-1 border rounded-xl py-2.5 text-sm font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>Cancel</button>
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-[#10B981] hover:bg-[#059669] disabled:opacity-60 text-white rounded-xl py-2.5 text-sm font-bold transition-all">
@@ -420,26 +435,6 @@ export default function Managers() {
         </div>
       )}
 
-      {/* Delete All Confirm */}
-      {deleteAllConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-sm rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0"><Trash2 className="w-5 h-5 text-red-500" /></div>
-              <div>
-                <h3 className="font-bold" style={{ color: textPrimary }}>Delete All Managers</h3>
-                <p className="text-sm mt-0.5" style={{ color: textMuted }}>This will permanently delete <strong>{managers.length} manager{managers.length !== 1 ? 's' : ''}</strong>. This cannot be undone.</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteAllConfirm(false)} disabled={deletingAll} className="flex-1 border rounded-xl py-2.5 text-sm font-bold transition-all" style={{ borderColor: inputBorder, color: textMuted }}>Cancel</button>
-              <button onClick={handleDeleteAll} disabled={deletingAll} className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white rounded-xl py-2.5 text-sm font-bold transition-all">
-                {deletingAll ? 'Deleting...' : 'Delete All'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
