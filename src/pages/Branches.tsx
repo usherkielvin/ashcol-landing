@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, MapPin, CheckCircle, XCircle, Users, Phone, Mail, ShieldCheck, RefreshCw, Filter } from 'lucide-react'
+import { Search, MapPin, CheckCircle, XCircle, Users, Phone, Mail, ShieldCheck, RefreshCw } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
@@ -11,8 +11,7 @@ interface Branch {
   address: string
   phone?: string
   email: string
-  is_active: boolean
-  isActive?: boolean
+  isActive: boolean
   manager_name?: string
   managerName?: string
   employee_count?: number
@@ -46,13 +45,17 @@ export default function Branches() {
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const pageBg      = isLight ? '#f1f5f9' : '#060B18'
   const border      = isLight ? '#e2e8f0' : '#1E2D48'
   const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#ffffff' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const theadBg     = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
+
+  const getBranchActive = (branch: Branch) => {
+    const hasManager = !!(branch.managerName || branch.manager_name)
+    return !!branch.isActive && hasManager
+  }
 
   const fetchBranches = async () => {
     if (!isAllowed) { setLoading(false); return }
@@ -70,34 +73,30 @@ export default function Branches() {
       }
       const data = await res.json()
       const apiBranches = data.data || []
-      const merged = PUBLIC_BRANCHES.map((pub) => {
-        const pubName = normalize(pub.name)
-        const pubTag  = normalize(pub.tag)
-        const api = apiBranches.find((a: Branch) => {
-          const aName = normalize(a.name || '')
-          const aLoc  = normalize(a.location || '')
-          return aName === pubName || aName.includes(pubTag) || aLoc.includes(pubTag)
+      const merged = apiBranches.map((api: Branch & { is_active?: boolean; active?: boolean }) => {
+        const apiName = normalize(api.name || '')
+        const apiLocation = normalize(api.location || '')
+        const pub = PUBLIC_BRANCHES.find(candidate => {
+          const pubName = normalize(candidate.name)
+          const pubTag = normalize(candidate.tag)
+          return pubName === apiName || pubTag === apiLocation || apiName.includes(pubTag) || apiLocation.includes(pubTag)
         })
+
         return {
-          id:             api?.id,
-          name:           pub.name,
-          location:       api?.location || pub.tag,
-          address:        pub.address,
-          phone:          api?.phone  || pub.phones?.[0],
-          phones:         pub.phones,
-          landline:       pub.landline,
-          email:          api?.email  || pub.email,
-          is_active:      api?.is_active  ?? api?.isActive  ?? true,
-          isActive:       api?.isActive   ?? api?.is_active ?? true,
-          manager_name:   api?.manager_name,
-          managerName:    api?.managerName,
-          employee_count: api?.employee_count,
-          active_tickets: api?.active_tickets,
-          tag:            pub.tag,
-          color:          pub.color,
-          mapUrl:         pub.mapUrl,
-          region:         pub.region,
-          isHQ:           pub.isHQ,
+          ...api,
+          name: api.name,
+          location: api.location || pub?.tag || '',
+          address: pub?.address || api.address || '',
+          phone: pub?.phones?.[0] || api.phone,
+          phones: pub?.phones,
+          landline: pub?.landline,
+          email: pub?.email || api.email || '',
+          isActive: api.isActive ?? api.is_active ?? api.active ?? false,
+          tag: pub?.tag,
+          color: pub?.color,
+          mapUrl: pub?.mapUrl,
+          region: pub?.region,
+          isHQ: pub?.isHQ,
         }
       })
       setBranches(merged)
@@ -123,7 +122,7 @@ export default function Branches() {
   }
 
   const filteredBranches = branches.filter(b => {
-    const active = b.isActive ?? b.is_active
+    const active = getBranchActive(b)
     if (filterActive !== null && active !== filterActive) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -135,7 +134,7 @@ export default function Branches() {
     return true
   })
 
-  const activeCnt   = branches.filter(b => b.isActive ?? b.is_active).length
+  const activeCnt   = branches.filter(b => getBranchActive(b)).length
   const inactiveCnt = branches.length - activeCnt
 
   return (
@@ -234,7 +233,7 @@ export default function Branches() {
             {filteredBranches.map((branch, idx) => {
               const accent = accentFor(idx)
               const manager  = branch.managerName || branch.manager_name
-              const isActive = manager ? (branch.isActive ?? branch.is_active) : false
+              const isActive = getBranchActive(branch)
               const staffCount = manager ? (branch.employee_count ?? 0) : 0
               return (
                 <div key={branch.id ?? idx} className="rounded-2xl border overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, borderColor: border }}>
@@ -321,7 +320,7 @@ export default function Branches() {
                     {filteredBranches.map((branch, idx) => {
                     const accent   = accentFor(idx)
                     const manager  = branch.managerName || branch.manager_name
-                    const isActive = manager ? (branch.isActive ?? branch.is_active) : false
+                    const isActive = getBranchActive(branch)
                     const staffCount = manager ? (branch.employee_count ?? 0) : 0
                     return (
                       <tr

@@ -14,7 +14,6 @@ const initials = (n: string) => n.split(' ').map(w => w[0]).join('').toUpperCase
 const avatarColor = (n: string) => ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6'][n.charCodeAt(0) % 6]
 
 const EMPTY_FORM = { name: '', email: '', personalEmail: '', phone: '', branchId: '' }
-const PRESET_FORM = { name: 'Juan Dela Cruz', email: 'manager@ashcol.com.ph', personalEmail: '', phone: '09171234567', branchId: '' }
 
 export default function Managers() {
   const { theme } = useTheme()
@@ -80,7 +79,6 @@ export default function Managers() {
     setShowModal(true)
     if (branches.length === 0) fetchAll()
   }
-  const fillPreset = () => { setForm(PRESET_FORM); setErr('') }
 
   // Auto-generate email from branch name
   const generateEmailFromBranch = (branchName: string) => {
@@ -145,8 +143,18 @@ export default function Managers() {
 
   const handleDelete = async () => {
     if (!deleting) return
-    await fetch(`${API_BASE_URL}/admin/managers/${deleting.id}`, { method: 'DELETE', headers: authH() })
-    setDeleting(null); fetchAll()
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/managers/${deleting.id}`, { method: 'DELETE', headers: authH() })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.message || 'Failed to delete manager')
+        return
+      }
+      setDeleting(null)
+      fetchAll()
+    } catch (e) {
+      alert('Network error while deleting')
+    }
   }
 
 
@@ -323,7 +331,6 @@ export default function Managers() {
             {err && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{err}</p>}
             {!editing && (
               <div className="flex items-center gap-2">
-                <button onClick={fillPreset} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/20 transition-colors">Fill Preset</button>
                 <button onClick={() => setForm(EMPTY_FORM)} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Clear</button>
               </div>
             )}

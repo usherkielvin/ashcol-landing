@@ -4,17 +4,19 @@ import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck
+  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationContext'
 import logoImg from '../assets/ash-logo.jpg'
 
 export default function DashboardLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [notifOpen, setNotifOpen] = useState(false)
-  const [navPicBroken, setNavPicBroken] = useState(false)
+  const [sidebarOpen, setSidebarOpen]         = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [profileOpen, setProfileOpen]           = useState(false)
+  const [notifOpen, setNotifOpen]               = useState(false)
+  const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
@@ -84,46 +86,69 @@ export default function DashboardLayout() {
       {/* ── Sidebar ─────────────────────────────────────── */}
       <aside
         className={`
-          fixed md:static inset-y-0 left-0 z-50 flex flex-col
-          w-[260px] md:w-[240px] lg:w-[260px]
-          transition-transform duration-300 ease-in-out
+          fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
+          transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[240px] lg:w-[260px]'}
         `}
         style={{ backgroundColor: sidebarBg, borderRight: `1px solid ${border}` }}
       >
         {/* Brand */}
         <div
-          className="flex items-center justify-between h-16 px-5 shrink-0"
+          className="flex items-center h-16 shrink-0 px-4"
           style={{ borderBottom: `1px solid ${border}` }}
         >
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <img
-                src={logoImg}
-                alt="Ashcol"
-                className="w-9 h-9 object-contain rounded-lg"
-              />
-            </div>
-            <div>
-              <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>Ashcol</div>
-              <div className="text-[9px] font-bold tracking-[3px] text-[#10B981] uppercase">Portal</div>
-            </div>
+          {/* Logo - always visible, click to toggle collapse on desktop */}
+          <img
+            src={logoImg}
+            alt="Ashcol"
+            onClick={() => setSidebarCollapsed(c => !c)}
+            className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
+          />
+          <img
+            src={logoImg}
+            alt="Ashcol"
+            className="w-9 h-9 object-contain rounded-lg shrink-0 md:hidden"
+          />
+
+          {/* Brand text - fades out when collapsed */}
+          <div
+            className="flex-1 min-w-0 ml-3 transition-all duration-200"
+            style={{ opacity: sidebarCollapsed ? 0 : 1, width: sidebarCollapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
+          >
+            <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>Ashcol</div>
+            <div className="text-[9px] font-bold tracking-[3px] text-[#10B981] uppercase">Portal</div>
           </div>
+
           {/* Mobile close */}
           <button
-            className="md:hidden p-1.5 rounded-lg transition-colors hover:bg-red-500/10 hover:text-red-400"
+            className="md:hidden p-1.5 rounded-lg transition-colors hover:bg-red-500/10 hover:text-red-400 shrink-0"
             style={{ color: textMuted }}
             onClick={() => setSidebarOpen(false)}
           >
             <X className="w-4 h-4" />
           </button>
+
+          {/* Desktop collapse toggle - only when expanded */}
+          {!sidebarCollapsed && (
+            <button
+              className="hidden md:flex p-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
+              style={{ color: textMuted }}
+              title="Collapse sidebar"
+              onClick={() => setSidebarCollapsed(true)}
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-0.5">
-          <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2" style={{ color: textMuted }}>
-            Navigation
-          </div>
+        <nav className="flex-1 overflow-y-auto py-4 px-2 flex flex-col gap-0.5">
+          {!sidebarCollapsed && (
+            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2" style={{ color: textMuted }}>
+              Navigation
+            </div>
+          )}
           {navLinks.map((link) => {
             const isActive = location.pathname === link.path
             return (
@@ -131,6 +156,7 @@ export default function DashboardLayout() {
                 key={link.name}
                 to={link.path}
                 onClick={() => setSidebarOpen(false)}
+                title={sidebarCollapsed ? link.name : undefined}
                 className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
                 style={isActive ? {
                   color: '#10B981',
@@ -151,11 +177,23 @@ export default function DashboardLayout() {
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />
                 )}
                 <link.icon className="w-4 h-4 shrink-0" />
-                <span className="flex-1">{link.name}</span>
-                {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
+                {!sidebarCollapsed && <span className="flex-1 truncate">{link.name}</span>}
+                {!sidebarCollapsed && isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
               </Link>
             )
           })}
+
+          {/* Expand button at bottom of nav when collapsed */}
+          {sidebarCollapsed && (
+            <button
+              className="hidden md:flex items-center justify-center mt-auto p-2.5 rounded-xl transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              style={{ color: textMuted }}
+              title="Expand sidebar"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+          )}
         </nav>
 
       </aside>
