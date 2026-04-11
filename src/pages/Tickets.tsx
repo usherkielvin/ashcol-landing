@@ -253,12 +253,6 @@ export default function Tickets() {
   }
 
   // ── Filter tabs (simplified) ─────────────────────────────────────────────────
-  const TABS = [
-    { key: 'all',         label: 'All',         color: isLight ? '#475569' : '#94A3B8' },
-    { key: 'PENDING',     label: 'Pending',      color: '#F59E0B' },
-    { key: 'IN_PROGRESS', label: 'In Progress',  color: '#10B981' },
-    { key: 'COMPLETED',   label: 'Completed',    color: '#3B82F6' },
-  ]
 
   const filteredTickets = tickets.filter(t => {
     const s = t.status.toUpperCase()

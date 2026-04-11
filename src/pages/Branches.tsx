@@ -51,6 +51,7 @@ export default function Branches() {
   const inputBg     = isLight ? '#ffffff' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const theadBg     = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
+  const rowHover    = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
 
   const getBranchActive = (branch: Branch) => {
     const hasManager = !!(branch.managerName || branch.manager_name)
@@ -136,13 +137,6 @@ export default function Branches() {
 
   const activeCnt   = branches.filter(b => getBranchActive(b)).length
   const inactiveCnt = branches.length - activeCnt
-
-  // ── Filter tabs (standardized) ───────────────────────────────────────────
-  const TABS = [
-    { label: 'All',      value: null,  color: isLight ? '#475569' : '#94A3B8' },
-    { label: 'Active',   value: true,  color: '#10B981' },
-    { label: 'Inactive', value: false, color: '#F59E0B' },
-  ]
 
   return (
     <div className="flex flex-col gap-6">

@@ -247,20 +247,6 @@ export default function CreateTicket() {
     setIsSubmitting(true)
     try {
       const unitNames = sel.map(u => `${u.name} x${u.quantity}`).join(', ')
-      const acBits = sel.flatMap(u => u.details.map((d, di) => {
-        const bits: string[] = []
-        if (d.brand) bits.push(`Brand: ${d.brand}`)
-        if (d.hp) bits.push(`Capacity: ${d.hp}`)
-        if (d.technology) bits.push(`Type: ${d.technology}`)
-        if (d.subtype) bits.push(`Subtype: ${d.subtype}`)
-        if (d.feature && d.feature !== 'No special feature') bits.push(`Feature: ${d.feature}`)
-        if (d.issueType) bits.push(`Issue: ${d.issueType}`)
-        if (d.refrigerant) bits.push(`Refrigerant: ${d.refrigerant}`)
-        if (d.voltage) bits.push(`Voltage: ${d.voltage}`)
-        if (d.ageRange) bits.push(`Age: ${d.ageRange}`)
-        const lbl = u.quantity > 1 ? `${u.name} #${di + 1}` : u.name
-        return `${lbl}${bits.length ? ` (${bits.join(' | ')})` : ''}`
-      }))
 
       const fullDesc = description.trim() || 'No additional details provided.'
       const fullLoc = [address.region, address.city, address.barangay, address.street]

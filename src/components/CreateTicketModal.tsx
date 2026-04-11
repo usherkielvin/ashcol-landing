@@ -365,23 +365,6 @@ export default function CreateTicketModal({ onClose, onSuccess }: { onClose: () 
 
       const selectedUnitNames = selectedUnits.map(u => `${u.name} x${u.quantity}`).join(', ')
 
-      const acDetailsByUnit = selectedUnits.flatMap(unit =>
-        unit.details.map((detail, detailIdx) => {
-          const bits: string[] = []
-          if (detail.brand) bits.push(`Brand: ${detail.brand}`)
-          if (detail.hp) bits.push(`Capacity: ${detail.hp}`)
-          if (detail.technology) bits.push(`Type: ${detail.technology}`)
-          if (detail.subtype) bits.push(`Subtype: ${detail.subtype}`)
-          if (detail.feature && detail.feature !== 'No special feature') bits.push(`Feature: ${detail.feature}`)
-          if (detail.issueType) bits.push(`Issue: ${detail.issueType}`)
-          if (detail.refrigerant) bits.push(`Refrigerant: ${detail.refrigerant}`)
-          if (detail.voltage) bits.push(`Voltage: ${detail.voltage}`)
-          if (detail.ageRange) bits.push(`Age: ${detail.ageRange}`)
-          const unitLabel = unit.quantity > 1 ? `${unit.name} #${detailIdx + 1}` : unit.name
-          return `${unitLabel}${bits.length ? ` (${bits.join(' | ')})` : ''}`
-        })
-      )
-
       const fullLocation = location + (landmark ? `, ${landmark}` : '')
       const fullDescription = description.trim() || 'No additional details provided.'
 

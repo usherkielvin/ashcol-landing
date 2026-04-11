@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, Plus, RefreshCw, Shield, Mail, Phone, Building2, X, Pencil, Trash2, CheckCircle, XCircle, MoreVertical } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'

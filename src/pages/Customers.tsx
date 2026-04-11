@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, MoreVertical, Building, User as UserIcon, Mail, Phone, RefreshCw, CheckCircle, XCircle, Pencil, Trash2, Power, X } from 'lucide-react'
+import { Search, MoreVertical, Building, User as UserIcon, Mail, Phone, RefreshCw, CheckCircle, XCircle, Pencil, Trash2, Power, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
 interface Customer {
@@ -24,7 +24,6 @@ export default function Customers() {
   const [loading, setLoading] = useState(true)
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [editing, setEditing] = useState<Customer | null>(null)
   const [deleting, setDeleting] = useState<Customer | null>(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '', city: '', region: '' })
@@ -131,15 +130,6 @@ export default function Customers() {
   const theadBg      = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
   const inputBg      = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder  = isLight ? '#cbd5e1' : '#243452'
-  const tabActiveBg  = isLight ? '#e2e8f0' : '#1E2D48'
-  const tabActiveText= isLight ? '#0f172a' : '#ffffff'
-
-  // ── Filter tabs (standardized) ───────────────────────────────────────────
-  const TABS = [
-    { key: 'all',      label: 'All',      color: isLight ? '#475569' : '#94A3B8' },
-    { key: 'active',   label: 'Active',   color: '#10B981' },
-    { key: 'inactive', label: 'Inactive', color: '#F59E0B' },
-  ]
 
   const filteredCustomers = customers.filter(c => {
     if (activeTab === 'active' && !c.isActive) return false

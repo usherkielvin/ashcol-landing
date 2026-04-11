@@ -138,15 +138,6 @@ export default function Employees() {
   const theadBg      = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
   const inputBg      = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder  = isLight ? '#cbd5e1' : '#243452'
-  const tabActiveBg  = isLight ? '#e2e8f0' : '#1E2D48'
-  const tabActiveText= isLight ? '#0f172a' : '#ffffff'
-
-  // ── Filter tabs ────────────────────────────────────────────────────────────
-  const TABS = [
-    { key: 'all',      label: 'All',      color: isLight ? '#475569' : '#94A3B8' },
-    { key: 'active',   label: 'Active',   color: '#10B981' },
-    { key: 'inactive', label: 'Inactive', color: '#F59E0B' },
-  ]
 
   const filteredEmployees = employees.filter(e => {
     if (activeTab === 'active' && !e.isActive) return false
