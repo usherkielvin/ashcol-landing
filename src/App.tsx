@@ -9,7 +9,7 @@ import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
 import CreateTicket from './pages/CreateTicket'
 import Customers from './pages/Customers'
-import Staff from './pages/Staff'
+import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Managers from './pages/Managers'
@@ -60,7 +60,7 @@ export default function App() {
               <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
               <Route path="/managers" element={<Managers />} />
-              <Route path="/staff" element={<Staff />} />
+              <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
             </Route>
           </Routes>

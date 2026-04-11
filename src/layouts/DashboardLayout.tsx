@@ -42,8 +42,8 @@ export default function DashboardLayout() {
     { name: 'Tickets',       path: '/tickets',   icon: TicketIcon },
     { name: 'Branches',      path: '/branches',  icon: Building2,  roles: ['admin', 'manager'] },
     { name: 'Managers',      path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
+    { name: 'Employees',     path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',     path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Staff & Roles', path: '/staff',     icon: Wrench,     roles: ['admin', 'manager'] },
   ]
 
   const navLinks = allLinks.filter(link => {
