@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Search, MoreVertical, Wrench, Mail, Phone, RefreshCw, UserCheck, Shield } from 'lucide-react'
+import { Search, MoreVertical, Wrench, Mail, Phone, RefreshCw, UserCheck, Shield, Building2, CheckCircle, XCircle } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { API_BASE_URL } from '../utils/api'
 
 interface StaffMember {
   id: string
@@ -8,6 +9,8 @@ interface StaffMember {
   email: string
   phone?: string
   role: string
+  branchId?: string
+  branchName?: string
   isActive: boolean
   profileImage?: string
 }
@@ -24,20 +27,27 @@ export default function Staff() {
   const fetchStaff = async () => {
     try {
       setLoading(true)
-      const token = sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const headers = { Authorization: `Bearer ${token}` }
       
       // Fetch Employees
-      const resEmp = await fetch(`${apiUrl}/user/all?role=EMPLOYEE`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const resEmp = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
       const dataEmp = resEmp.ok ? await resEmp.json() : { data: [] }
       
       // Fetch Managers
-      const resMan = await fetch(`${apiUrl}/user/all?role=MANAGER`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const resMan = await fetch(`${API_BASE_URL}/user/all?role=MANAGER`, { headers })
       const dataMan = resMan.ok ? await resMan.json() : { data: [] }
+
+      // Fetch branches for branch name resolution
+      let branchMap: Record<string, string> = {}
+      try {
+        const resBranch = await fetch(`${API_BASE_URL}/branches`, { headers })
+        if (resBranch.ok) {
+          const dataBranch = await resBranch.json()
+          const branches = dataBranch?.data || []
+          branches.forEach((b: any) => { if (b.id) branchMap[b.id] = b.name })
+        }
+      } catch { /* silent */ }
 
       const allStaff = [...(dataMan?.data || []), ...(dataEmp?.data || [])]
       
@@ -46,7 +56,9 @@ export default function Staff() {
         name: s.name || 'Unknown',
         email: s.email || '',
         phone: s.phone || '',
-        role: s.role || 'EMPLOYEE',
+        role: (s.role || 'employee').toUpperCase(),
+        branchId: s.branchId || '',
+        branchName: s.branchId ? (branchMap[s.branchId] || '') : '',
         isActive: s.isActive !== false,
         profileImage: s.profileImage
       })))
@@ -72,8 +84,9 @@ export default function Staff() {
   const tabActiveText= isLight ? '#0f172a' : '#ffffff'
 
   const filteredStaff = staff.filter(s => {
-    if (activeTab === 'manager' && s.role !== 'MANAGER') return false
-    if (activeTab === 'employee' && s.role !== 'EMPLOYEE') return false
+    const role = s.role.toUpperCase()
+    if (activeTab === 'manager' && role !== 'MANAGER') return false
+    if (activeTab === 'employee' && role !== 'EMPLOYEE') return false
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -117,19 +130,22 @@ export default function Staff() {
           
           {/* Tabs */}
           <div style={{ borderColor: border, backgroundColor: inputBg }} className="flex p-1 border rounded-xl w-full lg:w-auto overflow-x-auto">
-            {['all', 'manager', 'employee'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={activeTab === tab
-                  ? { backgroundColor: tabActiveBg, color: tabActiveText }
-                  : { color: textMuted }
-                }
-                className="px-5 py-2 text-sm font-bold capitalize rounded-lg transition-all shrink-0"
-              >
-                {tab}s
-              </button>
-            ))}
+            {['all', 'manager', 'employee'].map((tab) => {
+              const count = tab === 'all' ? staff.length : tab === 'manager' ? staff.filter(s => s.role === 'MANAGER').length : staff.filter(s => s.role === 'EMPLOYEE').length
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={activeTab === tab
+                    ? { backgroundColor: tabActiveBg, color: tabActiveText }
+                    : { color: textMuted }
+                  }
+                  className="px-5 py-2 text-sm font-bold capitalize rounded-lg transition-all shrink-0"
+                >
+                  {tab}s <span className="text-xs opacity-60 ml-1">({count})</span>
+                </button>
+              )
+            })}
           </div>
 
           {/* Search & Filter */}
@@ -151,22 +167,70 @@ export default function Staff() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
+        {/* Mobile/Tablet Card View */}
+        <div className="lg:hidden flex flex-col gap-3 p-4">
+          {loading ? (
+            <div className="p-8 text-center" style={{ color: textMuted }}>Loading staff...</div>
+          ) : filteredStaff.length > 0 ? filteredStaff.map((s) => (
+            <div key={s.id} className="rounded-xl border p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, borderColor: border }}>
+              <div className="flex items-start gap-3">
+                {s.profileImage ? (
+                  <img src={s.profileImage} alt={s.name} className="w-12 h-12 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-white font-black text-sm" style={{ backgroundColor: getInitialsColor(s.name) }}>{getInitials(s.name)}</div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold truncate" style={{ color: textPrimary }}>{s.name}</div>
+                  <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] mt-0.5" style={{ color: s.role === 'MANAGER' ? '#8B5CF6' : '#3B82F6' }}>
+                    {s.role === 'MANAGER' ? <Shield className="w-3 h-3" /> : <UserCheck className="w-3 h-3" />}
+                    {s.role}
+                  </div>
+                </div>
+                <div className="shrink-0">
+                  <div
+                    style={s.isActive
+                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.2)' }
+                      : { color: '#64748b', backgroundColor: 'rgba(148,163,184,0.1)', borderColor: 'rgba(148,163,184,0.2)' }
+                    }
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border"
+                  >
+                    {s.isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                    {s.isActive ? 'Active' : 'Inactive'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5 text-sm">
+                {s.email && <div className="flex items-center gap-2" style={{ color: textMuted }}><Mail className="w-4 h-4 shrink-0" /><span className="truncate">{s.email}</span></div>}
+                {s.phone && <div className="flex items-center gap-2" style={{ color: textMuted }}><Phone className="w-4 h-4 shrink-0" />{s.phone}</div>}
+                {s.branchName && <div className="flex items-center gap-2" style={{ color: textPrimary }}><Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />{s.branchName}</div>}
+              </div>
+            </div>
+          )) : (
+            <div className="p-8 text-center">
+              <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" style={{ color: textMuted }} />
+              <h3 style={{ color: textPrimary }} className="text-lg font-bold">No staff members found</h3>
+              <p style={{ color: textMuted }} className="text-sm mt-1">Try adjusting your search or filters.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
               <tr style={{ backgroundColor: theadBg, color: textMuted }} className="text-xs uppercase tracking-wider font-bold">
-                <th style={{ borderColor: border }} className="p-4 pl-6 border-b">Member</th>
-                <th style={{ borderColor: border }} className="p-4 border-b">Role</th>
-                <th style={{ borderColor: border }} className="p-4 border-b">Contact</th>
-                <th style={{ borderColor: border }} className="p-4 border-b">Status</th>
-                <th style={{ borderColor: border }} className="p-4 pr-6 border-b text-right">Actions</th>
+                <th style={{ borderColor: border }} className="p-4 pl-6 border-b whitespace-nowrap">Member</th>
+                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Role</th>
+                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Branch</th>
+                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Contact</th>
+                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Status</th>
+                <th style={{ borderColor: border }} className="p-4 pr-6 border-b text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-[#7A95B8]">Loading staff...</td>
+                  <td colSpan={6} className="p-12 text-center" style={{ color: textMuted }}>Loading staff...</td>
                 </tr>
               ) : filteredStaff.length > 0 ? filteredStaff.map((s) => (
                 <tr
@@ -179,19 +243,9 @@ export default function Staff() {
                   <td className="p-4 pl-6">
                     <div className="flex items-center gap-3">
                       {s.profileImage ? (
-                        <img
-                          src={s.profileImage}
-                          alt={s.name}
-                          className="w-10 h-10 rounded-full object-cover shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
+                        <img src={s.profileImage} alt={s.name} className="w-10 h-10 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
                       ) : (
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-black text-sm"
-                          style={{ backgroundColor: getInitialsColor(s.name) }}
-                        >
-                          {getInitials(s.name)}
-                        </div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-black text-sm" style={{ backgroundColor: getInitialsColor(s.name) }}>{getInitials(s.name)}</div>
                       )}
                       <div>
                         <div style={{ color: textPrimary }} className="font-bold mb-0.5">{s.name}</div>
@@ -206,16 +260,23 @@ export default function Staff() {
                     </div>
                   </td>
                   <td className="p-4">
+                    {s.branchName ? (
+                      <div className="flex items-center gap-2 text-sm font-medium" style={{ color: textPrimary }}>
+                        <Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />{s.branchName}
+                      </div>
+                    ) : <span className="text-xs italic" style={{ color: textMuted }}>—</span>}
+                  </td>
+                  <td className="p-4">
                     <div className="flex flex-col gap-1">
                       {s.email && (
                         <div style={{ color: textMuted }} className="flex items-center gap-2 text-[13px]">
-                          <Mail className="w-3.5 h-3.5" />
+                          <Mail className="w-3.5 h-3.5 shrink-0" />
                           <a href={`mailto:${s.email}`} className="hover:text-[#10B981] transition-colors">{s.email}</a>
                         </div>
                       )}
                       {s.phone && (
                         <div style={{ color: textMuted }} className="flex items-center gap-2 text-[13px]">
-                          <Phone className="w-3.5 h-3.5" />
+                          <Phone className="w-3.5 h-3.5 shrink-0" />
                           <a href={`tel:${s.phone}`} className="hover:text-[#10B981] transition-colors">{s.phone}</a>
                         </div>
                       )}
@@ -241,7 +302,7 @@ export default function Staff() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center">
+                  <td colSpan={6} className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <Wrench className="w-12 h-12 text-slate-300 dark:text-[#3A5070] mb-3" />
                       <h3 style={{ color: textPrimary }} className="text-lg font-bold">No staff members found</h3>
