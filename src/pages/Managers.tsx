@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Search, Plus, RefreshCw, Shield, Mail, Phone, Building2, X, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Search, Plus, RefreshCw, Shield, Mail, Phone, Building2, X, Pencil, Trash2, CheckCircle, XCircle, MoreVertical } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -28,13 +28,15 @@ export default function Managers() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Manager | null>(null)
   const [deleting, setDeleting] = useState<Manager | null>(null)
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [loadErr, setLoadErr] = useState('')
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
-  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const border = isLight ? '#e2e8f0' : '#141C2E'
   const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
@@ -52,11 +54,11 @@ export default function Managers() {
       ])
       if (mRes.ok) {
         const d = await mRes.json()
-        setManagers(d?.data || d?.users || [])
+        setManagers(d?.data || [])
       }
       if (bRes.ok) {
         const d = await bRes.json()
-        setBranches(d?.data || d?.branches || [])
+        setBranches(d?.data || [])
       } else {
         if (bRes.status === 401 || bRes.status === 403) {
           setLoadErr('Session expired or unauthorized. Please log out and log in again.')
@@ -158,7 +160,18 @@ export default function Managers() {
   }
 
 
-  const filtered = managers.filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase()) || (m.branchName || '').toLowerCase().includes(search.toLowerCase()))
+  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL')
+
+  const filtered = managers.filter(m => {
+    const matchesSearch = !search || 
+      m.name.toLowerCase().includes(search.toLowerCase()) || 
+      m.email.toLowerCase().includes(search.toLowerCase()) || 
+      (m.branchName || '').toLowerCase().includes(search.toLowerCase())
+    
+    if (filter === 'ACTIVE') return matchesSearch && m.isActive
+    if (filter === 'INACTIVE') return matchesSearch && !m.isActive
+    return matchesSearch
+  })
 
   if (!isAdmin) return (
     <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -186,13 +199,31 @@ export default function Managers() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div style={{ backgroundColor: inputBg, borderColor: inputBorder }} className="flex flex-1 max-w-md items-center border rounded-xl px-3 py-2.5 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981]">
-            <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="bg-transparent text-sm outline-none w-full placeholder-slate-400" style={{ color: textPrimary }} />
-          </div>
+      {/* Search & Filters */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div style={{ backgroundColor: inputBg, borderColor: inputBorder }} className="flex flex-1 max-w-md items-center border rounded-xl px-3 py-2.5 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981]">
+          <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="bg-transparent text-sm outline-none w-full placeholder-slate-400" style={{ color: textPrimary }} />
+        </div>
+
+        <div className="flex p-1 rounded-xl border w-full md:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
+          {[
+            { id: 'ALL', label: 'All', color: 'slate' },
+            { id: 'ACTIVE', label: 'Active', color: 'emerald' },
+            { id: 'INACTIVE', label: 'Inactive', color: 'amber' }
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setFilter(t.id as any)}
+              className={`flex-1 md:flex-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                filter === t.id 
+                  ? t.id === 'ACTIVE' ? 'bg-emerald-500 text-white shadow-sm' : t.id === 'INACTIVE' ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -218,8 +249,20 @@ export default function Managers() {
                 <div className="font-bold truncate" style={{ color: textPrimary }}>{m.name}</div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => openEdit(m)} className="p-2 rounded-lg hover:bg-[#10B981]/10 hover:text-[#10B981] transition-colors" style={{ color: textMuted }}><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => setDeleting(m)} className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: textMuted }}><Trash2 className="w-4 h-4" /></button>
+                <button 
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setMenuPosition({
+                      top: rect.bottom + window.scrollY + 4,
+                      left: rect.right + window.scrollX - 176
+                    })
+                    setActiveDropdown(activeDropdown === m.id ? null : m.id)
+                  }} 
+                  className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" 
+                  style={{ color: textMuted }}
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
               </div>
             </div>
             
@@ -248,77 +291,134 @@ export default function Managers() {
         ))}
       </div>
 
-      {/* Desktop Table View */}
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="hidden lg:block border rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr style={{ backgroundColor: theadBg, color: textMuted }} className="text-xs uppercase tracking-wider font-bold">
-                <th style={{ borderColor: border }} className="p-4 pl-6 border-b whitespace-nowrap">Manager</th>
-                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Contact</th>
-                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Branch</th>
-                <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Status</th>
-                <th style={{ borderColor: border }} className="p-4 pr-6 border-b text-right whitespace-nowrap">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm">
-              {loading ? (
-                <tr><td colSpan={5} className="p-12 text-center" style={{ color: textMuted }}>Loading managers...</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={5} className="p-12 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <Shield className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-                    <p style={{ color: textMuted }} className="text-sm">No managers found</p>
+      {/* Desktop Table */}
+      <div className="hidden lg:block overflow-hidden rounded-2xl border shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
+        <table className="w-full text-left border-collapse table-fixed">
+          <thead>
+            <tr style={{ backgroundColor: theadBg }}>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Manager</th>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Contact</th>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Branch</th>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%]" style={{ color: textMuted }}>Status</th>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[10%]" style={{ color: textMuted + '80' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody className="text-sm">
+            {loading ? (
+              <tr><td colSpan={5} className="px-6 py-12 text-center" style={{ color: textMuted }}>Loading managers...</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} className="px-6 py-12 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Shield className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+                  <p style={{ color: textMuted }} className="text-sm">No managers found</p>
+                </div>
+              </td></tr>
+            ) : filtered.map(m => (
+              <tr key={m.id} className="group transition-colors" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover} onMouseLeave={e => e.currentTarget.style.backgroundColor = cardBg}>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    {m.profileImage ? (
+                      <img src={m.profileImage} alt={m.name} className="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-slate-100 dark:ring-slate-800" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-xs shadow-sm ring-2 ring-slate-100 dark:ring-slate-800" style={{ backgroundColor: avatarColor(m.name) }}>{initials(m.name)}</div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{m.name}</div>
+                      <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }}>{m.email}</div>
+                    </div>
                   </div>
-                </td></tr>
-              ) : filtered.map(m => (
-                <tr key={m.id} style={{ borderColor: border }} className="border-b transition-colors"
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                  <td className="p-4 pl-6">
-                    <div className="flex items-center gap-3">
-                      {m.profileImage ? (
-                        <img src={m.profileImage} alt={m.name} className="w-10 h-10 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{ backgroundColor: avatarColor(m.name) }}>{initials(m.name)}</div>
-                      )}
-                      <div>
-                        <div className="font-bold" style={{ color: textPrimary }}>{m.name}</div>
-                      </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: textPrimary }}><Mail className="w-3.5 h-3.5 text-[#10B981]" /> {m.email}</div>
+                    <div className="flex items-center gap-2 text-[11px]" style={{ color: textMuted }}><Phone className="w-3.5 h-3.5" /> {m.phone || 'N/A'}</div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  {m.branchName ? (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: border, color: textPrimary }}>
+                      <Building2 className="w-3.5 h-3.5 text-[#10B981]" /> {m.branchName}
                     </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 text-[13px]" style={{ color: textMuted }}><Mail className="w-3.5 h-3.5 shrink-0" />{m.email}</div>
-                      <div className="flex items-center gap-2 text-[13px]" style={{ color: textMuted }}><Mail className="w-3.5 h-3.5 shrink-0" />{m.personalEmail}</div>
-                      {m.phone && <div className="flex items-center gap-2 text-[13px]" style={{ color: textMuted }}><Phone className="w-3.5 h-3.5 shrink-0" />{m.phone}</div>}
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    {m.branchName ? (
-                      <div className="flex items-center gap-2 text-sm font-medium" style={{ color: textPrimary }}>
-                        <Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />{m.branchName}
-                      </div>
-                    ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
-                  </td>
-                  <td className="p-4">
-                    <button onClick={() => handleToggleActive(m)} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold transition-all ${m.isActive ? 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-slate-500 bg-slate-50 border-slate-200 dark:text-slate-400 dark:bg-slate-800/50 dark:border-slate-700'}`}>
-                      {m.isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                      {m.isActive ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="p-4 pr-6 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(m)} className="p-2 rounded-lg hover:bg-[#10B981]/10 hover:text-[#10B981] transition-colors" style={{ color: textMuted }}><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleting(m)} className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: textMuted }}><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
+                </td>
+                <td className="px-6 py-4">
+                  <button onClick={() => handleToggleActive(m)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 ${m.isActive ? 'text-emerald-500 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-slate-400 bg-slate-50/50 border-slate-100 dark:text-slate-500 dark:bg-slate-800/30 dark:border-slate-800'}`}>
+                    {m.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                    {m.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                </td>
+                <td className="px-6 py-4">
+                  <button 
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setMenuPosition({
+                        top: rect.bottom + window.scrollY + 4,
+                        left: rect.right + window.scrollX - 176
+                      })
+                      setActiveDropdown(activeDropdown === m.id ? null : m.id)
+                    }} 
+                    className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" 
+                    style={{ color: textMuted }}
+                    title="Actions"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+
+      {/* ── Popup Menu (rendered outside table) ─────────────────── */}
+      {activeDropdown && menuPosition && (() => {
+        const manager = managers.find(m => m.id === activeDropdown)
+        if (!manager) return null
+        
+        return (
+          <div 
+            className="fixed w-44 rounded-lg shadow-2xl z-[100] overflow-hidden"
+            style={{ 
+              backgroundColor: cardBg, 
+              border: `1px solid ${border}`,
+              boxShadow: isLight 
+                ? '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' 
+                : '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`
+            }}
+            onMouseLeave={() => {
+              setActiveDropdown(null)
+              setMenuPosition(null)
+            }}
+          >
+            <button 
+              onClick={() => { 
+                openEdit(manager)
+                setActiveDropdown(null)
+                setMenuPosition(null)
+              }} 
+              className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 transition-all" 
+              style={{ color: textPrimary }}
+            >
+              <Pencil className="w-4 h-4 shrink-0" /> 
+              <span>Edit</span>
+            </button>
+            <button 
+              onClick={() => { 
+                setDeleting(manager)
+                setActiveDropdown(null)
+                setMenuPosition(null)
+              }} 
+              className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-all" 
+              style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
+            >
+              <Trash2 className="w-4 h-4 shrink-0" /> 
+              <span>Delete</span>
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Create / Edit Modal */}
       {showModal && (

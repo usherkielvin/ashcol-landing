@@ -166,7 +166,7 @@ export default function CreateTicket() {
   // Colour tokens
   const pageBg      = isLight ? '#f1f5f9' : '#060B18'
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#e2e8f0' : '#1E2D48'
+  const border      = isLight ? '#e2e8f0' : '#141C2E'
   const inputBg     = isLight ? '#ffffff' : '#121720'
   const inputBorder = isLight ? '#DDD'    : '#2C3440'
   const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
@@ -262,7 +262,7 @@ export default function CreateTicket() {
         return `${lbl}${bits.length ? ` (${bits.join(' | ')})` : ''}`
       }))
 
-      const fullDesc = [description.trim() || 'No additional details provided.', acBits.length ? `AC Details - ${acBits.join('; ')}` : ''].filter(Boolean).join('\n\n')
+      const fullDesc = description.trim() || 'No additional details provided.'
       const fullLoc = [address.region, address.city, address.barangay, address.street]
         .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')

@@ -383,10 +383,7 @@ export default function CreateTicketModal({ onClose, onSuccess }: { onClose: () 
       )
 
       const fullLocation = location + (landmark ? `, ${landmark}` : '')
-      const fullDescription = [
-        description.trim() || 'No additional details provided.',
-        acDetailsByUnit.length ? `AC Details - ${acDetailsByUnit.join('; ')}` : '',
-      ].filter(Boolean).join('\n\n')
+      const fullDescription = description.trim() || 'No additional details provided.'
 
       const token = sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'

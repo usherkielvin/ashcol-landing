@@ -45,7 +45,7 @@ export default function Branches() {
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#e2e8f0' : '#1E2D48'
+  const border      = isLight ? '#e2e8f0' : '#141C2E'
   const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#ffffff' : '#0F1A2E'
@@ -137,6 +137,13 @@ export default function Branches() {
   const activeCnt   = branches.filter(b => getBranchActive(b)).length
   const inactiveCnt = branches.length - activeCnt
 
+  // ── Filter tabs (standardized) ───────────────────────────────────────────
+  const TABS = [
+    { label: 'All',      value: null,  color: isLight ? '#475569' : '#94A3B8' },
+    { label: 'Active',   value: true,  color: '#10B981' },
+    { label: 'Inactive', value: false, color: '#F59E0B' },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
 
@@ -168,27 +175,24 @@ export default function Branches() {
       )}
 
       {/* ── Toolbar ──────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         {/* Tabs */}
-        <div style={{ borderColor: border, backgroundColor: inputBg }} className="flex p-1 border rounded-xl overflow-x-auto">
-          {([
-            { label: 'All',       value: null,  count: branches.length },
-            { label: 'Active',    value: true,  count: activeCnt },
-            { label: 'Inactive',  value: false, count: inactiveCnt },
-          ] as { label: string; value: boolean | null; count: number }[]).map(tab => (
+        <div className="flex p-1 rounded-xl border w-full sm:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
+          {[
+            { label: 'All', value: null, color: 'slate' },
+            { label: 'Active', value: true, color: 'emerald' },
+            { id: 'inactive', label: 'Inactive', value: false, color: 'amber' }
+          ].map(t => (
             <button
-              key={tab.label}
-              onClick={() => setFilterActive(tab.value)}
-              style={filterActive === tab.value
-                ? { backgroundColor: '#10B981', color: '#fff' }
-                : { color: textMuted }
-              }
-              className="px-4 py-2 text-sm font-bold rounded-lg transition-all shrink-0 flex items-center gap-1.5"
+              key={t.label}
+              onClick={() => setFilterActive(t.value)}
+              className={`flex-1 sm:flex-none px-5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-widest ${
+                filterActive === t.value 
+                  ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-sm' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
             >
-              {tab.label}
-              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${filterActive === tab.value ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700'}`} style={filterActive !== tab.value ? { color: textMuted } : {}}>
-                {tab.count}
-              </span>
+              {t.label}
             </button>
           ))}
         </div>
@@ -291,10 +295,12 @@ export default function Branches() {
                           <span className="italic">No manager</span>
                         </div>
                       )}
-                      <div className="flex items-center gap-1.5 text-xs shrink-0" style={{ color: textMuted }}>
-                        <Users className="w-3.5 h-3.5" />
-                        <span className="font-bold" style={{ color: textPrimary }}>{staffCount}</span> staff
-                      </div>
+                      {staffCount > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          <Users className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
+                          <span style={{ color: textPrimary }}>{staffCount} staff</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -302,114 +308,79 @@ export default function Branches() {
             })}
           </div>
 
-          {/* ── Desktop  –  table ──────────────────────────── */}
-          <div className="hidden lg:block border rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr style={{ backgroundColor: theadBg, color: textMuted }} className="text-xs uppercase tracking-wider font-bold">
-                    <th style={{ borderColor: border }} className="p-4 pl-6 border-b whitespace-nowrap">Branch</th>
-                    <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Address</th>
-                    <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Contact</th>
-                    <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap">Manager</th>
-                    <th style={{ borderColor: border }} className="p-4 border-b whitespace-nowrap text-center">Staff</th>
-                    <th style={{ borderColor: border }} className="p-4 pr-6 border-b whitespace-nowrap text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
-                    {filteredBranches.map((branch, idx) => {
-                    const accent   = accentFor(idx)
-                    const manager  = branch.managerName || branch.manager_name
-                    const isActive = getBranchActive(branch)
-                    const staffCount = manager ? (branch.employee_count ?? 0) : 0
-                    return (
-                      <tr
-                        key={branch.id ?? idx}
-                        style={{ borderColor: border }}
-                        className="border-b transition-colors group"
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
-                      >
-                        {/* Branch name + accent dot */}
-                        <td className="p-4 pl-6">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
-                              <MapPin className="w-4 h-4" style={{ color: accent }} />
-                            </div>
-                            <div>
-                              <div className="font-bold" style={{ color: textPrimary }}>{branch.name}</div>
-                              <div className="text-xs mt-0.5" style={{ color: textMuted }}>{branch.location}</div>
-                            </div>
+          {/* Desktop Table */}
+          <div className="hidden lg:block overflow-hidden rounded-2xl border shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
+            <table className="w-full text-left border-collapse table-fixed">
+              <thead>
+                <tr style={{ backgroundColor: theadBg }}>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Branch</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Address</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[20%]" style={{ color: textMuted }}>Contact</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%]" style={{ color: textMuted }}>Manager</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%] text-center" style={{ color: textMuted }}>Status</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {filteredBranches.map((branch, idx) => {
+                  const accent   = accentFor(idx)
+                  const manager  = branch.managerName || branch.manager_name
+                  const isActive = getBranchActive(branch)
+                  return (
+                    <tr key={branch.id ?? idx} className="group transition-colors" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover} onMouseLeave={e => e.currentTarget.style.backgroundColor = cardBg}>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
+                            <MapPin className="w-4 h-4" style={{ color: accent }} />
                           </div>
-                        </td>
-
-                        {/* Address */}
-                        <td className="p-4 max-w-[220px]">
-                          <p className="text-sm leading-relaxed" style={{ color: textPrimary }}>{branch.address || '—'}</p>
-                        </td>
-
-                        {/* Contact */}
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            {branch.phone && (
-                              <div className="flex items-center gap-1.5 text-[13px]" style={{ color: textMuted }}>
-                                <Phone className="w-3.5 h-3.5 shrink-0" />
-                                {branch.phone}
-                              </div>
-                            )}
-                            {branch.email && (
-                              <div className="flex items-center gap-1.5 text-[13px]" style={{ color: textMuted }}>
-                                <Mail className="w-3.5 h-3.5 shrink-0" />
-                                {branch.email}
-                              </div>
-                            )}
-                            {!branch.phone && !branch.email && <span className="text-xs italic" style={{ color: textMuted }}>—</span>}
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{branch.name}</div>
+                            <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }}>{branch.location}</div>
                           </div>
-                        </td>
-
-                        {/* Manager */}
-                        <td className="p-4">
-                          {manager ? (
-                            <div className="flex items-center gap-1.5 text-sm font-medium" style={{ color: textPrimary }}>
-                              <ShieldCheck className="w-4 h-4 shrink-0" style={{ color: accent }} />
-                              {manager}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-xs leading-relaxed line-clamp-2" style={{ color: textPrimary }}>{branch.address || '—'}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          {branch.phone && (
+                            <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: textPrimary }}>
+                              <Phone className="w-3.5 h-3.5 text-emerald-500" /> {branch.phone}
                             </div>
-                          ) : (
-                            <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>
                           )}
-                        </td>
-
-                        {/* Staff count */}
-                        <td className="p-4 text-center">
-                          <span className="inline-flex items-center gap-1 text-sm font-bold" style={{ color: textPrimary }}>
-                            <Users className="w-3.5 h-3.5" style={{ color: accent }} />
-                            {staffCount}
-                          </span>
-                        </td>
-
-                        {/* Status */}
-                        <td className="p-4 pr-6 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold ${isActive ? 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-red-500 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
-                            {isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                            {isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
+                          {branch.email && (
+                            <div className="flex items-center gap-1.5 text-[11px] font-medium truncate" style={{ color: textMuted }}>
+                              <Mail className="w-3.5 h-3.5" /> {branch.email}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {manager ? (
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: border, color: textPrimary }}>
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> <span className="truncate">{manager}</span>
+                          </div>
+                        ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 ${isActive ? 'text-emerald-500 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800 shadow-sm shadow-emerald-500/10' : 'text-red-400 bg-red-50 border-red-100 dark:text-red-500 dark:bg-red-900/20 dark:border-red-900'}`}>
+                          {isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
             {/* Footer */}
             <div style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.3)' }} className="p-4 border-t flex items-center justify-between">
-              <span className="text-sm font-bold" style={{ color: textMuted }}>
-                Showing {filteredBranches.length} of {branches.length} branches
+              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                {filteredBranches.length} branch{filteredBranches.length !== 1 ? 'es' : ''} listed
               </span>
-              <div className="flex items-center gap-2 text-xs font-bold" style={{ color: textMuted }}>
-                <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> {activeCnt} active
-                <span className="mx-1 opacity-40">·</span>
-                <XCircle className="w-3.5 h-3.5 text-red-400" /> {inactiveCnt} inactive
+              <div className="flex items-center gap-3 text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                <span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> {activeCnt}</span>
+                <span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {inactiveCnt}</span>
               </div>
             </div>
           </div>

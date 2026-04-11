@@ -107,12 +107,16 @@ export default function Tickets() {
   const [editingDesc, setEditingDesc]       = useState(false)
   const [descDraft, setDescDraft]           = useState('')
   const [descSaving, setDescSaving]         = useState(false)
+  const [menuPosition, setMenuPosition]     = useState<{ top: number; left: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null)
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+        setMenuPosition(null)
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -125,7 +129,7 @@ export default function Tickets() {
 
   // ── Color tokens ─────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#e2e8f0' : '#1E2D48'
+  const border      = isLight ? '#e2e8f0' : '#141C2E'
   const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const rowHover    = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
@@ -236,7 +240,7 @@ export default function Tickets() {
   const getStatusStyle = (status: string) => {
     switch (status.toUpperCase()) {
       case 'PENDING':
-        return { label: 'Pending', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', borderC: 'rgba(245,158,11,0.3)', icon: Clock }
+        return { label: 'Pending', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', borderC: 'rgba(251,146,60,0.3)', icon: Clock }
       case 'IN_PROGRESS':
         return { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.12)', borderC: 'rgba(16,185,129,0.3)', icon: RefreshCw }
       case 'COMPLETED':
@@ -250,9 +254,10 @@ export default function Tickets() {
 
   // ── Filter tabs (simplified) ─────────────────────────────────────────────────
   const TABS = [
-    { key: 'all', label: 'All' },
-    { key: 'PENDING', label: 'Pending' },
-    { key: 'IN_PROGRESS', label: 'In Progress' },
+    { key: 'all',         label: 'All',         color: isLight ? '#475569' : '#94A3B8' },
+    { key: 'PENDING',     label: 'Pending',      color: '#F59E0B' },
+    { key: 'IN_PROGRESS', label: 'In Progress',  color: '#10B981' },
+    { key: 'COMPLETED',   label: 'Completed',    color: '#3B82F6' },
   ]
 
   const filteredTickets = tickets.filter(t => {
@@ -326,31 +331,31 @@ export default function Tickets() {
         </div>
       </div>
 
+      {/* ── Filter Tabs ── */}
+      <div className="flex p-1 rounded-xl border w-full md:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
+        {[
+          { key: 'all', label: 'All', color: 'slate' },
+          { key: 'PENDING', label: 'Pending', color: 'amber' },
+          { key: 'IN_PROGRESS', label: 'In Progress', color: 'emerald' },
+          { key: 'COMPLETED', label: 'Completed', color: 'blue' }
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={`flex-1 md:flex-none px-5 py-2 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest ${
+              activeTab === t.key 
+                ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-md' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-md' : t.color === 'blue' ? 'bg-blue-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
+                : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Main Card ─────────────────────────────────────────── */}
       <div className="relative">
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="border rounded-2xl flex flex-col overflow-hidden shadow-sm">
-
-        {/* ── Tab row ── */}
-        <div style={{ borderColor: border }} className="border-b">
-          <div className="flex">
-            {TABS.map(tab => {
-              const isActive = activeTab === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className="flex-1 py-2.5 text-sm font-semibold transition-all relative"
-                  style={isActive ? { color: '#10B981' } : { color: textMuted }}
-                >
-                  {tab.label}
-                  {isActive && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#10B981] rounded-full" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
 
         {/* ── Mobile card list (< md) ───────────────────────────── */}
         <div className="md:hidden flex flex-col">
@@ -384,8 +389,10 @@ export default function Tickets() {
                     <span className="font-mono font-semibold">{shortId(ticket.id)}</span>
                     <span>·</span>
                     {!isCustomer && <><span>{ticket.customerName || 'Unknown'}</span><span>·</span></>}
-                    {!isCustomer && getTicketField(ticket, 'customerEmail', 'customer_email', 'email') !== '—' && <><span>{getTicketField(ticket, 'customerEmail', 'customer_email', 'email')}</span><span>·</span></>}
                     <span>{formatDate(ticket.createdAt || ticket.created_at)}</span>
+                  </div>
+                  <div className="text-[11px] mt-1 opacity-80 truncate max-w-[200px]" style={{ color: textMuted }}>
+                    {formatLocation(ticket.location)}
                   </div>
                 </div>
 
@@ -408,20 +415,21 @@ export default function Tickets() {
         <div className="hidden md:block">
           <table className="w-full text-left table-fixed">
             <thead>
-              <tr style={{ backgroundColor: theadBg, color: textMuted }} className="text-xs uppercase tracking-wider font-bold">
-                <th style={{ borderColor: border, width: isCustomer ? '38%' : '30%' }} className="px-6 py-3 border-b">Ticket</th>
-                <th style={{ borderColor: border, width: isCustomer ? '22%' : '18%' }} className="px-4 py-3 border-b">Service</th>
-                {!isCustomer && <th style={{ borderColor: border, width: '20%' }} className="px-4 py-3 border-b">Customer</th>}
-                <th style={{ borderColor: border, width: isCustomer ? '20%' : '14%' }} className="px-4 py-3 border-b">Date</th>
-                <th style={{ borderColor: border, width: isCustomer ? '15%' : '14%' }} className="px-4 py-3 border-b">Status</th>
-                <th style={{ borderColor: border, width: '5%' }} className="px-4 py-3 border-b"></th>
+              <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-[10px] uppercase tracking-[0.1em] font-black">
+                <th style={{ borderColor: border, width: isCustomer ? '18%' : '14%' }} className="px-6 py-3 border-b">Ticket</th>
+                <th style={{ borderColor: border, width: isCustomer ? '14%' : '12%' }} className="px-4 py-3 border-b">Service</th>
+                {!isCustomer && <th style={{ borderColor: border, width: '14%' }} className="px-4 py-3 border-b">Customer</th>}
+                <th style={{ borderColor: border, width: isCustomer ? '28%' : '24%' }} className="px-4 py-3 border-b">Address</th>
+                <th style={{ borderColor: border, width: isCustomer ? '15%' : '12%' }} className="px-4 py-3 border-b">Date</th>
+                <th style={{ borderColor: border, width: isCustomer ? '16%' : '13%' }} className="px-4 py-3 border-b">Status</th>
+                <th style={{ borderColor: border, width: '5%' }} className="px-4 py-3 border-b">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={isCustomer ? 5 : 6} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
+                <tr><td colSpan={isCustomer ? 6 : 7} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
               ) : filteredTickets.length === 0 ? (
-                <tr><td colSpan={isCustomer ? 5 : 6} className="py-16 text-center">
+                <tr><td colSpan={isCustomer ? 6 : 7} className="py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
                     <p className="text-sm font-semibold" style={{ color: textPrimary }}>No tickets found</p>
@@ -435,16 +443,16 @@ export default function Tickets() {
                 return (
                   <tr
                     key={ticket.id}
-                    style={{ borderColor: border }}
-                    className="border-b transition-colors cursor-pointer"
+                    style={{ borderBottom: `1px solid ${border}` }}
+                    className="transition-colors cursor-pointer"
                     onClick={() => { setSelectedTicket(ticket); setShowViewModal(true) }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
                   >
                     {/* Ticket */}
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-sm" style={{ color: textPrimary }}>{ticket.title}</div>
-                      <div className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>{shortId(ticket.id)}</div>
+                      <div className="font-semibold text-sm font-mono" style={{ color: textPrimary }}>{shortId(ticket.id)}</div>
+                      <div className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{ticket.title}</div>
                     </td>
                     {/* Service */}
                     <td className="px-4 py-4">
@@ -454,13 +462,19 @@ export default function Tickets() {
                     {!isCustomer && (
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-0.5 min-w-0">
-                          <span className="text-sm truncate" style={{ color: textPrimary }}>{ticket.customerName || ticket.customer_name || '—'}</span>
+                          <span className="text-sm truncate font-semibold" style={{ color: textPrimary }}>{ticket.customerName || ticket.customer_name || '—'}</span>
                           {getTicketField(ticket, 'customerEmail', 'customer_email', 'email') !== '—' && (
-                            <span className="text-xs truncate" style={{ color: textMuted }}>{getTicketField(ticket, 'customerEmail', 'customer_email', 'email')}</span>
+                            <span className="text-[11px] truncate opacity-80" style={{ color: textMuted }}>{getTicketField(ticket, 'customerEmail', 'customer_email', 'email')}</span>
                           )}
                         </div>
                       </td>
                     )}
+                    {/* Address */}
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: textMuted }}>
+                         <span className="truncate">{formatLocation(ticket.location)}</span>
+                      </div>
+                    </td>
                     {/* Date */}
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="text-xs" style={{ color: textMuted }}>{formatDate(ticket.createdAt || ticket.created_at)}</span>
@@ -474,38 +488,22 @@ export default function Tickets() {
                     </td>
                     {/* 3-dot menu */}
                     <td className="px-4 py-4 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="relative inline-block" ref={isMenuOpen ? menuRef : null}>
-                        <button
-                          onClick={() => setOpenMenuId(isMenuOpen ? null : ticket.id)}
-                          className="p-2 rounded-lg transition-colors"
-                          style={{ color: textMuted }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                        {isMenuOpen && (
-                          <div className="absolute right-0 top-full mt-1 w-40 rounded-xl shadow-xl z-50 overflow-hidden"
-                            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                            <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-left transition-colors"
-                              style={{ color: textPrimary }}
-                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(16,185,129,0.08)'}
-                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
-                              onClick={() => { setSelectedTicket(ticket); setShowViewModal(true); setOpenMenuId(null) }}>
-                              <FileText className="w-4 h-4 shrink-0" /> View Details
-                            </button>
-                            {isAdmin && (
-                              <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-left"
-                                style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.08)'}
-                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
-                                onClick={() => { setOpenMenuId(null); handleDeleteTicket(ticket.id) }}>
-                                <Trash2 className="w-4 h-4 shrink-0" /> Delete
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setMenuPosition({
+                            top: rect.bottom + window.scrollY + 4,
+                            left: rect.right + window.scrollX - 176 // 176px = w-44 width
+                          })
+                          setOpenMenuId(isMenuOpen ? null : ticket.id)
+                        }}
+                        className="p-2 rounded-lg transition-colors hover:bg-opacity-80"
+                        style={{ color: textMuted }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 )
@@ -514,6 +512,70 @@ export default function Tickets() {
           </table>
         </div>
       </div>
+
+      {/* ── Popup Menu (rendered outside table) ─────────────────── */}
+      {openMenuId && menuPosition && (() => {
+        const ticket = tickets.find(t => t.id === openMenuId)
+        if (!ticket) return null
+        
+        return (
+          <div 
+            ref={menuRef}
+            className="fixed w-44 rounded-lg shadow-2xl z-[100] overflow-hidden"
+            style={{ 
+              backgroundColor: cardBg, 
+              border: `1px solid ${border}`,
+              boxShadow: isLight 
+                ? '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' 
+                : '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`
+            }}
+          >
+            <button 
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
+              style={{ color: textPrimary }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(16,185,129,0.1)'
+                ;(e.currentTarget as HTMLElement).style.color = '#10B981'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = ''
+                ;(e.currentTarget as HTMLElement).style.color = textPrimary
+              }}
+              onClick={() => { 
+                setSelectedTicket(ticket)
+                setShowViewModal(true)
+                setOpenMenuId(null)
+                setMenuPosition(null)
+              }}
+            >
+              <FileText className="w-4 h-4 shrink-0" /> 
+              <span>View Details</span>
+            </button>
+            {isAdmin && (
+              <button 
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
+                style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.1)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = ''
+                }}
+                onClick={() => { 
+                  setOpenMenuId(null)
+                  setMenuPosition(null)
+                  handleDeleteTicket(ticket.id)
+                }}
+              >
+                <Trash2 className="w-4 h-4 shrink-0" /> 
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Detail Screen ─────────────────────────────────────── */}
       {showViewModal && selectedTicket && (() => {
