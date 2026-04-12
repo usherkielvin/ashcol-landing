@@ -200,7 +200,7 @@ export default function CreateAccount() {
             Keeping <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">YOU</span><br />Cool Always.
           </h2>
           <p className="text-[#A2B7D0] text-base leading-relaxed">
-            Join the leading HVAC provider. Seamless booking, professional maintenance, and priority support — all in one place.
+            Join the leading air conditioning services provider. Seamless booking, professional maintenance, and priority support — all in one place.
           </p>
           <div className="mt-8 flex flex-col gap-3">
             {['Book services in minutes', 'Real-time job tracking', 'Certified technicians'].map(item => (

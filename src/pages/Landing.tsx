@@ -3,10 +3,12 @@ import {
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone
+  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone, Bot
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { PUBLIC_BRANCHES } from '../data/branches'
+import { getPortalUrl } from '../utils/portalUrl'
+import PublicAIChatBot from '../components/PublicAIChatBot'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -172,7 +174,7 @@ const FEATURED_PROJECTS = [
   },
   {
     title: 'Mang Inasal Restaurant Branch',
-    type: 'Commercial HVAC Installation',
+    type: 'Commercial air conditioning services Installation',
     tag: 'Food & Beverage',
     tagColor: '#F59E0B',
     tagBg: 'rgba(245,158,11,0.12)',
@@ -189,12 +191,12 @@ const FEATURED_PROJECTS = [
   },
   {
     title: 'Industrial Cold Storage Facility',
-    type: 'Industrial HVAC & Refrigeration',
+    type: 'Industrial air conditioning services & Refrigeration',
     tag: 'Industrial',
     tagColor: '#8B5CF6',
     tagBg: 'rgba(139,92,246,0.12)',
     location: 'Rodriguez, Rizal',
-    scope: 'Design and installation of precision-climate HVAC for a 2,000 sqm cold storage warehouse, including insulated ductwork, air handlers, and control panels.',
+    scope: 'Design and installation of precision-climate air conditioning services for a 2,000 sqm cold storage warehouse, including insulated ductwork, air handlers, and control panels.',
     stats: [
       { label: 'Facility Area', value: '2,000 sqm' },
       { label: 'System Type', value: 'VRF Multi-zone' },
@@ -226,7 +228,7 @@ const FEATURED_PROJECTS = [
 const FAQS = [
   {
     q: 'What types of air conditioning services does Ashcol offer?',
-    a: 'Ashcol provides a comprehensive range of AC services including installation and dismantling, preventive maintenance (general cleaning), repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial & industrial HVAC solutions.',
+    a: 'Ashcol provides a comprehensive range of AC services including installation and dismantling, preventive maintenance (general cleaning), repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial & industrial air conditioning services solutions.',
   },
   {
     q: 'How do I book a service?',
@@ -250,7 +252,7 @@ const FAQS = [
   },
   {
     q: 'Can Ashcol handle large commercial or industrial AC projects?',
-    a: 'Absolutely. We specialize in commercial and industrial HVAC installations including centralized systems, VRF/VRV multi-zone systems, chiller systems, custom ductwork fabrication, and large-scale electrical works for malls, restaurants, office buildings, hospitals, and factories.',
+    a: 'Absolutely. We specialize in commercial and industrial air conditioning services installations including centralized systems, VRF/VRV multi-zone systems, chiller systems, custom ductwork fabrication, and large-scale electrical works for malls, restaurants, office buildings, hospitals, and factories.',
   },
   {
     q: 'How much does a typical AC service cost?',
@@ -370,18 +372,8 @@ function BranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string;
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Landing() {
+  const [publicAiOpen, setPublicAiOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('hero')
-  
-  // Helper to get portal URL (e.g. portal.ashcol.com.ph or localhost/?portal=true)
-  const getPortalUrl = (path: string) => {
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    if (isLocal) {
-      return `${path}?portal=true`
-    }
-    // In production, go to the portal subdomain
-    // We use https explicitly for production
-    return `https://portal.ashcol.com.ph${path}`
-  }
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
@@ -501,6 +493,18 @@ export default function Landing() {
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
+            {/* Public Ashcol AI (Vercel /api/chat — no backend) */}
+            <button
+              type="button"
+              onClick={() => setPublicAiOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition-all"
+              style={{ color: t.accent, backgroundColor: t.accentBg }}
+              title="Chat with Ashcol AI"
+            >
+              <Bot className="w-4 h-4" />
+              AI
+            </button>
+
             {/* Login link */}
             <a
               href={getPortalUrl('/login')}
@@ -543,6 +547,18 @@ export default function Landing() {
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false)
+                setPublicAiOpen(true)
+              }}
+              className="flex items-center gap-2 text-left text-sm font-bold py-2 rounded-lg px-2 -mx-2 transition-colors"
+              style={{ color: t.accent, backgroundColor: t.accentBg }}
+            >
+              <Bot className="w-4 h-4 shrink-0" />
+              Ashcol AI — chat now
+            </button>
             <div className="flex gap-2 mt-1">
               <a
                 href={getPortalUrl('/login')}
@@ -1285,6 +1301,15 @@ export default function Landing() {
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
             <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Login</a>
             <a href={getPortalUrl('/create-account')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
+            <button
+              type="button"
+              onClick={() => setPublicAiOpen(true)}
+              className="text-[13px] transition-colors hover:text-[#10B981] flex items-center gap-1.5 text-left"
+              style={{ color: t.textFaint }}
+            >
+              <Bot className="w-3.5 h-3.5 text-[#10B981]" />
+              Ashcol AI
+            </button>
           </div>
         </div>
 
@@ -1292,6 +1317,20 @@ export default function Landing() {
           © 2026 Ashcol Airconditioning Services Corporation. All rights reserved.
         </div>
       </footer>
+
+      <PublicAIChatBot isOpen={publicAiOpen} onClose={() => setPublicAiOpen(false)} isDark={isDark} />
+
+      {!publicAiOpen && (
+        <button
+          type="button"
+          onClick={() => setPublicAiOpen(true)}
+          className="fixed bottom-6 right-6 z-[60] p-4 rounded-full shadow-2xl hover:scale-105 transition-transform flex items-center justify-center bg-gradient-to-r from-[#10B981] to-[#059669] text-white"
+          aria-label="Open Ashcol AI chat"
+          title="Chat with Ashcol AI"
+        >
+          <Bot className="w-6 h-6 animate-pulse" />
+        </button>
+      )}
     </div>
   )
 }

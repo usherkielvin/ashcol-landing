@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotificationContext'
+import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 
 export default function DashboardLayout() {
@@ -413,6 +414,9 @@ export default function DashboardLayout() {
           </div>
         </main>
       </div>
+
+      {/* ── Global Agentic Chat UI ────────────────────── */}
+      <AIChatBot />
     </div>
   )
 }

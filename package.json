@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.62",
     "@react-oauth/google": "^0.13.4",
+    "ai": "^6.0.158",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
@@ -23,6 +25,7 @@
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vercel/node": "^5.7.4",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
