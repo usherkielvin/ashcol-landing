@@ -1,3 +1,4 @@
+/** When editing branches, sync Spring: `Spring API/src/main/resources/ai/ashcol-branches-prompt.txt` (or re-run branch export). */
 export type PublicBranch = {
   name: string
   tag: string

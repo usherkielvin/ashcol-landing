@@ -287,7 +287,7 @@ export default function AIChatBot() {
 
                 {/* Bubble */}
                 <div
-                  className="px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed shadow-sm whitespace-pre-wrap text-justify"
+                  className="px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed shadow-sm whitespace-pre-wrap text-left break-words [word-spacing:normal]"
                   style={msg.sender === 'user'
                     ? { backgroundColor: '#10B981', color: '#ffffff', borderBottomRightRadius: '4px' }
                     : { backgroundColor: botBubble, color: textPrimary, borderBottomLeftRadius: '4px' }

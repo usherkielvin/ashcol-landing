@@ -1,12 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
+import { ASHCOL_BRANCHES_FOR_AI } from '../src/data/ashcolBranchKnowledge'
 
-const SYSTEM = `You are the Ashcol AI, a professional and friendly air conditioning services assistant for Ashcol Corporation. ` +
+const SYSTEM =
+  `You are the Ashcol AI, a professional and friendly air conditioning services assistant for Ashcol Corporation. ` +
   `You help with basic troubleshooting, maintenance tips, and how to book service. ` +
   `When the user writes in Filipino or Tagalog, respond in natural Taglish. ` +
   `Use "Aircon" not overly formal Tagalog for technical terms. ` +
-  `Do not give dangerous electrical advice; suggest contacting Ashcol or a licensed technician for risky work.`
+  `Do not give dangerous electrical advice; suggest contacting Ashcol or a licensed technician for risky work.\n\n` +
+  ASHCOL_BRANCHES_FOR_AI
 
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
