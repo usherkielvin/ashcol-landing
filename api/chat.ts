@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
-import { ASHCOL_BRANCHES_FOR_AI } from '../src/data/ashcolBranchKnowledge'
+import { ASHCOL_BRANCHES_FOR_AI } from './branchKnowledge'
 
 const SYSTEM =
   `You are the Ashcol AI, a professional and friendly air conditioning services assistant for Ashcol Corporation. ` +

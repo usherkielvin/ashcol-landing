@@ -1,4 +1,4 @@
-/** When editing branches, sync Spring: `Spring API/src/main/resources/ai/ashcol-branches-prompt.txt` (or re-run branch export). */
+/** When editing branches, sync: `api/branchKnowledge.ts`, Spring `ai/ashcol-branches-prompt.txt` (content matches ashcolBranchKnowledge). */
 export type PublicBranch = {
   name: string
   tag: string

@@ -14,8 +14,9 @@ function formatBranchBlock(b: PublicBranch): string {
 }
 
 /**
- * Full branch facts for AI system prompts (Vercel + any client that needs the same text).
- * Keep in sync with Spring `ashcol-branches-prompt.txt` or regenerate when branches change.
+ * Full branch facts for AI system prompts (built from {@link PUBLIC_BRANCHES}).
+ * Vercel `/api/chat` cannot import this file — it uses `api/branchKnowledge.ts` instead; keep both in sync.
+ * Spring uses `ai/ashcol-branches-prompt.txt`.
  */
 export function buildAshcolBranchesKnowledgeBlock(): string {
   const rows = PUBLIC_BRANCHES.map(formatBranchBlock)
