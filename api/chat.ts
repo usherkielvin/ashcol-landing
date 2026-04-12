@@ -1,3 +1,9 @@
+/**
+ * Vercel serverless only: public landing AI (`/api/chat`). Uses GOOGLE_GENERATIVE_AI_API_KEY.
+ * Does not run in Vite dev unless you use `vercel dev` or proxy to a deployed URL.
+ * Model: VERCEL_PUBLIC_AI_MODEL (preferred) or GEMINI_MODEL_ID, then default below.
+ * Separate from Spring Boot portal AI (`/api/ai/chat`) — that stack uses GEMINI_API_KEY + application.properties.
+ */
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 // Clean AI text: remove markdown, normalize spacing
@@ -129,8 +135,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Field 'message' is required." })
     }
 
-    // Use stable model
-    const modelId = process.env.GEMINI_MODEL_ID || 'gemini-1.5-flash'
+    const modelId =
+      process.env.VERCEL_PUBLIC_AI_MODEL?.trim() ||
+      process.env.GEMINI_MODEL_ID?.trim() ||
+      'gemini-3.1-flash-lite-preview'
     console.log('[api/chat] Processing message with model:', modelId)
 
     const result = await generateText({
