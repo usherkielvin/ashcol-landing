@@ -12,6 +12,17 @@ interface Message {
 const TYPEWRITER_INTERVAL_MS = 16
 const CHARS_PER_TICK = 3
 
+// Clean AI text: remove markdown, normalize spacing
+function cleanAiText(text: string): string {
+  return text
+    .replace(/\*+/g, '') // Remove asterisks
+    .replace(/#+/g, '') // Remove hash symbols
+    .replace(/- +/g, '') // Remove bullet dashes
+    .replace(/\n\s*\n/g, '\n') // Remove extra blank lines
+    .replace(/  +/g, ' ') // Collapse multiple spaces to single space
+    .trim()
+}
+
 interface PublicAIChatBotProps {
   isOpen: boolean
   onClose: () => void
@@ -124,7 +135,8 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
       }
 
       const data = (await response.json()) as { reply?: string; error?: string }
-      const reply = data.reply ?? (data.error ? `Error: ${data.error}` : 'No response received.')
+      const rawReply = data.reply ?? (data.error ? `Error: ${data.error}` : 'No response received.')
+      const reply = cleanAiText(rawReply)
 
       const botMsgId = (Date.now() + 1).toString()
       setMessages((prev) => [...prev, { id: botMsgId, text: '', sender: 'ai', isTyping: true }])
@@ -178,17 +190,12 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
         style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-[#10B981]/20 flex items-center justify-center relative">
+          <div className="w-8 h-8 rounded-full bg-[#10B981]/20 flex items-center justify-center">
             <Bot className="w-4 h-4 text-[#10B981]" />
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-[#0A1120] rounded-full" />
           </div>
           <div>
-            <h3 className="text-sm font-bold" style={{ color: textPrimary }}>
-              Ashcol AI
-            </h3>
-            <p className="text-[10px]" style={{ color: textMuted }}>
-              Public assistant · no sign-in
-            </p>
+            <h3 className="text-sm font-bold" style={{ color: textPrimary }}>Ashcol AI</h3>
+            <p className="text-[10px]" style={{ color: textMuted }}>Ask about services or booking</p>
           </div>
         </div>
         <button
@@ -264,7 +271,7 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
             }}
             placeholder={isStreaming ? 'AI is responding…' : 'Ask about aircon or booking…'}
             disabled={isLoading || isStreaming}
-            className="w-full pl-4 pr-12 py-3 rounded-xl text-[13px] focus:outline-none transition-shadow"
+            className="w-full pl-4 pr-12 py-3 rounded-xl text-base sm:text-[13px] focus:outline-none transition-shadow"
             style={{
               backgroundColor: isLight ? '#ffffff' : '#0A1120',
               color: textPrimary,
@@ -287,7 +294,7 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
           </button>
         </div>
         <p className="mt-2 text-center text-[9px] font-medium" style={{ color: textMuted }}>
-          Powered by Gemini · Vercel serverless (no account required)
+          Powered by Gemini · Google AI
         </p>
       </div>
     </div>
