@@ -3,12 +3,28 @@ import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
 import { ASHCOL_BRANCHES_FOR_AI } from './branchKnowledge'
 
+// Clean AI text: remove markdown, normalize spacing
+function cleanAiText(text: string): string {
+  return text
+    .replace(/\*+/g, '')
+    .replace(/#+/g, '')
+    .replace(/- +/g, '')
+    .replace(/\n\s*\n/g, '\n')
+    .replace(/  +/g, ' ')
+    .trim()
+}
+
 const SYSTEM =
   `You are the Ashcol AI, a professional and friendly air conditioning services assistant for Ashcol Corporation. ` +
-  `You help with basic troubleshooting, maintenance tips, and how to book service. ` +
-  `When the user writes in Filipino or Tagalog, respond in natural Taglish. ` +
-  `Use "Aircon" not overly formal Tagalog for technical terms. ` +
-  `Do not give dangerous electrical advice; suggest contacting Ashcol or a licensed technician for risky work.\n\n` +
+  `ASHCOL KNOWLEDGE: Founded in 2006 with 11 branches across Luzon. ` +
+  `Services: Installation and Dismantling, Preventive Maintenance, Repair and Diagnostics, Ducting, Electrical Works, Commercial/Industrial solutions. ` +
+  `Brands: Carrier, Daikin, Panasonic, Samsung, LG, Koppel, Mitsubishi, York, Gree, Midea, Sharp, Haier, TCL, Aux, Fuji-Aire, Kolin. ` +
+  `Contact: +63 (917) 7143810, headoffice@ashcol.com.ph. ` +
+  `FORMAT RULES: Use plain text only. NO markdown. NO asterisks, stars, bullets, dashes. ` +
+  `Write in short natural paragraphs. Do NOT add extra spaces. Never use bullet points. ` +
+  `LANGUAGE: When user speaks Filipino/Tagalog, reply in natural Taglish. ` +
+  `Use "Aircon" not formal Tagalog. Use "Repair" not "Pagkukumpuni". Keep it conversational. ` +
+  `SAFETY: Never give dangerous electrical advice.\n\n` +
   ASHCOL_BRANCHES_FOR_AI
 
 function setCors(res: VercelResponse) {
@@ -41,7 +57,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Field 'message' is required." })
     }
 
-    const modelId = process.env.GEMINI_MODEL_ID || 'gemini-3.1-flash-lite-preview'
+    // Use stable model - gemini-1.5-flash is the most reliable
+    const modelId = process.env.GEMINI_MODEL_ID || 'gemini-1.5-flash'
+
+    console.log('[api/chat] Using model:', modelId)
 
     const result = await generateText({
       model: google(modelId),
@@ -50,7 +69,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       maxOutputTokens: 1024,
     })
 
-    return res.status(200).json({ reply: result.text })
+    // Clean the response text
+    const cleanReply = cleanAiText(result.text)
+
+    return res.status(200).json({ reply: cleanReply })
   } catch (e: unknown) {
     console.error('[api/chat]', e)
     const msg = e instanceof Error ? e.message : 'Unknown error'
