@@ -41,7 +41,7 @@ export default function Branches() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterActive, setFilterActive] = useState<boolean | null>(null)
 
-  const isAllowed = user?.role?.toLowerCase() === 'manager' || user?.role?.toLowerCase() === 'admin'
+  const isAllowed = user?.role?.toLowerCase() === 'admin'
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -108,7 +108,7 @@ export default function Branches() {
     }
   }
 
-  useEffect(() => { fetchBranches() }, [isAllowed])
+  useEffect(() => { fetchBranches() }, [isAllowed, user?.role, user?.branchId])
 
   if (!isAllowed) {
     return (
@@ -146,7 +146,9 @@ export default function Branches() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: textPrimary }}>Branches</h2>
           <p className="text-sm" style={{ color: textMuted }}>
-            {loading ? 'Loading…' : `${branches.length} branch${branches.length !== 1 ? 'es' : ''} · ${activeCnt} active`}
+            {user?.role?.toLowerCase() === 'manager'
+              ? (loading ? 'Loading…' : 'Your assigned service area and contact details.')
+              : (loading ? 'Loading…' : `${branches.length} branch${branches.length !== 1 ? 'es' : ''} · ${activeCnt} active`)}
           </p>
         </div>
         <button

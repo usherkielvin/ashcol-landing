@@ -64,9 +64,11 @@ export default function Login() {
       setUser({
         name: appUser.name || email,
         email: appUser.email || email,
+        personalEmail: appUser.personalEmail ?? null,
         picture: resolveImageUrl(appUser.profileImage),
         role: appUser.role || 'customer',
         initials: getInitials(appUser.name || email),
+        branchId: appUser.branchId ?? null,
       })
 
       navigate('/dashboard')
@@ -111,9 +113,11 @@ export default function Login() {
         setUser({
           name: appUser.name || profile.name || profile.email,
           email: appUser.email || profile.email,
+          personalEmail: appUser.personalEmail ?? null,
           picture: resolveImageUrl(appUser.profileImage) || profile.picture || '',
           role: appUser.role || 'customer',
           initials: getInitials(appUser.name || profile.name || profile.email),
+          branchId: appUser.branchId ?? null,
         })
         navigate('/dashboard')
       } catch (err: any) {

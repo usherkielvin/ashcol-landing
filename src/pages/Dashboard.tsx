@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   FileText, Clock, CheckCircle, AlertCircle, Plus,
   ChevronRight, Wrench, Zap, Wind, Building2, Circle,
-  CalendarDays, MapPin, RefreshCw
+  CalendarDays, MapPin, RefreshCw, ExternalLink,
+  ClipboardList, Phone,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,18 +13,24 @@ interface Ticket {
   id: string
   title: string
   serviceType: string
-  customerName: string
+  customerName?: string
+  customer_name?: string
   status: string
-
-  createdAt: string
-  location?: string
+  createdAt?: string
+  created_at?: string
+  updatedAt?: string
+  updated_at?: string
+  location?: unknown
   preferredDate?: string
+  preferred_date?: string
   scheduledDate?: string
+  contactPhone?: string
+  contact_phone?: string
 }
 
 const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-const STATUS_CFG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
+const STATUS_CFG: Record<string, { label: string; color: string; bg: string; border: string; icon: typeof Clock }> = {
   PENDING:     { label: 'Pending',     color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)',  icon: Clock },
   ASSIGNED:    { label: 'Assigned',    color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',  border: 'rgba(59,130,246,0.25)',  icon: AlertCircle },
   IN_PROGRESS: { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.25)',  icon: RefreshCw },
@@ -31,7 +38,7 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string; bor
   CANCELLED:   { label: 'Cancelled',   color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.25)', icon: Circle },
 }
 
-const SVC_ICON: Record<string, any> = {
+const SVC_ICON: Record<string, typeof Wrench> = {
   Cleaning: Wrench, Maintenance: Wrench, Repair: Zap,
   Installation: Building2, Ducting: Wind,
 }
@@ -53,6 +60,75 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`
 }
 
+function statusKey(s: string) {
+  return s.toUpperCase().replace(/ /g, '_')
+}
+
+function getPreferredDate(t: Ticket): string | undefined {
+  return t.preferredDate || t.preferred_date || t.scheduledDate
+}
+
+/** Human-readable service address for map search */
+function formatLocationLine(loc: unknown): string {
+  if (!loc) return ''
+  if (typeof loc === 'string') {
+    const s = loc.trim()
+    if (!s) return ''
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try {
+        const p = JSON.parse(s) as Record<string, string>
+        const parts = [p.address, p.barangay, p.city, p.region].filter(Boolean)
+        return parts.join(', ')
+      } catch { /* fall through */ }
+    }
+    if (/lat|lng|long|latitude|longitude/i.test(s)) return ''
+    return s
+  }
+  const o = loc as Record<string, string>
+  const parts = [o.address, o.barangay, o.city, o.region].filter(Boolean)
+  return parts.join(', ')
+}
+
+function parseLatLng(loc: unknown): { lat: number; lng: number } | null {
+  let o: Record<string, unknown> | null = null
+  if (typeof loc === 'string') {
+    const s = loc.trim()
+    if (s.startsWith('{')) {
+      try { o = JSON.parse(s) as Record<string, unknown> } catch { return null }
+    } else return null
+  } else if (loc && typeof loc === 'object') o = loc as Record<string, unknown>
+  if (!o) return null
+  const lat = o.lat ?? o.latitude
+  const lng = o.lng ?? o.longitude ?? o.long
+  if (typeof lat === 'number' && typeof lng === 'number') return { lat, lng }
+  if (typeof lat === 'string' && typeof lng === 'string') {
+    const la = parseFloat(lat)
+    const ln = parseFloat(lng)
+    if (!Number.isNaN(la) && !Number.isNaN(ln)) return { lat: la, lng: ln }
+  }
+  return null
+}
+
+function mapsEmbedUrl(loc: unknown): string | null {
+  const ll = parseLatLng(loc)
+  if (ll) return `https://maps.google.com/maps?q=${ll.lat},${ll.lng}&z=16&output=embed`
+  const line = formatLocationLine(loc)
+  if (!line) return null
+  return `https://maps.google.com/maps?q=${encodeURIComponent(line)}&output=embed`
+}
+
+function mapsOpenUrl(loc: unknown): string | null {
+  const ll = parseLatLng(loc)
+  if (ll) return `https://www.google.com/maps?q=${ll.lat},${ll.lng}`
+  const line = formatLocationLine(loc)
+  if (!line) return null
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(line)}`
+}
+
+function customerName(t: Ticket): string {
+  return (t.customerName || t.customer_name || '').trim() || 'Customer'
+}
+
 export default function Dashboard() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -60,13 +136,14 @@ export default function Dashboard() {
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
+  const isEmployee = role === 'employee'
+  const isAdminOrManager = role === 'admin' || role === 'manager'
 
-  const [statsData, setStatsData]     = useState<any>(null)
-  const [tickets, setTickets]         = useState<Ticket[]>([])
-  const [loading, setLoading]         = useState(true)
+  const [statsData, setStatsData] = useState<Record<string, number> | null>(null)
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('ALL')
 
-  // ── Theme tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
   const textPrimary = isLight ? '#0f172a'  : '#F0F6FF'
@@ -83,16 +160,18 @@ export default function Dashboard() {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const isAdmin = role === 'admin' || role === 'manager'
-        const statsEp = isAdmin ? '/dashboard/stats' : '/tickets/stats'
-        const ticketEp = isCustomer ? '/tickets/my' : role === 'employee' ? '/tickets/assigned' : '/tickets'
+        const statsEp = isAdminOrManager ? '/dashboard/stats' : '/tickets/stats'
+        const ticketEp = isCustomer ? '/tickets/my' : isEmployee ? '/tickets/assigned' : '/tickets'
 
         const [sRes, tRes] = await Promise.all([
           fetch(`${apiUrl}${statsEp}`, { headers }),
-          fetch(`${apiUrl}${ticketEp}?size=20`, { headers }),
+          fetch(`${apiUrl}${ticketEp}?size=50`, { headers }),
         ])
 
-        if (sRes.ok) { const s = await sRes.json(); setStatsData(s?.data || s) }
+        if (sRes.ok) {
+          const s = await sRes.json()
+          setStatsData(s?.data || s)
+        }
         if (tRes.ok) {
           const t = await tRes.json()
           setTickets(t?.data?.tickets || t?.tickets || [])
@@ -101,9 +180,8 @@ export default function Dashboard() {
       finally { setLoading(false) }
     }
     fetchAll()
-  }, [user])
+  }, [user, isAdminOrManager, isCustomer, isEmployee])
 
-  // ── Customer stat cards ───────────────────────────────────────
   const customerStats = [
     { label: 'Total',       value: statsData?.total       ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
     { label: 'Pending',     value: statsData?.pending     ?? 0, color: '#F59E0B', icon: Clock,       status: 'PENDING' },
@@ -111,7 +189,6 @@ export default function Dashboard() {
     { label: 'Completed',   value: statsData?.completed   ?? 0, color: '#8B5CF6', icon: CheckCircle, status: 'COMPLETED' },
   ]
 
-  // ── Admin stat cards ──────────────────────────────────────────
   const adminStats = [
     { label: 'Total Tickets',   value: statsData?.total_tickets      ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
     { label: 'Pending',         value: statsData?.pending_tickets    ?? 0, color: '#F59E0B', icon: Clock,       status: 'PENDING' },
@@ -121,22 +198,283 @@ export default function Dashboard() {
 
   const stats = isCustomer ? customerStats : adminStats
 
-  // ── Active ticket (most recent non-completed) ─────────────────
   const activeTicket = isCustomer
     ? tickets.find(t => !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase()))
     : null
 
-  // ── Filtered list ─────────────────────────────────────────────
   const filtered = filterStatus === 'ALL'
     ? tickets
     : tickets.filter(t => t.status.toUpperCase() === filterStatus)
 
-  const statusKey = (s: string) => s.toUpperCase().replace(/ /g, '_')
+  const focusJob = useMemo(() => {
+    if (!isEmployee) return null
+    const open = tickets.filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase()))
+    const byPref = (a: Ticket, b: Ticket) => {
+      const da = getPreferredDate(a) || '9999-99-99'
+      const db = getPreferredDate(b) || '9999-99-99'
+      return da.localeCompare(db)
+    }
+    const assigned = open.filter(t => t.status.toUpperCase() === 'ASSIGNED').sort(byPref)
+    const prog = open.filter(t => t.status.toUpperCase() === 'IN_PROGRESS').sort(byPref)
+    return assigned[0] || prog[0] || null
+  }, [isEmployee, tickets])
 
+  const scheduleRows = useMemo(() => {
+    if (!isEmployee) return []
+    return tickets
+      .filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase()))
+      .filter(t => !!getPreferredDate(t))
+      .sort((a, b) => (getPreferredDate(a) || '').localeCompare(getPreferredDate(b) || ''))
+  }, [isEmployee, tickets])
+
+  const filterPills = isEmployee
+    ? ['ALL', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED'] as const
+    : ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED'] as const
+
+  function JobStepper({ ticket }: { ticket: Ticket }) {
+    const st = ticket.status.toUpperCase()
+    const steps = [
+      { key: 'assigned', label: 'Assigned', desc: 'Queued by your branch' },
+      { key: 'otw', label: 'On the way', desc: 'Travel to the service pin' },
+      { key: 'site', label: 'On site', desc: 'Mark In progress when you arrive' },
+      { key: 'done', label: 'Done', desc: 'Complete in Tickets' },
+    ] as const
+
+    let activeIdx = 0
+    if (st === 'ASSIGNED') activeIdx = 1
+    else if (st === 'IN_PROGRESS') activeIdx = 2
+    else if (st === 'COMPLETED') activeIdx = 3
+    else activeIdx = 0
+
+    return (
+      <div className="mt-4">
+        <p className="text-[11px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Job progress</p>
+        <div className="grid grid-cols-4 gap-1 sm:gap-2">
+          {steps.map((step, i) => {
+            const current = st !== 'COMPLETED' && i === activeIdx
+            const complete = st === 'COMPLETED' || i < activeIdx
+            return (
+              <div key={step.key} className="relative text-center">
+                <div
+                  className="mx-auto w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] font-black border-2 transition-all"
+                  style={{
+                    borderColor: complete ? '#10B981' : current ? '#3B82F6' : border,
+                    backgroundColor: complete ? 'rgba(16,185,129,0.15)' : current ? 'rgba(59,130,246,0.12)' : inputBg,
+                    color: complete ? '#10B981' : current ? '#3B82F6' : textMuted,
+                    boxShadow: current ? '0 0 0 3px rgba(59,130,246,0.2)' : undefined,
+                  }}
+                >
+                  {complete ? '✓' : i + 1}
+                </div>
+                <p className="text-[10px] sm:text-[11px] font-bold mt-1.5 leading-tight" style={{ color: textPrimary }}>{step.label}</p>
+                <p className="text-[9px] sm:text-[10px] leading-snug mt-0.5 hidden sm:block" style={{ color: textMuted }}>{step.desc}</p>
+                {i < steps.length - 1 && (
+                  <div
+                    className="hidden sm:block absolute top-4 left-[calc(50%+1rem)] w-[calc(100%-2rem)] h-[2px] -z-0"
+                    style={{ backgroundColor: i < activeIdx ? '#10B981' : border }}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {st === 'ASSIGNED' && (
+          <p className="text-xs mt-3 rounded-xl px-3 py-2" style={{ backgroundColor: inputBg, color: textMuted }}>
+            Open <strong style={{ color: textPrimary }}>Tickets</strong> and set status to <strong style={{ color: '#10B981' }}>In progress</strong> when you arrive on site. Use the map to navigate.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  /* ── Clean Technician dashboard ───────────────────────────── */
+  if (isEmployee) {
+    const mapUrl = focusJob ? mapsEmbedUrl(focusJob.location) : null
+    const openMapUrl = focusJob ? mapsOpenUrl(focusJob.location) : null
+    const locLine = focusJob ? formatLocationLine(focusJob.location) : ''
+
+    // Count stats for quick view
+    const assignedCount = tickets.filter(t => t.status.toUpperCase() === 'ASSIGNED').length
+    const inProgressCount = tickets.filter(t => t.status.toUpperCase() === 'IN_PROGRESS').length
+    const completedToday = tickets.filter(t => {
+      if (t.status.toUpperCase() !== 'COMPLETED') return false
+      const d = t.updatedAt || t.updated_at
+      if (!d) return false
+      return new Date(d).toDateString() === new Date().toDateString()
+    }).length
+
+    return (
+      <div className="flex flex-col gap-4 pb-8" style={{ backgroundColor: pageBg }}>
+        {/* Header greeting */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#10B981' }}>Technician</p>
+            <h2 className="text-lg md:text-xl font-black tracking-tight" style={{ color: textPrimary }}>
+              Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0] || 'Technician'}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/tickets')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 transition-all"
+          >
+            <ClipboardList className="w-4 h-4" /> All Tickets
+          </button>
+        </div>
+
+        {/* Quick stats row */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <p className="text-2xl font-black" style={{ color: assignedCount > 0 ? '#3B82F6' : textMuted }}>{loading ? '—' : assignedCount}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Assigned</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <p className="text-2xl font-black" style={{ color: inProgressCount > 0 ? '#F59E0B' : textMuted }}>{loading ? '—' : inProgressCount}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>In Progress</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <p className="text-2xl font-black" style={{ color: '#8B5CF6' }}>{loading ? '—' : completedToday}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Done Today</p>
+          </div>
+        </div>
+
+        {/* Current Job Card - Main Focus */}
+        {focusJob ? (
+          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            {/* Job header */}
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}`, background: isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)' }}>
+              <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: '#10B981' }}>Current Job</span>
+              <span
+                className="px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase"
+                style={{
+                  color: STATUS_CFG[statusKey(focusJob.status)]?.color,
+                  backgroundColor: STATUS_CFG[statusKey(focusJob.status)]?.bg,
+                  borderColor: STATUS_CFG[statusKey(focusJob.status)]?.border,
+                }}
+              >
+                {STATUS_CFG[statusKey(focusJob.status)]?.label ?? focusJob.status}
+              </span>
+            </div>
+
+            <div className="p-4">
+              <h3 className="text-base font-bold mb-1" style={{ color: textPrimary }}>{focusJob.title}</h3>
+              <p className="text-sm mb-3" style={{ color: textMuted }}>{customerName(focusJob)}</p>
+
+              {/* Quick info row */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: inputBg, color: textMuted }}>
+                  <Wrench className="w-3 h-3" /> {focusJob.serviceType}
+                </span>
+                {getPreferredDate(focusJob) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: inputBg, color: textMuted }}>
+                    <CalendarDays className="w-3 h-3" /> {formatDate(getPreferredDate(focusJob))}
+                  </span>
+                )}
+                {(focusJob.contactPhone || focusJob.contact_phone) && (
+                  <a
+                    href={`tel:${(focusJob.contactPhone || focusJob.contact_phone || '').replace(/\D/g, '')}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium hover:opacity-80"
+                    style={{ backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.2)', color: '#10B981' }}
+                  >
+                    <Phone className="w-3 h-3" /> Call
+                  </a>
+                )}
+              </div>
+
+              {/* Address */}
+              {locLine && (
+                <div className="flex items-start gap-2 mb-3 p-2 rounded-lg" style={{ backgroundColor: inputBg }}>
+                  <MapPin className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#10B981' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: textPrimary }}>{locLine}</p>
+                    {openMapUrl && (
+                      <a href={openMapUrl} target="_blank" rel="noreferrer" className="text-[10px] text-[#10B981] hover:underline inline-flex items-center gap-1 mt-1">
+                        Open in Maps <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Compact stepper */}
+              <JobStepper ticket={focusJob} />
+
+              {/* Action buttons */}
+              <div className="flex gap-2 mt-4">
+                <Link
+                  to={`/tickets?id=${focusJob.id}`}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 transition-all"
+                >
+                  View Job Details
+                </Link>
+                {focusJob.status.toUpperCase() === 'ASSIGNED' && (
+                  <button
+                    onClick={() => navigate(`/tickets?id=${focusJob.id}`)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all"
+                    style={{ borderColor: '#3B82F6', color: '#3B82F6' }}
+                  >
+                    Start Job
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Mini map */}
+            {mapUrl && (
+              <div className="h-48 border-t" style={{ borderColor: border }}>
+                <iframe title="Service location" src={mapUrl} className="w-full h-full border-0"
+                  loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+              </div>
+            )}
+          </div>
+        ) : !loading && (
+          <div className="rounded-2xl p-6 text-center" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" style={{ color: textMuted }} />
+            <p className="font-bold text-sm" style={{ color: textPrimary }}>No jobs assigned</p>
+            <p className="text-xs mt-1" style={{ color: textMuted }}>Check back later or contact your manager</p>
+          </div>
+        )}
+
+        {/* Upcoming jobs list */}
+        {scheduleRows.length > 0 && (
+          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <h3 className="font-bold text-sm" style={{ color: textPrimary }}>Upcoming</h3>
+              <span className="text-[10px] font-medium" style={{ color: textMuted }}>{scheduleRows.length} scheduled</span>
+            </div>
+            <div className="divide-y" style={{ borderColor: border }}>
+              {scheduleRows.slice(0, 3).map(t => (
+                <Link
+                  key={t.id}
+                  to={`/tickets?id=${t.id}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:opacity-90 transition-opacity"
+                >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${STATUS_CFG[statusKey(t.status)]?.color}15`, color: STATUS_CFG[statusKey(t.status)]?.color }}>
+                    <CalendarDays className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: textPrimary }}>{t.title}</p>
+                    <p className="text-[11px] truncate" style={{ color: textMuted }}>{formatDate(getPreferredDate(t))} · {customerName(t)}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 shrink-0 opacity-40" style={{ color: textMuted }} />
+                </Link>
+              ))}
+              {scheduleRows.length > 3 && (
+                <Link to="/tickets" className="block px-4 py-2 text-center text-[11px] font-bold text-[#10B981] hover:underline">
+                  + {scheduleRows.length - 3} more
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  /* ── Customer, manager, admin dashboard (original flow) ──────── */
   return (
     <div className="flex flex-col gap-5 pb-8" style={{ backgroundColor: pageBg }}>
 
-      {/* ── Welcome + CTA ── */}
       <div
         className="rounded-2xl p-5 md:p-7 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
@@ -149,17 +487,20 @@ export default function Dashboard() {
           </h2>
           <p className="text-sm" style={{ color: textMuted }}>
             {isCustomer
-              ? statsData?.inProgress > 0
-                ? `You have ${statsData.inProgress} active service request${statsData.inProgress > 1 ? 's' : ''} in progress.`
-                : statsData?.pending > 0
-                  ? `You have ${statsData.pending} pending request${statsData.pending > 1 ? 's' : ''} waiting for assignment.`
+              ? (statsData?.inProgress ?? 0) > 0
+                ? `You have ${statsData?.inProgress ?? 0} active service request${(statsData?.inProgress ?? 0) > 1 ? 's' : ''} in progress.`
+                : (statsData?.pending ?? 0) > 0
+                  ? `You have ${statsData?.pending ?? 0} pending request${(statsData?.pending ?? 0) > 1 ? 's' : ''} waiting for assignment.`
                   : 'All clear! Book a new service whenever you need us.'
-              : `${statsData?.pending_tickets ?? 0} pending · ${statsData?.in_progress_tickets ?? 0} in progress`
+              : role === 'manager'
+                ? `Branch overview: ${statsData?.pending_tickets ?? 0} awaiting assignment · ${statsData?.in_progress_tickets ?? 0} in progress.`
+                : `${statsData?.pending_tickets ?? 0} pending · ${statsData?.in_progress_tickets ?? 0} in progress (all branches)`
             }
           </p>
         </div>
         {isCustomer && (
           <button
+            type="button"
             onClick={() => navigate('/create-ticket')}
             className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all shrink-0 shadow-lg shadow-[#10B981]/20"
           >
@@ -168,7 +509,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((s, i) => {
           const Icon = s.icon
@@ -176,6 +516,7 @@ export default function Dashboard() {
           return (
             <button
               key={i}
+              type="button"
               onClick={() => setFilterStatus(isActive ? 'ALL' : s.status)}
               className="rounded-2xl p-4 md:p-5 text-left transition-all hover:shadow-md relative overflow-hidden"
               style={{
@@ -199,7 +540,6 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* ── Active ticket highlight (customer only) ── */}
       {isCustomer && activeTicket && (
         <div
           className="rounded-2xl p-5 relative overflow-hidden"
@@ -231,15 +571,15 @@ export default function Dashboard() {
             <span className="flex items-center gap-1.5 text-[12px]" style={{ color: textMuted }}>
               <Wrench className="w-3.5 h-3.5" /> {activeTicket.serviceType}
             </span>
-            {(activeTicket.scheduledDate || activeTicket.preferredDate) && (
+            {(activeTicket.scheduledDate || getPreferredDate(activeTicket)) && (
               <span className="flex items-center gap-1.5 text-[12px]" style={{ color: textMuted }}>
                 <CalendarDays className="w-3.5 h-3.5" />
-                {formatDate(activeTicket.scheduledDate || activeTicket.preferredDate)}
+                {formatDate(activeTicket.scheduledDate || getPreferredDate(activeTicket))}
               </span>
             )}
-            {activeTicket.location && (
+            {formatLocationLine(activeTicket.location) && (
               <span className="flex items-center gap-1.5 text-[12px]" style={{ color: textMuted }}>
-                <MapPin className="w-3.5 h-3.5 shrink-0" /> <span className="break-words">{activeTicket.location}</span>
+                <MapPin className="w-3.5 h-3.5 shrink-0" /> <span className="break-words">{formatLocationLine(activeTicket.location)}</span>
               </span>
             )}
           </div>
@@ -254,22 +594,20 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Ticket list ── */}
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
-        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
           <h3 className="font-black text-base" style={{ color: textPrimary }}>
             {isCustomer ? 'My Service Requests' : 'Recent Tickets'}
           </h3>
-          {/* Status filter pills */}
           <div className="flex flex-wrap gap-1.5">
-            {['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED'].map(s => {
-              const cfg = STATUS_CFG[s]
+            {filterPills.map(s => {
+              const cfg = s === 'ALL' ? null : STATUS_CFG[s]
               const isActive = filterStatus === s
               return (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => setFilterStatus(s)}
                   className="px-3 py-1 rounded-full text-[11px] font-bold border transition-all"
                   style={isActive
@@ -284,10 +622,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* List */}
         {loading ? (
           <div className="flex flex-col gap-3 p-5">
-            {[1,2,3].map(i => (
+            {[1, 2, 3].map(i => (
               <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
             ))}
           </div>
@@ -308,7 +645,7 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col divide-y" style={{ '--tw-divide-opacity': 1 } as any}>
+          <div className="flex flex-col divide-y" style={{ borderColor: border }}>
             {filtered.map(ticket => {
               const sk = statusKey(ticket.status)
               const cfg = STATUS_CFG[sk] ?? STATUS_CFG.PENDING
@@ -318,29 +655,25 @@ export default function Dashboard() {
                   key={ticket.id}
                   to={`/tickets?id=${ticket.id}`}
                   className="flex items-center gap-4 px-5 py-4 transition-colors group"
-                  style={{ borderColor: border }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = rowHover }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
                 >
-                  {/* Service icon */}
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${cfg.color}15`, color: cfg.color }}>
                     <SvcIcon className="w-4 h-4" />
                   </div>
 
-                  {/* Main info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="font-bold text-sm truncate" style={{ color: textPrimary }}>{ticket.title}</span>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-[12px]" style={{ color: textMuted }}>{ticket.serviceType}</span>
-                      {ticket.createdAt && (
-                        <span className="text-[11px]" style={{ color: textMuted }}>{timeAgo(ticket.createdAt)}</span>
+                      {(ticket.createdAt || ticket.created_at) && (
+                        <span className="text-[11px]" style={{ color: textMuted }}>{timeAgo((ticket.createdAt || ticket.created_at) as string)}</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Status badge */}
                   <div className="flex items-center gap-2 shrink-0">
                     <span
                       className="hidden sm:inline-flex px-2.5 py-1 rounded-full text-[11px] font-bold border uppercase tracking-wide"
@@ -348,7 +681,6 @@ export default function Dashboard() {
                     >
                       {cfg.label}
                     </span>
-                    {/* Mobile: just dot */}
                     <span className="sm:hidden w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
                     <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: textMuted }} />
                   </div>
@@ -358,7 +690,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Footer */}
         {filtered.length > 0 && (
           <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
             <span className="text-[12px]" style={{ color: textMuted }}>{filtered.length} ticket{filtered.length !== 1 ? 's' : ''}</span>

@@ -3,7 +3,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield,
-  KeyRound, Trash2, X, AlertTriangle, MapPin, Lock, Eye, Bell
+  KeyRound, Trash2, X, AlertTriangle, MapPin, Lock, Eye, EyeOff, Bell
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import PhAddressPicker from '../components/PhAddressPicker'
@@ -24,6 +24,7 @@ export default function Profile() {
   const { user, setUser, logout } = useAuth()
   const { theme } = useTheme()
   const isLight = theme === 'light'
+  const isManager = user?.role?.toLowerCase() === 'manager'
   const fileRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<Tab>('profile')
 
@@ -39,6 +40,7 @@ export default function Profile() {
 
   // ── Profile info state ────────────────────────────────────────────────────
   const [name, setName]               = useState(user?.name || '')
+  const [personalEmail, setPersonalEmail] = useState(user?.personalEmail || '')
   const [phone, setPhone]             = useState(user?.phone || '')
   const [address, setAddress]         = useState<AddressValue>({
     region: user?.region || '',
@@ -79,6 +81,9 @@ export default function Profile() {
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [passwordErr, setPasswordErr]       = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   // ── User management state (admin only) ────────────────────────────────────
   const [users, setUsers]                   = useState<any[]>([])
@@ -96,6 +101,7 @@ export default function Profile() {
         const u = data?.data || data
         if (u.phone !== undefined) setPhone(u.phone || '')
         if (u.name !== undefined) setName(u.name || '')
+        if (u.personalEmail !== undefined) setPersonalEmail(u.personalEmail || '')
         // Always update address from API, even if empty
         setAddress({
           region: u.region || '',
@@ -147,6 +153,9 @@ export default function Profile() {
         payload.street = address.street
         payload.landmark = address.landmark
       }
+      if (isManager) {
+        payload.personalEmail = personalEmail.trim()
+      }
       console.log('Updating profile with payload:', payload)
       const res = await fetch(`${apiUrl}/user/profile`, {
         method: 'PATCH', headers: authHeaders(),
@@ -160,6 +169,7 @@ export default function Profile() {
         ...user!,
         name: u.name || name.trim(),
         phone: u.phone || phone.trim(),
+        personalEmail: isManager ? ((u.personalEmail ?? personalEmail.trim()) || null) : user!.personalEmail,
         region: u.region || address.region,
         city: u.city || address.city,
         barangay: u.barangay || address.barangay,
@@ -288,6 +298,7 @@ export default function Profile() {
         body: JSON.stringify({
           currentPassword: currentPassword,
           newPassword: newPassword,
+          confirmPassword: confirmPassword,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to change password.')
@@ -400,20 +411,41 @@ export default function Profile() {
                       />
                     </div>
 
-                    {/* Email row */}
+                    {/* Work email — read-only for branch managers */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
-                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Email</label>
-                      <div className="flex-1 flex items-center gap-2">
-                        <span className="text-sm" style={{ color: textPrimary }}>{user?.email}</span>
-                        <button
-                          type="button"
-                          onClick={() => { setShowEmailModal(true); setEmailStep('input'); setEmailErr(''); setNewEmail(''); setEmailCode('') }}
-                          className="text-[#10B981] text-sm font-semibold hover:underline"
-                        >
-                          Change
-                        </button>
+                      <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>
+                        {isManager ? 'Work email' : 'Email'}
+                      </label>
+                      <div className="flex-1 flex flex-col gap-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm break-all" style={{ color: textPrimary }}>{user?.email}</span>
+                          {!isManager && (
+                            <button
+                              type="button"
+                              onClick={() => { setShowEmailModal(true); setEmailStep('input'); setEmailErr(''); setNewEmail(''); setEmailCode('') }}
+                              className="text-[#10B981] text-sm font-semibold hover:underline shrink-0"
+                            >
+                              Change
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
+
+                    {isManager && (
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                        <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Personal email</label>
+                        <input
+                          type="email"
+                          value={personalEmail}
+                          onChange={e => setPersonalEmail(e.target.value)}
+                          style={inputStyle}
+                          className={`${ic} flex-1`}
+                          placeholder="your.personal@email.com"
+                          autoComplete="email"
+                        />
+                      </div>
+                    )}
 
                     {/* Phone row (hidden for admin) */}
                     {user?.role !== 'admin' && (
@@ -540,31 +572,58 @@ export default function Profile() {
                 {/* Current password */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>Current Password</label>
-                  <input
-                    type="password" value={currentPassword}
-                    onChange={e => setCurrentPassword(e.target.value)}
-                    style={inputStyle} className={ic} placeholder="Enter current password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'} value={currentPassword}
+                      onChange={e => setCurrentPassword(e.target.value)}
+                      style={inputStyle} className={`${ic} pr-10`} placeholder="Enter current password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* New password */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>New Password</label>
-                  <input
-                    type="password" value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    style={inputStyle} className={ic} placeholder="Enter new password (min 8 chars)"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'} value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      style={inputStyle} className={`${ic} pr-10`} placeholder="Enter new password (min 8 chars)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Confirm password */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-1.5" style={{ color: textMuted }}>Confirm New Password</label>
-                  <input
-                    type="password" value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    style={inputStyle} className={ic} placeholder="Confirm new password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      style={inputStyle} className={`${ic} pr-10`} placeholder="Confirm new password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Feedback */}

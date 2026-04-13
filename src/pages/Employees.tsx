@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Search, MoreVertical, Wrench, Mail, Phone, RefreshCw, UserCheck, Building2, CheckCircle, XCircle, Pencil, Trash2, Power, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Search, MoreVertical, Wrench, Mail, Phone, RefreshCw, UserCheck, Building2, CheckCircle, XCircle, Pencil, Trash2, Power, X, Plus, Copy, Check } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 
 interface Employee {
@@ -17,7 +18,10 @@ interface Employee {
 
 export default function Employees() {
   const { theme } = useTheme()
+  const { user } = useAuth()
   const isLight = theme === 'light'
+  const isManager = user?.role?.toLowerCase() === 'manager'
+  const isAdmin = user?.role?.toLowerCase() === 'admin'
   
   const [activeTab, setActiveTab] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -25,11 +29,58 @@ export default function Employees() {
   const [loading, setLoading] = useState(true)
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement>(null)
+
+  const MENU_WIDTH = 176
+
+  const openEmployeeActions = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (activeDropdown === id) {
+      setActiveDropdown(null)
+      setMenuPosition(null)
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const left = Math.min(Math.max(8, rect.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - 8)
+    setMenuPosition({ top: rect.bottom + 4, left })
+    setActiveDropdown(id)
+  }
+
+  useEffect(() => {
+    if (!activeDropdown) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (actionMenuRef.current?.contains(t)) return
+      if ((e.target as HTMLElement).closest('[data-employee-action-trigger="true"]')) return
+      setActiveDropdown(null)
+      setMenuPosition(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [activeDropdown])
+
+  useEffect(() => {
+    if (!activeDropdown) return
+    const close = () => {
+      setActiveDropdown(null)
+      setMenuPosition(null)
+    }
+    window.addEventListener('scroll', close, true)
+    return () => window.removeEventListener('scroll', close, true)
+  }, [activeDropdown])
   const [editing, setEditing] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState<Employee | null>(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', email: '', branchId: '' })
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [createSaving, setCreateSaving] = useState(false)
+  /** Shown once after successful create — technician can log in with this password (also emailed when SMTP is configured). */
+  const [newTechCreds, setNewTechCreds] = useState<{ email: string; password: string } | null>(null)
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null)
 
   const fetchEmployees = async () => {
     try {
@@ -72,10 +123,30 @@ export default function Employees() {
 
   useEffect(() => { fetchEmployees() }, [])
 
+  useEffect(() => {
+    if (!isAdmin) return
+    const loadBranches = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        setBranches(list.map((b: { id: string; name: string }) => ({ id: b.id, name: b.name || b.id })))
+      } catch {
+        /* ignore */
+      }
+    }
+    loadBranches()
+  }, [isAdmin])
+
   const handleToggleActive = async (emp: Employee) => {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/admin/users/${emp.id}/toggle-active`, {
+      const url = isManager
+        ? `${API_BASE_URL}/manager/employees/${emp.id}/toggle-active`
+        : `${API_BASE_URL}/admin/users/${emp.id}/toggle-active`
+      const res = await fetch(url, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -87,7 +158,10 @@ export default function Employees() {
     if (!deleting) return
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/admin/users/${deleting.id}`, {
+      const url = isManager
+        ? `${API_BASE_URL}/manager/employees/${deleting.id}`
+        : `${API_BASE_URL}/admin/users/${deleting.id}`
+      const res = await fetch(url, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -104,7 +178,10 @@ export default function Employees() {
     setErr('')
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/admin/users/${editing.id}`, {
+      const url = isManager
+        ? `${API_BASE_URL}/manager/employees/${editing.id}`
+        : `${API_BASE_URL}/admin/users/${editing.id}`
+      const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(form)
@@ -127,6 +204,55 @@ export default function Employees() {
     setEditing(emp)
     setForm({ name: emp.name, email: emp.email, phone: emp.phone || '' })
     setErr('')
+  }
+
+  const handleCreateTech = async () => {
+    if (!createForm.name?.trim() || !createForm.email?.trim()) {
+      setErr('Name and email are required.')
+      return
+    }
+    if (isAdmin && !createForm.branchId?.trim()) {
+      setErr('Select a branch for this technician.')
+      return
+    }
+    setCreateSaving(true)
+    setErr('')
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const url = isAdmin ? `${API_BASE_URL}/admin/technicians` : `${API_BASE_URL}/manager/employees`
+      const body = isAdmin
+        ? {
+            name: createForm.name.trim(),
+            email: createForm.email.trim(),
+            branchId: createForm.branchId.trim(),
+          }
+        : {
+            name: createForm.name.trim(),
+            email: createForm.email.trim(),
+          }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(data?.message || 'Could not create technician.')
+        return
+      }
+      const u = data?.data
+      const temp = u?.temporaryPassword
+      if (typeof temp === 'string' && temp.length > 0 && u?.email) {
+        setNewTechCreds({ email: u.email, password: temp })
+      }
+      setShowCreate(false)
+      setCreateForm({ name: '', email: '', branchId: '' })
+      fetchEmployees()
+    } catch {
+      setErr('Network error.')
+    } finally {
+      setCreateSaving(false)
+    }
   }
 
   // ── Colour tokens ──────────────────────────────────────────────
@@ -160,14 +286,40 @@ export default function Employees() {
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
+  const copyCreds = async (text: string, field: 'email' | 'password') => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
+      setTimeout(() => setCopiedField(null), 2000)
+    } catch {
+      /* non-secure context */
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 style={{ color: textPrimary }} className="text-2xl font-bold tracking-tight mb-1">Employees</h2>
-          <p style={{ color: textMuted }} className="text-sm">Manage internal employees and service staff.</p>
+          <h2 style={{ color: textPrimary }} className="text-2xl font-bold tracking-tight mb-1">
+            {isManager ? 'Branch team' : 'Employees'}
+          </h2>
+          <p style={{ color: textMuted }} className="text-sm">
+            {isManager
+              ? 'Add technicians and manage who can be assigned to jobs for your branch.'
+              : 'Manage internal employees and service staff.'}
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+        {(isManager || isAdmin) && (
+          <button
+            type="button"
+            onClick={() => { setShowCreate(true); setErr(''); setCreateForm({ name: '', email: '', branchId: '' }) }}
+            className="flex items-center gap-2 bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" /> Add technician
+          </button>
+        )}
         <button
           onClick={fetchEmployees}
           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
@@ -175,6 +327,7 @@ export default function Employees() {
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
+        </div>
       </div>
 
       {/* Main Card */}
@@ -224,21 +377,18 @@ export default function Employees() {
                   <div className="font-bold truncate" style={{ color: textPrimary }}>{e.name}</div>
                   <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] mt-0.5" style={{ color: '#3B82F6' }}>
                     <UserCheck className="w-3 h-3" />
-                    {e.role}
+                    {isManager ? 'Technician' : e.role}
                   </div>
                 </div>
-                <div className="relative">
-                  <button onClick={() => setActiveDropdown(activeDropdown === e.id ? null : e.id)} style={{ color: textMuted }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                  {activeDropdown === e.id && (
-                    <div className="absolute right-0 top-8 mt-1 w-48 bg-white dark:bg-[#0F1A2E] border dark:border-[#243452] rounded-xl shadow-lg z-50 py-1" onMouseLeave={() => setActiveDropdown(null)}>
-                      <button onClick={() => { openEdit(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Pencil className="w-4 h-4" /> Edit</button>
-                      <button onClick={() => { handleToggleActive(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Power className="w-4 h-4" /> {e.isActive ? 'Disable' : 'Enable'}</button>
-                      <button onClick={() => { setDeleting(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Delete</button>
-                    </div>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  data-employee-action-trigger="true"
+                  onClick={(ev) => openEmployeeActions(ev, e.id)}
+                  style={{ color: textMuted }}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
               </div>
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center gap-2" style={{ color: textMuted }}><Mail className="w-4 h-4 shrink-0" /><span className="truncate">{e.email}</span></div>
@@ -268,13 +418,15 @@ export default function Employees() {
         </div>
 
         {/* Desktop Table */}
-        <div className="hidden lg:block overflow-hidden">
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left border-collapse table-fixed">
             <thead>
               <tr style={{ backgroundColor: theadBg }}>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Member</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%]" style={{ color: textMuted }}>Role</th>
+                {!isManager && (
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[20%]" style={{ color: textMuted }}>Branch</th>
+                )}
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[20%]" style={{ color: textMuted }}>Contact</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[12%]" style={{ color: textMuted }}>Status</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[8%]" style={{ color: textMuted + '80' }}>Actions</th>
@@ -282,9 +434,9 @@ export default function Employees() {
             </thead>
             <tbody className="text-sm">
               {loading ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center" style={{ color: textMuted }}>Loading employees...</td></tr>
+                <tr><td colSpan={isManager ? 5 : 6} className="px-6 py-12 text-center" style={{ color: textMuted }}>Loading employees...</td></tr>
               ) : filteredEmployees.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center" style={{ color: textMuted }}>No employees found.</td></tr>
+                <tr><td colSpan={isManager ? 5 : 6} className="px-6 py-12 text-center" style={{ color: textMuted }}>No employees found.</td></tr>
               ) : filteredEmployees.map((e) => (
                 <tr key={e.id} style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} className="group transition-colors" onMouseEnter={el => el.currentTarget.style.backgroundColor = rowHover} onMouseLeave={el => el.currentTarget.style.backgroundColor = cardBg}>
                   <td className="px-6 py-4">
@@ -302,9 +454,10 @@ export default function Employees() {
                   <td className="px-6 py-4">
                     <div className="inline-flex items-center gap-1.5 font-black uppercase tracking-[0.05em] text-[10px] px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
                       <UserCheck className="w-3 h-3" />
-                      {e.role}
+                      {isManager ? 'Technician' : e.role}
                     </div>
                   </td>
+                  {!isManager && (
                   <td className="px-6 py-4">
                     {e.branchName ? (
                       <div className="flex items-center gap-2 text-xs font-bold" style={{ color: textPrimary }}>
@@ -313,6 +466,7 @@ export default function Employees() {
                       </div>
                     ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
                   </td>
+                  )}
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-1.5 text-xs font-medium truncate" style={{ color: textMuted }}>
@@ -332,19 +486,15 @@ export default function Employees() {
                     </button>
                   </td>
                   <td className="px-6 py-4 text-left">
-                    <div className="relative">
-                      <button onClick={() => setActiveDropdown(activeDropdown === e.id ? null : e.id)} style={{ color: textMuted }} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                      {activeDropdown === e.id && (
-                        <div className="absolute right-0 top-10 mt-1 w-44 bg-white dark:bg-[#0F1A2E] border dark:border-[#243452] rounded-xl shadow-xl z-50 py-1 border-slate-200" onMouseLeave={() => setActiveDropdown(null)}>
-                          <button onClick={() => { openEdit(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Pencil className="w-3.5 h-3.5" /> Edit Member</button>
-                          <button onClick={() => { handleToggleActive(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Power className="w-3.5 h-3.5" /> {e.isActive ? 'Disable Access' : 'Enable Access'}</button>
-                          <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                          <button onClick={() => { setDeleting(e); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete Member</button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      data-employee-action-trigger="true"
+                      onClick={(ev) => openEmployeeActions(ev, e.id)}
+                      style={{ color: textMuted }}
+                      className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -352,6 +502,162 @@ export default function Employees() {
           </table>
         </div>
       </div>
+
+      {/* Actions menu (fixed — not clipped by table overflow) */}
+      {activeDropdown && menuPosition && (() => {
+        const emp = employees.find(x => x.id === activeDropdown)
+        if (!emp) return null
+        const close = () => { setActiveDropdown(null); setMenuPosition(null) }
+        return (
+          <div
+            ref={actionMenuRef}
+            className="fixed w-44 rounded-xl shadow-2xl z-[100] py-1 border border-slate-200 dark:border-[#243452]"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              backgroundColor: isLight ? '#ffffff' : '#0F1A2E',
+              boxShadow: isLight
+                ? '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)'
+                : '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.4)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { openEdit(emp); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              style={{ color: textPrimary }}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Member
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleToggleActive(emp); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              style={{ color: textPrimary }}
+            >
+              <Power className="w-3.5 h-3.5" /> {emp.isActive ? 'Disable Access' : 'Enable Access'}
+            </button>
+            <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+            <button
+              type="button"
+              onClick={() => { setDeleting(emp); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Member
+            </button>
+          </div>
+        )
+      })()}
+
+      {/* Create technician (manager or admin) */}
+      {showCreate && (isManager || isAdmin) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold" style={{ color: textPrimary }}>Add technician</h3>
+              <button type="button" onClick={() => setShowCreate(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs" style={{ color: textMuted }}>
+              {isAdmin
+                ? 'Creates an active technician for the branch you select. They receive an invitation email with login details (when SMTP is configured). They can add their phone number in Profile after signing in. You will also see the temporary password once here to copy.'
+                : 'Creates an active login for your branch. They receive the same invitation email when SMTP is configured. They can add their phone in Profile after signing in. You will also see the temporary password once here to copy.'}
+            </p>
+            {err && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{err}</p>}
+            {isAdmin && (
+              <div>
+                <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Branch</label>
+                <select
+                  value={createForm.branchId}
+                  onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}
+                  className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                >
+                  <option value="">Select branch…</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                {branches.length === 0 && (
+                  <p className="text-xs mt-1" style={{ color: textMuted }}>Loading branches… If empty, refresh the page or check API access.</p>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Name</label>
+              <input value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+            </div>
+            <div>
+              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Work email (login)</label>
+              <input type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setShowCreate(false)} className="flex-1 border rounded-xl py-2.5 text-sm font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>Cancel</button>
+              <button type="button" onClick={handleCreateTech} disabled={createSaving} className="flex-1 bg-[#10B981] hover:bg-[#059669] disabled:opacity-60 text-white rounded-xl py-2.5 text-sm font-bold transition-all">
+                {createSaving ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* One-time login details after creating a technician */}
+      {newTechCreds && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-lg font-bold" style={{ color: textPrimary }}>Technician login</h3>
+              <button
+                type="button"
+                onClick={() => setNewTechCreds(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                style={{ color: textMuted }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs leading-relaxed" style={{ color: textMuted }}>
+              Share these with the technician so they can sign in. They should change their password under Profile after first login. This dialog won’t show again.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Login email</label>
+                <div className="flex gap-2 items-center">
+                  <code className="flex-1 text-sm px-3 py-2 rounded-lg border truncate" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>{newTechCreds.email}</code>
+                  <button
+                    type="button"
+                    onClick={() => copyCreds(newTechCreds.email, 'email')}
+                    className="shrink-0 p-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1 transition-colors hover:bg-emerald-500/10 hover:border-[#10B981]"
+                    style={{ borderColor: inputBorder, color: '#10B981' }}
+                  >
+                    {copiedField === 'email' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Temporary password</label>
+                <div className="flex gap-2 items-center">
+                  <code className="flex-1 text-sm px-3 py-2 rounded-lg border break-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>{newTechCreds.password}</code>
+                  <button
+                    type="button"
+                    onClick={() => copyCreds(newTechCreds.password, 'password')}
+                    className="shrink-0 p-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1 transition-colors hover:bg-emerald-500/10 hover:border-[#10B981]"
+                    style={{ borderColor: inputBorder, color: '#10B981' }}
+                  >
+                    {copiedField === 'password' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewTechCreds(null)}
+              className="w-full bg-[#10B981] hover:bg-[#059669] text-white rounded-xl py-3 text-sm font-bold transition-all"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editing && (
@@ -404,6 +710,7 @@ export default function Employees() {
           </div>
         </div>
       )}
+
     </div>
   )
 }

@@ -8,6 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL } from '../utils/api'
 import { useNotifications } from '../contexts/NotificationContext'
 import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -26,9 +27,32 @@ export default function DashboardLayout() {
   const { user, logout } = useAuth()
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const isLight = theme === 'light'
+  const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
   // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
   useEffect(() => { setNavPicBroken(false) }, [user?.picture])
+
+  useEffect(() => {
+    const r = (user?.role || '').toLowerCase()
+    if (r !== 'manager' || !user?.branchId) {
+      setBranchLabel(null)
+      return
+    }
+    const load = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        const b = list.find((x: { id: string }) => x.id === user.branchId)
+        setBranchLabel(b?.name || null)
+      } catch {
+        setBranchLabel(null)
+      }
+    }
+    load()
+  }, [user?.role, user?.branchId])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -43,10 +67,10 @@ export default function DashboardLayout() {
   const allLinks = [
     { name: 'Overview',      path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',       path: '/tickets',   icon: TicketIcon },
-    { name: 'Branches',      path: '/branches',  icon: Building2,  roles: ['admin', 'manager'] },
+    { name: 'Branches',      path: '/branches',  icon: Building2,  roles: ['admin'] },
     { name: 'Managers',      path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
     { name: 'Employees',     path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
-    { name: 'Customers',     path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Customers',     path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
   ]
 
   const navLinks = allLinks.filter(link => {
@@ -225,8 +249,12 @@ export default function DashboardLayout() {
               <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
                 {currentPage}
               </h1>
-              <p className="text-[11px] hidden sm:block" style={{ color: textMuted }}>
-                Ashcol Service Portal
+              <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
+                {(user?.role || '').toLowerCase() === 'manager' && branchLabel
+                  ? `Branch · ${branchLabel}`
+                  : (user?.role || '').toLowerCase() === 'employee'
+                    ? 'Technician View'
+                    : 'Ashcol Service Portal'}
               </p>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, MoreVertical, Building, User as UserIcon, Mail, Phone, RefreshCw, CheckCircle, XCircle, Pencil, Trash2, Power, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -24,6 +24,23 @@ export default function Customers() {
   const [loading, setLoading] = useState(true)
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement>(null)
+
+  const MENU_WIDTH = 176
+
+  const openCustomerActions = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (activeDropdown === id) {
+      setActiveDropdown(null)
+      setMenuPosition(null)
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const left = Math.min(Math.max(8, rect.right - MENU_WIDTH), window.innerWidth - MENU_WIDTH - 8)
+    setMenuPosition({ top: rect.bottom + 4, left })
+    setActiveDropdown(id)
+  }
   const [editing, setEditing] = useState<Customer | null>(null)
   const [deleting, setDeleting] = useState<Customer | null>(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '', city: '', region: '' })
@@ -120,6 +137,29 @@ export default function Customers() {
   }
 
   useEffect(() => { fetchCustomers() }, [])
+
+  useEffect(() => {
+    if (!activeDropdown) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (actionMenuRef.current?.contains(t)) return
+      if ((e.target as HTMLElement).closest('[data-customer-action-trigger="true"]')) return
+      setActiveDropdown(null)
+      setMenuPosition(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [activeDropdown])
+
+  useEffect(() => {
+    if (!activeDropdown) return
+    const close = () => {
+      setActiveDropdown(null)
+      setMenuPosition(null)
+    }
+    window.addEventListener('scroll', close, true)
+    return () => window.removeEventListener('scroll', close, true)
+  }, [activeDropdown])
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg       = isLight ? '#ffffff' : '#0A1120'
@@ -221,18 +261,15 @@ export default function Customers() {
                 <div className="font-bold truncate" style={{ color: textPrimary }}>{cust.name}</div>
                 <div className="text-[10px] font-medium opacity-60" style={{ color: textMuted }}>ID: {cust.id}</div>
               </div>
-              <div className="relative">
-                <button onClick={() => setActiveDropdown(activeDropdown === cust.id ? null : cust.id)} style={{ color: textMuted }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-                {activeDropdown === cust.id && (
-                  <div className="absolute right-0 top-8 mt-1 w-48 bg-white dark:bg-[#0F1A2E] border dark:border-[#243452] rounded-xl shadow-lg z-50 py-1" onMouseLeave={() => setActiveDropdown(null)}>
-                    <button onClick={() => { openEdit(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Pencil className="w-4 h-4" /> Edit</button>
-                    <button onClick={() => { handleToggleActive(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Power className="w-4 h-4" /> {cust.isActive ? 'Disable' : 'Enable'}</button>
-                    <button onClick={() => { setDeleting(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Delete</button>
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                data-customer-action-trigger="true"
+                onClick={(ev) => openCustomerActions(ev, cust.id)}
+                style={{ color: textMuted }}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
             </div>
             
             {/* Contact Info */}
@@ -258,8 +295,8 @@ export default function Customers() {
       </div>
 
       {/* Desktop Table View */}
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="hidden lg:block border rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+      <div style={{ backgroundColor: cardBg, borderColor: border }} className="hidden lg:block border rounded-2xl overflow-x-auto shadow-sm">
+        <div className="min-w-0">
           <table className="w-full text-left">
             <thead>
               <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold">
@@ -313,19 +350,15 @@ export default function Customers() {
                     </button>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="relative inline-flex justify-end">
-                      <button onClick={() => setActiveDropdown(activeDropdown === cust.id ? null : cust.id)} style={{ color: textMuted }} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                      {activeDropdown === cust.id && (
-                        <div className="absolute right-0 top-10 mt-1 w-44 bg-white dark:bg-[#0F1A2E] border dark:border-[#243452] rounded-xl shadow-xl z-50 py-1 border-slate-200" onMouseLeave={() => setActiveDropdown(null)}>
-                          <button onClick={() => { openEdit(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Pencil className="w-3.5 h-3.5" /> Edit Profile</button>
-                          <button onClick={() => { handleToggleActive(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2" style={{ color: textPrimary }}><Power className="w-3.5 h-3.5" /> {cust.isActive ? 'Disable' : 'Enable'}</button>
-                          <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                          <button onClick={() => { setDeleting(cust); setActiveDropdown(null) }} className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /> Delete User</button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      data-customer-action-trigger="true"
+                      onClick={(ev) => openCustomerActions(ev, cust.id)}
+                      style={{ color: textMuted }}
+                      className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors inline-flex"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -342,6 +375,54 @@ export default function Customers() {
           </div>
         )}
       </div>
+
+      {activeDropdown && menuPosition && (() => {
+        const cust = customers.find(c => c.id === activeDropdown)
+        if (!cust) return null
+        const close = () => {
+          setActiveDropdown(null)
+          setMenuPosition(null)
+        }
+        return (
+          <div
+            ref={actionMenuRef}
+            className="fixed w-44 rounded-xl shadow-2xl z-[100] py-1 border border-slate-200 dark:border-[#243452]"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              backgroundColor: isLight ? '#ffffff' : '#0F1A2E',
+              boxShadow: isLight
+                ? '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)'
+                : '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.4)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { openEdit(cust); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              style={{ color: textPrimary }}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleToggleActive(cust); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              style={{ color: textPrimary }}
+            >
+              <Power className="w-3.5 h-3.5" /> {cust.isActive ? 'Disable' : 'Enable'}
+            </button>
+            <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+            <button
+              type="button"
+              onClick={() => { setDeleting(cust); close() }}
+              className="w-full text-left px-4 py-2 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex items-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete User
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Edit Modal */}
       {editing && (

@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Local env (never commit secrets)
+.env
+.env.*.local
+
+# Cursor / local AI config
+.ai/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

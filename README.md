@@ -61,7 +61,7 @@ A professional, full-featured web portal for **Ashcol Airconditioning Corporatio
    ```
 
 3. **Environment Setup:**
-   Create a `.env` file in the root directory:
+   Copy `.env.example` to `.env` (the real `.env` is not committed). Then set:
    ```env
    VITE_API_BASE_URL=http://localhost:8080/api
    VITE_GOOGLE_CLIENT_ID=your_google_client_id

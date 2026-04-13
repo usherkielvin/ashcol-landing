@@ -129,7 +129,8 @@ export default function Managers() {
     try {
       const url = editing ? `${API_BASE_URL}/admin/managers/${editing.id}` : `${API_BASE_URL}/admin/managers`
       const method = editing ? 'PATCH' : 'POST'
-      const body: any = { name: form.name, email: form.email, personalEmail: form.personalEmail, phone: form.phone, branchId: form.branchId || null }
+      const body: any = { name: form.name, email: form.email, personalEmail: form.personalEmail, phone: form.phone }
+      if (!editing) body.branchId = form.branchId || null
       const res = await fetch(url, { method, headers: jsonH(), body: JSON.stringify(body) })
       const data = await res.json()
       if (!res.ok) { setErr(data?.message || 'Failed to save.'); return }
@@ -227,8 +228,8 @@ export default function Managers() {
         </div>
       </div>
 
-      {/* Mobile/Tablet Card View */}
-      <div className="lg:hidden flex flex-col gap-3">
+      {/* Mobile / tablet / small desktop: cards avoid cramped table overlap */}
+      <div className="xl:hidden flex flex-col gap-3">
         {loading ? (
           <div className="p-8 text-center" style={{ color: textMuted }}>Loading managers...</div>
         ) : filtered.length === 0 ? (
@@ -291,16 +292,16 @@ export default function Managers() {
         ))}
       </div>
 
-      {/* Desktop Table */}
-      <div className="hidden lg:block overflow-hidden rounded-2xl border shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
-        <table className="w-full text-left border-collapse table-fixed">
+      {/* Desktop table: xl+ only; horizontal scroll if viewport still tight */}
+      <div className="hidden xl:block rounded-2xl border shadow-sm overflow-x-auto" style={{ backgroundColor: cardBg, borderColor: border }}>
+        <table className="w-full min-w-[920px] text-left border-collapse table-fixed">
           <thead>
             <tr style={{ backgroundColor: theadBg }}>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Manager</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Contact</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Branch</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%]" style={{ color: textMuted }}>Status</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[10%]" style={{ color: textMuted + '80' }}>Actions</th>
+              <th className="px-4 xl:px-5 py-4 text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: textMuted, width: '20%' }}>Manager</th>
+              <th className="px-4 xl:px-5 py-4 text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: textMuted, width: '28%' }}>Contact</th>
+              <th className="px-4 xl:px-5 py-4 text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: textMuted, width: '22%' }}>Branch</th>
+              <th className="px-4 xl:px-5 py-4 text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: textMuted, width: '18%' }}>Status</th>
+              <th className="px-4 xl:px-5 py-4 text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: textMuted + '80', width: '12%' }}>Actions</th>
             </tr>
           </thead>
           <tbody className="text-sm">
@@ -315,39 +316,56 @@ export default function Managers() {
               </td></tr>
             ) : filtered.map(m => (
               <tr key={m.id} className="group transition-colors" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover} onMouseLeave={e => e.currentTarget.style.backgroundColor = cardBg}>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
+                <td className="px-4 xl:px-5 py-4 align-top min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-3 min-w-0">
                     {m.profileImage ? (
-                      <img src={m.profileImage} alt={m.name} className="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-slate-100 dark:ring-slate-800" referrerPolicy="no-referrer" />
+                      <img src={m.profileImage} alt={m.name} className="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-slate-100 dark:ring-slate-800 shrink-0" referrerPolicy="no-referrer" />
                     ) : (
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-xs shadow-sm ring-2 ring-slate-100 dark:ring-slate-800" style={{ backgroundColor: avatarColor(m.name) }}>{initials(m.name)}</div>
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-xs shadow-sm ring-2 ring-slate-100 dark:ring-slate-800 shrink-0" style={{ backgroundColor: avatarColor(m.name) }}>{initials(m.name)}</div>
                     )}
-                    <div className="min-w-0">
-                      <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{m.name}</div>
-                      <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }}>{m.email}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm truncate" style={{ color: textPrimary }} title={m.name}>{m.name}</div>
+                      <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }} title={m.email}>{m.email}</div>
                     </div>
                   </div>
                 </td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: textPrimary }}><Mail className="w-3.5 h-3.5 text-[#10B981]" /> {m.email}</div>
-                    <div className="flex items-center gap-2 text-[11px]" style={{ color: textMuted }}><Phone className="w-3.5 h-3.5" /> {m.phone || 'N/A'}</div>
+                <td className="px-4 xl:px-5 py-4 align-top min-w-0 overflow-hidden">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 text-xs font-semibold" style={{ color: textPrimary }}>
+                      <Mail className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                      <span className="truncate min-w-0" title={m.email}>{m.email}</span>
+                    </div>
+                    {m.personalEmail && (
+                      <div className="flex items-center gap-2 min-w-0 text-[11px]" style={{ color: textMuted }}>
+                        <Mail className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                        <span className="truncate min-w-0" title={m.personalEmail}>{m.personalEmail}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 min-w-0 text-[11px]" style={{ color: textMuted }}>
+                      <Phone className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{m.phone || 'N/A'}</span>
+                    </div>
                   </div>
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-4 xl:px-5 py-4 align-top min-w-0 overflow-hidden">
                   {m.branchName ? (
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: border, color: textPrimary }}>
-                      <Building2 className="w-3.5 h-3.5 text-[#10B981]" /> {m.branchName}
+                    <div
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold bg-slate-50 dark:bg-slate-900/40 w-full max-w-full min-w-0"
+                      style={{ borderColor: border, color: textPrimary }}
+                      title={m.branchName}
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                      <span className="truncate min-w-0">{m.branchName}</span>
                     </div>
                   ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
                 </td>
-                <td className="px-6 py-4">
-                  <button onClick={() => handleToggleActive(m)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 ${m.isActive ? 'text-emerald-500 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-slate-400 bg-slate-50/50 border-slate-100 dark:text-slate-500 dark:bg-slate-800/30 dark:border-slate-800'}`}>
-                    {m.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                    {m.isActive ? 'Active' : 'Inactive'}
+                <td className="px-4 xl:px-5 py-4 align-top min-w-0 whitespace-nowrap">
+                  <button onClick={() => handleToggleActive(m)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 max-w-full ${m.isActive ? 'text-emerald-500 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-slate-400 bg-slate-50/50 border-slate-100 dark:text-slate-500 dark:bg-slate-800/30 dark:border-slate-800'}`}>
+                    {m.isActive ? <CheckCircle className="w-3.5 h-3.5 shrink-0" /> : <XCircle className="w-3.5 h-3.5 shrink-0" />}
+                    <span className="truncate">{m.isActive ? 'Active' : 'Inactive'}</span>
                   </button>
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-4 xl:px-5 py-4 align-top whitespace-nowrap w-[1%]">
                   <button 
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
@@ -436,40 +454,55 @@ export default function Managers() {
             )}
             <div>
               <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Branch</label>
-              <select
-                value={form.branchId}
-                onChange={e => {
-                  const branchId = e.target.value
-                  if (!editing) {
-                    const selectedBranch = branches.find(b => b.id === branchId)
-                    const autoEmail = selectedBranch ? generateEmailFromBranch(selectedBranch.name) : ''
-                    setForm(p => ({ ...p, branchId, email: autoEmail }))
-                  } else {
-                    setForm(p => ({ ...p, branchId }))
-                  }
-                }}
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              >
-                <option value="">— Select Branch —</option>
-                {branches.map(b => {
-                  const isTaken = !!(b.managerId && (!editing || b.managerId !== editing.id))
-                  return (
-                    <option
-                      key={b.id}
-                      value={b.id}
-                      disabled={isTaken}
-                      className={isTaken ? 'opacity-50 italic' : ''}
-                    >
-                      {b.name} {isTaken ? '(Already Assigned)' : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              {branches.length === 0 && (
-                <p className="text-xs mt-1" style={{ color: loadErr ? '#ef4444' : textMuted }}>
-                  {loadErr || 'No branches loaded yet. Click Refresh and try again.'}
-                </p>
+              {editing ? (
+                <div
+                  className="w-full border rounded-xl px-4 py-2.5 text-sm flex items-center gap-2 cursor-not-allowed select-none"
+                  style={{
+                    backgroundColor: isLight ? '#e2e8f0' : '#141C2E',
+                    borderColor: isLight ? '#cbd5e1' : '#243452',
+                    color: textMuted,
+                  }}
+                  aria-readonly="true"
+                >
+                  <Building2 className="w-4 h-4 shrink-0 opacity-70" style={{ color: '#10B981' }} />
+                  <span className="truncate">
+                    {editing.branchName || branches.find(b => b.id === editing.branchId)?.name || 'Unassigned'}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={form.branchId}
+                    onChange={e => {
+                      const branchId = e.target.value
+                      const selectedBranch = branches.find(b => b.id === branchId)
+                      const autoEmail = selectedBranch ? generateEmailFromBranch(selectedBranch.name) : ''
+                      setForm(p => ({ ...p, branchId, email: autoEmail }))
+                    }}
+                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="">— Select Branch —</option>
+                    {branches.map(b => {
+                      const isTaken = !!b.managerId
+                      return (
+                        <option
+                          key={b.id}
+                          value={b.id}
+                          disabled={isTaken}
+                          className={isTaken ? 'opacity-50 italic' : ''}
+                        >
+                          {b.name}{isTaken ? ' (Already Assigned)' : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  {branches.length === 0 && (
+                    <p className="text-xs mt-1" style={{ color: loadErr ? '#ef4444' : textMuted }}>
+                      {loadErr || 'No branches loaded yet. Click Refresh and try again.'}
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <div>

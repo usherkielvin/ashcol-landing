@@ -3,6 +3,8 @@ import { createContext, useContext, useState } from 'react'
 export interface AuthUser {
   name: string
   email: string
+  /** Personal contact email (editable for branch managers; work email stays fixed). */
+  personalEmail?: string | null
   phone?: string    // User's contact number
   address?: string  // Legacy: User's default address (kept for backward compatibility)
   region?: string   // User's region
@@ -13,6 +15,8 @@ export interface AuthUser {
   picture: string   // Google profile picture URL
   role: string      // e.g. 'Customer', 'Staff', 'Administrator'
   initials: string
+  /** Set for branch managers — scopes portal to this branch */
+  branchId?: string | null
 }
 
 interface AuthContextType {

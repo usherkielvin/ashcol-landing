@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical } from 'lucide-react'
+import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical, Check, Mail, Phone } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -29,6 +29,11 @@ interface Ticket {
   created_at?: string
   preferredDate?: string
   preferred_date?: string
+  assignedTo?: string
+  assigned_employee_name?: string
+  assignedEmployeeName?: string
+  customerPersonalEmail?: string
+  customer_personal_email?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,6 +85,15 @@ function getTicketField(ticket: Ticket, ...keys: string[]): string {
   return '—'
 }
 
+/** PH-style numbers for tel: links */
+function telHref(raw: string): string | null {
+  const d = raw.replace(/\D/g, '')
+  if (d.length < 8) return null
+  if (d.startsWith('63')) return `tel:+${d}`
+  if (d.startsWith('0')) return `tel:+63${d.slice(1)}`
+  return `tel:+${d}`
+}
+
 function shortId(id: string) {
   return `ASH${(id || '').replace(/-/g, '').slice(-6).toUpperCase()}`
 }
@@ -108,6 +122,8 @@ export default function Tickets() {
   const [descDraft, setDescDraft]           = useState('')
   const [descSaving, setDescSaving]         = useState(false)
   const [menuPosition, setMenuPosition]     = useState<{ top: number; left: number } | null>(null)
+  const [branchTechs, setBranchTechs]       = useState<{ id: string; name: string }[]>([])
+  const [assignPick, setAssignPick]         = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on outside click
@@ -125,7 +141,31 @@ export default function Tickets() {
   const isCustomer = user?.role?.toLowerCase() === 'customer'
   const isAdmin    = user?.role?.toLowerCase() === 'admin'
   const isManager  = user?.role?.toLowerCase() === 'manager'
-  const canEditDesc = isAdmin || isManager
+  const isEmployee = user?.role?.toLowerCase() === 'employee'
+
+  useEffect(() => {
+    if (!isManager || !user) {
+      setBranchTechs([])
+      return
+    }
+    const loadTechs = async () => {
+      try {
+        const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+        const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+        const res = await fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        setBranchTechs(list.map((u: { id: string; name?: string; email?: string }) => ({
+          id: u.id,
+          name: u.name || u.email || u.id,
+        })))
+      } catch {
+        setBranchTechs([])
+      }
+    }
+    loadTechs()
+  }, [user, isManager])
 
   // ── Color tokens ─────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -148,7 +188,8 @@ export default function Tickets() {
       if (user?.role?.toLowerCase() === 'customer')  endpoint = '/tickets/my'
       if (user?.role?.toLowerCase() === 'employee') endpoint = '/tickets/assigned'
 
-      const res  = await fetch(`${apiUrl}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } })
+      const pageSize = user?.role?.toLowerCase() === 'employee' ? 100 : 50
+      const res  = await fetch(`${apiUrl}${endpoint}?page=0&size=${pageSize}`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to fetch')
 
       const data = await res.json()
@@ -158,7 +199,21 @@ export default function Tickets() {
       const ticketId = searchParams.get('id')
       if (ticketId) {
         const found = tks.find(t => t.id === ticketId)
-        if (found) { setSelectedTicket(found); setShowViewModal(true) }
+        if (found) {
+          setSelectedTicket(found)
+          setShowViewModal(true)
+        } else {
+          const oneRes = await fetch(`${apiUrl}/tickets/${ticketId}`, { headers: { Authorization: `Bearer ${token}` } })
+          if (oneRes.ok) {
+            const oneJson = await oneRes.json()
+            const t: Ticket = oneJson?.data || oneJson
+            if (t?.id) {
+              setSelectedTicket(t)
+              setShowViewModal(true)
+              setTickets(prev => (prev.some(x => x.id === t.id) ? prev : [t, ...prev]))
+            }
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching tickets:', err)
@@ -167,7 +222,8 @@ export default function Tickets() {
     }
   }
 
-  useEffect(() => { if (user) fetchTickets() }, [user])
+  const ticketIdParam = searchParams.get('id')
+  useEffect(() => { if (user) fetchTickets() }, [user, ticketIdParam])
 
   useEffect(() => {
     if (searchParams.get('refresh') === 'true') {
@@ -175,6 +231,34 @@ export default function Tickets() {
       navigate('/tickets', { replace: true })
     }
   }, [searchParams])
+
+  const handleAssignTechnician = async () => {
+    if (!selectedTicket || !assignPick) return
+    setUpdateLoading(true)
+    try {
+      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const pending = selectedTicket.status.toUpperCase() === 'PENDING'
+      const body: Record<string, string> = { assignedTo: assignPick }
+      if (pending) body.status = 'ASSIGNED'
+      const res = await fetch(`${apiUrl}/tickets/${selectedTicket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('assign failed')
+      const payload = await res.json()
+      const updated = payload?.data || payload
+      const merged = { ...selectedTicket, ...updated, status: updated?.status || selectedTicket.status }
+      setSelectedTicket(merged)
+      setTickets(prev => prev.map(t => t.id === selectedTicket.id ? merged : t))
+      setAssignPick('')
+    } catch {
+      alert('Could not assign technician.')
+    } finally {
+      setUpdateLoading(false)
+    }
+  }
 
   const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
     setUpdateLoading(true)
@@ -187,8 +271,12 @@ export default function Tickets() {
         body: JSON.stringify({ status: newStatus })
       })
       if (!res.ok) throw new Error('Failed to update ticket')
-      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t))
-      if (selectedTicket?.id === ticketId) setSelectedTicket({ ...selectedTicket, status: newStatus })
+      const payload = await res.json()
+      const updated = payload?.data || payload
+      setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, ...updated, status: updated?.status || newStatus } : t)))
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket({ ...selectedTicket, ...updated, status: updated?.status || newStatus })
+      }
     } catch {
       alert('Could not update ticket status.')
     } finally {
@@ -241,6 +329,8 @@ export default function Tickets() {
     switch (status.toUpperCase()) {
       case 'PENDING':
         return { label: 'Pending', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', borderC: 'rgba(251,146,60,0.3)', icon: Clock }
+      case 'ASSIGNED':
+        return { label: 'Assigned', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', borderC: 'rgba(59,130,246,0.3)', icon: ArrowRight }
       case 'IN_PROGRESS':
         return { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.12)', borderC: 'rgba(16,185,129,0.3)', icon: RefreshCw }
       case 'COMPLETED':
@@ -281,7 +371,13 @@ export default function Tickets() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: textPrimary }}>Service Tickets</h2>
           <p className="text-sm" style={{ color: textMuted }}>
-            {loading ? 'Loading…' : `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} total`}
+            {loading
+              ? 'Loading…'
+              : isEmployee
+                ? `${tickets.length} job${tickets.length !== 1 ? 's' : ''} assigned to you — open one for customer contact details`
+                : isManager
+                  ? `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} for your branch (customers near your area)`
+                  : `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} total`}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -330,6 +426,7 @@ export default function Tickets() {
         {[
           { key: 'all', label: 'All', color: 'slate' },
           { key: 'PENDING', label: 'Pending', color: 'amber' },
+          ...(!isCustomer ? [{ key: 'ASSIGNED', label: 'Assigned', color: 'blue' }] as const : []),
           { key: 'IN_PROGRESS', label: 'In Progress', color: 'emerald' },
           { key: 'COMPLETED', label: 'Completed', color: 'blue' }
         ].map(t => (
@@ -385,6 +482,12 @@ export default function Tickets() {
                     {!isCustomer && <><span>{ticket.customerName || 'Unknown'}</span><span>·</span></>}
                     <span>{formatDate(ticket.createdAt || ticket.created_at)}</span>
                   </div>
+                  {isEmployee && (ticket.contactPhone || ticket.contact_phone) && (
+                    <div className="text-[11px] mt-1 flex items-center gap-1 font-semibold" style={{ color: '#10B981' }}>
+                      <Phone className="w-3 h-3 shrink-0" />
+                      <span>{ticket.contactPhone || ticket.contact_phone}</span>
+                    </div>
+                  )}
                   <div className="text-[11px] mt-1 opacity-80 truncate max-w-[200px]" style={{ color: textMuted }}>
                     {formatLocation(ticket.location)}
                   </div>
@@ -410,10 +513,10 @@ export default function Tickets() {
           <table className="w-full text-left table-fixed">
             <thead>
               <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-[10px] uppercase tracking-[0.1em] font-black">
-                <th style={{ borderColor: border, width: isCustomer ? '18%' : '14%' }} className="px-6 py-3 border-b">Ticket</th>
-                <th style={{ borderColor: border, width: isCustomer ? '14%' : '12%' }} className="px-4 py-3 border-b">Service</th>
+                <th style={{ borderColor: border, width: isCustomer ? '18%' : '20%' }} className="px-6 py-3 border-b">Ticket</th>
+                {isCustomer && <th style={{ borderColor: border, width: '14%' }} className="px-4 py-3 border-b">Service</th>}
                 {!isCustomer && <th style={{ borderColor: border, width: '14%' }} className="px-4 py-3 border-b">Customer</th>}
-                <th style={{ borderColor: border, width: isCustomer ? '28%' : '24%' }} className="px-4 py-3 border-b">Address</th>
+                <th style={{ borderColor: border, width: '28%' }} className="px-4 py-3 border-b">Address</th>
                 <th style={{ borderColor: border, width: isCustomer ? '15%' : '12%' }} className="px-4 py-3 border-b">Date</th>
                 <th style={{ borderColor: border, width: isCustomer ? '16%' : '13%' }} className="px-4 py-3 border-b">Status</th>
                 <th style={{ borderColor: border, width: '5%' }} className="px-4 py-3 border-b">Action</th>
@@ -421,9 +524,9 @@ export default function Tickets() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={isCustomer ? 6 : 7} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
+                <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
               ) : filteredTickets.length === 0 ? (
-                <tr><td colSpan={isCustomer ? 6 : 7} className="py-16 text-center">
+                <tr><td colSpan={6} className="py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
                     <p className="text-sm font-semibold" style={{ color: textPrimary }}>No tickets found</p>
@@ -448,10 +551,11 @@ export default function Tickets() {
                       <div className="font-semibold text-sm font-mono" style={{ color: textPrimary }}>{shortId(ticket.id)}</div>
                       <div className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{ticket.title}</div>
                     </td>
-                    {/* Service */}
-                    <td className="px-4 py-4">
-                      <span className="text-sm" style={{ color: textPrimary }}>{getTicketField(ticket, 'serviceType', 'service_type')}</span>
-                    </td>
+                    {isCustomer && (
+                      <td className="px-4 py-4">
+                        <span className="text-sm" style={{ color: textPrimary }}>{getTicketField(ticket, 'serviceType', 'service_type')}</span>
+                      </td>
+                    )}
                     {/* Customer */}
                     {!isCustomer && (
                       <td className="px-4 py-4">
@@ -459,6 +563,12 @@ export default function Tickets() {
                           <span className="text-sm truncate font-semibold" style={{ color: textPrimary }}>{ticket.customerName || ticket.customer_name || '—'}</span>
                           {getTicketField(ticket, 'customerEmail', 'customer_email', 'email') !== '—' && (
                             <span className="text-[11px] truncate opacity-80" style={{ color: textMuted }}>{getTicketField(ticket, 'customerEmail', 'customer_email', 'email')}</span>
+                          )}
+                          {isEmployee && getTicketField(ticket, 'contactPhone', 'contact_phone') !== '—' && (
+                            <span className="text-[11px] truncate flex items-center gap-1 font-semibold" style={{ color: '#10B981' }}>
+                              <Phone className="w-3 h-3 shrink-0" />
+                              {getTicketField(ticket, 'contactPhone', 'contact_phone')}
+                            </span>
                           )}
                         </div>
                       </td>
@@ -567,6 +677,27 @@ export default function Tickets() {
                 <span>Delete</span>
               </button>
             )}
+            {isCustomer && ticket.status.toUpperCase() === 'PENDING' && (
+              <button 
+                type="button"
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
+                style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.1)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = ''
+                }}
+                onClick={() => { 
+                  setOpenMenuId(null)
+                  setMenuPosition(null)
+                  handleDeleteTicket(ticket.id)
+                }}
+              >
+                <XCircle className="w-4 h-4 shrink-0" /> 
+                <span>Cancel ticket</span>
+              </button>
+            )}
           </div>
         )
       })()}
@@ -577,15 +708,28 @@ export default function Tickets() {
         const isPending = selectedTicket.status.toUpperCase() === 'PENDING'
         const canChange = !isCustomer
         const acDetails = parseAcDetails(selectedTicket)
-        const infoRows  = [
-          { label: 'Customer',   value: getTicketField(selectedTicket, 'customerName', 'customer_name') },
-          { label: 'Email',      value: getTicketField(selectedTicket, 'customerEmail', 'customer_email', 'email') },
-          { label: 'Phone',      value: getTicketField(selectedTicket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone') },
-          { label: 'Address',    value: formatLocation(selectedTicket.location) },
-          { label: 'Service',    value: getTicketField(selectedTicket, 'serviceType', 'service_type') },
-          { label: 'Unit Type',  value: getTicketField(selectedTicket, 'unitType', 'unit_type') },
+        const techName = getTicketField(selectedTicket, 'assignedEmployeeName', 'assigned_employee_name')
+        const custName = getTicketField(selectedTicket, 'customerName', 'customer_name')
+        const emailWork = getTicketField(selectedTicket, 'customerEmail', 'customer_email', 'email')
+        const emailPersonal = getTicketField(selectedTicket, 'customerPersonalEmail', 'customer_personal_email')
+        const phoneVal = getTicketField(selectedTicket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+        const addrVal = formatLocation(selectedTicket.location)
+        const phoneLink = phoneVal !== '—' ? telHref(phoneVal) : null
+
+        const infoRows = [
+          ...(isCustomer
+            ? [
+                { label: 'Customer', value: custName },
+                { label: 'Email', value: emailWork },
+                { label: 'Phone', value: phoneVal },
+              ]
+            : []),
+          { label: 'Address', value: addrVal },
+          { label: 'Service', value: getTicketField(selectedTicket, 'serviceType', 'service_type') },
+          { label: 'Unit Type', value: getTicketField(selectedTicket, 'unitType', 'unit_type') },
           { label: 'Pref. Date', value: formatDate(selectedTicket.preferredDate || selectedTicket.preferred_date) },
-          { label: 'Submitted',  value: formatDate(selectedTicket.createdAt || selectedTicket.created_at) },
+          { label: 'Submitted', value: formatDate(selectedTicket.createdAt || selectedTicket.created_at) },
+          ...(!isCustomer && techName && techName !== '—' ? [{ label: 'Technician', value: techName }] : []),
         ].filter(r => r.value && r.value !== '—')
 
         return (
@@ -628,10 +772,109 @@ export default function Tickets() {
                 {/* ── Left column ── */}
                 <div className="flex flex-col gap-4">
 
+                  {!isCustomer && (
+                    <div
+                      className="rounded-xl overflow-hidden"
+                      style={{
+                        border: `1px solid rgba(16,185,129,0.45)`,
+                        backgroundColor: isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.09)',
+                      }}
+                    >
+                      <div
+                        className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                        style={{ borderBottom: `1px solid ${border}`, color: '#10B981' }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 shrink-0" /> Customer contact
+                        </span>
+                        {selectedTicket.status.toUpperCase() === 'COMPLETED' && (
+                          <span className="text-[10px] font-bold normal-case tracking-normal opacity-90" style={{ color: textMuted }}>
+                            Job completed — details stay here for your records
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4 flex flex-col gap-3">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: textMuted }}>Customer</p>
+                          <p className="text-base font-black leading-tight" style={{ color: textPrimary }}>
+                            {custName !== '—' ? custName : '—'}
+                          </p>
+                        </div>
+                        {emailWork !== '—' ? (
+                          <a
+                            href={`mailto:${emailWork}`}
+                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
+                          >
+                            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+                            <span className="min-w-0 break-all">
+                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Account email</span>
+                              {emailWork}
+                            </span>
+                          </a>
+                        ) : emailPersonal !== '—' ? (
+                          <a
+                            href={`mailto:${emailPersonal}`}
+                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
+                          >
+                            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+                            <span className="min-w-0 break-all">
+                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Email</span>
+                              {emailPersonal}
+                            </span>
+                          </a>
+                        ) : (
+                          <p className="text-xs" style={{ color: textMuted }}>No email on file for this customer.</p>
+                        )}
+                        {emailPersonal !== '—'
+                          && emailWork !== '—'
+                          && emailPersonal.trim().toLowerCase() !== emailWork.trim().toLowerCase() && (
+                          <a
+                            href={`mailto:${emailPersonal}`}
+                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: textPrimary, border: `1px solid ${border}` }}
+                          >
+                            <Mail className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
+                            <span className="min-w-0 break-all">
+                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Personal email</span>
+                              {emailPersonal}
+                            </span>
+                          </a>
+                        )}
+                        {phoneVal !== '—' ? (
+                          phoneLink ? (
+                            <a
+                              href={phoneLink}
+                              className="flex items-center gap-2.5 text-sm font-bold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
+                              style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
+                            >
+                              <Phone className="w-4 h-4 shrink-0" />
+                              {phoneVal}
+                            </a>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: textPrimary }}>
+                              <Phone className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                              {phoneVal}
+                            </div>
+                          )
+                        ) : (
+                          <p className="text-xs" style={{ color: textMuted }}>No phone on this ticket or customer profile.</p>
+                        )}
+                        {addrVal !== '—' && (
+                          <p className="text-xs leading-relaxed pt-1 border-t" style={{ color: textMuted, borderColor: border }}>
+                            <span className="font-bold" style={{ color: textPrimary }}>Service address · </span>
+                            {addrVal}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Info table */}
                   <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
                     <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                      Details
+                      {isCustomer ? 'Details' : 'Job details'}
                     </div>
                     {infoRows.map((row, i) => (
                       <div
@@ -653,7 +896,7 @@ export default function Tickets() {
                   <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
                     <div className="px-4 py-2.5 flex items-center justify-between text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
                       <span>Description</span>
-                      {canEditDesc && !editingDesc && (
+                      {(isAdmin || isManager || (isCustomer && isPending)) && !editingDesc && (
                         <button
                           onClick={() => { setDescDraft(stripEmbeddedAcDetails(selectedTicket.description) === '—' ? '' : (selectedTicket.description || '')); setEditingDesc(true) }}
                           className="text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors hover:text-[#10B981]"
@@ -749,6 +992,40 @@ export default function Tickets() {
                     </div>
                   )}
 
+                  {/* Assign technician (branch manager) */}
+                  {isManager && branchTechs.length > 0 && (
+                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
+                        Assign technician
+                      </div>
+                      <div className="p-3 flex flex-col gap-2">
+                        <p className="text-[11px] leading-snug" style={{ color: textMuted }}>
+                          Tickets here are for your branch (including customers matched to your service area). Choose a technician to dispatch.
+                        </p>
+                        <select
+                          value={assignPick}
+                          onChange={e => setAssignPick(e.target.value)}
+                          disabled={updateLoading}
+                          className="w-full text-sm rounded-lg px-3 py-2.5 outline-none border"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                        >
+                          <option value="">Select technician…</option>
+                          {branchTechs.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={updateLoading || !assignPick}
+                          onClick={handleAssignTechnician}
+                          className="w-full py-2.5 rounded-lg text-xs font-bold text-white bg-[#3B82F6] hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                          {updateLoading ? 'Saving…' : 'Assign'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Status controls */}
                   {canChange && (
                     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
@@ -783,38 +1060,43 @@ export default function Tickets() {
               </div>
             </div>
 
-            {/* ── Footer ── */}
+            {/* ── Footer: compact corner actions (same pattern for customers as staff) ── */}
             <div
-              className="flex-shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5"
+              className="flex-shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-3"
               style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
             >
-              {isCustomer && isPending ? (
-                <button
-                  onClick={() => handleDeleteTicket(selectedTicket.id)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-black text-white transition-all"
-                  style={{ backgroundColor: '#EF4444' }}
-                >
-                  Cancel Ticket
-                </button>
-              ) : (
-                <>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDeleteTicket(selectedTicket.id)}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all hover:bg-red-500/10"
-                      style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.3)' }}
-                    >
-                      <Trash2 className="w-4 h-4" /> Delete
-                    </button>
-                  )}
+              <div className="flex items-center min-h-[36px]">
+                {isCustomer && isPending && (
                   <button
-                    onClick={() => { setShowViewModal(false); setEditingDesc(false) }}
-                    className="ml-auto px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-[#10B981] hover:bg-[#059669] transition-all"
+                    type="button"
+                    onClick={() => handleDeleteTicket(selectedTicket.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-red-500/10"
+                    style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.35)' }}
                   >
-                    Done
+                    <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    Cancel
                   </button>
-                </>
-              )}
+                )}
+                {!isCustomer && isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTicket(selectedTicket.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-red-500/10"
+                    style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.35)' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    Delete
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowViewModal(false); setEditingDesc(false) }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669] transition-all shrink-0"
+              >
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                Done
+              </button>
             </div>
           </div>
         )
