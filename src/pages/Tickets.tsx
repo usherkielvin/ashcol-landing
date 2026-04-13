@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical, Check, Mail, Phone } from 'lucide-react'
+import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical, Check, Mail, Phone, Navigation } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -331,6 +331,8 @@ export default function Tickets() {
         return { label: 'Pending', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', borderC: 'rgba(251,146,60,0.3)', icon: Clock }
       case 'ASSIGNED':
         return { label: 'Assigned', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', borderC: 'rgba(59,130,246,0.3)', icon: ArrowRight }
+      case 'ON_THE_WAY':
+        return { label: 'On the way', color: '#06B6D4', bg: 'rgba(6,182,212,0.12)', borderC: 'rgba(6,182,212,0.3)', icon: Navigation }
       case 'IN_PROGRESS':
         return { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.12)', borderC: 'rgba(16,185,129,0.3)', icon: RefreshCw }
       case 'COMPLETED':
@@ -427,15 +429,16 @@ export default function Tickets() {
           { key: 'all', label: 'All', color: 'slate' },
           { key: 'PENDING', label: 'Pending', color: 'amber' },
           ...(!isCustomer ? [{ key: 'ASSIGNED', label: 'Assigned', color: 'blue' }] as const : []),
+          { key: 'ON_THE_WAY', label: 'OTW', color: 'cyan' },
           { key: 'IN_PROGRESS', label: 'In Progress', color: 'emerald' },
           { key: 'COMPLETED', label: 'Completed', color: 'blue' }
         ].map(t => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`flex-1 md:flex-none px-5 py-2 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest ${
+            className={`flex-1 md:flex-none px-4 sm:px-5 py-2 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest ${
               activeTab === t.key 
-                ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-md' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-md' : t.color === 'blue' ? 'bg-blue-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
+                ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-md' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-md' : t.color === 'blue' ? 'bg-blue-500 text-white shadow-md' : t.color === 'cyan' ? 'bg-cyan-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
                 : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold'
             }`}
           >
@@ -1032,8 +1035,11 @@ export default function Tickets() {
                       <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
                         Update Status
                       </div>
-                      <div className="p-3 grid grid-cols-2 gap-2">
-                        {['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => {
+                      <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {(isEmployee
+                          ? ['ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+                          : ['PENDING', 'ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+                        ).map(s => {
                           const sStyle  = getStatusStyle(s)
                           const isActiveS = selectedTicket.status.toUpperCase() === s
                           return (

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   FileText, Clock, CheckCircle, AlertCircle, Plus,
   ChevronRight, Wrench, Zap, Wind, Building2, Circle,
-  CalendarDays, MapPin, RefreshCw, ExternalLink,
+  CalendarDays, MapPin, RefreshCw, ExternalLink, Navigation,
   ClipboardList, Phone,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -33,6 +33,7 @@ const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.ge
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; border: string; icon: typeof Clock }> = {
   PENDING:     { label: 'Pending',     color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)',  icon: Clock },
   ASSIGNED:    { label: 'Assigned',    color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',  border: 'rgba(59,130,246,0.25)',  icon: AlertCircle },
+  ON_THE_WAY:  { label: 'On the way',  color: '#06B6D4', bg: 'rgba(6,182,212,0.1)',   border: 'rgba(6,182,212,0.25)',   icon: Navigation },
   IN_PROGRESS: { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.25)',  icon: RefreshCw },
   COMPLETED:   { label: 'Completed',   color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)',  border: 'rgba(139,92,246,0.25)',  icon: CheckCircle },
   CANCELLED:   { label: 'Cancelled',   color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.25)', icon: Circle },
@@ -204,7 +205,13 @@ export default function Dashboard() {
 
   const filtered = filterStatus === 'ALL'
     ? tickets
-    : tickets.filter(t => t.status.toUpperCase() === filterStatus)
+    : tickets.filter(t => {
+        const u = t.status.toUpperCase()
+        if (filterStatus === 'IN_PROGRESS' && (isCustomer || isAdminOrManager)) {
+          return u === 'IN_PROGRESS' || u === 'ON_THE_WAY'
+        }
+        return u === filterStatus
+      })
 
   const focusJob = useMemo(() => {
     if (!isEmployee) return null
@@ -215,8 +222,9 @@ export default function Dashboard() {
       return da.localeCompare(db)
     }
     const assigned = open.filter(t => t.status.toUpperCase() === 'ASSIGNED').sort(byPref)
+    const otw = open.filter(t => t.status.toUpperCase() === 'ON_THE_WAY').sort(byPref)
     const prog = open.filter(t => t.status.toUpperCase() === 'IN_PROGRESS').sort(byPref)
-    return assigned[0] || prog[0] || null
+    return assigned[0] || otw[0] || prog[0] || null
   }, [isEmployee, tickets])
 
   const scheduleRows = useMemo(() => {
@@ -228,7 +236,7 @@ export default function Dashboard() {
   }, [isEmployee, tickets])
 
   const filterPills = isEmployee
-    ? ['ALL', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED'] as const
+    ? ['ALL', 'ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED'] as const
     : ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED'] as const
 
   function JobStepper({ ticket }: { ticket: Ticket }) {
@@ -242,8 +250,9 @@ export default function Dashboard() {
 
     let activeIdx = 0
     if (st === 'ASSIGNED') activeIdx = 1
-    else if (st === 'IN_PROGRESS') activeIdx = 2
-    else if (st === 'COMPLETED') activeIdx = 3
+    else if (st === 'ON_THE_WAY') activeIdx = 2
+    else if (st === 'IN_PROGRESS') activeIdx = 3
+    else if (st === 'COMPLETED') activeIdx = 4
     else activeIdx = 0
 
     return (
@@ -280,7 +289,12 @@ export default function Dashboard() {
         </div>
         {st === 'ASSIGNED' && (
           <p className="text-xs mt-3 rounded-xl px-3 py-2" style={{ backgroundColor: inputBg, color: textMuted }}>
-            Open <strong style={{ color: textPrimary }}>Tickets</strong> and set status to <strong style={{ color: '#10B981' }}>In progress</strong> when you arrive on site. Use the map to navigate.
+            In <strong style={{ color: textPrimary }}>Tickets</strong>, set <strong style={{ color: '#06B6D4' }}>On the way</strong> when you head out, then <strong style={{ color: '#10B981' }}>In progress</strong> when you arrive.
+          </p>
+        )}
+        {st === 'ON_THE_WAY' && (
+          <p className="text-xs mt-3 rounded-xl px-3 py-2" style={{ backgroundColor: inputBg, color: textMuted }}>
+            You are en route. Set <strong style={{ color: '#10B981' }}>In progress</strong> when you are on site.
           </p>
         )}
       </div>
@@ -295,6 +309,7 @@ export default function Dashboard() {
 
     // Count stats for quick view
     const assignedCount = tickets.filter(t => t.status.toUpperCase() === 'ASSIGNED').length
+    const onTheWayCount = tickets.filter(t => t.status.toUpperCase() === 'ON_THE_WAY').length
     const inProgressCount = tickets.filter(t => t.status.toUpperCase() === 'IN_PROGRESS').length
     const completedToday = tickets.filter(t => {
       if (t.status.toUpperCase() !== 'COMPLETED') return false
@@ -323,14 +338,18 @@ export default function Dashboard() {
         </div>
 
         {/* Quick stats row */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <p className="text-2xl font-black" style={{ color: assignedCount > 0 ? '#3B82F6' : textMuted }}>{loading ? '—' : assignedCount}</p>
             <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Assigned</p>
           </div>
           <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <p className="text-2xl font-black" style={{ color: onTheWayCount > 0 ? '#06B6D4' : textMuted }}>{loading ? '—' : onTheWayCount}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>On the way</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <p className="text-2xl font-black" style={{ color: inProgressCount > 0 ? '#F59E0B' : textMuted }}>{loading ? '—' : inProgressCount}</p>
-            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>In Progress</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>On site</p>
           </div>
           <div className="rounded-xl p-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <p className="text-2xl font-black" style={{ color: '#8B5CF6' }}>{loading ? '—' : completedToday}</p>
@@ -615,7 +634,7 @@ export default function Dashboard() {
                     : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
                   }
                 >
-                  {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s.charAt(0) + s.slice(1).toLowerCase()}
+                  {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s === 'ON_THE_WAY' ? 'On the way' : s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ')}
                 </button>
               )
             })}
