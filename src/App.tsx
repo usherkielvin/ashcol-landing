@@ -13,6 +13,7 @@ import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Managers from './pages/Managers'
+import Inventory from './pages/inventory'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -54,6 +55,7 @@ export default function App() {
             {/* Portal Routes */}
             <Route element={<DashboardLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/inventory" element={<Inventory />} />
               <Route path="/tickets" element={<Tickets />} />
               <Route path="/tickets/create" element={<CreateTicket />} />
               <Route path="/create-ticket" element={<CreateTicket />} />
