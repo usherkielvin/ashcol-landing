@@ -445,7 +445,17 @@ export default function Tickets() {
       const assigneeName = getTicketField(t, 'assignedEmployeeName', 'assigned_employee_name').toLowerCase()
       const meName = (user?.name || '').trim().toLowerCase()
       const meEmail = (user?.email || '').trim().toLowerCase()
-      if (assignmentFilter === 'ASSIGNED_TO_ME' && assigneeName !== meName && assigneeName !== meEmail) return false
+      if (assignmentFilter === 'ASSIGNED_TO_ME') {
+        if (isEmployee) {
+          // Employee view already comes from /tickets/assigned; keep these visible.
+          if (assignee === '—' && assigneeName === '—') return false
+        } else {
+          const nameHit = !!meName && (assigneeName === meName || assigneeName.includes(meName))
+          const emailHit = !!meEmail && (assigneeName === meEmail || assigneeName.includes(meEmail))
+          const idHit = !!meEmail && assignee.toLowerCase() === meEmail
+          if (!nameHit && !emailHit && !idHit) return false
+        }
+      }
       if (assignmentFilter === 'UNASSIGNED' && assignee !== '—') return false
     }
     if (dateFilter !== 'ALL') {
@@ -530,6 +540,15 @@ export default function Tickets() {
           )}
         </div>
       </div>
+      {fetchError && tickets.length > 0 && (
+        <div
+          className="px-3 py-2 rounded-lg text-xs font-semibold border flex items-center justify-between gap-2"
+          style={{ color: '#F59E0B', backgroundColor: isLight ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.35)' }}
+        >
+          <span>{fetchError} Showing last loaded tickets.</span>
+          <button onClick={fetchTickets} className="px-2 py-1 rounded text-[11px] font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
+        </div>
+      )}
 
       {/* ── Filter Tabs ── */}
       <div className="flex p-1 rounded-xl border w-full md:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
@@ -588,7 +607,7 @@ export default function Tickets() {
         <div className="md:hidden flex flex-col">
           {loading ? (
             <div className="p-10 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</div>
-          ) : fetchError ? (
+          ) : fetchError && tickets.length === 0 ? (
             <div className="p-10 flex flex-col items-center justify-center gap-2">
               <FileText className="w-12 h-12 opacity-20" style={{ color: textMuted }} />
               <h3 className="text-base font-bold" style={{ color: textPrimary }}>Could not load tickets</h3>
@@ -670,7 +689,7 @@ export default function Tickets() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
-              ) : fetchError ? (
+              ) : fetchError && tickets.length === 0 ? (
                 <tr><td colSpan={6} className="py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
