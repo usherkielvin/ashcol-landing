@@ -130,6 +130,14 @@ function customerName(t: Ticket): string {
   return (t.customerName || t.customer_name || '').trim() || 'Customer'
 }
 
+function ticketsLink(ticketId?: string, status?: string) {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status.toUpperCase())
+  if (ticketId) params.set('id', ticketId)
+  const q = params.toString()
+  return q ? `/tickets?${q}` : '/tickets'
+}
+
 export default function Dashboard() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -330,7 +338,7 @@ export default function Dashboard() {
           </div>
           <button
             type="button"
-            onClick={() => navigate('/tickets')}
+            onClick={() => navigate(ticketsLink(undefined, 'ALL'))}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 transition-all"
           >
             <ClipboardList className="w-4 h-4" /> All Tickets
@@ -421,14 +429,14 @@ export default function Dashboard() {
               {/* Action buttons */}
               <div className="flex gap-2 mt-4">
                 <Link
-                  to={`/tickets?id=${focusJob.id}`}
+                  to={ticketsLink(focusJob.id, focusJob.status)}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 transition-all"
                 >
                   View Job Details
                 </Link>
                 {focusJob.status.toUpperCase() === 'ASSIGNED' && (
                   <button
-                    onClick={() => navigate(`/tickets?id=${focusJob.id}`)}
+                    onClick={() => navigate(ticketsLink(focusJob.id, 'ASSIGNED'))}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all"
                     style={{ borderColor: '#3B82F6', color: '#3B82F6' }}
                   >
@@ -465,7 +473,7 @@ export default function Dashboard() {
               {scheduleRows.slice(0, 3).map(t => (
                 <Link
                   key={t.id}
-                  to={`/tickets?id=${t.id}`}
+                  to={ticketsLink(t.id, t.status)}
                   className="flex items-center gap-3 px-4 py-3 hover:opacity-90 transition-opacity"
                 >
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${STATUS_CFG[statusKey(t.status)]?.color}15`, color: STATUS_CFG[statusKey(t.status)]?.color }}>
@@ -604,7 +612,7 @@ export default function Dashboard() {
           </div>
 
           <Link
-            to={`/tickets?id=${activeTicket.id}`}
+            to={ticketsLink(activeTicket.id, activeTicket.status)}
             className="inline-flex items-center gap-1.5 text-sm font-bold transition-colors hover:opacity-80"
             style={{ color: STATUS_CFG[statusKey(activeTicket.status)]?.color ?? '#10B981' }}
           >
@@ -672,7 +680,7 @@ export default function Dashboard() {
               return (
                 <Link
                   key={ticket.id}
-                  to={`/tickets?id=${ticket.id}`}
+                  to={ticketsLink(ticket.id, ticket.status)}
                   className="flex items-center gap-4 px-5 py-4 transition-colors group"
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = rowHover }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '' }}

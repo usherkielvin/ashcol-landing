@@ -110,10 +110,13 @@ export default function Tickets() {
   const navigate = useNavigate()
   const isLight = theme === 'light'
 
-  const [activeTab, setActiveTab]         = useState('all')
+  const [activeTab, setActiveTab]         = useState(() => (searchParams.get('status') || 'all').toUpperCase())
   const [tickets, setTickets]             = useState<Ticket[]>([])
   const [loading, setLoading]             = useState(true)
   const [searchQuery, setSearchQuery]     = useState('')
+  const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED_TO_ME' | 'UNASSIGNED'>('ALL')
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'THIS_WEEK'>('ALL')
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [showViewModal, setShowViewModal]   = useState(false)
   const [updateLoading, setUpdateLoading]   = useState(false)
@@ -124,6 +127,65 @@ export default function Tickets() {
   const [menuPosition, setMenuPosition]     = useState<{ top: number; left: number } | null>(null)
   const [branchTechs, setBranchTechs]       = useState<{ id: string; name: string }[]>([])
   const [assignPick, setAssignPick]         = useState('')
+  const statusParam = (searchParams.get('status') || 'all').toUpperCase()
+  const ticketIdParam = searchParams.get('id')
+
+  const setStatusFilter = (statusKey: string) => {
+    const next = statusKey.toUpperCase()
+    setActiveTab(next)
+    const params = new URLSearchParams(searchParams)
+    if (next === 'ALL') params.delete('status')
+    else params.set('status', next)
+    const q = params.toString()
+    navigate(q ? `/tickets?${q}` : '/tickets', { replace: true })
+  }
+
+  const getEffectiveDate = (t: Ticket): Date | null => {
+    const raw = t.preferredDate || t.preferred_date || t.createdAt || t.created_at
+    if (!raw) return null
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate()
+
+  const isInCurrentWeek = (d: Date) => {
+    const now = new Date()
+    const day = now.getDay()
+    const diffToMonday = (day + 6) % 7
+    const weekStart = new Date(now)
+    weekStart.setHours(0, 0, 0, 0)
+    weekStart.setDate(now.getDate() - diffToMonday)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 7)
+    return d >= weekStart && d < weekEnd
+  }
+
+  const getAllowedStatusTransitions = (ticket: Ticket) => {
+    const current = ticket.status.toUpperCase()
+    if (isEmployee) {
+      switch (current) {
+        case 'ASSIGNED': return ['ON_THE_WAY']
+        case 'ON_THE_WAY': return ['IN_PROGRESS']
+        case 'IN_PROGRESS': return ['COMPLETED']
+        default: return []
+      }
+    }
+    if (isManager || isAdmin) {
+      const map: Record<string, string[]> = {
+        PENDING: ['ASSIGNED', 'CANCELLED'],
+        ASSIGNED: ['ON_THE_WAY', 'CANCELLED'],
+        ON_THE_WAY: ['IN_PROGRESS', 'CANCELLED'],
+        IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+      }
+      return map[current] || []
+    }
+    return []
+  }
+
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on outside click
@@ -181,6 +243,7 @@ export default function Tickets() {
   const fetchTickets = async () => {
     try {
       setLoading(true)
+      setFetchError(null)
       const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
@@ -217,20 +280,35 @@ export default function Tickets() {
       }
     } catch (err) {
       console.error('Error fetching tickets:', err)
+      setFetchError('Failed to load tickets. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
-  const ticketIdParam = searchParams.get('id')
-  useEffect(() => { if (user) fetchTickets() }, [user, ticketIdParam])
+  useEffect(() => {
+    setActiveTab(statusParam || 'ALL')
+  }, [statusParam])
+
+  useEffect(() => { if (user) fetchTickets() }, [user, ticketIdParam, statusParam])
 
   useEffect(() => {
     if (searchParams.get('refresh') === 'true') {
       fetchTickets()
-      navigate('/tickets', { replace: true })
+      const params = new URLSearchParams(searchParams)
+      params.delete('refresh')
+      const q = params.toString()
+      navigate(q ? `/tickets?${q}` : '/tickets', { replace: true })
     }
-  }, [searchParams])
+  }, [searchParams, navigate])
+
+  useEffect(() => {
+    if (!selectedTicket) return
+    const currentlyAssigned = getTicketField(selectedTicket, 'assignedTo')
+    if (currentlyAssigned !== '—' && assignPick !== currentlyAssigned) {
+      setAssignPick(currentlyAssigned)
+    }
+  }, [selectedTicket, assignPick])
 
   const handleAssignTechnician = async () => {
     if (!selectedTicket || !assignPick) return
@@ -261,6 +339,11 @@ export default function Tickets() {
   }
 
   const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
+    const prevTickets = tickets
+    const prevSelected = selectedTicket
+    const normalized = newStatus.toUpperCase()
+    setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, status: normalized } : t)))
+    if (selectedTicket?.id === ticketId) setSelectedTicket({ ...selectedTicket, status: normalized })
     setUpdateLoading(true)
     try {
       const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
@@ -273,11 +356,13 @@ export default function Tickets() {
       if (!res.ok) throw new Error('Failed to update ticket')
       const payload = await res.json()
       const updated = payload?.data || payload
-      setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, ...updated, status: updated?.status || newStatus } : t)))
+      setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, ...updated, status: updated?.status || normalized } : t)))
       if (selectedTicket?.id === ticketId) {
-        setSelectedTicket({ ...selectedTicket, ...updated, status: updated?.status || newStatus })
+        setSelectedTicket({ ...selectedTicket, ...updated, status: updated?.status || normalized })
       }
     } catch {
+      setTickets(prevTickets)
+      setSelectedTicket(prevSelected)
       alert('Could not update ticket status.')
     } finally {
       setUpdateLoading(false)
@@ -348,7 +433,27 @@ export default function Tickets() {
 
   const filteredTickets = tickets.filter(t => {
     const s = t.status.toUpperCase()
-    if (activeTab !== 'all' && s !== activeTab) return false
+    if (activeTab !== 'ALL') {
+      if (activeTab === 'IN_PROGRESS') {
+        if (s !== 'IN_PROGRESS' && s !== 'ON_THE_WAY') return false
+      } else if (s !== activeTab) {
+        return false
+      }
+    }
+    if (!isCustomer) {
+      const assignee = getTicketField(t, 'assignedTo')
+      const assigneeName = getTicketField(t, 'assignedEmployeeName', 'assigned_employee_name').toLowerCase()
+      const meName = (user?.name || '').trim().toLowerCase()
+      const meEmail = (user?.email || '').trim().toLowerCase()
+      if (assignmentFilter === 'ASSIGNED_TO_ME' && assigneeName !== meName && assigneeName !== meEmail) return false
+      if (assignmentFilter === 'UNASSIGNED' && assignee !== '—') return false
+    }
+    if (dateFilter !== 'ALL') {
+      const d = getEffectiveDate(t)
+      if (!d) return false
+      if (dateFilter === 'TODAY' && !isSameDay(d, new Date())) return false
+      if (dateFilter === 'THIS_WEEK' && !isInCurrentWeek(d)) return false
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       return t.title.toLowerCase().includes(q)
@@ -360,6 +465,9 @@ export default function Tickets() {
           || (t.customer_email ?? '').toLowerCase().includes(q)
           || (t.email ?? '').toLowerCase().includes(q)
           || (t.serviceType ?? '').toLowerCase().includes(q)
+          || (t.service_type ?? '').toLowerCase().includes(q)
+          || (t.assignedEmployeeName ?? '').toLowerCase().includes(q)
+          || (t.assigned_employee_name ?? '').toLowerCase().includes(q)
     }
     return true
   })
@@ -426,16 +534,17 @@ export default function Tickets() {
       {/* ── Filter Tabs ── */}
       <div className="flex p-1 rounded-xl border w-full md:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
         {[
-          { key: 'all', label: 'All', color: 'slate' },
+          { key: 'ALL', label: 'All', color: 'slate' },
           { key: 'PENDING', label: 'Pending', color: 'amber' },
           ...(!isCustomer ? [{ key: 'ASSIGNED', label: 'Assigned', color: 'blue' }] as const : []),
           { key: 'ON_THE_WAY', label: 'OTW', color: 'cyan' },
           { key: 'IN_PROGRESS', label: 'In Progress', color: 'emerald' },
-          { key: 'COMPLETED', label: 'Completed', color: 'blue' }
+          { key: 'COMPLETED', label: 'Completed', color: 'blue' },
+          { key: 'CANCELLED', label: 'Cancelled', color: 'slate' }
         ].map(t => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => setStatusFilter(t.key)}
             className={`flex-1 md:flex-none px-4 sm:px-5 py-2 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest ${
               activeTab === t.key 
                 ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-md' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-md' : t.color === 'blue' ? 'bg-blue-500 text-white shadow-md' : t.color === 'cyan' ? 'bg-cyan-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
@@ -446,6 +555,30 @@ export default function Tickets() {
           </button>
         ))}
       </div>
+      <div className="flex flex-wrap gap-2">
+        {!isCustomer && (
+          <select
+            value={assignmentFilter}
+            onChange={e => setAssignmentFilter(e.target.value as 'ALL' | 'ASSIGNED_TO_ME' | 'UNASSIGNED')}
+            className="px-3 py-2 rounded-lg border text-xs font-semibold"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="ALL">All assignments</option>
+            <option value="ASSIGNED_TO_ME">Assigned to me</option>
+            <option value="UNASSIGNED">Unassigned</option>
+          </select>
+        )}
+        <select
+          value={dateFilter}
+          onChange={e => setDateFilter(e.target.value as 'ALL' | 'TODAY' | 'THIS_WEEK')}
+          className="px-3 py-2 rounded-lg border text-xs font-semibold"
+          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+        >
+          <option value="ALL">Any date</option>
+          <option value="TODAY">Today</option>
+          <option value="THIS_WEEK">This week</option>
+        </select>
+      </div>
 
       {/* ── Main Card ─────────────────────────────────────────── */}
       <div className="relative">
@@ -455,11 +588,20 @@ export default function Tickets() {
         <div className="md:hidden flex flex-col">
           {loading ? (
             <div className="p-10 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</div>
+          ) : fetchError ? (
+            <div className="p-10 flex flex-col items-center justify-center gap-2">
+              <FileText className="w-12 h-12 opacity-20" style={{ color: textMuted }} />
+              <h3 className="text-base font-bold" style={{ color: textPrimary }}>Could not load tickets</h3>
+              <p className="text-sm" style={{ color: textMuted }}>{fetchError}</p>
+              <button onClick={fetchTickets} className="mt-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
+            </div>
           ) : filteredTickets.length === 0 ? (
             <div className="p-10 flex flex-col items-center justify-center gap-2">
               <FileText className="w-12 h-12 opacity-20" style={{ color: textMuted }} />
-              <h3 className="text-base font-bold" style={{ color: textPrimary }}>No tickets found</h3>
-              <p className="text-sm" style={{ color: textMuted }}>Try adjusting your search or filter.</p>
+              <h3 className="text-base font-bold" style={{ color: textPrimary }}>{tickets.length === 0 ? 'No tickets yet' : 'No tickets found'}</h3>
+              <p className="text-sm" style={{ color: textMuted }}>
+                {tickets.length === 0 ? 'No records are available for this view yet.' : 'Try adjusting your search or filter.'}
+              </p>
             </div>
           ) : filteredTickets.map((ticket, idx) => {
             const st = getStatusStyle(ticket.status)
@@ -528,12 +670,22 @@ export default function Tickets() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
+              ) : fetchError ? (
+                <tr><td colSpan={6} className="py-16 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+                    <p className="text-sm font-semibold" style={{ color: textPrimary }}>Could not load tickets</p>
+                    <button onClick={fetchTickets} className="mt-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
+                  </div>
+                </td></tr>
               ) : filteredTickets.length === 0 ? (
                 <tr><td colSpan={6} className="py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-                    <p className="text-sm font-semibold" style={{ color: textPrimary }}>No tickets found</p>
-                    <p className="text-xs" style={{ color: textMuted }}>Try adjusting your search or filter.</p>
+                    <p className="text-sm font-semibold" style={{ color: textPrimary }}>{tickets.length === 0 ? 'No tickets yet' : 'No tickets found'}</p>
+                    <p className="text-xs" style={{ color: textMuted }}>
+                      {tickets.length === 0 ? 'No records are available for this view yet.' : 'Try adjusting your search or filter.'}
+                    </p>
                   </div>
                 </td></tr>
               ) : filteredTickets.map(ticket => {
@@ -1036,10 +1188,12 @@ export default function Tickets() {
                         Update Status
                       </div>
                       <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {(isEmployee
-                          ? ['ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
-                          : ['PENDING', 'ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
-                        ).map(s => {
+                        {getAllowedStatusTransitions(selectedTicket).length === 0 && (
+                          <p className="col-span-full text-xs font-medium" style={{ color: textMuted }}>
+                            No status actions available for this ticket in your role.
+                          </p>
+                        )}
+                        {getAllowedStatusTransitions(selectedTicket).map(s => {
                           const sStyle  = getStatusStyle(s)
                           const isActiveS = selectedTicket.status.toUpperCase() === s
                           return (
