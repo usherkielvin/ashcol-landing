@@ -26,6 +26,8 @@ interface Ticket {
   scheduledDate?: string
   contactPhone?: string
   contact_phone?: string
+  assignedTo?: string
+  assigned_employee_name?: string
 }
 
 const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -152,6 +154,8 @@ export default function Dashboard() {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('ALL')
+  const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
+  const [assignLoading, setAssignLoading] = useState<string | null>(null)
 
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
@@ -172,10 +176,17 @@ export default function Dashboard() {
         const statsEp = isAdminOrManager ? '/dashboard/stats' : '/tickets/stats'
         const ticketEp = isCustomer ? '/tickets/my' : isEmployee ? '/tickets/assigned' : '/tickets'
 
-        const [sRes, tRes] = await Promise.all([
+        const promises = [
           fetch(`${apiUrl}${statsEp}`, { headers }),
-          fetch(`${apiUrl}${ticketEp}?size=50`, { headers }),
-        ])
+          fetch(`${apiUrl}${ticketEp}?size=50`, { headers })
+        ]
+
+        if (role === 'manager') {
+           promises.push(fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }))
+        }
+
+        const res = await Promise.all(promises)
+        const [sRes, tRes] = res
 
         if (sRes.ok) {
           const s = await sRes.json()
@@ -185,11 +196,50 @@ export default function Dashboard() {
           const t = await tRes.json()
           setTickets(t?.data?.tickets || t?.tickets || [])
         }
+        if (role === 'manager' && res[2]?.ok) {
+           const techData = await res[2].json()
+           setTechnicians(techData?.data || [])
+        }
       } catch (e) { console.error(e) }
       finally { setLoading(false) }
     }
     fetchAll()
   }, [user, isAdminOrManager, isCustomer, isEmployee])
+
+  const handleQuickAssign = async (ticketId: string, technicianId: string) => {
+    if (!technicianId) return
+    setAssignLoading(ticketId)
+    try {
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }
+      const body = JSON.stringify({ assignedTo: technicianId, status: 'ASSIGNED' })
+      const res = await fetch(`${apiUrl}/tickets/${ticketId}`, { method: 'PATCH', headers, body })
+      if (!res.ok) throw new Error('Failed to assign')
+      
+      const payload = await res.json()
+      const updated = payload?.data || payload
+      const tName = technicians.find(t => t.id === technicianId)?.name || ''
+      
+      setTickets(prev => prev.map(t => t.id === ticketId ? { 
+        ...t, 
+        ...updated, 
+        status: 'ASSIGNED', 
+        assignedTo: technicianId, 
+        assigned_employee_name: tName 
+      } : t))
+      
+      setStatsData(prev => prev ? {
+        ...prev,
+        pending_tickets: Math.max(0, (prev.pending_tickets || 0) - 1),
+        in_progress_tickets: (prev.in_progress_tickets || 0) + 1,
+      } : prev)
+    } catch (e) {
+      console.error(e)
+      alert("Failed to assign ticket")
+    } finally {
+      setAssignLoading(null)
+    }
+  }
 
   const customerStats = [
     { label: 'Total',       value: statsData?.total       ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
@@ -566,6 +616,93 @@ export default function Dashboard() {
           )
         })}
       </div>
+
+      {/* ── Technician Workload & Quick Assign ── */}
+      {role === 'manager' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+             <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
+                 <h3 className="font-black text-base" style={{ color: textPrimary }}>Pending Tickets</h3>
+                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>
+                   {tickets.filter(t => t.status.toUpperCase() === 'PENDING').length} unassigned
+                 </span>
+             </div>
+             <div className="flex-1 overflow-y-auto max-h-[300px]">
+               {tickets.filter(t => t.status.toUpperCase() === 'PENDING').length === 0 ? (
+                  <div className="p-8 text-center" style={{ color: textMuted }}>
+                     <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                     <p className="text-sm font-bold">All caught up</p>
+                  </div>
+               ) : (
+                  <div className="divide-y" style={{ borderColor: border }}>
+                    {tickets.filter(t => t.status.toUpperCase() === 'PENDING').map(t => (
+                       <div key={t.id} className="p-4 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                          <div className="flex-1 min-w-0">
+                             <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{t.title}</p>
+                             <p className="text-xs truncate" style={{ color: textMuted }}>{(t.customerName || t.customer_name) || 'Customer'} · {formatDate(t.createdAt || t.created_at)}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                            <select
+                              className="text-xs py-2 px-3 rounded-xl border flex-1 sm:w-36 transition-all"
+                              style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                              onChange={(e) => handleQuickAssign(t.id, e.target.value)}
+                              disabled={assignLoading === t.id}
+                              value=""
+                            >
+                              <option value="" disabled>Assign to...</option>
+                              {technicians.map(tech => (
+                                 <option key={tech.id} value={tech.id}>{tech.name}</option>
+                              ))}
+                            </select>
+                            {assignLoading === t.id && <RefreshCw className="w-5 h-5 animate-spin shrink-0" style={{ color: textMuted }} />}
+                          </div>
+                       </div>
+                    ))}
+                  </div>
+               )}
+             </div>
+          </div>
+          <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+             <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
+                 <h3 className="font-black text-base" style={{ color: textPrimary }}>Technician Workload</h3>
+                 <span className="text-[11px] font-bold px-2 py-1 uppercase tracking-wider" style={{ color: textMuted }}>{technicians.length} tech{technicians.length !== 1 ? 's' : ''}</span>
+             </div>
+             <div className="flex-1 overflow-y-auto max-h-[300px]">
+                {technicians.length === 0 ? (
+                   <div className="p-8 text-center" style={{ color: textMuted }}>
+                     <p className="text-sm">No technicians found in this branch.</p>
+                   </div>
+                ) : (
+                   <div className="divide-y" style={{ borderColor: border }}>
+                     {technicians.map(tech => {
+                        const techTickets = tickets.filter(t => t.assignedTo === tech.id || t.assigned_employee_name === tech.name)
+                        const active = techTickets.filter(t => ['ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS'].includes(t.status.toUpperCase())).length
+                        const completed = techTickets.filter(t => t.status.toUpperCase() === 'COMPLETED').length
+                        
+                        return (
+                          <div key={tech.id} className="p-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                             <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm" style={{ backgroundColor: `${STATUS_CFG.IN_PROGRESS.color}15`, color: STATUS_CFG.IN_PROGRESS.color }}>
+                                  {tech.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                   <p className="text-sm font-bold" style={{ color: textPrimary }}>{tech.name}</p>
+                                   <p className="text-xs" style={{ color: textMuted }}>{completed} completed job{completed !== 1 ? 's' : ''}</p>
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: active > 0 ? '#10B981' : textMuted, opacity: active > 0 ? 1 : 0.4 }} />
+                                <span className="text-sm font-black" style={{ color: textPrimary }}>{active} active</span>
+                             </div>
+                          </div>
+                        )
+                     })}
+                   </div>
+                )}
+             </div>
+          </div>
+        </div>
+      )}
 
       {isCustomer && activeTicket && (
         <div
