@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck,
-  PanelLeftClose, PanelLeftOpen, Package,
+  PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -67,7 +67,6 @@ export default function DashboardLayout() {
   const allLinks = [
     { name: 'Overview',      path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',       path: '/tickets',   icon: TicketIcon },
-    { name: 'Inventory',     path: '/inventory', icon: Package,    roles: ['admin', 'manager', 'employee'] },
     { name: 'Branches',      path: '/branches',  icon: Building2,  roles: ['admin'] },
     { name: 'Managers',      path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
     { name: 'Employees',     path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
