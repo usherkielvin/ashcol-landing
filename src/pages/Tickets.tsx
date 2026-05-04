@@ -127,6 +127,9 @@ export default function Tickets() {
   const [menuPosition, setMenuPosition]     = useState<{ top: number; left: number } | null>(null)
   const [branchTechs, setBranchTechs]       = useState<{ id: string; name: string }[]>([])
   const [assignPick, setAssignPick]         = useState('')
+  const [dispatchScores, setDispatchScores] = useState<Array<{ technicianId: string; name: string; score: number; activeTickets: number }>>([])
+  const [dispatchLoading, setDispatchLoading] = useState(false)
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
   const statusParam = (searchParams.get('status') || 'all').toUpperCase()
   const ticketIdParam = searchParams.get('id')
 
@@ -406,6 +409,55 @@ export default function Tickets() {
       setShowViewModal(false)
     } catch {
       alert('Could not delete ticket.')
+    }
+  }
+
+  const handleLoadDispatchScores = async () => {
+    if (!selectedTicket) return
+    setDispatchLoading(true)
+    setDispatchError(null)
+    try {
+      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const res = await fetch(`${apiUrl}/dispatch/scores/${selectedTicket.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to load scores')
+      const payload = await res.json()
+      const rows = (payload?.data || payload || []) as Array<{ technicianId: string; name: string; score: number; activeTickets: number }>
+      setDispatchScores(rows)
+    } catch (e) {
+      console.error(e)
+      setDispatchError('Could not load AI dispatch scores.')
+    } finally {
+      setDispatchLoading(false)
+    }
+  }
+
+  const handleAutoAssignBest = async () => {
+    if (!selectedTicket) return
+    setDispatchLoading(true)
+    setDispatchError(null)
+    try {
+      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const res = await fetch(`${apiUrl}/dispatch/auto-assign/${selectedTicket.id}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Auto-assign failed')
+      await fetchTickets()
+      const oneRes = await fetch(`${apiUrl}/tickets/${selectedTicket.id}`, { headers: { Authorization: `Bearer ${token}` } })
+      if (oneRes.ok) {
+        const oneJson = await oneRes.json()
+        const t: Ticket = oneJson?.data || oneJson
+        if (t?.id) setSelectedTicket(t)
+      }
+    } catch (e) {
+      console.error(e)
+      setDispatchError('Auto-assign failed. Check threshold/candidate readiness.')
+    } finally {
+      setDispatchLoading(false)
     }
   }
 
@@ -1196,6 +1248,55 @@ export default function Tickets() {
                         >
                           {updateLoading ? 'Saving…' : 'Assign'}
                         </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dispatch scoring + auto-assign (admin/manager, pending only) */}
+                  {(isPending && (isManager || isAdmin)) && (
+                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
+                        AI Dispatch
+                      </div>
+                      <div className="p-3 flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleLoadDispatchScores}
+                            disabled={dispatchLoading}
+                            className="py-2.5 rounded-lg text-xs font-bold border transition-all"
+                            style={{ color: textPrimary, borderColor: border, backgroundColor: inputBg }}
+                          >
+                            {dispatchLoading ? 'Loading…' : 'Load AI Scores'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleAutoAssignBest}
+                            disabled={dispatchLoading}
+                            className="py-2.5 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669] disabled:opacity-60 transition-all"
+                          >
+                            Auto-Assign Best
+                          </button>
+                        </div>
+                        {dispatchError && (
+                          <p className="text-xs font-semibold" style={{ color: '#EF4444' }}>{dispatchError}</p>
+                        )}
+                        {dispatchScores.length > 0 && (
+                          <div className="rounded-lg border overflow-hidden" style={{ borderColor: border }}>
+                            {dispatchScores.slice(0, 4).map((row, i) => (
+                              <div
+                                key={row.technicianId}
+                                className="px-3 py-2.5 flex items-center justify-between text-xs"
+                                style={{ borderBottom: i < Math.min(3, dispatchScores.length - 1) ? `1px solid ${border}` : 'none' }}
+                              >
+                                <span style={{ color: textPrimary }} className="font-semibold truncate mr-3">{row.name}</span>
+                                <span style={{ color: textMuted }} className="shrink-0">
+                                  Score <span style={{ color: '#10B981' }} className="font-black">{Number(row.score).toFixed(2)}</span> · Active {row.activeTickets}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
