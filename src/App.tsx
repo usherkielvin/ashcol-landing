@@ -13,6 +13,8 @@ import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Managers from './pages/Managers'
+import Inventory from './pages/Inventory'
+import Analytics from './pages/Analytics'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -62,6 +64,8 @@ export default function App() {
               <Route path="/managers" element={<Managers />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/analytics" element={<Analytics />} />
             </Route>
           </Routes>
         </BrowserRouter>
