@@ -8,7 +8,8 @@ export async function fetchBranchStock(branchId: string) {
   const res = await fetch(`${API_BASE_URL}/inventory/branch/${branchId}`, { headers: authHeaders() })
   if (!res.ok) throw new Error(`Inventory stock failed: ${res.status}`)
   const d = await res.json()
-  return (d?.data ?? d ?? []) as unknown[]
+  const list = d?.data ?? d
+  return Array.isArray(list) ? list : []
 }
 
 export async function fetchPartRequests(branchId: string) {
@@ -17,5 +18,6 @@ export async function fetchPartRequests(branchId: string) {
   })
   if (!res.ok) throw new Error(`Part requests failed: ${res.status}`)
   const d = await res.json()
-  return (d?.data ?? d ?? []) as unknown[]
+  const list = d?.data ?? d
+  return Array.isArray(list) ? list : []
 }

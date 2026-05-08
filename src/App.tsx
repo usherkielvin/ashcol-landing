@@ -15,6 +15,8 @@ import Branches from './pages/Branches'
 import Managers from './pages/Managers'
 import Inventory from './pages/Inventory'
 import Analytics from './pages/Analytics'
+import DailyAuditReport from './pages/DailyAuditReport'
+import DailySalesForm from './pages/DailySalesForm'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -66,6 +68,8 @@ export default function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/audit-report" element={<DailyAuditReport />} />
+              <Route path="/daily-report" element={<DailySalesForm />} />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -107,7 +107,7 @@ export default function Inventory() {
     fetch(`${API_BASE_URL}/branches`, { headers })
       .then(r => r.json())
       .then(d => {
-        const list: Branch[] = d?.data || d || []
+        const list = Array.isArray(d?.data) ? d.data : (Array.isArray(d) ? d : [])
         setBranches(list)
         // Auto-select manager's branch, or first branch for admin
         if (user?.branchId) {
@@ -140,8 +140,9 @@ export default function Inventory() {
   useEffect(() => { fetchStock() }, [fetchStock])
 
   // ── Derived data ─────────────────────────────────────────────────
-  const filtered = stock
+  const filtered = (Array.isArray(stock) ? stock : [])
     .filter(s => {
+      if (!s.part) return false
       const st = getStockStatus(s.quantityAvailable, s.reorderLevel)
       if (filterStatus !== 'ALL' && st !== filterStatus) return false
       const q = search.toLowerCase()
@@ -152,12 +153,14 @@ export default function Inventory() {
       )
     })
 
-  const inStock    = stock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'IN_STOCK').length
-  const lowStock   = stock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'LOW_STOCK').length
-  const outOfStock = stock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'OUT_OF_STOCK').length
-  const pendingReq = requests.filter(r => r.status === 'PENDING').length
+  const safeStock = Array.isArray(stock) ? stock : []
+  const safeReqs = Array.isArray(requests) ? requests : []
+  const inStock    = safeStock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'IN_STOCK').length
+  const lowStock   = safeStock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'LOW_STOCK').length
+  const outOfStock = safeStock.filter(s => getStockStatus(s.quantityAvailable, s.reorderLevel) === 'OUT_OF_STOCK').length
+  const pendingReq = safeReqs.filter(r => r.status === 'PENDING').length
 
-  const selectedBranchName = branches.find(b => b.id === selectedBranch)?.name || 'Branch'
+  const selectedBranchName = (Array.isArray(branches) ? branches : []).find(b => b.id === selectedBranch)?.name || 'Branch'
 
   return (
     <div className="flex flex-col gap-5 pb-8">

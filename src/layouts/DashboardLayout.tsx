@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck,
-  PanelLeftClose, PanelLeftOpen, Package, BarChart2,
+  PanelLeftClose, PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -71,8 +71,10 @@ export default function DashboardLayout() {
     { name: 'Managers',   path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
     { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
-    { name: 'Inventory',  path: '/inventory', icon: Package,    roles: ['admin', 'manager'] },
-    { name: 'Analytics',  path: '/analytics', icon: BarChart2,  roles: ['admin', 'manager'] },
+    { name: 'Inventory',     path: '/inventory',    icon: Package,           roles: ['admin', 'manager'] },
+    { name: 'Analytics',     path: '/analytics',    icon: BarChart2,         roles: ['admin', 'manager'] },
+    { name: 'Audit Report',  path: '/audit-report', icon: ClipboardList,     roles: ['admin', 'manager', 'staff'] },
+    { name: 'Daily Report',  path: '/daily-report', icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
   ]
 
   const navLinks = allLinks.filter(link => {

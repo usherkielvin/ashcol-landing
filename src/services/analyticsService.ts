@@ -15,5 +15,6 @@ export async function fetchBranchPerformance() {
   const res = await fetch(`${API_BASE_URL}/analytics/branches`, { headers: authHeaders() })
   if (!res.ok) throw new Error(`Analytics branches failed: ${res.status}`)
   const d = await res.json()
-  return (d?.data ?? d ?? []) as unknown[]
+  const list = d?.data ?? d
+  return Array.isArray(list) ? list : []
 }
