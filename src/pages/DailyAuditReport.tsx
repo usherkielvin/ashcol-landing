@@ -61,7 +61,12 @@ export default function DailyAuditReport() {
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [importing, setImporting] = useState(false)
-  const [date, setDate]           = useState(new Date().toISOString().split('T')[0])
+  // NOTE: use LOCAL date (not toISOString which is UTC) so a Filipino user at
+  // 1 AM doesn't see "yesterday" as the default.
+  const [date, setDate]           = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
@@ -94,7 +99,26 @@ export default function DailyAuditReport() {
 
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file) {
+      e.target.value = ''
+      return
+    }
+
+    // Capture the date the user has selected RIGHT NOW so there's no ambiguity
+    // about which day will receive the imported data.
+    const targetDate = date
+    const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    })
+    const confirmed = window.confirm(
+      `Import "${file.name}" into ${prettyDate}?\n\n` +
+      `The backend will look for a sheet matching this date (e.g. "${targetDate}" or "${prettyDate.split(',')[1]?.trim()}") ` +
+      `and save the data under that day. Existing reports for ${prettyDate} will be REPLACED.`
+    )
+    if (!confirmed) {
+      e.target.value = ''
+      return
+    }
 
     setImporting(true)
     const formData = new FormData()
@@ -102,9 +126,9 @@ export default function DailyAuditReport() {
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      // Pass the audit date so the backend imports the matching daily sheet
-      // (e.g. "09-MAY") from a multi-sheet workbook instead of always picking sheet 0.
-      const res = await fetch(`${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(date)}`, {
+      const url = `${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(targetDate)}`
+      console.log('[Audit] Importing Excel ->', url)
+      const res = await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -112,18 +136,21 @@ export default function DailyAuditReport() {
 
       if (res.ok) {
         const result = await res.json()
-        alert(result.message || 'Import successful!')
-        fetchAudit()
+        const importedDate = (result?.date as string) || targetDate
+        const sheetMsg = result?.sheet ? ` (from sheet "${result.sheet}")` : ''
+        alert(`${result.message || 'Import successful!'}${sheetMsg}`)
+        // Jump audit view to whichever date the server actually wrote into.
+        if (importedDate !== date) setDate(importedDate)
+        else fetchAudit()
       } else {
-        const error = await res.json()
-        alert(error.error || 'Import failed')
+        const error = await res.json().catch(() => ({}))
+        alert(error.error || `Import failed (HTTP ${res.status})`)
       }
     } catch (err) {
       console.error(err)
       alert('Network error during import')
     } finally {
       setImporting(false)
-      // Reset input
       e.target.value = ''
     }
   }
@@ -259,16 +286,19 @@ export default function DailyAuditReport() {
                 type="button"
                 disabled={importing}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
+                title={`Will import into ${date}. Change the date picker first if you want a different day.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                style={{ 
-                  backgroundColor: '#10B981', 
-                  borderColor: '#10B981', 
+                style={{
+                  backgroundColor: '#10B981',
+                  borderColor: '#10B981',
                   color: '#fff',
-                  opacity: importing ? 0.7 : 1 
+                  opacity: importing ? 0.7 : 1
                 }}
               >
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
-                {importing ? 'Importing...' : 'Import Excel'}
+                {importing
+                  ? 'Importing…'
+                  : `Import Excel for ${new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
               </button>
             </>
           )}
