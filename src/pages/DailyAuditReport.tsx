@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart2, RefreshCw, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, Receipt, ChevronRight, FileText,
+  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -60,12 +60,17 @@ export default function DailyAuditReport() {
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
+  const [importing, setImporting] = useState(false)
   const [date, setDate]           = useState(new Date().toISOString().split('T')[0])
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
+  const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
+  
+  const fileInputRef = useState<HTMLInputElement | null>(null)[1] // Placeholder for ref logic if needed, but I'll use a direct ref
 
   const role = (user?.role || '').toLowerCase()
   const isManagerOrStaff = role === 'manager' || role === 'staff'
+  const isAdmin = role === 'admin'
 
   const fetchAudit = useCallback(async () => {
     setLoading(true)
@@ -87,6 +92,42 @@ export default function DailyAuditReport() {
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      // Pass the audit date so the backend imports the matching daily sheet
+      // (e.g. "09-MAY") from a multi-sheet workbook instead of always picking sheet 0.
+      const res = await fetch(`${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(date)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+
+      if (res.ok) {
+        const result = await res.json()
+        alert(result.message || 'Import successful!')
+        fetchAudit()
+      } else {
+        const error = await res.json()
+        alert(error.error || 'Import failed')
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Network error during import')
+    } finally {
+      setImporting(false)
+      // Reset input
+      e.target.value = ''
+    }
+  }
+
   const openDrilldown = async (branchName: string) => {
     setDrillLoading(true)
     setDrilldown({ branchName, items: [] })
@@ -106,8 +147,18 @@ export default function DailyAuditReport() {
     }
   }
 
+  const toggleHideBranch = (branchName: string) => {
+    setHiddenBranches(prev => 
+      prev.includes(branchName) 
+        ? prev.filter(b => b !== branchName)
+        : [...prev, branchName]
+    )
+  }
+
+  const visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
+
   // Totals row
-  const totals = rows.reduce(
+  const totals = visibleRows.reduce(
     (acc, r) => ({
       grossSales: acc.grossSales + r.grossSales,
       targetDailyQuota: acc.targetDailyQuota + r.targetDailyQuota,
@@ -181,6 +232,46 @@ export default function DailyAuditReport() {
               style={{ color: textPrimary }}
             />
           </div>
+
+          {hiddenBranches.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHiddenBranches([])}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}
+            >
+              <Eye className="w-4 h-4" />
+              Show {hiddenBranches.length} Hidden
+            </button>
+          )}
+
+          {isAdmin && (
+            <>
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                className="hidden"
+                id="excel-import-input"
+                onChange={handleImportExcel}
+              />
+              <button
+                id="audit-import-btn"
+                type="button"
+                disabled={importing}
+                onClick={() => document.getElementById('excel-import-input')?.click()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                style={{ 
+                  backgroundColor: '#10B981', 
+                  borderColor: '#10B981', 
+                  color: '#fff',
+                  opacity: importing ? 0.7 : 1 
+                }}
+              >
+                <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
+                {importing ? 'Importing...' : 'Import Excel'}
+              </button>
+            </>
+          )}
 
           <button
             id="audit-refresh-btn"
@@ -273,10 +364,10 @@ export default function DailyAuditReport() {
               <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
             ))}
           </div>
-        ) : rows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-            <p className="text-sm font-semibold" style={{ color: textMuted }}>No reports found for this date</p>
+            <p className="text-sm font-semibold" style={{ color: textMuted }}>No reports found for this date (or all are hidden)</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -292,7 +383,7 @@ export default function DailyAuditReport() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => {
+                {visibleRows.map((row, idx) => {
                   const isAbove  = row.remarks === 'ABOVE QUOTA'
                   const noReport = row.status === 'NO REPORT'
                   return (
@@ -300,7 +391,7 @@ export default function DailyAuditReport() {
                       key={idx}
                       id={`audit-row-${idx}`}
                       style={{ borderBottom: `1px solid ${border}` }}
-                      className="transition-colors cursor-pointer"
+                      className="transition-colors cursor-pointer group"
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = rowHover)}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                       onClick={() => openDrilldown(row.branchName)}
@@ -309,7 +400,18 @@ export default function DailyAuditReport() {
                       <td className="px-3 py-3 font-bold sticky left-0" style={{ color: textMuted, backgroundColor: cardBg }}>{idx + 1}</td>
 
                       {/* Branch */}
-                      <td className="px-3 py-3 font-black whitespace-nowrap" style={{ color: textPrimary }}>{row.branchName}</td>
+                      <td className="px-3 py-3 font-black whitespace-nowrap" style={{ color: textPrimary }}>
+                        <div className="flex items-center gap-2">
+                          {row.branchName}
+                          <button 
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-red-500/10 text-red-400"
+                            onClick={(e) => { e.stopPropagation(); toggleHideBranch(row.branchName); }}
+                            title="Hide Branch"
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
 
                       {/* Time */}
                       <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{row.timeUploaded || '—'}</td>
