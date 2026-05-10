@@ -17,24 +17,33 @@ interface ServiceRow {
   customerName: string | null
   customerAddress: string | null
   customerPhone: string | null
+  district: string | null
   serviceType: string | null
+  statusCode: string | null
+  commitTerms: string | null
+  dealer: string | null
   unitBrandModel: string | null
   unitSerial: string | null
   quantity: number | null
   technicianName: string | null
+  negotiator: string | null
   scheduleTime: string | null
+  scheduleStatus: string | null
   timeStarted: string | null
   timeEnded: string | null
   amountCharged: number | null
   paymentStatus: string | null
   jobStatus: string | null
   remarks: string | null
+  note: string | null
+  controlNumber: string | null
+  serviceColumn: string | null
 }
 
 interface BranchOption { id: string; name: string }
 
-const SERVICE_TYPES = ['INSTALLATION', 'REPAIR', 'MAINTENANCE', 'CHECK_UP', 'RELOCATION'] as const
-const PAYMENT_STATUSES = ['PAID', 'UNPAID', 'PARTIAL'] as const
+const SERVICE_TYPES = ['INSTALLATION', 'SERVICE', 'REPAIR', 'MAINTENANCE', 'CHECK_UP', 'RELOCATION'] as const
+const PAYMENT_MODES = ['CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'PAID', 'UNPAID', 'PARTIAL'] as const
 const JOB_STATUSES = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RESCHEDULED'] as const
 
 const peso = (v: number | null | undefined) =>
@@ -51,18 +60,27 @@ const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> =
   customerName: '',
   customerAddress: '',
   customerPhone: '',
+  district: '',
   serviceType: 'INSTALLATION',
+  statusCode: 'I',
+  commitTerms: '',
+  dealer: '',
   unitBrandModel: '',
   unitSerial: '',
   quantity: 1,
   technicianName: '',
+  negotiator: '',
   scheduleTime: '',
+  scheduleStatus: '',
   timeStarted: '',
   timeEnded: '',
   amountCharged: 0,
-  paymentStatus: 'UNPAID',
+  paymentStatus: 'CASH',
   jobStatus: 'SCHEDULED',
   remarks: '',
+  note: '',
+  controlNumber: '',
+  serviceColumn: '',
 })
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -98,6 +116,9 @@ export default function DailyServiceReport() {
 
   // Modal state for create / edit
   const [editing, setEditing] = useState<Partial<ServiceRow> | null>(null)
+
+  // Pending Excel import waiting for the admin to choose a target branch
+  const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string } | null>(null)
 
   // ── Week helpers ──────────────────────────────────────────────────────────
   const weekRange = useMemo(() => {
@@ -146,26 +167,45 @@ export default function DailyServiceReport() {
   useEffect(() => { fetchRows() }, [fetchRows])
 
   // ── Excel import ──────────────────────────────────────────────────────────
-  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) { e.target.value = ''; return }
+    e.target.value = ''
+    if (!file) return
+    if (isManager) {
+      // Manager → branch is implicit (their own); skip picker
+      runImport(file, user?.branchId || '')
+    } else {
+      // Admin → must pick which branch this workbook is for
+      const seedBranch = branchFilter || (branches[0]?.id || '')
+      setPendingImport({ file, branchId: seedBranch })
+    }
+  }
 
+  const runImport = async (file: File, branchId: string) => {
+    if (!isManager && !branchId) {
+      alert('Please pick a target branch')
+      return
+    }
     const targetDate = date
+    const branchName = branches.find(b => b.id === branchId)?.name
+      || (isManager ? 'your branch' : 'the chosen branch')
     const pretty = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     })
     const ok = window.confirm(
-      `Import "${file.name}" as the Daily Service Report for ${pretty}?\n\n` +
-      `Existing service rows for ${pretty} will be REPLACED.`
+      `Import "${file.name}" into ${branchName} for ${pretty}?\n\n` +
+      `Existing ${branchName} service rows for ${pretty} will be REPLACED.`
     )
-    if (!ok) { e.target.value = ''; return }
+    if (!ok) { setPendingImport(null); return }
 
     setImporting(true)
     const fd = new FormData()
     fd.append('file', file)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const url = `${API_BASE_URL}/v1/service-reports/import?date=${encodeURIComponent(targetDate)}`
+      const params = new URLSearchParams({ date: targetDate })
+      if (!isManager && branchId) params.set('branchId', branchId)
+      const url = `${API_BASE_URL}/v1/service-reports/import?${params.toString()}`
       const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
       if (res.ok) {
         const result = await res.json()
@@ -180,7 +220,7 @@ export default function DailyServiceReport() {
     } catch (err) {
       console.error(err); alert('Network error during import')
     } finally {
-      setImporting(false); e.target.value = ''
+      setImporting(false); setPendingImport(null)
     }
   }
 
@@ -270,7 +310,13 @@ export default function DailyServiceReport() {
     }
   }
 
-  const paymentColor = (p: string | null) => p === 'PAID' ? '#10B981' : p === 'PARTIAL' ? '#F59E0B' : '#EF4444'
+  const paymentColor = (p: string | null) => {
+    const u = (p || '').toUpperCase()
+    if (u === 'PAID' || u === 'CASH' || u === 'GCASH' || u === 'BANK TRANSFER' || u === 'CHEQUE') return '#10B981'
+    if (u === 'PARTIAL' || u === 'BALANCE') return '#F59E0B'
+    if (u === 'UNPAID' || u === '') return '#EF4444'
+    return '#3B82F6'
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -378,7 +424,7 @@ export default function DailyServiceReport() {
           {/* Excel Import */}
           {canImport && (
             <>
-              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportExcel} />
+              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
               <button id="svc-import-btn" type="button" disabled={importing || viewMode === 'weekly'}
                       onClick={() => document.getElementById('svc-import-input')?.click()}
                       title={viewMode === 'weekly'
@@ -458,52 +504,88 @@ export default function DailyServiceReport() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs" style={{ minWidth: '1700px' }}>
+            <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {['#', 'Date', 'Branch', 'Customer', 'Address', 'Phone', 'Service', 'Unit / Model', 'Serial', 'Qty',
-                    'Technician', 'Schedule', 'Started', 'Ended', 'Amount', 'Payment', 'Status', 'Remarks', 'Actions'
-                  ].map(h => (
-                    <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                        style={{ color: textMuted }}>{h}</th>
+                  {['#', 'Customer', 'Destination', 'Brand / Unit', 'Installer', 'Update', 'Charges', 'Payment', 'Status', 'Actions']
+                    .map(h => (
+                      <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
+                          style={{ color: textMuted }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {visible.map((r, idx) => (
                   <tr key={r.id} style={{ borderBottom: `1px solid ${border}` }}
-                      className="transition-colors"
+                      className="transition-colors cursor-pointer"
+                      onClick={() => canEdit && setEditing(r)}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = rowHover)}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                    <td className="px-3 py-3 font-bold" style={{ color: textMuted }}>{idx + 1}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.reportDate || '—'}</td>
-                    <td className="px-3 py-3 font-bold whitespace-nowrap" style={{ color: textPrimary }}>{r.branchName || '—'}</td>
-                    <td className="px-3 py-3 font-bold whitespace-nowrap" style={{ color: textPrimary }}>{r.customerName || '—'}</td>
-                    <td className="px-3 py-3 max-w-xs truncate" title={r.customerAddress || ''} style={{ color: textMuted }}>{r.customerAddress || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.customerPhone || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: '#8B5CF6', fontWeight: 700 }}>{r.serviceType || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textPrimary }}>{r.unitBrandModel || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.unitSerial || '—'}</td>
-                    <td className="px-3 py-3 text-center font-bold" style={{ color: textPrimary }}>{r.quantity ?? 1}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textPrimary }}>{r.technicianName || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.scheduleTime || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.timeStarted || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{r.timeEnded || '—'}</td>
-                    <td className="px-3 py-3 font-bold whitespace-nowrap" style={{ color: '#10B981' }}>₱{peso(r.amountCharged)}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 font-bold align-top" style={{ color: textMuted }}>{idx + 1}</td>
+
+                    <td className="px-3 py-3 align-top max-w-[14rem]">
+                      <div className="font-bold truncate" title={r.customerName || ''} style={{ color: textPrimary }}>
+                        {r.customerName || '—'}
+                      </div>
+                      <div className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>
+                        {[r.customerPhone, r.controlNumber].filter(Boolean).join(' · ') || '\u00a0'}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[20rem]">
+                      <div className="truncate" title={r.customerAddress || ''} style={{ color: textPrimary }}>
+                        {r.customerAddress || '—'}
+                      </div>
+                      {r.district && (
+                        <div className="text-[10px] mt-0.5 font-bold" style={{ color: textMuted }}>{r.district}</div>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[16rem]">
+                      <div className="truncate" title={r.unitBrandModel || ''} style={{ color: textPrimary }}>
+                        {r.unitBrandModel || '—'}
+                      </div>
+                      {r.dealer && (
+                        <div className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }} title={r.dealer}>
+                          {r.dealer}
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[12rem]">
+                      <div className="truncate" title={r.technicianName || ''} style={{ color: textPrimary }}>
+                        {r.technicianName || '—'}
+                      </div>
+                      {r.scheduleTime && (
+                        <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>{r.scheduleTime}</div>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[20rem]">
+                      <div className="line-clamp-2" title={r.remarks || ''} style={{ color: textPrimary }}>
+                        {r.remarks || '—'}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3 align-top whitespace-nowrap font-bold" style={{ color: '#10B981' }}>
+                      ₱{peso(r.amountCharged)}
+                    </td>
+
+                    <td className="px-3 py-3 align-top">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap"
                             style={{ color: paymentColor(r.paymentStatus), backgroundColor: `${paymentColor(r.paymentStatus)}1f` }}>
-                        {r.paymentStatus || 'UNPAID'}
+                        {r.paymentStatus || '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
+
+                    <td className="px-3 py-3 align-top">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap"
                             style={{ color: statusColor(r.jobStatus), backgroundColor: `${statusColor(r.jobStatus)}1f` }}>
                         {r.jobStatus || 'SCHEDULED'}
                       </span>
                     </td>
-                    <td className="px-3 py-3 max-w-[16rem] truncate" title={r.remarks || ''} style={{ color: textMuted }}>{r.remarks || '—'}</td>
-                    <td className="px-3 py-3">
+
+                    <td className="px-3 py-3 align-top" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
                         {canEdit && (
                           <button onClick={() => setEditing(r)}
@@ -524,6 +606,55 @@ export default function DailyServiceReport() {
           </div>
         )}
       </div>
+
+      {/* ── Branch Picker (admin Excel import) ─────────────────────── */}
+      {pendingImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+             onClick={() => setPendingImport(null)}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+               onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <h3 className="font-black text-sm" style={{ color: textPrimary }}>Choose Target Branch</h3>
+              <button onClick={() => setPendingImport(null)} className="p-1.5 rounded-lg" style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <p className="text-xs" style={{ color: textMuted }}>
+                Every row in <span className="font-bold" style={{ color: textPrimary }}>{pendingImport.file.name}</span> will be saved
+                under the branch you pick. Existing rows for that branch on{' '}
+                <span className="font-bold" style={{ color: textPrimary }}>
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </span>{' '}will be replaced.
+              </p>
+              <Field label="Branch" required>
+                <select value={pendingImport.branchId}
+                        onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
+                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                  <option value="" style={{ color: '#000' }}>— Choose branch —</option>
+                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
+              <button onClick={() => setPendingImport(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold border"
+                      style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                Cancel
+              </button>
+              <button onClick={() => runImport(pendingImport.file, pendingImport.branchId)}
+                      disabled={!pendingImport.branchId || importing}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                      style={{ backgroundColor: '#3B82F6', opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
+                {importing ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Edit / Create Modal ─────────────────────────────────────── */}
       {editing && (
@@ -577,18 +708,44 @@ export default function DailyServiceReport() {
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
-              <Field label="Address" full>
+              <Field label="Destination / Address" full>
                 <input value={editing.customerAddress || ''} onChange={e => setEditing({ ...editing, customerAddress: e.target.value })}
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
+              <Field label="District / City">
+                <input value={editing.district || ''} onChange={e => setEditing({ ...editing, district: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+              <Field label="Brand / Unit Model">
+                <input value={editing.unitBrandModel || ''} onChange={e => setEditing({ ...editing, unitBrandModel: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+
+              <Field label="Dealer (DLR)">
+                <input value={editing.dealer || ''} onChange={e => setEditing({ ...editing, dealer: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
               <Field label="Service Type">
-                <select value={editing.serviceType || ''} onChange={e => setEditing({ ...editing, serviceType: e.target.value })}
+                <select value={editing.serviceType || ''} onChange={e => {
+                          const v = e.target.value
+                          setEditing({ ...editing, serviceType: v, statusCode: v === 'INSTALLATION' ? 'I' : v === 'SERVICE' ? 'S' : editing.statusCode })
+                        }}
                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                   {SERVICE_TYPES.map(t => <option key={t} value={t} style={{ color: '#000' }}>{t}</option>)}
                 </select>
+              </Field>
+
+              <Field label="Status Code (S/I)">
+                <input value={editing.statusCode || ''} onChange={e => setEditing({ ...editing, statusCode: e.target.value })}
+                       maxLength={4}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold uppercase"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
               <Field label="Quantity">
                 <input type="number" min={1} value={editing.quantity ?? 1}
@@ -597,24 +754,30 @@ export default function DailyServiceReport() {
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
-              <Field label="Unit / Brand / Model">
-                <input value={editing.unitBrandModel || ''} onChange={e => setEditing({ ...editing, unitBrandModel: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Serial Number">
-                <input value={editing.unitSerial || ''} onChange={e => setEditing({ ...editing, unitSerial: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              <Field label="Commit Terms" full>
+                <textarea rows={2} value={editing.commitTerms || ''} onChange={e => setEditing({ ...editing, commitTerms: e.target.value })}
+                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
-              <Field label="Technician">
+              <Field label="Installer / Technician">
                 <input value={editing.technicianName || ''} onChange={e => setEditing({ ...editing, technicianName: e.target.value })}
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
+              <Field label="Negotiator">
+                <input value={editing.negotiator || ''} onChange={e => setEditing({ ...editing, negotiator: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+
               <Field label="Schedule Time (e.g. 9:00 AM)">
                 <input value={editing.scheduleTime || ''} onChange={e => setEditing({ ...editing, scheduleTime: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+              <Field label="Schedule Status">
+                <input value={editing.scheduleStatus || ''} onChange={e => setEditing({ ...editing, scheduleStatus: e.target.value })}
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
@@ -629,30 +792,41 @@ export default function DailyServiceReport() {
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
-              <Field label="Amount Charged (PHP)">
+              <Field label="Installation Charges (PHP)">
                 <input type="number" min={0} step="0.01" value={editing.amountCharged ?? 0}
                        onChange={e => setEditing({ ...editing, amountCharged: parseFloat(e.target.value || '0') })}
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
-              <Field label="Payment Status">
-                <select value={editing.paymentStatus || 'UNPAID'} onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
+              <Field label="Mode of Payment">
+                <select value={editing.paymentStatus || 'CASH'} onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {PAYMENT_STATUSES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
+                  {PAYMENT_MODES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
                 </select>
               </Field>
 
-              <Field label="Job Status" full>
+              <Field label="Job Status">
                 <select value={editing.jobStatus || 'SCHEDULED'} onChange={e => setEditing({ ...editing, jobStatus: e.target.value })}
                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                   {JOB_STATUSES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
                 </select>
               </Field>
+              <Field label="Control # / SI">
+                <input value={editing.controlNumber || ''} onChange={e => setEditing({ ...editing, controlNumber: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
 
-              <Field label="Remarks" full>
-                <textarea rows={3} value={editing.remarks || ''} onChange={e => setEditing({ ...editing, remarks: e.target.value })}
+              <Field label="Update / Remarks" full>
+                <textarea rows={2} value={editing.remarks || ''} onChange={e => setEditing({ ...editing, remarks: e.target.value })}
+                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+
+              <Field label="Internal Note" full>
+                <textarea rows={2} value={editing.note || ''} onChange={e => setEditing({ ...editing, note: e.target.value })}
                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
