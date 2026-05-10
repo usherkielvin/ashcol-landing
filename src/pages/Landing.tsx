@@ -244,7 +244,7 @@ const FAQS = [
   },
   {
     q: 'Do you provide services outside Metro Manila?',
-    a: 'Yes! Ashcol has 11 branches across Luzon including Valenzuela, Batangas, Bulacan, San Fernando (Pampanga), Candelaria (Quezon), Calauan (Laguna), Rodriguez (Rizal), Gen. Trias, Silang, and Dasmariñas (Cavite).',
+    a: 'Yes! Ashcol operates 11 branches across Luzon — 8 owned branches (Taguig, Bulacan, Pampanga, Rizal, Laguna, Candelaria, Dasmariñas, and Silang) plus 3 franchise branches (Valenzuela, Batangas, and General Trias).',
   },
   {
     q: 'Is there a warranty on your services?',
@@ -292,77 +292,109 @@ function ComingSoonModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ─── BranchCard ──────────────────────────────────────────────────────────────
+// ─── Branch Cards ────────────────────────────────────────────────────────────
 
 type BranchType = {
   name: string; tag: string; color: string; address: string;
   phones: string[]; email: string; mapUrl: string;
-  landline?: string; isHQ?: boolean; region?: string;
+  landline?: string; isHQ?: boolean; region?: string; isFranchise?: boolean;
 }
 type ThemeTokens = Record<string, string>
 
-function BranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
+/** Owned branch card — clean, minimal, focused */
+function OwnedBranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
   return (
     <div
-      className="rounded-2xl overflow-hidden flex flex-col relative h-full w-full"
+      className="rounded-2xl flex flex-col gap-3 p-5 relative overflow-hidden transition-all hover:translate-y-[-2px]"
       style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
     >
-      <div className="h-[3px] w-full flex-shrink-0" style={{ background: branch.color }} />
-      <div className="p-4 flex flex-col gap-2.5 flex-1">
-        {/* Header row */}
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '20', color: branch.color }}>
-            <Building2 className="w-3.5 h-3.5" />
-          </div>
-          <div className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: branch.color + '18', color: branch.color }}>{branch.tag}</div>
+      {/* Left accent bar */}
+      <div className="absolute top-0 left-0 w-[3px] h-full rounded-l-2xl" style={{ backgroundColor: branch.color }} />
+
+      {/* Icon + tag row */}
+      <div className="flex items-center gap-2 pl-2">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '18', color: branch.color }}>
+          <Building2 className="w-4 h-4" />
+        </div>
+        <div>
+          <div className="text-[11px] font-black uppercase tracking-wider" style={{ color: branch.color }}>{branch.tag}</div>
           {branch.isHQ && (
-            <span className="ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ backgroundColor: '#10B98120', color: '#10B981', border: '1px solid #10B98140' }}>HQ</span>
+            <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#10B981' }}>Head Office</span>
           )}
         </div>
+      </div>
 
-        <div className="font-bold text-[14px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
-
-        {/* Address */}
-        <div className="flex items-start gap-1.5">
-          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: branch.color }} />
+      {/* Name */}
+      <div className="pl-2">
+        <div className="font-black text-[15px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
+        <div className="flex items-start gap-1.5 mt-1.5">
+          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: t.textFaint }} />
           <span className="text-[11px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
         </div>
+      </div>
 
-        {/* Phones */}
-        {branch.phones && branch.phones.length > 0 && (
-          <div className="flex flex-col gap-0.5">
-            {branch.phones.map((p, pi) => (
-              <a key={pi} href={`tel:${p.replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
-                <Phone className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
-                <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{p}</span>
-              </a>
-            ))}
-            {branch.landline && (
-              <a href={`tel:${branch.landline.replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
-                <Phone className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
-                <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.landline} (Landline)</span>
-              </a>
-            )}
-          </div>
-        )}
-
-        {/* Email */}
-        {branch.email && (
-          <a href={`mailto:${branch.email}`} className="flex items-center gap-1.5 group">
-            <Mail className="w-3 h-3 flex-shrink-0" style={{ color: branch.color }} />
-            <span className="text-[10px] break-all group-hover:underline" style={{ color: t.textMuted }}>{branch.email}</span>
-          </a>
-        )}
-
-        {/* Map link */}
-        <a
-          href={mapUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-auto flex items-center gap-1 text-[11px] font-semibold opacity-70 hover:opacity-100 transition-opacity"
+      {/* Contact row */}
+      <div className="pl-2 flex items-center justify-between mt-auto pt-1" style={{ borderTop: `1px solid ${t.border}` }}>
+        <a href={`tel:${(branch.phones[0] || '').replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
+          <Phone className="w-3 h-3" style={{ color: branch.color }} />
+          <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.phones[0]}</span>
+        </a>
+        <a href={mapUrl} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-0.5 text-[10px] font-semibold transition-opacity opacity-60 hover:opacity-100"
           style={{ color: branch.color }}
         >
-          View on Google Maps <ArrowUpRight className="w-3 h-3" />
+          Map <ArrowUpRight className="w-3 h-3" />
+        </a>
+      </div>
+    </div>
+  )
+}
+
+/** Franchise branch card — amber accent, distinct layout */
+function FranchiseBranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
+  return (
+    <div
+      className="rounded-2xl flex flex-col gap-3 p-5 relative overflow-hidden flex-1 min-w-[220px] transition-all hover:translate-y-[-2px]"
+      style={{
+        backgroundColor: t.bgCard,
+        border: '1px solid rgba(245,158,11,0.3)',
+        background: t.bgCard === '#0F1A2E'
+          ? 'linear-gradient(135deg, #0F1A2E 80%, rgba(245,158,11,0.04) 100%)'
+          : 'linear-gradient(135deg, #ffffff 80%, rgba(245,158,11,0.04) 100%)'
+      }}
+    >
+      {/* Top accent */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl" style={{ background: 'linear-gradient(90deg, #F59E0B, rgba(245,158,11,0.2))' }} />
+
+      {/* Franchise badge + icon */}
+      <div className="flex items-center justify-between">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B' }}>
+          <Building2 className="w-4 h-4" />
+        </div>
+        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>Franchise</span>
+      </div>
+
+      {/* Name + tag */}
+      <div>
+        <div className="font-black text-[15px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
+        <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F59E0B' }}>{branch.tag}</div>
+        <div className="flex items-start gap-1.5 mt-2">
+          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: 'rgba(245,158,11,0.6)' }} />
+          <span className="text-[11px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
+        </div>
+      </div>
+
+      {/* Contact row */}
+      <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid rgba(245,158,11,0.15)' }}>
+        <a href={`tel:${(branch.phones[0] || '').replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
+          <Phone className="w-3 h-3" style={{ color: '#F59E0B' }} />
+          <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.phones[0]}</span>
+        </a>
+        <a href={mapUrl} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-0.5 text-[10px] font-semibold transition-opacity opacity-60 hover:opacity-100"
+          style={{ color: '#F59E0B' }}
+        >
+          Map <ArrowUpRight className="w-3 h-3" />
         </a>
       </div>
     </div>
@@ -643,39 +675,50 @@ export default function Landing() {
 
       </section>
 
-      {/* ── Branch Locations (2-row scrollable) ─────────────────────────── */}
-      <section className="py-10 md:py-14" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="px-4 md:px-11 lg:px-20 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-3 w-fit">
+      {/* ── Branch Locations ──────────────────────────────────────────────── */}
+      <section className="py-14 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
+        <div className="px-4 md:px-11 lg:px-20 max-w-7xl mx-auto">
+
+          {/* Section header */}
+          <div className="mb-10">
+            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-4 w-fit">
               <MapPin className="w-3 h-3 text-[#10B981]" />
               <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
             </div>
             <h2 className="text-[clamp(1.4rem,3vw,2.2rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>11 Branches Across Luzon</h2>
-            <p className="text-[14px] mt-1" style={{ color: t.textMuted }}>Head office in Taguig — always nearby wherever you are.</p>
+            <p className="text-[14px] mt-1" style={{ color: t.textMuted }}>8 company-owned branches &amp; 3 franchise partners nationwide.</p>
           </div>
-        </div>
 
-        <div
-          className="overflow-x-auto pb-4 px-4 md:px-11 lg:px-20"
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#1E2D48 transparent' }}
-        >
-          {/* ── Unified 2-row grid: clamp makes columns narrower on mobile ── */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateRows: 'repeat(2, 1fr)',
-              gridAutoFlow: 'column',
-              gridAutoColumns: 'clamp(150px, 42vw, 260px)',
-              gap: '10px',
-              width: 'max-content',
-            }}
-          >
-            {BRANCHES.map((branch, i) => {
-              const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
-              return <BranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
-            })}
+          {/* ── Owned Branches ── */}
+          <div className="mb-10">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="h-px flex-1" style={{ backgroundColor: t.border }} />
+              <span className="text-[10px] font-black uppercase tracking-widest px-3" style={{ color: t.textFaint }}>Company Branches</span>
+              <div className="h-px flex-1" style={{ backgroundColor: t.border }} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {BRANCHES.filter(b => !b.isFranchise).map((branch, i) => {
+                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
+                return <OwnedBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
+              })}
+            </div>
           </div>
+
+          {/* ── Franchise Branches ── */}
+          <div>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="h-px flex-1" style={{ backgroundColor: 'rgba(245,158,11,0.2)' }} />
+              <span className="text-[10px] font-black uppercase tracking-widest px-3" style={{ color: '#F59E0B' }}>Franchise Partners</span>
+              <div className="h-px flex-1" style={{ backgroundColor: 'rgba(245,158,11,0.2)' }} />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              {BRANCHES.filter(b => b.isFranchise).map((branch, i) => {
+                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
+                return <FranchiseBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
+              })}
+            </div>
+          </div>
+
         </div>
       </section>
 

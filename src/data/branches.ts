@@ -10,6 +10,7 @@ export type PublicBranch = {
   landline?: string
   isHQ?: boolean
   region?: string
+  isFranchise?: boolean
 }
 
 export const PUBLIC_BRANCHES: PublicBranch[] = [
@@ -33,6 +34,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     email: 'ashcolnorth@ashcol.com.ph',
     mapUrl: '',
     region: 'Metro Manila',
+    isFranchise: true,
   },
   {
     name: 'Ashcol Bulacan',
@@ -84,16 +86,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     email: 'ashcolbatangas@ashcol.com.ph',
     mapUrl: '',
     region: 'Batangas',
-  },
-  {
-    name: 'Ashcol Candelaria',
-    tag: 'Quezon',
-    color: '#EF4444',
-    address: 'Maharlika Highway, Malabanban Norte, Candelaria, Quezon Province',
-    phones: ['0917 159 6995', '0947 993 9208'],
-    email: 'ashcolcandelaria@gmail.com',
-    mapUrl: '',
-    region: 'Quezon',
+    isFranchise: true,
   },
   {
     name: 'Ashcol Gen. Trias',
@@ -104,6 +97,17 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     email: 'ashcolcavite@ashcol.com.ph',
     mapUrl: '',
     region: 'Cavite',
+    isFranchise: true,
+  },
+  {
+    name: 'Ashcol Candelaria',
+    tag: 'Quezon',
+    color: '#EF4444',
+    address: 'Maharlika Highway, Malabanban Norte, Candelaria, Quezon Province',
+    phones: ['0917 159 6995', '0947 993 9208'],
+    email: 'ashcolcandelaria@gmail.com',
+    mapUrl: '',
+    region: 'Quezon',
   },
   {
     name: 'Ashcol Dasmariñas',

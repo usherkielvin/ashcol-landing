@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  FileText, Plus, Trash2, Check, ChevronDown, ChevronUp,
+  Plus, Trash2, Check, ChevronDown, ChevronUp,
   DollarSign, CreditCard, Receipt, ShoppingCart, Send,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -40,7 +40,7 @@ const DENOMS: Denomination[] = [
   { label: '₱1',     value: 1,    qty: '' },
 ]
 
-const TYPE_CONFIG: Record<ItemType, { label: string; color: string; icon: React.FC<{ className?: string }> }> = {
+const TYPE_CONFIG: Record<ItemType, { label: string; color: string; icon: React.FC<{ className?: string; style?: React.CSSProperties }> }> = {
   CASH_SALE:   { label: 'Cash Sale',    color: '#10B981', icon: DollarSign },
   ONLINE_SALE: { label: 'Online/GCash', color: '#3B82F6', icon: CreditCard },
   EXPENSE:     { label: 'Expense',      color: '#EF4444', icon: Receipt },
@@ -108,7 +108,6 @@ export default function DailySalesForm() {
     items.filter(i => i.type === type).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
 
   const totalCash    = sum('CASH_SALE')
-  const totalOnline  = sum('ONLINE_SALE')
   const totalExp     = sum('EXPENSE')
   const totalPurch   = sum('PURCHASE')
   const cashForOffice = totalCash - totalExp - totalPurch

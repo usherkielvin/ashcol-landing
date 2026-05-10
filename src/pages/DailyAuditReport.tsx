@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  BarChart2, RefreshCw, CalendarDays, TrendingUp, TrendingDown,
+  BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
   Search, ArrowUp, ArrowDown, Trophy, Award, Crown
 } from 'lucide-react'
@@ -95,8 +95,6 @@ export default function DailyAuditReport() {
       label: `${pretty(monday)} – ${pretty(sunday)}, ${sunday.getFullYear()}`,
     }
   }, [date])
-  
-  const fileInputRef = useState<HTMLInputElement | null>(null)[1] // Placeholder for ref logic if needed, but I'll use a direct ref
 
   const role = (user?.role || '').toLowerCase()
   const isManagerOrStaff = role === 'manager' || role === 'staff'
@@ -653,7 +651,6 @@ export default function DailyAuditReport() {
                   const isAbove        = row.remarks === 'ABOVE QUOTA'
                   const noRecord       = row.status  === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'CLOSED'
                   const remarksClosed  = row.remarks === 'CLOSED'
-                  const noReport       = noRecord     // alias kept for legacy chrome
                   return (
                     <tr
                       key={idx}
