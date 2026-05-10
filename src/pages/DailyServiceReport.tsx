@@ -276,16 +276,23 @@ export default function DailyServiceReport() {
   }
 
   // ── Derived data ──────────────────────────────────────────────────────────
+  const rowSearchBlob = (r: ServiceRow) => {
+    const amt = r.amountCharged != null ? String(r.amountCharged) : ''
+    const amtPeso = r.amountCharged != null ? peso(r.amountCharged) : ''
+    return [
+      r.customerName, r.customerAddress, r.customerPhone, r.district,
+      r.branchName, r.serviceType, r.statusCode, r.commitTerms, r.dealer,
+      r.unitBrandModel, r.unitSerial, r.technicianName, r.negotiator,
+      r.scheduleTime, r.scheduleStatus, r.timeStarted, r.timeEnded,
+      r.paymentStatus, r.jobStatus, r.remarks, r.note, r.controlNumber,
+      r.serviceColumn, r.reportDate, amt, amtPeso,
+    ].filter(Boolean).join(' ').toLowerCase()
+  }
+
   const visible = useMemo(() => {
-    if (!searchQuery) return rows
-    const q = searchQuery.toLowerCase()
-    return rows.filter(r =>
-      (r.customerName || '').toLowerCase().includes(q)
-      || (r.branchName || '').toLowerCase().includes(q)
-      || (r.technicianName || '').toLowerCase().includes(q)
-      || (r.unitBrandModel || '').toLowerCase().includes(q)
-      || (r.serviceType || '').toLowerCase().includes(q)
-    )
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(r => rowSearchBlob(r).includes(q))
   }, [rows, searchQuery])
 
   const totals = useMemo(() => visible.reduce(
@@ -342,18 +349,24 @@ export default function DailyServiceReport() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {/* Search */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+          {/* Search — one bar filters all visible columns */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold min-w-0"
                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Search className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
             <input
               type="text"
-              placeholder="Search customer / tech…"
+              placeholder="Search name, address, phone, installer, dealer, status, amount…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs w-32 md:w-44"
+              className="bg-transparent outline-none text-xs min-w-0 flex-1 w-40 md:w-72 lg:w-96"
               style={{ color: textPrimary }}
             />
+            {searchQuery && (
+              <button type="button" onClick={() => setSearchQuery('')} title="Clear search"
+                      className="shrink-0 p-0.5 rounded-md hover:bg-slate-200/20" style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Branch filter (admin only — managers always see their own branch) */}
@@ -495,9 +508,14 @@ export default function DailyServiceReport() {
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              No service records for {viewMode === 'weekly' ? weekRange.label : 'this date'}
+              {searchQuery.trim()
+                ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
+                : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this date'}`}
             </p>
-            {canEdit && (
+            {searchQuery.trim() ? (
+              <button type="button" onClick={() => setSearchQuery('')}
+                      className="text-xs font-bold text-[#3B82F6] hover:underline">Clear search</button>
+            ) : canEdit && (
               <button onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : ''))}
                       className="text-xs font-bold text-[#3B82F6] hover:underline">+ Add the first one</button>
             )}
