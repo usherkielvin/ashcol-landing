@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart2, RefreshCw, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
@@ -11,6 +11,8 @@ import { API_BASE_URL } from '../utils/api'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface AuditRow {
+  /** Physical branch for counting (8 locations); Taguig audit lines share "ASHCOL TAGUIG". */
+  logicalBranchName?: string | null
   branchName: string
   timeUploaded: string | null
   status: string
@@ -73,6 +75,26 @@ export default function DailyAuditReport() {
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily')
+
+  // ── Week helpers (Mon..Sun ISO week containing `date`) ───────────────────
+  const weekRange = useMemo(() => {
+    const d = new Date(date + 'T00:00:00')
+    const dow = d.getDay()                  // Sun=0..Sat=6
+    const offsetToMonday = dow === 0 ? -6 : 1 - dow
+    const monday = new Date(d)
+    monday.setDate(d.getDate() + offsetToMonday)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const fmt = (x: Date) =>
+      `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+    const pretty = (x: Date) => x.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+    return {
+      mondayIso: fmt(monday),
+      sundayIso: fmt(sunday),
+      label: `${pretty(monday)} – ${pretty(sunday)}, ${sunday.getFullYear()}`,
+    }
+  }, [date])
   
   const fileInputRef = useState<HTMLInputElement | null>(null)[1] // Placeholder for ref logic if needed, but I'll use a direct ref
 
@@ -89,7 +111,8 @@ export default function DailyAuditReport() {
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${date}`, {
+      const path = viewMode === 'weekly' ? 'audit-summary-weekly' : 'audit-summary'
+      const res = await fetch(`${API_BASE_URL}/v1/reports/${path}?date=${date}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -101,7 +124,7 @@ export default function DailyAuditReport() {
     } finally {
       setLoading(false)
     }
-  }, [date])
+  }, [date, viewMode])
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
@@ -192,6 +215,12 @@ export default function DailyAuditReport() {
 
   let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
 
+  /** Eight physical branches — Taguig Sales + Service count as one. */
+  const logicalBranchCount = useMemo(
+    () => new Set(rows.map(r => (r.logicalBranchName ?? r.branchName).trim())).size,
+    [rows]
+  )
+
   if (searchQuery) {
     const q = searchQuery.toLowerCase()
     visibleRows = visibleRows.filter(r => r.branchName.toLowerCase().includes(q))
@@ -263,7 +292,7 @@ export default function DailyAuditReport() {
 
   const columns = [
     { key: 'branch',           label: 'BRANCH' },
-    { key: 'time',             label: 'TIME UPLOADED' },
+    { key: 'time',             label: viewMode === 'weekly' ? 'DAYS REPORTED' : 'TIME UPLOADED' },
     { key: 'status',           label: 'STATUS' },
     { key: 'grossSales',       label: 'GROSS SALES' },
     { key: 'target',           label: 'TARGET DAILY QUOTA' },
@@ -322,10 +351,36 @@ export default function DailyAuditReport() {
             />
           </div>
 
-          {/* Date picker */}
+          {/* View mode toggle (Daily / Weekly) */}
+          <div
+            id="audit-view-toggle"
+            className="flex items-center rounded-xl text-xs font-bold overflow-hidden"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+          >
+            {(['daily', 'weekly'] as const).map(mode => {
+              const active = viewMode === mode
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className="px-3 py-2 transition-colors capitalize"
+                  style={{
+                    backgroundColor: active ? '#10B981' : 'transparent',
+                    color: active ? '#fff' : textMuted,
+                  }}
+                >
+                  {mode}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Date picker — single day in Daily, anchor for the week in Weekly */}
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            title={viewMode === 'weekly' ? `Week of ${weekRange.label}` : undefined}
           >
             <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
             <input
@@ -336,6 +391,11 @@ export default function DailyAuditReport() {
               className="bg-transparent outline-none text-xs"
               style={{ color: textPrimary }}
             />
+            {viewMode === 'weekly' && (
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#10B981' }}>
+                {weekRange.label}
+              </span>
+            )}
           </div>
 
           {hiddenBranches.length > 0 && (
@@ -362,17 +422,20 @@ export default function DailyAuditReport() {
               <button
                 id="audit-import-btn"
                 type="button"
-                disabled={importing}
+                disabled={importing || viewMode === 'weekly'}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                title={isManager
-                  ? `Will import only YOUR branch's row into ${date}. Other branches in the workbook are ignored.`
-                  : `Will import every branch into ${date}. Change the date picker first if you want a different day.`}
+                title={viewMode === 'weekly'
+                  ? 'Excel import is per-day. Switch to Daily view to import.'
+                  : isManager
+                    ? `Will import only YOUR branch's row into ${date}. Other branches in the workbook are ignored.`
+                    : `Will import every branch into ${date}. Change the date picker first if you want a different day.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
                 style={{
                   backgroundColor: '#10B981',
                   borderColor: '#10B981',
                   color: '#fff',
-                  opacity: importing ? 0.7 : 1
+                  opacity: (importing || viewMode === 'weekly') ? 0.5 : 1,
+                  cursor: viewMode === 'weekly' ? 'not-allowed' : undefined,
                 }}
               >
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
@@ -383,17 +446,6 @@ export default function DailyAuditReport() {
             </>
           )}
 
-          <button
-            id="audit-refresh-btn"
-            type="button"
-            onClick={fetchAudit}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
         </div>
       </div>
 
@@ -477,7 +529,11 @@ export default function DailyAuditReport() {
                 <Trophy className="w-4 h-4" style={{ color: '#F59E0B' }} />
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
+                  {viewMode === 'weekly'
+                    ? `Week of ${weekRange.label}`
+                    : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </p>
                 <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
               </div>
               <span
@@ -539,12 +595,16 @@ export default function DailyAuditReport() {
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-          <h3 className="font-black text-sm" style={{ color: textPrimary }}>Branch Audit — {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
+          <h3 className="font-black text-sm" style={{ color: textPrimary }}>
+            Branch Audit — {viewMode === 'weekly'
+              ? `Week of ${weekRange.label}`
+              : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </h3>
           <span
             className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
             style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.12)' }}
           >
-            {rows.length} Branches
+            {logicalBranchCount} Branches
           </span>
         </div>
 
@@ -557,7 +617,11 @@ export default function DailyAuditReport() {
         ) : visibleRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-            <p className="text-sm font-semibold" style={{ color: textMuted }}>No reports found for this date (or all are hidden)</p>
+            <p className="text-sm font-semibold" style={{ color: textMuted }}>
+              {viewMode === 'weekly'
+                ? `No reports found for ${weekRange.label} (or all are hidden)`
+                : 'No reports found for this date (or all are hidden)'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -598,7 +662,7 @@ export default function DailyAuditReport() {
                       className="transition-colors cursor-pointer group"
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = rowHover)}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      onClick={() => openDrilldown(row.branchName)}
+                      onClick={() => openDrilldown((row.logicalBranchName ?? row.branchName).trim())}
                     >
                       {/* Row # */}
                       <td className="px-3 py-3 font-bold sticky left-0" style={{ color: textMuted, backgroundColor: cardBg }}>{idx + 1}</td>
@@ -688,7 +752,7 @@ export default function DailyAuditReport() {
                       <td className="px-3 py-3 font-bold whitespace-nowrap">
                         <button
                           id={`expense-drilldown-${idx}`}
-                          onClick={e => { e.stopPropagation(); openDrilldown(row.branchName) }}
+                          onClick={e => { e.stopPropagation(); openDrilldown((row.logicalBranchName ?? row.branchName).trim()) }}
                           className="flex items-center gap-1 transition-opacity hover:opacity-80"
                           style={{ color: '#EF4444' }}
                         >
