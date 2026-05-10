@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart2, RefreshCw, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
+  Search, ArrowUp, ArrowDown, Trophy, Award, Crown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -70,12 +71,19 @@ export default function DailyAuditReport() {
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
   const fileInputRef = useState<HTMLInputElement | null>(null)[1] // Placeholder for ref logic if needed, but I'll use a direct ref
 
   const role = (user?.role || '').toLowerCase()
   const isManagerOrStaff = role === 'manager' || role === 'staff'
+  const isManager = role === 'manager'
   const isAdmin = role === 'admin'
+  // Admins can import every branch from the workbook; managers can also
+  // upload the same workbook but the backend will only save the row matching
+  // their own branchId.
+  const canImportExcel = isAdmin || isManager
 
   const fetchAudit = useCallback(async () => {
     setLoading(true)
@@ -182,7 +190,61 @@ export default function DailyAuditReport() {
     )
   }
 
-  const visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
+  let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
+
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase()
+    visibleRows = visibleRows.filter(r => r.branchName.toLowerCase().includes(q))
+  }
+
+  if (sortConfig !== null) {
+    visibleRows.sort((a, b) => {
+      const keyMap: Record<string, keyof AuditRow> = {
+        'branch': 'branchName',
+        'time': 'timeUploaded',
+        'status': 'status',
+        'grossSales': 'grossSales',
+        'target': 'targetDailyQuota',
+        'difference': 'difference',
+        'remarks': 'remarks',
+        'coh': 'cohPreviousDay',
+        'fundHo': 'fundFromHo',
+        'cashReturns': 'cashReturns',
+        'totalCohCfd': 'totalCohCfd',
+        'cashColl': 'totalCashCollection',
+        'onlineColl': 'totalOnlineCollection',
+        'totalExp': 'totalExpenses',
+        'units': 'totalUnitsInstalledServiced',
+        'cancelled': 'totalCancelled',
+        'freeInstall': 'totalUnitsFreeInstall',
+        'forColl': 'forCollection',
+        'rebates': 'rebatesForCollection',
+      }
+      const mappedKey = keyMap[sortConfig.key] || sortConfig.key as keyof AuditRow
+      const aVal = a[mappedKey]
+      const bVal = b[mappedKey]
+
+      if (aVal === bVal) return 0
+      if (aVal === null || aVal === undefined) return 1
+      if (bVal === null || bVal === undefined) return -1
+      
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      }
+      
+      return sortConfig.direction === 'asc' 
+        ? (aVal < bVal ? -1 : 1) 
+        : (aVal < bVal ? 1 : -1)
+    })
+  }
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'desc'
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc'
+    }
+    setSortConfig({ key, direction })
+  }
 
   // Totals row
   const totals = visibleRows.reduce(
@@ -244,6 +306,22 @@ export default function DailyAuditReport() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* Search input */}
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+          >
+            <Search className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+            <input
+              type="text"
+              placeholder="Search branch..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs w-28 md:w-36"
+              style={{ color: textPrimary }}
+            />
+          </div>
+
           {/* Date picker */}
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
@@ -272,7 +350,7 @@ export default function DailyAuditReport() {
             </button>
           )}
 
-          {isAdmin && (
+          {canImportExcel && (
             <>
               <input
                 type="file"
@@ -286,7 +364,9 @@ export default function DailyAuditReport() {
                 type="button"
                 disabled={importing}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                title={`Will import into ${date}. Change the date picker first if you want a different day.`}
+                title={isManager
+                  ? `Will import only YOUR branch's row into ${date}. Other branches in the workbook are ignored.`
+                  : `Will import every branch into ${date}. Change the date picker first if you want a different day.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
                 style={{
                   backgroundColor: '#10B981',
@@ -298,7 +378,7 @@ export default function DailyAuditReport() {
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
                 {importing
                   ? 'Importing…'
-                  : `Import Excel for ${new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  : `${isManager ? 'Import My Branch' : 'Import Excel'} for ${new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
               </button>
             </>
           )}
@@ -375,6 +455,86 @@ export default function DailyAuditReport() {
         </div>
       )}
 
+      {/* ── Above Quota Spotlight ───────────────────────────────────── */}
+      {!loading && rows.length > 0 && (() => {
+        const aboveQuotaBranches = rows.filter(r =>
+          r.remarks === 'ABOVE QUOTA' &&
+          r.status !== 'CLOSED' &&
+          r.status !== 'NO RECORD' &&
+          r.status !== 'NO REPORT'
+        ).sort((a, b) => b.difference - a.difference)
+
+        if (aboveQuotaBranches.length === 0) return null
+
+        return (
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)' }}>
+                <Trophy className="w-4 h-4" style={{ color: '#F59E0B' }} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
+              </div>
+              <span
+                className="ml-auto text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider"
+                style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}
+              >
+                {aboveQuotaBranches.length} exceeded
+              </span>
+            </div>
+
+            {/* Cards */}
+            <div className="p-4 flex flex-wrap gap-3">
+              {aboveQuotaBranches.map((branch, idx) => {
+                const RankIcon = idx === 0 ? Crown : Award
+                const rankStyle = idx === 0
+                  ? { iconBg: 'rgba(245,158,11,0.12)', iconColor: '#F59E0B', cardBorder: 'rgba(245,158,11,0.25)' }
+                  : idx === 1
+                    ? { iconBg: 'rgba(148,163,184,0.12)', iconColor: '#94A3B8', cardBorder: border }
+                    : idx === 2
+                      ? { iconBg: 'rgba(180,100,50,0.12)', iconColor: '#CD7F32', cardBorder: border }
+                      : { iconBg: 'rgba(16,185,129,0.1)', iconColor: '#10B981', cardBorder: border }
+
+                return (
+                  <div
+                    key={branch.branchName}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors"
+                    style={{
+                      backgroundColor: inputBg,
+                      border: `1px solid ${rankStyle.cardBorder}`,
+                      minWidth: '210px',
+                    }}
+                  >
+                    {/* Rank icon */}
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: rankStyle.iconBg }}
+                    >
+                      <RankIcon className="w-4 h-4" style={{ color: rankStyle.iconColor }} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="font-black text-xs truncate" style={{ color: textPrimary }}>{branch.branchName}</p>
+                      <p className="text-[11px]" style={{ color: textMuted }}>₱{peso(branch.grossSales)}</p>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-black" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</p>
+                      <p className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: textMuted }}>#{idx + 1}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── Audit Table ─────────────────────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${border}` }}>
@@ -406,16 +566,30 @@ export default function DailyAuditReport() {
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                   <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider sticky left-0 z-10" style={{ color: textMuted, backgroundColor: inputBg }}>#</th>
                   {columns.map(col => (
-                    <th key={col.key} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap" style={{ color: textMuted }}>
-                      {col.label}
+                    <th 
+                      key={col.key} 
+                      className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity select-none" 
+                      style={{ color: textMuted }}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col.label}
+                        {sortConfig?.key === col.key ? (
+                          sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        ) : (
+                          <div className="w-3 h-3" />
+                        )}
+                      </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row, idx) => {
-                  const isAbove  = row.remarks === 'ABOVE QUOTA'
-                  const noReport = row.status === 'NO REPORT'
+                  const isAbove        = row.remarks === 'ABOVE QUOTA'
+                  const noRecord       = row.status  === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'CLOSED'
+                  const remarksClosed  = row.remarks === 'CLOSED'
+                  const noReport       = noRecord     // alias kept for legacy chrome
                   return (
                     <tr
                       key={idx}
@@ -446,16 +620,16 @@ export default function DailyAuditReport() {
                       {/* Time */}
                       <td className="px-3 py-3 whitespace-nowrap" style={{ color: textMuted }}>{row.timeUploaded || '—'}</td>
 
-                      {/* Status */}
+                      {/* Status — independent of Remarks */}
                       <td className="px-3 py-3">
                         <span
                           className="px-2 py-0.5 rounded-full font-bold text-[10px] uppercase whitespace-nowrap"
-                          style={noReport
+                          style={noRecord
                             ? { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
                             : { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
                           }
                         >
-                          {noReport ? 'No Report' : 'Checked'}
+                          {noRecord ? 'No Record' : 'Checked'}
                         </span>
                       </td>
 
@@ -467,26 +641,32 @@ export default function DailyAuditReport() {
 
                       {/* Difference */}
                       <td className="px-3 py-3 whitespace-nowrap">
-                        <span
-                          className="px-2 py-0.5 rounded font-black"
-                          style={{ color: isAbove ? '#10B981' : '#EF4444' }}
-                        >
-                          {isAbove ? '+' : ''}₱{peso(row.difference)}
-                        </span>
+                        {noRecord ? (
+                          <span style={{ color: textMuted }}>—</span>
+                        ) : (
+                          <span
+                            className="px-2 py-0.5 rounded font-black"
+                            style={{ color: isAbove ? '#10B981' : '#EF4444' }}
+                          >
+                            {isAbove ? '+' : ''}₱{peso(row.difference)}
+                          </span>
+                        )}
                       </td>
 
-                      {/* Remarks — traffic light */}
+                      {/* Remarks — traffic light (independent of Status) */}
                       <td className="px-3 py-3">
                         <span
                           className="px-2.5 py-1 rounded-lg font-black text-[10px] uppercase tracking-wider whitespace-nowrap"
-                          style={noReport
-                            ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#EF4444' }
-                            : isAbove
-                              ? { backgroundColor: 'rgba(16,185,129,0.18)', color: '#10B981' }
-                              : { backgroundColor: 'rgba(239,68,68,0.18)', color: '#EF4444' }
+                          style={remarksClosed
+                            ? { backgroundColor: 'rgba(148,163,184,0.18)', color: '#94A3B8' }
+                            : noRecord
+                              ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#EF4444' }
+                              : isAbove
+                                ? { backgroundColor: 'rgba(16,185,129,0.18)', color: '#10B981' }
+                                : { backgroundColor: 'rgba(239,68,68,0.18)', color: '#EF4444' }
                           }
                         >
-                          {noReport ? 'No Report' : row.remarks}
+                          {remarksClosed ? 'Closed' : noRecord ? 'No Record' : row.remarks}
                         </span>
                       </td>
 
