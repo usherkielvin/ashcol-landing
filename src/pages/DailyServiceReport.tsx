@@ -38,11 +38,25 @@ interface ServiceRow {
   note: string | null
   controlNumber: string | null
   serviceColumn: string | null
+  papers: string | null
+  costing: string | null
+  relayStatus: string | null
+  fifteenQuestions: string | null
+  freeInstallation: boolean | null
 }
 
 interface BranchOption { id: string; name: string }
 
-const SERVICE_TYPES = ['INSTALLATION', 'SERVICE', 'REPAIR', 'MAINTENANCE', 'CHECK_UP', 'RELOCATION'] as const
+const SERVICE_TYPES = ['INSTALLATION', 'FREE_INSTALLATION', 'SERVICE', 'REPAIR', 'MAINTENANCE', 'CHECK_UP', 'RELOCATION'] as const
+
+// Heuristic that mirrors the backend's isFreeInstallation logic so the modal
+// can keep the freeInstallation flag in sync as the user edits the COMMIT box.
+const detectFreeInstall = (commit: string | null | undefined) => {
+  if (!commit) return false
+  const u = commit.toUpperCase()
+  if (!u.includes('FREE')) return false
+  return u.includes('INSTAL') || u.includes('IDFT') || /\bFREE\s+\d+(ST|ND|RD|TH)\b/.test(u)
+}
 const PAYMENT_MODES = ['CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'PAID', 'UNPAID', 'PARTIAL'] as const
 const JOB_STATUSES = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RESCHEDULED'] as const
 
@@ -81,6 +95,11 @@ const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> =
   note: '',
   controlNumber: '',
   serviceColumn: '',
+  papers: '',
+  costing: '',
+  relayStatus: '',
+  fifteenQuestions: '',
+  freeInstallation: false,
 })
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -285,7 +304,9 @@ export default function DailyServiceReport() {
       r.unitBrandModel, r.unitSerial, r.technicianName, r.negotiator,
       r.scheduleTime, r.scheduleStatus, r.timeStarted, r.timeEnded,
       r.paymentStatus, r.jobStatus, r.remarks, r.note, r.controlNumber,
-      r.serviceColumn, r.reportDate, amt, amtPeso,
+      r.serviceColumn, r.papers, r.costing, r.relayStatus, r.fifteenQuestions,
+      r.freeInstallation ? 'free installation' : '',
+      r.reportDate, amt, amtPeso,
     ].filter(Boolean).join(' ').toLowerCase()
   }
 
@@ -302,8 +323,9 @@ export default function DailyServiceReport() {
       amount: acc.amount + (r.amountCharged || 0),
       completed: acc.completed + (r.jobStatus === 'COMPLETED' ? 1 : 0),
       cancelled: acc.cancelled + (r.jobStatus === 'CANCELLED' ? 1 : 0),
+      freeInstalls: acc.freeInstalls + (r.freeInstallation ? 1 : 0),
     }),
-    { count: 0, qty: 0, amount: 0, completed: 0, cancelled: 0 }
+    { count: 0, qty: 0, amount: 0, completed: 0, cancelled: 0, freeInstalls: 0 }
   ), [visible])
 
   const statusColor = (s: string | null) => {
@@ -463,11 +485,12 @@ export default function DailyServiceReport() {
 
       {/* KPI strip */}
       {!loading && rows.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           {[
             { label: 'Service Records', value: totals.count.toString(), color: '#3B82F6' },
             { label: 'Total Units',     value: totals.qty.toString(),   color: '#8B5CF6' },
             { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#10B981' },
+            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#06B6D4' },
             { label: 'Completed',       value: totals.completed.toString(), color: '#10B981' },
             { label: 'Cancelled',       value: totals.cancelled.toString(), color: '#EF4444' },
           ].map((k, i) => (
@@ -525,7 +548,7 @@ export default function DailyServiceReport() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {['#', 'Customer', 'Destination', 'Brand / Unit', 'Installer', 'Update', 'Charges', 'Payment', 'Status', 'Actions']
+                  {['#', 'Customer', 'Destination', 'Brand / Unit', 'Commit', 'Installer', 'Papers · Costing', 'Update', 'Charges', 'Payment', 'Status', 'Actions']
                     .map(h => (
                       <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
                           style={{ color: textMuted }}>{h}</th>
@@ -571,12 +594,33 @@ export default function DailyServiceReport() {
                     </td>
 
                     <td className="px-3 py-3 align-top max-w-[12rem]">
+                      <div className="line-clamp-2" title={r.commitTerms || ''} style={{ color: textPrimary }}>
+                        {r.commitTerms || '—'}
+                      </div>
+                      {r.freeInstallation && (
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider"
+                              style={{ color: '#06B6D4', backgroundColor: 'rgba(6,182,212,0.15)' }}>
+                          Free Install
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[12rem]">
                       <div className="truncate" title={r.technicianName || ''} style={{ color: textPrimary }}>
                         {r.technicianName || '—'}
                       </div>
                       {r.scheduleTime && (
                         <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>{r.scheduleTime}</div>
                       )}
+                    </td>
+
+                    <td className="px-3 py-3 align-top max-w-[10rem]">
+                      <div className="text-[11px] font-bold truncate" title={r.papers || ''} style={{ color: textPrimary }}>
+                        {r.papers || '—'}
+                      </div>
+                      <div className="text-[10px] mt-0.5 truncate" title={r.costing || ''} style={{ color: textMuted }}>
+                        {r.costing || '—'}
+                      </div>
                     </td>
 
                     <td className="px-3 py-3 align-top max-w-[20rem]">
@@ -772,10 +816,33 @@ export default function DailyServiceReport() {
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
-              <Field label="Commit Terms" full>
-                <textarea rows={2} value={editing.commitTerms || ''} onChange={e => setEditing({ ...editing, commitTerms: e.target.value })}
+              <Field label='Commit Terms — e.g. "FREE 1ST IDFT" flips Free Installation on' full>
+                <textarea rows={2} value={editing.commitTerms || ''}
+                          onChange={e => {
+                            const v = e.target.value
+                            const free = detectFreeInstall(v)
+                            setEditing({
+                              ...editing,
+                              commitTerms: v,
+                              freeInstallation: free,
+                              serviceType: free && (editing.serviceType === 'INSTALLATION' || !editing.serviceType)
+                                ? 'FREE_INSTALLATION'
+                                : (!free && editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType),
+                            })
+                          }}
                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <label className="flex items-center gap-2 mt-1.5 text-[11px] font-bold cursor-pointer"
+                       style={{ color: editing.freeInstallation ? '#06B6D4' : textMuted }}>
+                  <input type="checkbox" checked={!!editing.freeInstallation}
+                         onChange={e => setEditing({
+                           ...editing,
+                           freeInstallation: e.target.checked,
+                           serviceType: e.target.checked ? 'FREE_INSTALLATION'
+                             : (editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType),
+                         })} />
+                  Free Installation
+                </label>
               </Field>
 
               <Field label="Installer / Technician">
@@ -833,6 +900,27 @@ export default function DailyServiceReport() {
               </Field>
               <Field label="Control # / SI">
                 <input value={editing.controlNumber || ''} onChange={e => setEditing({ ...editing, controlNumber: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+
+              <Field label="Papers (e.g. SEND, PENDING)">
+                <input value={editing.papers || ''} onChange={e => setEditing({ ...editing, papers: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+              <Field label="Costing (e.g. FOR ACTUAL)">
+                <input value={editing.costing || ''} onChange={e => setEditing({ ...editing, costing: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+              <Field label="Relay Status">
+                <input value={editing.relayStatus || ''} onChange={e => setEditing({ ...editing, relayStatus: e.target.value })}
+                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              </Field>
+              <Field label="15 Questions (DONE / notes)">
+                <input value={editing.fifteenQuestions || ''} onChange={e => setEditing({ ...editing, fifteenQuestions: e.target.value })}
                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>

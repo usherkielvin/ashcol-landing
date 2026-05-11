@@ -509,7 +509,7 @@ export default function DailyAuditReport() {
       {!loading && rows.length > 0 && (() => {
         const aboveQuotaBranches = rows.filter(r =>
           r.remarks === 'ABOVE QUOTA' &&
-          r.status !== 'CLOSED' &&
+          r.status !== 'NO SCHED' &&
           r.status !== 'NO RECORD' &&
           r.status !== 'NO REPORT'
         ).sort((a, b) => b.difference - a.difference)
@@ -649,8 +649,8 @@ export default function DailyAuditReport() {
               <tbody>
                 {visibleRows.map((row, idx) => {
                   const isAbove        = row.remarks === 'ABOVE QUOTA'
-                  const noRecord       = row.status  === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'CLOSED'
-                  const remarksClosed  = row.remarks === 'CLOSED'
+                  const noRecord       = row.status  === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
+                  const remarksNoSched = row.remarks === 'NO SCHED'
                   return (
                     <tr
                       key={idx}
@@ -718,7 +718,7 @@ export default function DailyAuditReport() {
                       <td className="px-3 py-3">
                         <span
                           className="px-2.5 py-1 rounded-lg font-black text-[10px] uppercase tracking-wider whitespace-nowrap"
-                          style={remarksClosed
+                          style={remarksNoSched
                             ? { backgroundColor: 'rgba(148,163,184,0.18)', color: '#94A3B8' }
                             : noRecord
                               ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#EF4444' }
@@ -727,7 +727,7 @@ export default function DailyAuditReport() {
                                 : { backgroundColor: 'rgba(239,68,68,0.18)', color: '#EF4444' }
                           }
                         >
-                          {remarksClosed ? 'Closed' : noRecord ? 'No Record' : row.remarks}
+                          {remarksNoSched ? 'No Sched' : noRecord ? 'No Record' : row.remarks}
                         </span>
                       </td>
 
