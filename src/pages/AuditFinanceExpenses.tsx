@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown, ClipboardPaste } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -10,6 +10,7 @@ import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAudit
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
+import * as XLSX from 'xlsx'
 
 interface BranchOption { id: string; name: string }
 const peso = (v: number) => v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -130,6 +131,24 @@ export default function AuditFinanceExpenses() {
     const parsed = parseSmartDate(raw)
     if (parsed) { setDateRaw(parsed); setForm((f) => ({ ...f, date: parsed })); setDateError('') }
     else if (raw.trim()) setDateError('Cannot parse date. Try: May 16, 16-May-26, 2026-05-16')
+  }
+
+  const handleExportExcel = () => {
+    if (filtered.length === 0) return
+    const wsData = filtered.map(row => ({
+      Date: row.date,
+      'Incurred By': row.incurredBy,
+      Description: row.description,
+      Company: row.company,
+      'Receipt No': row.receiptNo || '',
+      Amount: row.amount,
+      Category: row.expenseCategory,
+      'Source of Funds': row.sourceOfFunds || ''
+    }))
+    const ws = XLSX.utils.json_to_sheet(wsData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Receipts')
+    XLSX.writeFile(wb, `Ashcol_Receipts_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -523,11 +542,19 @@ export default function AuditFinanceExpenses() {
             <h2 className="font-bold" style={{ color: textPrimary }}>
               {branchName} — Receipts {search ? `(filtered)` : ''}
             </h2>
-            <button type="button" onClick={() => setViewAll((v) => !v)}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: accent }}>
-              {viewAll ? 'Daily view' : 'Table view'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleExportExcel}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                title="Export filtered receipts to Excel">
+                <Download size={14} /> Export
+              </button>
+              <button type="button" onClick={() => setViewAll((v) => !v)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: accent }}>
+                {viewAll ? 'Daily view' : 'Table view'}
+              </button>
+            </div>
           </div>
 
           {filtered.length === 0 ? (
