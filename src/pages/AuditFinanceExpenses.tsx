@@ -332,10 +332,9 @@ export default function AuditFinanceExpenses() {
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-1">
                 <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()) }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
               </div>
-            )}
+          )}
 
             {/* Form grid */}
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
