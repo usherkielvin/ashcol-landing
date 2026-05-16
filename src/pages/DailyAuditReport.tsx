@@ -66,6 +66,7 @@ export default function DailyAuditReport() {
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
+  const [importing, setImporting] = useState(false)
   const [viewMode, setViewMode] = useState<'single' | 'range'>('single')
   // NOTE: use LOCAL date (not toISOString which is UTC) so a Filipino user at
   // 1 AM doesn't see "yesterday" as the default.
