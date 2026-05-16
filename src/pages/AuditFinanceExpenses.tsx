@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown, ClipboardPaste } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -171,9 +171,7 @@ export default function AuditFinanceExpenses() {
     setShowForm(true)
   }
 
-  const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const processImage = async (file: File) => {
     const url = URL.createObjectURL(file)
     setScanPreview(url)
     setScanning(true)
@@ -215,7 +213,34 @@ export default function AuditFinanceExpenses() {
       setScanError('Could not scan receipt. Make sure the backend is running.')
     } finally {
       setScanning(false)
-      e.target.value = ''
+      if (scanRef.current) scanRef.current.value = ''
+    }
+  }
+
+  const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await processImage(file)
+  }
+
+  const handlePasteClick = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (scanning) return
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageTypes = item.types.filter(type => type.startsWith('image/'))
+        if (imageTypes.length > 0) {
+          const blob = await item.getType(imageTypes[0])
+          const file = new File([blob], "pasted-receipt.png", { type: imageTypes[0] })
+          await processImage(file)
+          return
+        }
+      }
+      setScanError('No image found in clipboard. Please copy an image first.')
+    } catch (err) {
+      console.error('Paste error:', err)
+      setScanError('Could not read clipboard. Please check permissions or select a file instead.')
     }
   }
 
@@ -328,7 +353,16 @@ export default function AuditFinanceExpenses() {
               {editing ? 'Edit Receipt' : 'New Receipt'}
             </h2>
             <div className="flex items-center gap-2">
-              {/* Scan receipt image button */}
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={handlePasteClick}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                title="Paste an image from your clipboard"
+              >
+                <ClipboardPaste size={13} /> Paste Image
+              </button>
               <button
                 type="button"
                 disabled={scanning}
@@ -339,7 +373,7 @@ export default function AuditFinanceExpenses() {
               >
                 {scanning
                   ? <><Loader2 size={13} className="animate-spin" /> Scanning…</>
-                  : <><Camera size={13} /> Scan Receipt</>
+                  : <><Camera size={13} /> Upload File</>
                 }
               </button>
               <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
