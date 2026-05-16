@@ -321,20 +321,32 @@ export default function AuditFinanceExpenses() {
             </div>
           </div>
 
-          {/* Image preview + scan overlay */}
-          {scanPreview && (
-            <div className="flex gap-4 items-start p-3 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                <img src={scanPreview} alt="Receipt preview" style={{ width: 100, height: 130, objectFit: 'cover', borderRadius: 8, border: `1px solid ${border}` }} />
-                {scanning && (
-                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Loader2 size={24} className="animate-spin" style={{ color: accent }} />
-                  </div>
+          {/* ── Side-by-side: image reference + form fields ── */}
+          <div className="flex flex-col lg:flex-row gap-4">
+
+            {/* Sticky receipt image reference */}
+            {scanPreview && (
+              <div className="flex-shrink-0 lg:w-44">
+                <p className="text-xs font-semibold mb-1.5" style={{ color: scanBorder }}>📄 Receipt reference</p>
+                <div style={{ position: 'relative' }}>
+                  <img
+                    src={scanPreview}
+                    alt="Scanned receipt"
+                    style={{ width: '100%', maxWidth: 180, borderRadius: 10, border: `2px solid ${scanBorder}44`, objectFit: 'contain', maxHeight: 320 }}
+                  />
+                  {scanning && (
+                    <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <Loader2 size={28} className="animate-spin" style={{ color: accent }} />
+                      <span style={{ color: '#fff', fontSize: 11 }}>Reading receipt…</span>
+                    </div>
+                  )}
+                </div>
+                {!scanning && scannedFields.size > 0 && (
+                  <p className="text-xs mt-2" style={{ color: scanBorder }}>⚠ Amber fields were auto-filled — review for accuracy.</p>
                 )}
-              </div>
                 <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()) }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
               </div>
-          )}
+            )}
 
             {/* Form grid */}
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
