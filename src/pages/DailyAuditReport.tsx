@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import { loadAuditExpenses } from '../utils/auditExpenseStorage'
 import type { AuditExpense } from '../types/auditExpense'
+import DateRangeFilter, { type DateRange, buildDateRange } from '../components/DateRangeFilter'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,35 +69,13 @@ export default function DailyAuditReport() {
   const [importing, setImporting] = useState(false)
   // NOTE: use LOCAL date (not toISOString which is UTC) so a Filipino user at
   // 1 AM doesn't see "yesterday" as the default.
-  const [date, setDate]           = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
+  const [dateRange, setDateRange] = useState<DateRange>(() => buildDateRange('TODAY'))
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily')
-
-  // ── Week helpers (Mon..Sun ISO week containing `date`) ───────────────────
-  const weekRange = useMemo(() => {
-    const d = new Date(date + 'T00:00:00')
-    const dow = d.getDay()                  // Sun=0..Sat=6
-    const offsetToMonday = dow === 0 ? -6 : 1 - dow
-    const monday = new Date(d)
-    monday.setDate(d.getDate() + offsetToMonday)
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    const fmt = (x: Date) =>
-      `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
-    const pretty = (x: Date) => x.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
-    return {
-      mondayIso: fmt(monday),
-      sundayIso: fmt(sunday),
-      label: `${pretty(monday)} – ${pretty(sunday)}, ${sunday.getFullYear()}`,
-    }
-  }, [date])
+  // No more viewMode, DateRangeFilter handles it
 
   const role = (user?.role || '').toLowerCase()
   const isManagerOrStaff = role === 'manager' || role === 'staff'
@@ -108,11 +87,20 @@ export default function DailyAuditReport() {
   const canImportExcel = isAdmin || isManager
 
   const fetchAudit = useCallback(async () => {
+    if (dateRange.preset !== 'ALL' && (!dateRange.from || !dateRange.to)) return
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const path = viewMode === 'weekly' ? 'audit-summary-weekly' : 'audit-summary'
-      const res = await fetch(`${API_BASE_URL}/v1/reports/${path}?date=${date}`, {
+      const fmt = (d: Date) => d.toISOString().split('T')[0]
+      
+      let url = `${API_BASE_URL}/v1/reports/audit-summary`
+      if (dateRange.preset === 'TODAY' && dateRange.from) {
+        url += `?date=${fmt(dateRange.from)}`
+      } else if (dateRange.from && dateRange.to) {
+        url = `${API_BASE_URL}/v1/reports/audit-summary-range?from=${fmt(dateRange.from)}&to=${fmt(dateRange.to)}`
+      }
+
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -124,7 +112,7 @@ export default function DailyAuditReport() {
     } finally {
       setLoading(false)
     }
-  }, [date, viewMode])
+  }, [dateRange])
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
@@ -137,8 +125,8 @@ export default function DailyAuditReport() {
 
     // Capture the date the user has selected RIGHT NOW so there's no ambiguity
     // about which day will receive the imported data.
-    const targetDate = date
-    const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', {
+    const targetDate = dateRange.from ? dateRange.from.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    const prettyDate = (dateRange.from || new Date()).toLocaleDateString('en-PH', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     })
     const confirmed = window.confirm(
@@ -171,8 +159,10 @@ export default function DailyAuditReport() {
         const sheetMsg = result?.sheet ? ` (from sheet "${result.sheet}")` : ''
         alert(`${result.message || 'Import successful!'}${sheetMsg}`)
         // Jump audit view to whichever date the server actually wrote into.
-        if (importedDate !== date) setDate(importedDate)
-        else fetchAudit()
+        if (importedDate !== (dateRange.from?.toISOString().split('T')[0])) {
+           const d = new Date(importedDate + 'T00:00:00')
+           setDateRange({ preset: 'CUSTOM', from: d, to: d })
+        } else fetchAudit()
       } else {
         const error = await res.json().catch(() => ({}))
         alert(error.error || `Import failed (HTTP ${res.status})`)
@@ -193,11 +183,11 @@ export default function DailyAuditReport() {
     const allExpenses = loadAuditExpenses()
     
     // Normalize date and branch matching
-    const dObj = new Date(date + 'T00:00:00')
+    const dObj = dateRange.from || new Date()
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 1-May-26
     const format2 = `${String(dObj.getDate()).padStart(2, '0')}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 01-May-26
-    const isoFormat = date // YYYY-MM-DD
+    const isoFormat = dObj.toISOString().split('T')[0]
     
     const matchedExpenses = allExpenses.filter(e => 
       e.branchName.toLowerCase() === branchName.toLowerCase() && 
@@ -207,7 +197,8 @@ export default function DailyAuditReport() {
     setDrilldown({ branchName, items: [], auditExpenses: matchedExpenses })
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?branchName=${encodeURIComponent(branchName)}&date=${date}`, {
+      const drillDate = dObj.toISOString().split('T')[0]
+      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?branchName=${encodeURIComponent(branchName)}&date=${drillDate}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -308,7 +299,7 @@ export default function DailyAuditReport() {
 
   const columns = [
     { key: 'branch',           label: 'BRANCH' },
-    { key: 'time',             label: viewMode === 'weekly' ? 'DAYS REPORTED' : 'TIME UPLOADED' },
+    { key: 'time',             label: dateRange.preset === 'TODAY' ? 'TIME UPLOADED' : 'DAYS REPORTED' },
     { key: 'status',           label: 'STATUS' },
     { key: 'grossSales',       label: 'GROSS SALES' },
     { key: 'target',           label: 'TARGET DAILY QUOTA' },
@@ -367,52 +358,7 @@ export default function DailyAuditReport() {
             />
           </div>
 
-          {/* View mode toggle (Daily / Weekly) */}
-          <div
-            id="audit-view-toggle"
-            className="flex items-center rounded-xl text-xs font-bold overflow-hidden"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
-          >
-            {(['daily', 'weekly'] as const).map(mode => {
-              const active = viewMode === mode
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className="px-3 py-2 transition-colors capitalize"
-                  style={{
-                    backgroundColor: active ? '#10B981' : 'transparent',
-                    color: active ? '#fff' : textMuted,
-                  }}
-                >
-                  {mode}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Date picker — single day in Daily, anchor for the week in Weekly */}
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-            title={viewMode === 'weekly' ? `Week of ${weekRange.label}` : undefined}
-          >
-            <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-            <input
-              id="audit-date-picker"
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="bg-transparent outline-none text-xs"
-              style={{ color: textPrimary }}
-            />
-            {viewMode === 'weekly' && (
-              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#10B981' }}>
-                {weekRange.label}
-              </span>
-            )}
-          </div>
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
 
           {hiddenBranches.length > 0 && (
             <button
@@ -457,7 +403,7 @@ export default function DailyAuditReport() {
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
                 {importing
                   ? 'Importing…'
-                  : `${isManager ? 'Import My Branch' : 'Import Excel'} for ${new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  : `Import Excel for ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
               </button>
             </>
           )}
@@ -612,9 +558,9 @@ export default function DailyAuditReport() {
         <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Branch Audit — {viewMode === 'weekly'
-              ? `Week of ${weekRange.label}`
-              : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            Branch Audit — {dateRange.preset === 'TODAY' 
+              ? 'Today\'s Snapshot' 
+              : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
           </h3>
           <span
             className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
