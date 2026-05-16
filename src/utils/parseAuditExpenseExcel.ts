@@ -74,22 +74,51 @@ export async function parseAuditExpenseExcelFile(
 ): Promise<AuditExpenseExcelImportResult> {
   const buffer = await file.arrayBuffer()
 
-  // Read WITHOUT cellDates first so header row text is preserved as strings
-  const wb = XLSX.read(buffer, { type: 'array', cellDates: false })
-  const sheetName = wb.SheetNames[0]
-  if (!sheetName) {
-    return { imported: [], skipped: 0, errors: ['Workbook has no sheets.'] }
-  }
-  const sheet = wb.Sheets[sheetName]
+  // ── Step 1: Pick the right sheet ────────────────────────────────────────
+  // Scan every sheet; prefer the one whose header row contains both DATE and AMOUNT
+  // (so we skip "Installation Sales Report" cover sheets, etc.)
 
-  // Get raw 2-D array — every row is an array of raw cell values
-  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null })
-
-  console.log('[AuditExpense] Total rows in sheet:', grid.length)
-  console.log('[AuditExpense] First 5 rows:', grid.slice(0, 5))
-
-  // ── Step 1: Find header row ─────────────────────────────────────────────
+  let bestSheetName: string | null = null
+  let bestGrid: unknown[][] = []
   let headerIdx = -1
+
+  for (const sName of wb.SheetNames) {
+    const sSheet = wb.Sheets[sName]
+    const sGrid = XLSX.utils.sheet_to_json<unknown[]>(sSheet, { header: 1, defval: null })
+
+    console.log(`[AuditExpense] Scanning sheet "${sName}" (${sGrid.length} rows)`)
+
+    // Find a header row in this sheet
+    for (let r = 0; r < Math.min(25, sGrid.length); r++) {
+      const row = sGrid[r]
+      if (!Array.isArray(row)) continue
+
+      const cells = row.map(norm)
+      const hasDate   = cells.some(c => c === 'date' || (c.includes('date') && !c.includes('update') && !c.includes('create') && !c.includes('validated')))
+      const hasAmount = cells.some(c => c === 'amount' || c.includes('amount'))
+
+      if (hasDate && hasAmount) {
+        console.log(`[AuditExpense] ✅ Found expense header in sheet "${sName}" at row ${r}:`, cells.filter(Boolean).join(' | '))
+        bestSheetName = sName
+        bestGrid = sGrid
+        headerIdx = r
+        break
+      }
+    }
+
+    if (bestSheetName) break   // stop at the first sheet that has expense columns
+  }
+
+  // Hard fallback: use first sheet and best-guess header row
+  if (!bestSheetName) {
+    bestSheetName = wb.SheetNames[0]
+    const sSheet = wb.Sheets[bestSheetName]
+    bestGrid = XLSX.utils.sheet_to_json<unknown[]>(sSheet, { header: 1, defval: null })
+    console.warn('[AuditExpense] No expense sheet found — falling back to sheet 0')
+  }
+
+  const grid = bestGrid
+  console.log('[AuditExpense] Using sheet:', bestSheetName, '| Total rows:', grid.length)
 
   for (let r = 0; r < Math.min(25, grid.length); r++) {
     const row = grid[r]
@@ -150,9 +179,9 @@ export async function parseAuditExpenseExcelFile(
     return { imported: [], skipped: 0, errors: [`Header found at row ${headerIdx + 1} but missing DATE (col ${colIdx.date}) or AMOUNT (col ${colIdx.amount}) columns. Headers found: ${headerRow.map(norm).filter(Boolean).join(', ')}`] }
   }
 
-  // ── Step 3: Now re-read with cellDates for proper date parsing ──────────
+  // ── Step 3: Now re-read the SAME sheet with cellDates for proper date parsing ──
   const wbDate = XLSX.read(buffer, { type: 'array', cellDates: true })
-  const sheetDate = wbDate.Sheets[sheetName]
+  const sheetDate = wbDate.Sheets[bestSheetName!]
   const gridDate = XLSX.utils.sheet_to_json<unknown[]>(sheetDate, { header: 1, defval: null })
 
   // ── Step 4: Parse data rows ─────────────────────────────────────────────
