@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2 } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -45,7 +45,7 @@ export default function AuditFinanceExpenses() {
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
-  const [colFilters, setColFilters] = useState({ date: '', incurredBy: '', description: '', company: '', receiptNo: '', amount: '', expenseCategory: '', sourceOfFunds: '' })
+  const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>(null)
   const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
@@ -87,7 +87,7 @@ export default function AuditFinanceExpenses() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let rows = branchExpenses
+    let rows = [...branchExpenses]
     if (q) {
       rows = rows.filter((e) =>
         e.company.toLowerCase().includes(q) ||
@@ -98,17 +98,21 @@ export default function AuditFinanceExpenses() {
       )
     }
 
-    if (colFilters.date) rows = rows.filter(e => e.date.toLowerCase().includes(colFilters.date.toLowerCase()))
-    if (colFilters.incurredBy) rows = rows.filter(e => e.incurredBy.toLowerCase().includes(colFilters.incurredBy.toLowerCase()))
-    if (colFilters.description) rows = rows.filter(e => e.description.toLowerCase().includes(colFilters.description.toLowerCase()))
-    if (colFilters.company) rows = rows.filter(e => e.company.toLowerCase().includes(colFilters.company.toLowerCase()))
-    if (colFilters.receiptNo) rows = rows.filter(e => e.receiptNo.toLowerCase().includes(colFilters.receiptNo.toLowerCase()))
-    if (colFilters.amount) rows = rows.filter(e => String(e.amount).includes(colFilters.amount))
-    if (colFilters.expenseCategory) rows = rows.filter(e => e.expenseCategory.toLowerCase().includes(colFilters.expenseCategory.toLowerCase()))
-    if (colFilters.sourceOfFunds) rows = rows.filter(e => (e.sourceOfFunds || '').toLowerCase().includes(colFilters.sourceOfFunds.toLowerCase()))
+    if (sortConfig) {
+      rows.sort((a, b) => {
+        let valA = a[sortConfig.key]
+        let valB = b[sortConfig.key]
+        if (typeof valA === 'string') valA = valA.toLowerCase()
+        if (typeof valB === 'string') valB = valB.toLowerCase()
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
+        return 0
+      })
+    }
 
     return rows
-  }, [branchExpenses, search, colFilters])
+  }, [branchExpenses, search, sortConfig])
 
   // Group by date for daily view
   const byDate = useMemo(() => {
@@ -511,20 +515,29 @@ export default function AuditFinanceExpenses() {
                       { key: 'amount', label: 'Amount' },
                       { key: 'expenseCategory', label: 'Category' },
                       { key: 'sourceOfFunds', label: 'Source' }
-                    ].map(({ key, label }) => (
-                      <th key={key} className="px-3 py-2 text-left font-bold" style={{ color: textMuted }}>
-                        <div>{label}</div>
-                        <input
-                          type="text"
-                          placeholder="Filter…"
-                          value={colFilters[key as keyof typeof colFilters]}
-                          onChange={(e) => setColFilters(prev => ({ ...prev, [key]: e.target.value }))}
-                          className="w-full mt-1 px-2 py-1 text-[11px] rounded outline-none font-normal"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                        />
-                      </th>
-                    ))}
-                    <th className="px-3 py-2"></th>
+                    ].map(({ key, label }) => {
+                      const isSorted = sortConfig?.key === key
+                      return (
+                        <th key={key}
+                          className="px-3 py-3 text-left font-bold cursor-pointer select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                          style={{ color: textMuted }}
+                          onClick={() => {
+                            setSortConfig(prev => {
+                              if (prev?.key === key) {
+                                return prev.direction === 'asc' ? { key: key as keyof AuditExpense, direction: 'desc' } : null
+                              }
+                              return { key: key as keyof AuditExpense, direction: 'asc' }
+                            })
+                          }}
+                        >
+                          <div className="flex items-center gap-1">
+                            {label}
+                            {isSorted && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                          </div>
+                        </th>
+                      )
+                    })}
+                    <th className="px-3 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
