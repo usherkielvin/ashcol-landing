@@ -177,10 +177,22 @@ export default function AuditFinanceExpenses() {
           <p className="text-sm" style={{ color: textMuted }}>Encode and track daily branch receipts. Import from Excel or add manually.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => { setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError(''); setShowForm(true) }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow"
-            style={{ backgroundColor: accent }}>
-            <Plus size={16} /> Add Receipt
+          <button
+            type="button"
+            onClick={() => {
+              if (showForm) {
+                setShowForm(false); setEditing(null)
+              } else {
+                setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError(''); setShowForm(true)
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-200"
+            style={{ backgroundColor: showForm ? '#EF4444' : accent, minWidth: 140, justifyContent: 'center' }}
+          >
+            {showForm
+              ? <><X size={16} /> Close Form</>
+              : <><Plus size={16} /> Add Receipt</>
+            }
           </button>
           <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
