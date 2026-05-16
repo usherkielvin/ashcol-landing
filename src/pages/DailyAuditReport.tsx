@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  BarChart2, CalendarDays, TrendingUp, TrendingDown,
+  BarChart2, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
   Search, ArrowUp, ArrowDown, Trophy, Award, Crown
 } from 'lucide-react'
@@ -384,20 +384,20 @@ export default function DailyAuditReport() {
               <button
                 id="audit-import-btn"
                 type="button"
-                disabled={importing || viewMode === 'weekly'}
+                disabled={importing || dateRange.preset !== 'TODAY'}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                title={viewMode === 'weekly'
-                  ? 'Excel import is per-day. Switch to Daily view to import.'
+                title={dateRange.preset !== 'TODAY'
+                  ? 'Excel import is per-day. Switch to Today preset to import.'
                   : isManager
-                    ? `Will import only YOUR branch's row into ${date}. Other branches in the workbook are ignored.`
-                    : `Will import every branch into ${date}. Change the date picker first if you want a different day.`}
+                    ? `Will import only YOUR branch's row into ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}. Other branches in the workbook are ignored.`
+                    : `Will import every branch into ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}. Change the date picker first if you want a different day.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
                 style={{
                   backgroundColor: '#10B981',
                   borderColor: '#10B981',
                   color: '#fff',
-                  opacity: (importing || viewMode === 'weekly') ? 0.5 : 1,
-                  cursor: viewMode === 'weekly' ? 'not-allowed' : undefined,
+                  opacity: (importing || dateRange.preset !== 'TODAY') ? 0.5 : 1,
+                  cursor: dateRange.preset !== 'TODAY' ? 'not-allowed' : undefined,
                 }}
               >
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
