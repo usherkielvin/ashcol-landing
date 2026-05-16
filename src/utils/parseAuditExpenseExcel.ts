@@ -79,15 +79,30 @@ export function rowsToAuditExpenses(
   }
 ): AuditExpenseExcelImportResult {
   const imported: AuditExpense[] = []
-  const errors: string[] = []
+  const errors: string[] = []\
   let skipped = 0
   const now = new Date().toISOString()
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
-    const headers = mapHeaders(row)
-    const dateRaw = row[headers.date ?? ''] ?? row['DATE'] ?? row['Date']
-    const amount = parseAmount(row[headers.amount ?? ''] ?? row['AMOUNT'] ?? row['Amount'])
+
+    // Build a case-insensitive key map so "DATE", "Date", "date" all resolve
+    const lowerRow: Record<string, unknown> = {}
+    for (const k of Object.keys(row)) {
+      lowerRow[k.toLowerCase().trim().replace(/\s+/g, ' ')] = row[k]
+    }
+
+    // Helper to get a cell value by any of the given lowercase aliases
+    const get = (...aliases: string[]): unknown => {
+      for (const a of aliases) {
+        const v = lowerRow[a]
+        if (v !== undefined && v !== '') return v
+      }
+      return ''
+    }
+
+    const dateRaw = get('date', 'transaction date', 'expense date')
+    const amount  = parseAmount(get('amount', 'amt', 'total', 'value', 'expense amount'))
     const dateStr = excelDateToDisplay(dateRaw)
     const dateKey = parseExpenseDateKey(dateStr)
 
@@ -105,8 +120,8 @@ export function rowsToAuditExpenses(
       continue
     }
 
-    const description = cellStr(row[headers.description ?? ''] ?? row['DESCRIPTION'] ?? '')
-    const company = cellStr(row[headers.company ?? ''] ?? row['COMPANY'] ?? '')
+    const description = cellStr(get('description', 'desc', 'particulars', 'details'))
+    const company     = cellStr(get('company', 'vendor', 'establishment', 'supplier', 'payee'))
     if (!description && !company) {
       skipped++
       continue
@@ -117,15 +132,15 @@ export function rowsToAuditExpenses(
       branchId: opts.branchId,
       branchName: opts.branchName,
       date: dateStr,
-      incurredBy: cellStr(row[headers.incurredBy ?? ''] ?? row['INCURRED BY'] ?? 'IMPORT'),
+      incurredBy: cellStr(get('incurred by', 'incurred_by', 'employee', 'name', 'paid by')) || 'IMPORT',
       description,
       company,
-      receiptNo: cellStr(row[headers.receiptNo ?? ''] ?? row['RECEIPT NO'] ?? ''),
+      receiptNo: cellStr(get('receipt no', 'receipt no.', 'receipt #', 'receipt number', 'or no', 'or #', 'si no', 'invoice')),
       amount,
       expenseCategory: parseCategory(
-        cellStr(row[headers.expenseCategory ?? ''] ?? row['EXPENSE CATEGORY'] ?? '')
+        cellStr(get('expense category', 'category', 'expense type', 'type'))
       ),
-      sourceOfFunds: cellStr(row[headers.sourceOfFunds ?? ''] ?? row['SOURCE OF FUNDS'] ?? ''),
+      sourceOfFunds: cellStr(get('source of funds', 'source', 'fund source', 'funding')),
       createdAt: now,
       updatedAt: now,
     })
@@ -144,37 +159,53 @@ export async function parseAuditExpenseExcelFile(
   }
 ): Promise<AuditExpenseExcelImportResult> {
   const buffer = await file.arrayBuffer()
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-  const sheetName = workbook.SheetNames[0]
+
+  // Read once WITHOUT cellDates so header text cells that live in a date-formatted
+  // column are returned as strings, not Date objects.
+  const wbRaw  = XLSX.read(buffer, { type: 'array', cellDates: false })
+  // Read again WITH cellDates so data cells parse properly as dates.
+  const wbDate = XLSX.read(buffer, { type: 'array', cellDates: true })
+
+  const sheetName = wbRaw.SheetNames[0]
   if (!sheetName) {
     return { imported: [], skipped: 0, errors: ['Workbook has no sheets.'] }
   }
-  const sheet = workbook.Sheets[sheetName]
-  
-  // Use header: 1 to get a 2D array of raw cells
-  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
+
+  const sheetRaw  = wbRaw.Sheets[sheetName]
+  const sheetDate = wbDate.Sheets[sheetName]
+
+  // Read all rows as raw 2D array (no header conversion) using the non-date workbook
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheetRaw, { header: 1, defval: '' })
   if (rawRows.length === 0) {
     return { imported: [], skipped: 0, errors: ['No data rows found in the first sheet.'] }
   }
 
-  // Scan the first 20 rows to find the actual header row
+  // Also read date-parsed rows for actual data
+  const dateRows = XLSX.utils.sheet_to_json<unknown[]>(sheetDate, { header: 1, defval: '' })
+
+  // Scan up to the first 20 rows to find the header row.
+  // We look for ANY row that contains cells matching 'date' AND 'amount' (loose substring check).
   let headerRowIdx = -1
 
   for (let r = 0; r < Math.min(20, rawRows.length); r++) {
     const row = rawRows[r]
     if (!Array.isArray(row)) continue
-    
+
     let hasDate = false
     let hasAmount = false
-    
+
     for (let c = 0; c < row.length; c++) {
-      const cell = String(row[c]).toLowerCase().trim().replace(/\s+/g, ' ')
-      if (!cell) continue
-      
-      if (HEADER_ALIASES.date.includes(cell)) hasDate = true
-      if (HEADER_ALIASES.amount.includes(cell)) hasAmount = true
+      // Safely stringify; skip actual Date objects (they're data cells, not headers)
+      const rawVal = row[c]
+      if (rawVal instanceof Date) continue
+      const cell = String(rawVal).toLowerCase().trim().replace(/\s+/g, ' ')
+      if (!cell || cell === '0') continue
+
+      // Loose substring check — handles "DATE", "transaction date", etc.
+      if (cell === 'date' || cell.includes('date')) hasDate = true
+      if (cell === 'amount' || cell.includes('amount') || cell === 'amt' || cell === 'total') hasAmount = true
     }
-    
+
     if (hasDate && hasAmount) {
       headerRowIdx = r
       break
@@ -182,23 +213,44 @@ export async function parseAuditExpenseExcelFile(
   }
 
   if (headerRowIdx === -1) {
-    return { imported: [], skipped: 0, errors: ['Could not find a valid header row (expected DATE and AMOUNT columns).'] }
+    // Fallback: take the first row that has more than 4 non-empty string cells as the header
+    for (let r = 0; r < Math.min(20, rawRows.length); r++) {
+      const row = rawRows[r]
+      if (!Array.isArray(row)) continue
+      const nonEmpty = row.filter((c) => !(c instanceof Date) && String(c).trim() !== '').length
+      if (nonEmpty >= 4) {
+        headerRowIdx = r
+        break
+      }
+    }
   }
 
-  // Convert the raw rows back into an array of objects using the detected header row
+  if (headerRowIdx === -1) {
+    return { imported: [], skipped: 0, errors: ['Could not find a valid header row. Make sure your file has DATE and AMOUNT columns.'] }
+  }
+
+  // Build object rows from date-parsed sheet using header row from raw sheet
   const headerRow = rawRows[headerRowIdx] as unknown[]
   const objectRows: Record<string, unknown>[] = []
-  
-  for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
-    const row = rawRows[r]
+
+  for (let r = headerRowIdx + 1; r < dateRows.length; r++) {
+    const row = dateRows[r]
     if (!Array.isArray(row)) continue
-    
+
     const obj: Record<string, unknown> = {}
     for (let c = 0; c < Math.max(headerRow.length, row.length); c++) {
-       const key = String(headerRow[c] ?? '').trim() || `__EMPTY_${c}`
-       obj[key] = row[c]
+      const rawKey = headerRow[c]
+      // If header cell is a Date (column with date format), skip it — not a real header
+      const key = (rawKey instanceof Date || !rawKey)
+        ? `__EMPTY_${c}`
+        : String(rawKey).trim() || `__EMPTY_${c}`
+      obj[key] = row[c]
     }
     objectRows.push(obj)
+  }
+
+  if (objectRows.length === 0) {
+    return { imported: [], skipped: 0, errors: ['No data rows found after the header.'] }
   }
 
   return rowsToAuditExpenses(objectRows, opts)
