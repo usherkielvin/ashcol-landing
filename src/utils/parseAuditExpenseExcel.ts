@@ -73,6 +73,7 @@ export async function parseAuditExpenseExcelFile(
   }
 ): Promise<AuditExpenseExcelImportResult> {
   const buffer = await file.arrayBuffer()
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false })
 
   // ── Step 1: Pick the right sheet ────────────────────────────────────────
   // Scan every sheet; prefer the one whose header row contains both DATE and AMOUNT
