@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -46,6 +46,9 @@ export default function AuditFinanceExpenses() {
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
   const [viewAll, setViewAll] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanPreview, setScanPreview] = useState<string | null>(null)
+  const scanRef = useRef<HTMLInputElement>(null)
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
 
@@ -144,9 +147,53 @@ export default function AuditFinanceExpenses() {
   }
 
   const startEdit = (row: AuditExpense) => {
-    setEditing(row); setDateRaw(row.date); setDateError('')
+    setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(null)
     setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy })
     setShowForm(true)
+  }
+
+  const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // Show preview immediately
+    const url = URL.createObjectURL(file)
+    setScanPreview(url)
+    setScanning(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json() as Record<string, unknown>
+      if (data.error) { alert(`Scan failed: ${data.error}`); return }
+
+      // Auto-fill form with scanned values (keep existing if AI returned null)
+      const scannedDate = data.date ? String(data.date) : ''
+      const parsed = scannedDate ? (parseSmartDate(scannedDate) ?? scannedDate) : ''
+
+      setForm((f) => ({
+        date: parsed || f.date,
+        company: data.company ? String(data.company) : f.company,
+        description: data.description ? String(data.description) : f.description,
+        receiptNo: data.receiptNo ? String(data.receiptNo) : f.receiptNo,
+        amount: data.amount != null ? String(data.amount) : f.amount,
+        expenseCategory: (data.expenseCategory as AuditExpenseCategory) || f.expenseCategory,
+        sourceOfFunds: data.sourceOfFunds ? String(data.sourceOfFunds) : f.sourceOfFunds,
+        incurredBy: data.incurredBy ? String(data.incurredBy) : f.incurredBy,
+      }))
+      if (parsed) { setDateRaw(parsed); setDateError('') }
+    } catch (err) {
+      console.error('[ReceiptScan]', err)
+      alert('Could not scan receipt. Make sure the backend is running.')
+    } finally {
+      setScanning(false)
+      e.target.value = ''
+    }
   }
 
   const field = (label: string, children: React.ReactNode) => (
@@ -239,8 +286,46 @@ export default function AuditFinanceExpenses() {
               <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
               {editing ? 'Edit Receipt' : 'New Receipt'}
             </h2>
-            <button onClick={() => { setShowForm(false); setEditing(null) }} style={{ color: textMuted }}><X size={18} /></button>
+            <div className="flex items-center gap-2">
+              {/* Scan receipt image button */}
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={() => scanRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                title="Upload a photo of the receipt to auto-fill fields"
+              >
+                {scanning
+                  ? <><Loader2 size={13} className="animate-spin" /> Scanning…</>
+                  : <><Camera size={13} /> Scan Receipt</>
+                }
+              </button>
+              <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
+              <button onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} style={{ color: textMuted }}><X size={18} /></button>
+            </div>
           </div>
+
+          {/* Image preview + scan overlay */}
+          {scanPreview && (
+            <div className="flex gap-4 items-start p-3 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <img src={scanPreview} alt="Receipt preview" style={{ width: 100, height: 130, objectFit: 'cover', borderRadius: 8, border: `1px solid ${border}` }} />
+                {scanning && (
+                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Loader2 size={24} className="animate-spin" style={{ color: accent }} />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold" style={{ color: accent }}>
+                  {scanning ? '🔍 Scanning with Gemini Vision…' : '✅ Fields auto-filled from receipt!'}
+                </p>
+                <p className="text-xs" style={{ color: textMuted }}>Review and edit the fields below before saving.</p>
+                <button type="button" onClick={() => setScanPreview(null)} className="text-xs mt-1 self-start" style={{ color: textMuted }}>Remove preview</button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {/* Date with smart parsing */}
