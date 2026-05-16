@@ -48,6 +48,7 @@ export default function AuditFinanceExpenses() {
   const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
+  const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const scanRef = useRef<HTMLInputElement>(null)
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
@@ -155,10 +156,10 @@ export default function AuditFinanceExpenses() {
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    // Show preview immediately
     const url = URL.createObjectURL(file)
     setScanPreview(url)
     setScanning(true)
+    setScannedFields(new Set())
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const formData = new FormData()
@@ -172,21 +173,24 @@ export default function AuditFinanceExpenses() {
       const data = await res.json() as Record<string, unknown>
       if (data.error) { alert(`Scan failed: ${data.error}`); return }
 
-      // Auto-fill form with scanned values (keep existing if AI returned null)
       const scannedDate = data.date ? String(data.date) : ''
       const parsed = scannedDate ? (parseSmartDate(scannedDate) ?? scannedDate) : ''
+      const filled = new Set<string>()
 
-      setForm((f) => ({
-        date: parsed || f.date,
-        company: data.company ? String(data.company) : f.company,
-        description: data.description ? String(data.description) : f.description,
-        receiptNo: data.receiptNo ? String(data.receiptNo) : f.receiptNo,
-        amount: data.amount != null ? String(data.amount) : f.amount,
-        expenseCategory: (data.expenseCategory as AuditExpenseCategory) || f.expenseCategory,
-        sourceOfFunds: data.sourceOfFunds ? String(data.sourceOfFunds) : f.sourceOfFunds,
-        incurredBy: data.incurredBy ? String(data.incurredBy) : f.incurredBy,
-      }))
+      setForm((f) => {
+        const next = { ...f }
+        if (parsed)                          { next.date = parsed;                              filled.add('date') }
+        if (data.company)                    { next.company = String(data.company);             filled.add('company') }
+        if (data.description)                { next.description = String(data.description);     filled.add('description') }
+        if (data.receiptNo)                  { next.receiptNo = String(data.receiptNo);         filled.add('receiptNo') }
+        if (data.amount != null && data.amount !== '') { next.amount = String(data.amount);     filled.add('amount') }
+        if (data.expenseCategory)            { next.expenseCategory = data.expenseCategory as AuditExpenseCategory; filled.add('expenseCategory') }
+        if (data.sourceOfFunds)              { next.sourceOfFunds = String(data.sourceOfFunds); filled.add('sourceOfFunds') }
+        if (data.incurredBy)                 { next.incurredBy = String(data.incurredBy);       filled.add('incurredBy') }
+        return next
+      })
       if (parsed) { setDateRaw(parsed); setDateError('') }
+      setScannedFields(filled)
     } catch (err) {
       console.error('[ReceiptScan]', err)
       alert('Could not scan receipt. Make sure the backend is running.')
@@ -195,6 +199,17 @@ export default function AuditFinanceExpenses() {
       e.target.value = ''
     }
   }
+
+  // Clear the "scanned" highlight when user manually edits a field
+  const clearScanned = (field: string) =>
+    setScannedFields((prev) => { const next = new Set(prev); next.delete(field); return next })
+
+  // Highlight style for scanned fields (amber = please review)
+  const scanBorder = '#F59E0B'
+  const scannedStyle = (field: string): React.CSSProperties =>
+    scannedFields.has(field)
+      ? { borderColor: scanBorder, boxShadow: `0 0 0 2px ${scanBorder}33` }
+      : {}
 
   const field = (label: string, children: React.ReactNode) => (
     <div className="flex flex-col gap-1">
@@ -318,65 +333,90 @@ export default function AuditFinanceExpenses() {
                 )}
               </div>
               <div className="flex flex-col gap-1">
-                <p className="text-xs font-semibold" style={{ color: accent }}>
-                  {scanning ? '🔍 Scanning with Gemini Vision…' : '✅ Fields auto-filled from receipt!'}
-                </p>
-                <p className="text-xs" style={{ color: textMuted }}>Review and edit the fields below before saving.</p>
-                <button type="button" onClick={() => setScanPreview(null)} className="text-xs mt-1 self-start" style={{ color: textMuted }}>Remove preview</button>
+                <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()) }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
               </div>
+            )}
+
+            {/* Form grid */}
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Date */}
+              {field(
+                <span className="flex items-center gap-1">
+                  Date {scannedFields.has('date') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}
+                </span> as unknown as string,
+                <div>
+                  <input value={dateRaw}
+                    onChange={(e) => { setDateRaw(e.target.value); setDateError(''); clearScanned('date') }}
+                    onBlur={(e) => handleDateBlur(e.target.value)}
+                    placeholder="May 16, 16 May, 16-May-26"
+                    className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }} />
+                  {dateError
+                    ? <p className="text-xs mt-1" style={{ color: danger }}>{dateError}</p>
+                    : form.date ? <p className="text-xs mt-1" style={{ color: accent }}>✓ {form.date}</p> : null}
+                </div>
+              )}
+
+              {/* Incurred By */}
+              {field(
+                <span className="flex items-center gap-1">Incurred By {scannedFields.has('incurredBy') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <AutoSuggestInput value={form.incurredBy}
+                  onChange={(v) => { setForm((f) => ({ ...f, incurredBy: v })); clearScanned('incurredBy') }}
+                  suggestions={suggestions.people} placeholder="Who incurred this?"
+                  {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputBorder={scannedFields.has('incurredBy') ? scanBorder : inputBorder} />
+              )}
+
+              {/* Description */}
+              {field(
+                <span className="flex items-center gap-1">Description {scannedFields.has('description') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <AutoSuggestInput value={form.description}
+                  onChange={(v) => { setForm((f) => ({ ...f, description: v })); clearScanned('description') }}
+                  suggestions={suggestions.descs} placeholder="What was purchased?"
+                  {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputBorder={scannedFields.has('description') ? scanBorder : inputBorder} />
+              )}
+
+              {/* Company */}
+              {field(
+                <span className="flex items-center gap-1">Company / Vendor {scannedFields.has('company') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <AutoSuggestInput value={form.company}
+                  onChange={(v) => { setForm((f) => ({ ...f, company: v })); clearScanned('company') }}
+                  suggestions={suggestions.companies} placeholder="Store or vendor name"
+                  {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputBorder={scannedFields.has('company') ? scanBorder : inputBorder} />
+              )}
+
+              {/* Receipt No */}
+              {field(
+                <span className="flex items-center gap-1">Receipt No. {scannedFields.has('receiptNo') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <input value={form.receiptNo}
+                  onChange={(e) => { setForm((f) => ({ ...f, receiptNo: e.target.value })); clearScanned('receiptNo') }}
+                  placeholder="OR / SI number"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('receiptNo') }} />
+              )}
+
+              {/* Amount */}
+              {field(
+                <span className="flex items-center gap-1">Amount (₱) {scannedFields.has('amount') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <input type="number" value={form.amount}
+                  onChange={(e) => { setForm((f) => ({ ...f, amount: e.target.value })); clearScanned('amount') }}
+                  placeholder="0.00"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('amount') }} />
+              )}
+
+              {/* Source of Funds */}
+              {field(
+                <span className="flex items-center gap-1">Source of Funds {scannedFields.has('sourceOfFunds') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
+                <AutoSuggestInput value={form.sourceOfFunds}
+                  onChange={(v) => { setForm((f) => ({ ...f, sourceOfFunds: v })); clearScanned('sourceOfFunds') }}
+                  suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
+                  {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputBorder={scannedFields.has('sourceOfFunds') ? scanBorder : inputBorder} />
+              )}
             </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {/* Date with smart parsing */}
-            {field('Date',
-              <div>
-                <input value={dateRaw}
-                  onChange={(e) => { setDateRaw(e.target.value); setDateError('') }}
-                  onBlur={(e) => handleDateBlur(e.target.value)}
-                  placeholder="e.g. May 16, 16 May, 16-May-26"
-                  {...inp(dateError ? { borderColor: danger } : {})} />
-                {dateError
-                  ? <p className="text-xs mt-1" style={{ color: danger }}>{dateError}</p>
-                  : form.date ? <p className="text-xs mt-1" style={{ color: accent }}>✓ {form.date}</p> : null}
-              </div>
-            )}
-
-            {/* Incurred By */}
-            {field('Incurred By',
-              <AutoSuggestInput value={form.incurredBy} onChange={(v) => setForm((f) => ({ ...f, incurredBy: v }))}
-                suggestions={suggestions.people} placeholder="Who incurred this?" {...{ inputBg, inputBorder, textPrimary, textMuted, accent }} />
-            )}
-
-            {/* Description */}
-            {field('Description',
-              <AutoSuggestInput value={form.description} onChange={(v) => setForm((f) => ({ ...f, description: v }))}
-                suggestions={suggestions.descs} placeholder="What was purchased?" {...{ inputBg, inputBorder, textPrimary, textMuted, accent }} />
-            )}
-
-            {/* Company */}
-            {field('Company / Vendor',
-              <AutoSuggestInput value={form.company} onChange={(v) => setForm((f) => ({ ...f, company: v }))}
-                suggestions={suggestions.companies} placeholder="Store or vendor name" {...{ inputBg, inputBorder, textPrimary, textMuted, accent }} />
-            )}
-
-            {/* Receipt No */}
-            {field('Receipt No.',
-              <input value={form.receiptNo} onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
-                placeholder="OR / SI number" {...inp()} />
-            )}
-
-            {/* Amount */}
-            {field('Amount (₱)',
-              <input type="number" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                placeholder="0.00" {...inp()} />
-            )}
-
-            {/* Source of Funds */}
-            {field('Source of Funds',
-              <AutoSuggestInput value={form.sourceOfFunds} onChange={(v) => setForm((f) => ({ ...f, sourceOfFunds: v }))}
-                suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…" {...{ inputBg, inputBorder, textPrimary, textMuted, accent }} />
-            )}
           </div>
 
           {/* Category chips */}
