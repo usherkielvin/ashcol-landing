@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  BarChart2, TrendingUp, TrendingDown,
+  BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
   Search, ArrowUp, ArrowDown, Trophy, Award, Crown
 } from 'lucide-react'
@@ -66,16 +66,19 @@ export default function DailyAuditReport() {
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
-  const [importing, setImporting] = useState(false)
+  const [viewMode, setViewMode] = useState<'single' | 'range'>('single')
   // NOTE: use LOCAL date (not toISOString which is UTC) so a Filipino user at
   // 1 AM doesn't see "yesterday" as the default.
-  const [dateRange, setDateRange] = useState<DateRange>(() => buildDateRange('TODAY'))
+  const [date, setDate] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  const [dateRange, setDateRange] = useState<DateRange>(() => buildDateRange('LAST_7'))
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  // No more viewMode, DateRangeFilter handles it
 
   const role = (user?.role || '').toLowerCase()
   const isManagerOrStaff = role === 'manager' || role === 'staff'
@@ -87,15 +90,15 @@ export default function DailyAuditReport() {
   const canImportExcel = isAdmin || isManager
 
   const fetchAudit = useCallback(async () => {
-    if (dateRange.preset !== 'ALL' && (!dateRange.from || !dateRange.to)) return
+    if (viewMode === 'range' && dateRange.preset !== 'ALL' && (!dateRange.from || !dateRange.to)) return
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const fmt = (d: Date) => d.toISOString().split('T')[0]
       
       let url = `${API_BASE_URL}/v1/reports/audit-summary`
-      if (dateRange.preset === 'TODAY' && dateRange.from) {
-        url += `?date=${fmt(dateRange.from)}`
+      if (viewMode === 'single') {
+        url += `?date=${date}`
       } else if (dateRange.from && dateRange.to) {
         url = `${API_BASE_URL}/v1/reports/audit-summary-range?from=${fmt(dateRange.from)}&to=${fmt(dateRange.to)}`
       }
@@ -112,7 +115,7 @@ export default function DailyAuditReport() {
     } finally {
       setLoading(false)
     }
-  }, [dateRange])
+  }, [viewMode, date, dateRange])
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
@@ -125,10 +128,10 @@ export default function DailyAuditReport() {
 
     // Capture the date the user has selected RIGHT NOW so there's no ambiguity
     // about which day will receive the imported data.
-    const targetDate = dateRange.from ? dateRange.from.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-    const prettyDate = (dateRange.from || new Date()).toLocaleDateString('en-PH', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    })
+    const targetDate = viewMode === 'single' ? date : (dateRange.from ? dateRange.from.toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+    const prettyDate = viewMode === 'single'
+      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : (dateRange.from || new Date()).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const confirmed = window.confirm(
       `Import "${file.name}" into ${prettyDate}?\n\n` +
       `The backend will look for a sheet matching this date (e.g. "${targetDate}" or "${prettyDate.split(',')[1]?.trim()}") ` +
@@ -159,10 +162,15 @@ export default function DailyAuditReport() {
         const sheetMsg = result?.sheet ? ` (from sheet "${result.sheet}")` : ''
         alert(`${result.message || 'Import successful!'}${sheetMsg}`)
         // Jump audit view to whichever date the server actually wrote into.
-        if (importedDate !== (dateRange.from?.toISOString().split('T')[0])) {
-           const d = new Date(importedDate + 'T00:00:00')
-           setDateRange({ preset: 'CUSTOM', from: d, to: d })
-        } else fetchAudit()
+        if (viewMode === 'single') {
+          if (importedDate !== date) setDate(importedDate)
+          else fetchAudit()
+        } else {
+          if (importedDate !== (dateRange.from?.toISOString().split('T')[0])) {
+             const d = new Date(importedDate + 'T00:00:00')
+             setDateRange({ preset: 'CUSTOM', from: d, to: d })
+          } else fetchAudit()
+        }
       } else {
         const error = await res.json().catch(() => ({}))
         alert(error.error || `Import failed (HTTP ${res.status})`)
@@ -183,7 +191,7 @@ export default function DailyAuditReport() {
     const allExpenses = loadAuditExpenses()
     
     // Normalize date and branch matching
-    const dObj = dateRange.from || new Date()
+    const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : (dateRange.from || new Date())
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 1-May-26
     const format2 = `${String(dObj.getDate()).padStart(2, '0')}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 01-May-26
@@ -299,7 +307,7 @@ export default function DailyAuditReport() {
 
   const columns = [
     { key: 'branch',           label: 'BRANCH' },
-    { key: 'time',             label: dateRange.preset === 'TODAY' ? 'TIME UPLOADED' : 'DAYS REPORTED' },
+    { key: 'time',             label: viewMode === 'single' || dateRange.preset === 'TODAY' ? 'TIME UPLOADED' : 'DAYS REPORTED' },
     { key: 'status',           label: 'STATUS' },
     { key: 'grossSales',       label: 'GROSS SALES' },
     { key: 'target',           label: 'TARGET DAILY QUOTA' },
@@ -358,7 +366,54 @@ export default function DailyAuditReport() {
             />
           </div>
 
-          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          {/* View mode toggle */}
+          <div
+            id="audit-view-toggle"
+            className="flex items-center rounded-xl text-xs font-bold overflow-hidden"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode('single')}
+              className="px-3 py-2 transition-colors"
+              style={{
+                backgroundColor: viewMode === 'single' ? '#10B981' : 'transparent',
+                color: viewMode === 'single' ? '#fff' : textMuted,
+              }}
+            >
+              Daily Snapshot
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('range')}
+              className="px-3 py-2 transition-colors"
+              style={{
+                backgroundColor: viewMode === 'range' ? '#10B981' : 'transparent',
+                color: viewMode === 'range' ? '#fff' : textMuted,
+              }}
+            >
+              Range Summary
+            </button>
+          </div>
+
+          {viewMode === 'single' ? (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            >
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+              <input
+                id="audit-date-picker"
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="bg-transparent outline-none text-xs"
+                style={{ color: textPrimary }}
+              />
+            </div>
+          ) : (
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          )}
 
           {hiddenBranches.length > 0 && (
             <button
@@ -384,26 +439,26 @@ export default function DailyAuditReport() {
               <button
                 id="audit-import-btn"
                 type="button"
-                disabled={importing || dateRange.preset !== 'TODAY'}
+                disabled={importing || (viewMode === 'range' && dateRange.preset !== 'TODAY')}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                title={dateRange.preset !== 'TODAY'
-                  ? 'Excel import is per-day. Switch to Today preset to import.'
+                title={viewMode === 'range' && dateRange.preset !== 'TODAY'
+                  ? 'Excel import is per-day. Switch to Daily Snapshot to import.'
                   : isManager
-                    ? `Will import only YOUR branch's row into ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}. Other branches in the workbook are ignored.`
-                    : `Will import every branch into ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}. Change the date picker first if you want a different day.`}
+                    ? `Will import only YOUR branch's row into ${viewMode === 'single' ? date : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}.`
+                    : `Will import every branch into ${viewMode === 'single' ? date : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
                 style={{
                   backgroundColor: '#10B981',
                   borderColor: '#10B981',
                   color: '#fff',
-                  opacity: (importing || dateRange.preset !== 'TODAY') ? 0.5 : 1,
-                  cursor: dateRange.preset !== 'TODAY' ? 'not-allowed' : undefined,
+                  opacity: (importing || (viewMode === 'range' && dateRange.preset !== 'TODAY')) ? 0.5 : 1,
+                  cursor: (viewMode === 'range' && dateRange.preset !== 'TODAY') ? 'not-allowed' : undefined,
                 }}
               >
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
                 {importing
                   ? 'Importing…'
-                  : `Import Excel for ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  : `Import Excel for ${viewMode === 'single' ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
               </button>
             </>
           )}
@@ -492,9 +547,11 @@ export default function DailyAuditReport() {
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
-                  {dateRange.preset === 'TODAY'
-                    ? (dateRange.from || new Date()).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-                    : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  {viewMode === 'single'
+                    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+                    : dateRange.preset === 'TODAY'
+                      ? (dateRange.from || new Date()).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+                      : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
                 </p>
                 <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
               </div>
@@ -558,9 +615,11 @@ export default function DailyAuditReport() {
         <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Branch Audit — {dateRange.preset === 'TODAY' 
-              ? 'Today\'s Snapshot' 
-              : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+            Branch Audit — {viewMode === 'single'
+              ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+              : dateRange.preset === 'TODAY' 
+                ? 'Today\'s Snapshot' 
+                : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
           </h3>
           <span
             className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
@@ -580,7 +639,7 @@ export default function DailyAuditReport() {
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              {dateRange.preset !== 'TODAY'
+              {viewMode === 'range' && dateRange.preset !== 'TODAY'
                 ? `No reports found for ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} (or all are hidden)`
                 : 'No reports found for this date (or all are hidden)'}
             </p>
