@@ -9,7 +9,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import { loadAuditExpenses } from '../utils/auditExpenseStorage'
 import type { AuditExpense } from '../types/auditExpense'
-import DateRangeFilter, { type DateRange, buildDateRange } from '../components/DateRangeFilter'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +73,17 @@ export default function DailyAuditReport() {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
-  const [dateRange, setDateRange] = useState<DateRange>(() => buildDateRange('LAST_7'))
+  
+  const [rangeFrom, setRangeFrom] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 6)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  const [rangeTo, setRangeTo] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+
   const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
@@ -91,17 +100,16 @@ export default function DailyAuditReport() {
   const canImportExcel = isAdmin || isManager
 
   const fetchAudit = useCallback(async () => {
-    if (viewMode === 'range' && dateRange.preset !== 'ALL' && (!dateRange.from || !dateRange.to)) return
+    if (viewMode === 'range' && (!rangeFrom || !rangeTo)) return
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const fmt = (d: Date) => d.toISOString().split('T')[0]
       
       let url = `${API_BASE_URL}/v1/reports/audit-summary`
       if (viewMode === 'single') {
         url += `?date=${date}`
-      } else if (dateRange.from && dateRange.to) {
-        url = `${API_BASE_URL}/v1/reports/audit-summary-range?from=${fmt(dateRange.from)}&to=${fmt(dateRange.to)}`
+      } else if (rangeFrom && rangeTo) {
+        url = `${API_BASE_URL}/v1/reports/audit-summary-range?from=${rangeFrom}&to=${rangeTo}`
       }
 
       const res = await fetch(url, {
@@ -116,7 +124,7 @@ export default function DailyAuditReport() {
     } finally {
       setLoading(false)
     }
-  }, [viewMode, date, dateRange])
+  }, [viewMode, date, rangeFrom, rangeTo])
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
@@ -129,10 +137,10 @@ export default function DailyAuditReport() {
 
     // Capture the date the user has selected RIGHT NOW so there's no ambiguity
     // about which day will receive the imported data.
-    const targetDate = viewMode === 'single' ? date : (dateRange.from ? dateRange.from.toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+    const targetDate = viewMode === 'single' ? date : rangeFrom
     const prettyDate = viewMode === 'single'
       ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      : (dateRange.from || new Date()).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const confirmed = window.confirm(
       `Import "${file.name}" into ${prettyDate}?\n\n` +
       `The backend will look for a sheet matching this date (e.g. "${targetDate}" or "${prettyDate.split(',')[1]?.trim()}") ` +
@@ -167,9 +175,9 @@ export default function DailyAuditReport() {
           if (importedDate !== date) setDate(importedDate)
           else fetchAudit()
         } else {
-          if (importedDate !== (dateRange.from?.toISOString().split('T')[0])) {
-             const d = new Date(importedDate + 'T00:00:00')
-             setDateRange({ preset: 'CUSTOM', from: d, to: d })
+          if (importedDate !== rangeFrom) {
+             setRangeFrom(importedDate)
+             setRangeTo(importedDate)
           } else fetchAudit()
         }
       } else {
@@ -192,7 +200,7 @@ export default function DailyAuditReport() {
     const allExpenses = loadAuditExpenses()
     
     // Normalize date and branch matching
-    const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : (dateRange.from || new Date())
+    const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : new Date(rangeFrom + 'T00:00:00')
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 1-May-26
     const format2 = `${String(dObj.getDate()).padStart(2, '0')}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 01-May-26
@@ -308,7 +316,7 @@ export default function DailyAuditReport() {
 
   const columns = [
     { key: 'branch',           label: 'BRANCH' },
-    { key: 'time',             label: viewMode === 'single' || dateRange.preset === 'TODAY' ? 'TIME UPLOADED' : 'DAYS REPORTED' },
+    { key: 'time',             label: viewMode === 'single' ? 'TIME UPLOADED' : 'DAYS REPORTED' },
     { key: 'status',           label: 'STATUS' },
     { key: 'grossSales',       label: 'GROSS SALES' },
     { key: 'target',           label: 'TARGET DAILY QUOTA' },
@@ -413,7 +421,35 @@ export default function DailyAuditReport() {
               />
             </div>
           ) : (
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            <div className="flex items-center gap-2">
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              >
+                <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                <input
+                  type="date"
+                  value={rangeFrom}
+                  onChange={e => setRangeFrom(e.target.value)}
+                  className="bg-transparent outline-none text-xs"
+                  style={{ color: textPrimary }}
+                />
+              </div>
+              <span className="text-xs font-bold" style={{ color: textMuted }}>TO</span>
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              >
+                <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                <input
+                  type="date"
+                  value={rangeTo}
+                  onChange={e => setRangeTo(e.target.value)}
+                  className="bg-transparent outline-none text-xs"
+                  style={{ color: textPrimary }}
+                />
+              </div>
+            </div>
           )}
 
           {hiddenBranches.length > 0 && (
@@ -440,26 +476,26 @@ export default function DailyAuditReport() {
               <button
                 id="audit-import-btn"
                 type="button"
-                disabled={importing || (viewMode === 'range' && dateRange.preset !== 'TODAY')}
+                disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                title={viewMode === 'range' && dateRange.preset !== 'TODAY'
-                  ? 'Excel import is per-day. Switch to Daily Snapshot to import.'
+                title={viewMode === 'range' && rangeFrom !== rangeTo
+                  ? 'Excel import is per-day. Switch to Daily Snapshot or select a single day range to import.'
                   : isManager
-                    ? `Will import only YOUR branch's row into ${viewMode === 'single' ? date : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}.`
-                    : `Will import every branch into ${viewMode === 'single' ? date : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}.`}
+                    ? `Will import only YOUR branch's row into ${viewMode === 'single' ? date : rangeFrom}.`
+                    : `Will import every branch into ${viewMode === 'single' ? date : rangeFrom}.`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
                 style={{
                   backgroundColor: '#10B981',
                   borderColor: '#10B981',
                   color: '#fff',
-                  opacity: (importing || (viewMode === 'range' && dateRange.preset !== 'TODAY')) ? 0.5 : 1,
-                  cursor: (viewMode === 'range' && dateRange.preset !== 'TODAY') ? 'not-allowed' : undefined,
+                  opacity: (importing || (viewMode === 'range' && rangeFrom !== rangeTo)) ? 0.5 : 1,
+                  cursor: (viewMode === 'range' && rangeFrom !== rangeTo) ? 'not-allowed' : undefined,
                 }}
               >
                 <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
                 {importing
                   ? 'Importing…'
-                  : `Import Excel for ${viewMode === 'single' ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  : `Import Excel for ${viewMode === 'single' ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
               </button>
             </>
           )}
@@ -550,9 +586,7 @@ export default function DailyAuditReport() {
                 <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
                   {viewMode === 'single'
                     ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-                    : dateRange.preset === 'TODAY'
-                      ? (dateRange.from || new Date()).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-                      : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
                 </p>
                 <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
               </div>
@@ -618,9 +652,7 @@ export default function DailyAuditReport() {
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
             Branch Audit — {viewMode === 'single'
               ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-              : dateRange.preset === 'TODAY' 
-                ? 'Today\'s Snapshot' 
-                : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+              : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
           </h3>
           <span
             className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
@@ -640,8 +672,8 @@ export default function DailyAuditReport() {
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              {viewMode === 'range' && dateRange.preset !== 'TODAY'
-                ? `No reports found for ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} (or all are hidden)`
+              {viewMode === 'range'
+                ? `No reports found for ${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} (or all are hidden)`
                 : 'No reports found for this date (or all are hidden)'}
             </p>
           </div>
