@@ -150,9 +150,56 @@ export async function parseAuditExpenseExcelFile(
     return { imported: [], skipped: 0, errors: ['Workbook has no sheets.'] }
   }
   const sheet = workbook.Sheets[sheetName]
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
-  if (rows.length === 0) {
+  
+  // Use header: 1 to get a 2D array of raw cells
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
+  if (rawRows.length === 0) {
     return { imported: [], skipped: 0, errors: ['No data rows found in the first sheet.'] }
   }
-  return rowsToAuditExpenses(rows, opts)
+
+  // Scan the first 20 rows to find the actual header row
+  let headerRowIdx = -1
+
+  for (let r = 0; r < Math.min(20, rawRows.length); r++) {
+    const row = rawRows[r]
+    if (!Array.isArray(row)) continue
+    
+    let hasDate = false
+    let hasAmount = false
+    
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c]).toLowerCase().trim().replace(/\s+/g, ' ')
+      if (!cell) continue
+      
+      if (HEADER_ALIASES.date.includes(cell)) hasDate = true
+      if (HEADER_ALIASES.amount.includes(cell)) hasAmount = true
+    }
+    
+    if (hasDate && hasAmount) {
+      headerRowIdx = r
+      break
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    return { imported: [], skipped: 0, errors: ['Could not find a valid header row (expected DATE and AMOUNT columns).'] }
+  }
+
+  // Convert the raw rows back into an array of objects using the detected header row
+  const headerRow = rawRows[headerRowIdx] as unknown[]
+  const objectRows: Record<string, unknown>[] = []
+  
+  for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+    const row = rawRows[r]
+    if (!Array.isArray(row)) continue
+    
+    const obj: Record<string, unknown> = {}
+    for (let c = 0; c < Math.max(headerRow.length, row.length); c++) {
+       const key = String(headerRow[c] ?? '').trim() || `__EMPTY_${c}`
+       obj[key] = row[c]
+    }
+    objectRows.push(obj)
+  }
+
+  return rowsToAuditExpenses(objectRows, opts)
 }
