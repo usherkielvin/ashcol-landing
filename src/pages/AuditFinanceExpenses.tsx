@@ -45,6 +45,7 @@ export default function AuditFinanceExpenses() {
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
+  const [colFilters, setColFilters] = useState({ date: '', incurredBy: '', description: '', company: '', receiptNo: '', amount: '', expenseCategory: '', sourceOfFunds: '' })
   const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
@@ -86,16 +87,28 @@ export default function AuditFinanceExpenses() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const rows = branchExpenses
-    if (!q) return rows
-    return rows.filter((e) =>
-      e.company.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.receiptNo.toLowerCase().includes(q) ||
-      e.incurredBy.toLowerCase().includes(q) ||
-      e.date.toLowerCase().includes(q)
-    )
-  }, [branchExpenses, search])
+    let rows = branchExpenses
+    if (q) {
+      rows = rows.filter((e) =>
+        e.company.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q) ||
+        e.receiptNo.toLowerCase().includes(q) ||
+        e.incurredBy.toLowerCase().includes(q) ||
+        e.date.toLowerCase().includes(q)
+      )
+    }
+
+    if (colFilters.date) rows = rows.filter(e => e.date.toLowerCase().includes(colFilters.date.toLowerCase()))
+    if (colFilters.incurredBy) rows = rows.filter(e => e.incurredBy.toLowerCase().includes(colFilters.incurredBy.toLowerCase()))
+    if (colFilters.description) rows = rows.filter(e => e.description.toLowerCase().includes(colFilters.description.toLowerCase()))
+    if (colFilters.company) rows = rows.filter(e => e.company.toLowerCase().includes(colFilters.company.toLowerCase()))
+    if (colFilters.receiptNo) rows = rows.filter(e => e.receiptNo.toLowerCase().includes(colFilters.receiptNo.toLowerCase()))
+    if (colFilters.amount) rows = rows.filter(e => String(e.amount).includes(colFilters.amount))
+    if (colFilters.expenseCategory) rows = rows.filter(e => e.expenseCategory.toLowerCase().includes(colFilters.expenseCategory.toLowerCase()))
+    if (colFilters.sourceOfFunds) rows = rows.filter(e => (e.sourceOfFunds || '').toLowerCase().includes(colFilters.sourceOfFunds.toLowerCase()))
+
+    return rows
+  }, [branchExpenses, search, colFilters])
 
   // Group by date for daily view
   const byDate = useMemo(() => {
@@ -489,9 +502,29 @@ export default function AuditFinanceExpenses() {
               <table className="w-full text-xs min-w-[900px]">
                 <thead>
                   <tr style={{ backgroundColor: `${accent}18` }}>
-                    {['Date','Incurred By','Description','Company','Receipt No','Amount','Category','Source',''].map((h) => (
-                      <th key={h} className="px-3 py-2.5 text-left font-bold" style={{ color: textMuted }}>{h}</th>
+                    {[
+                      { key: 'date', label: 'Date' },
+                      { key: 'incurredBy', label: 'Incurred By' },
+                      { key: 'description', label: 'Description' },
+                      { key: 'company', label: 'Company' },
+                      { key: 'receiptNo', label: 'Receipt No' },
+                      { key: 'amount', label: 'Amount' },
+                      { key: 'expenseCategory', label: 'Category' },
+                      { key: 'sourceOfFunds', label: 'Source' }
+                    ].map(({ key, label }) => (
+                      <th key={key} className="px-3 py-2 text-left font-bold" style={{ color: textMuted }}>
+                        <div>{label}</div>
+                        <input
+                          type="text"
+                          placeholder="Filter…"
+                          value={colFilters[key as keyof typeof colFilters]}
+                          onChange={(e) => setColFilters(prev => ({ ...prev, [key]: e.target.value }))}
+                          className="w-full mt-1 px-2 py-1 text-[11px] rounded outline-none font-normal"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                        />
+                      </th>
                     ))}
+                    <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
