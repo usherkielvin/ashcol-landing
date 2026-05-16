@@ -49,6 +49,7 @@ export default function AuditFinanceExpenses() {
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
+  const [scanError, setScanError] = useState('')
   const scanRef = useRef<HTMLInputElement>(null)
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
@@ -159,6 +160,7 @@ export default function AuditFinanceExpenses() {
     const url = URL.createObjectURL(file)
     setScanPreview(url)
     setScanning(true)
+    setScanError('')
     setScannedFields(new Set())
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -171,7 +173,7 @@ export default function AuditFinanceExpenses() {
       })
       if (!res.ok) throw new Error(`Server error ${res.status}`)
       const data = await res.json() as Record<string, unknown>
-      if (data.error) { alert(`Scan failed: ${data.error}`); return }
+      if (data.error) { setScanError(`Scan failed: ${data.error}`); return }
 
       const scannedDate = data.date ? String(data.date) : ''
       const parsed = scannedDate ? (parseSmartDate(scannedDate) ?? scannedDate) : ''
@@ -193,11 +195,18 @@ export default function AuditFinanceExpenses() {
       setScannedFields(filled)
     } catch (err) {
       console.error('[ReceiptScan]', err)
-      alert('Could not scan receipt. Make sure the backend is running.')
+      setScanError('Could not scan receipt. Make sure the backend is running.')
     } finally {
       setScanning(false)
       e.target.value = ''
     }
+  }
+
+  const handleScanClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (scanning) return
+    setScanError('')
+    scanRef.current?.click()
   }
 
   // Clear the "scanned" highlight when user manually edits a field
@@ -306,7 +315,7 @@ export default function AuditFinanceExpenses() {
               <button
                 type="button"
                 disabled={scanning}
-                onClick={() => scanRef.current?.click()}
+                onClick={handleScanClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                 style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Upload a photo of the receipt to auto-fill fields"
@@ -341,10 +350,13 @@ export default function AuditFinanceExpenses() {
                     </div>
                   )}
                 </div>
-                {!scanning && scannedFields.size > 0 && (
+                {!scanning && scannedFields.size > 0 && !scanError && (
                   <p className="text-xs mt-2" style={{ color: scanBorder }}>⚠ Amber fields were auto-filled — review for accuracy.</p>
                 )}
-                <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()) }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
+                {!scanning && scanError && (
+                  <p className="text-xs mt-2" style={{ color: danger }}>❌ {scanError}</p>
+                )}
+                <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()); setScanError('') }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
               </div>
             )}
 
