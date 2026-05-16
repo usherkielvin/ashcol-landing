@@ -492,9 +492,9 @@ export default function DailyAuditReport() {
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
-                  {viewMode === 'weekly'
-                    ? `Week of ${weekRange.label}`
-                    : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  {dateRange.preset === 'TODAY'
+                    ? (dateRange.from || new Date()).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+                    : `${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
                 </p>
                 <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
               </div>
@@ -580,8 +580,8 @@ export default function DailyAuditReport() {
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              {viewMode === 'weekly'
-                ? `No reports found for ${weekRange.label} (or all are hidden)`
+              {dateRange.preset !== 'TODAY'
+                ? `No reports found for ${dateRange.from?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} - ${dateRange.to?.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} (or all are hidden)`
                 : 'No reports found for this date (or all are hidden)'}
             </p>
           </div>
