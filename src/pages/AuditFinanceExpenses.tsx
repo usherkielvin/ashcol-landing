@@ -157,11 +157,10 @@ export default function AuditFinanceExpenses() {
     }
 
     const msg =
-      `Import "${file.name}" for ${branchName} — ${formatMonthLabel(monthKey)}?\n\n` +
+      `Import "${file.name}" for ${branchName}?\n\n` +
       (replaceOnImport
-        ? 'Existing receipts for this branch and month will be REPLACED.'
-        : 'New rows will be ADDED to existing receipts for this branch and month.') +
-      '\n\nOnly rows matching the selected month (by date column) are imported.'
+        ? `Existing receipts for this branch in ${formatMonthLabel(monthKey)} will be REPLACED. Rows from other months will be ADDED.`
+        : 'New rows will be ADDED to existing receipts for this branch.')
 
     if (!window.confirm(msg)) {
       e.target.value = ''
@@ -174,7 +173,7 @@ export default function AuditFinanceExpenses() {
         branchId,
         branchName,
         monthKey,
-        filterToMonth: true,
+        filterToMonth: false,
       })
       if (result.imported.length === 0) {
         alert(
