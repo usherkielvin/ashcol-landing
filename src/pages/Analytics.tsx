@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { fetchBranchPerformance, fetchEfficiencyMetrics } from '../services/analyticsService'
+import DateRangeFilter, { type DateRange, buildDateRange } from '../components/DateRangeFilter'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,13 +52,15 @@ export default function Analytics() {
   const [branchPerf, setBranchPerf] = useState<BranchPerf[]>([])
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [dateRange, setDateRange] = useState<DateRange>(buildDateRange('ALL'))
 
-  const fetchData = async () => {
+  const fetchData = async (range?: DateRange) => {
+    const r = range ?? dateRange
     setLoading(true)
     try {
       const [eff, branches] = await Promise.all([
-        fetchEfficiencyMetrics(),
-        fetchBranchPerformance(),
+        fetchEfficiencyMetrics(r.from, r.to),
+        fetchBranchPerformance(r.from, r.to),
       ])
       setMetrics(eff as EfficiencyMetrics)
       setBranchPerf(branches as BranchPerf[])
@@ -70,6 +73,9 @@ export default function Analytics() {
   }
 
   useEffect(() => { fetchData() }, [])
+
+  // Re-fetch when date range changes
+  useEffect(() => { fetchData(dateRange) }, [dateRange])
 
   const kpiCards = metrics ? [
     {
@@ -127,16 +133,19 @@ export default function Analytics() {
             Last refreshed: {lastRefresh.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchData}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 shrink-0"
-          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          <button
+            type="button"
+            onClick={() => fetchData()}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 shrink-0"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── KPI Cards ───────────────────────────────────────────── */}

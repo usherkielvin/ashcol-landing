@@ -16,6 +16,7 @@ import Managers from './pages/Managers'
 import Inventory from './pages/Inventory'
 import Analytics from './pages/Analytics'
 import DailyAuditReport from './pages/DailyAuditReport'
+import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import DailySalesForm from './pages/DailySalesForm'
 import DailyServiceReport from './pages/DailyServiceReport'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/audit-report" element={<DailyAuditReport />} />
+              <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
               <Route path="/daily-report" element={<DailySalesForm />} />
               <Route path="/service-report" element={<DailyServiceReport />} />
             </Route>

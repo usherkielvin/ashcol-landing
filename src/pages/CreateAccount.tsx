@@ -219,7 +219,7 @@ export default function CreateAccount() {
 
       {/* ── Right Form Panel ── */}
       <div
-        className="flex-1 flex items-center justify-center relative overflow-y-auto overflow-x-hidden no-scrollbar"
+        className="flex-1 flex flex-col items-center relative overflow-y-auto overflow-x-hidden no-scrollbar"
         style={{ backgroundColor: rightBg }}
       >
         {/* Theme toggle */}
@@ -233,12 +233,14 @@ export default function CreateAccount() {
         </button>
 
         {/* Ambient orbs */}
-        <div className="absolute top-0 right-0 w-96 h-96 pointer-events-none translate-x-1/3 -translate-y-1/3"
-          style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)', filter: 'blur(60px)' }} />
-        <div className="absolute bottom-0 left-0 w-96 h-96 pointer-events-none -translate-x-1/3 translate-y-1/3"
-          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)', filter: 'blur(60px)' }} />
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-0 right-0 w-96 h-96 translate-x-1/3 -translate-y-1/3"
+            style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)', filter: 'blur(60px)' }} />
+          <div className="absolute bottom-0 left-0 w-96 h-96 -translate-x-1/3 translate-y-1/3"
+            style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)', filter: 'blur(60px)' }} />
+        </div>
 
-        <div className="w-full max-w-[500px] px-6 sm:px-10 py-10 relative z-10">
+        <div className="w-full max-w-[500px] px-6 sm:px-10 py-10 relative z-10 my-auto">
 
           {/* Mobile logo */}
           <div className="flex flex-col items-center mb-10 lg:hidden">

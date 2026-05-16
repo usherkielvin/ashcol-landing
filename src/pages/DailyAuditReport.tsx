@@ -7,6 +7,8 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
+import { loadAuditExpenses } from '../utils/auditExpenseStorage'
+import type { AuditExpense } from '../types/auditExpense'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +72,7 @@ export default function DailyAuditReport() {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
-  const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[] } | null>(null)
+  const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
@@ -186,7 +188,23 @@ export default function DailyAuditReport() {
 
   const openDrilldown = async (branchName: string) => {
     setDrillLoading(true)
-    setDrilldown({ branchName, items: [] })
+    
+    // Also fetch Audit Expenses for this branch & date from localStorage
+    const allExpenses = loadAuditExpenses()
+    
+    // Normalize date and branch matching
+    const dObj = new Date(date + 'T00:00:00')
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 1-May-26
+    const format2 = `${String(dObj.getDate()).padStart(2, '0')}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}` // e.g. 01-May-26
+    const isoFormat = date // YYYY-MM-DD
+    
+    const matchedExpenses = allExpenses.filter(e => 
+      e.branchName.toLowerCase() === branchName.toLowerCase() && 
+      (e.date === format1 || e.date === format2 || e.date === isoFormat)
+    )
+
+    setDrilldown({ branchName, items: [], auditExpenses: matchedExpenses })
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?branchName=${encodeURIComponent(branchName)}&date=${date}`, {
@@ -194,10 +212,10 @@ export default function DailyAuditReport() {
       })
       if (res.ok) {
         const items = await res.json()
-        setDrilldown({ branchName, items })
+        setDrilldown({ branchName, items, auditExpenses: matchedExpenses })
       }
     } catch {
-      setDrilldown({ branchName, items: [] })
+      setDrilldown({ branchName, items: [], auditExpenses: matchedExpenses })
     } finally {
       setDrillLoading(false)
     }
@@ -839,37 +857,77 @@ export default function DailyAuditReport() {
                 <div className="flex flex-col gap-2">
                   {[1,2,3].map(i => <div key={i} className="h-10 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
                 </div>
-              ) : drilldown.items.length === 0 ? (
+              ) : drilldown.items.length === 0 && drilldown.auditExpenses.length === 0 ? (
                 <div className="flex flex-col items-center py-10 gap-2">
                   <Receipt className="w-8 h-8 opacity-20" style={{ color: textMuted }} />
                   <p className="text-sm" style={{ color: textMuted }}>No expense items recorded</p>
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${border}` }}>
-                      {['Type', 'Description', 'Amount'].map(h => (
-                        <th key={h} className="pb-2 text-left text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drilldown.items.map((item, i) => {
-                      const typeColor = item.type === 'EXPENSE' ? '#EF4444' : item.type === 'PURCHASE' ? '#F59E0B' : item.type === 'CASH_SALE' ? '#10B981' : '#3B82F6'
-                      return (
-                        <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                          <td className="py-2.5 pr-3">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ backgroundColor: `${typeColor}18`, color: typeColor }}>
-                              {item.type.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-2.5 pr-3 text-xs" style={{ color: textPrimary }}>{item.description}</td>
-                          <td className="py-2.5 font-black text-xs whitespace-nowrap" style={{ color: typeColor }}>₱{peso(item.amount)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="flex flex-col gap-8">
+                  {/* API Drilldown Items */}
+                  {drilldown.items.length > 0 && (
+                    <div>
+                      <h5 className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Summary Breakdown</h5>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr style={{ borderBottom: `1px solid ${border}` }}>
+                            {['Type', 'Description', 'Amount'].map(h => (
+                              <th key={h} className="pb-2 text-left text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {drilldown.items.map((item, i) => {
+                            const typeColor = item.type === 'EXPENSE' ? '#EF4444' : item.type === 'PURCHASE' ? '#F59E0B' : item.type === 'CASH_SALE' ? '#10B981' : '#3B82F6'
+                            return (
+                              <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                                <td className="py-2.5 pr-3">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ backgroundColor: `${typeColor}18`, color: typeColor }}>
+                                    {item.type.replace('_', ' ')}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 pr-3 text-xs" style={{ color: textPrimary }}>{item.description}</td>
+                                <td className="py-2.5 font-black text-xs whitespace-nowrap" style={{ color: typeColor }}>₱{peso(item.amount)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Excel-like Audit Expenses Details */}
+                  {drilldown.auditExpenses.length > 0 && (
+                    <div>
+                      <h5 className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#10B981' }}>Detailed Audit Expenses (Excel format)</h5>
+                      <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${border}` }}>
+                        <table className="w-full text-xs min-w-[700px]">
+                          <thead>
+                            <tr style={{ backgroundColor: `rgba(16,185,129,0.13)` }}>
+                              {['DATE', 'INCURRED BY', 'DESCRIPTION', 'COMPANY', 'RECEIPT NO', 'AMOUNT', 'CATEGORY', 'SOURCE'].map((h) => (
+                                <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {drilldown.auditExpenses.map((row) => (
+                              <tr key={row.id} style={{ borderTop: `1px solid ${border}` }}>
+                                <td className="px-3 py-2 whitespace-nowrap" style={{ color: textPrimary }}>{row.date}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.incurredBy}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.description}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.company}</td>
+                                <td className="px-3 py-2" style={{ color: textMuted }}>{row.receiptNo || '—'}</td>
+                                <td className="px-3 py-2 font-black" style={{ color: '#EF4444' }}>₱{peso(row.amount)}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.expenseCategory}</td>
+                                <td className="px-3 py-2" style={{ color: textMuted }}>{row.sourceOfFunds || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

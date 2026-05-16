@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical, Check, Mail, Phone, Navigation } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import DateRangeFilter, { type DateRange, buildDateRange, isInDateRange } from '../components/DateRangeFilter'
 
 interface Ticket {
   id: string
@@ -115,7 +116,7 @@ export default function Tickets() {
   const [loading, setLoading]             = useState(true)
   const [searchQuery, setSearchQuery]     = useState('')
   const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED_TO_ME' | 'UNASSIGNED'>('ALL')
-  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'THIS_WEEK'>('ALL')
+  const [dateRange, setDateRange] = useState<DateRange>(buildDateRange('ALL'))
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [showViewModal, setShowViewModal]   = useState(false)
@@ -148,23 +149,6 @@ export default function Tickets() {
     if (!raw) return null
     const d = new Date(raw)
     return Number.isNaN(d.getTime()) ? null : d
-  }
-
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate()
-
-  const isInCurrentWeek = (d: Date) => {
-    const now = new Date()
-    const day = now.getDay()
-    const diffToMonday = (day + 6) % 7
-    const weekStart = new Date(now)
-    weekStart.setHours(0, 0, 0, 0)
-    weekStart.setDate(now.getDate() - diffToMonday)
-    const weekEnd = new Date(weekStart)
-    weekEnd.setDate(weekStart.getDate() + 7)
-    return d >= weekStart && d < weekEnd
   }
 
   const getAllowedStatusTransitions = (ticket: Ticket) => {
@@ -510,11 +494,9 @@ export default function Tickets() {
       }
       if (assignmentFilter === 'UNASSIGNED' && assignee !== '—') return false
     }
-    if (dateFilter !== 'ALL') {
+    if (dateRange.preset !== 'ALL') {
       const d = getEffectiveDate(t)
-      if (!d) return false
-      if (dateFilter === 'TODAY' && !isSameDay(d, new Date())) return false
-      if (dateFilter === 'THIS_WEEK' && !isInCurrentWeek(d)) return false
+      if (!isInDateRange(d, dateRange)) return false
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -639,16 +621,7 @@ export default function Tickets() {
             <option value="UNASSIGNED">Unassigned</option>
           </select>
         )}
-        <select
-          value={dateFilter}
-          onChange={e => setDateFilter(e.target.value as 'ALL' | 'TODAY' | 'THIS_WEEK')}
-          className="px-3 py-2 rounded-lg border text-xs font-semibold"
-          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-        >
-          <option value="ALL">Any date</option>
-          <option value="TODAY">Today</option>
-          <option value="THIS_WEEK">This week</option>
-        </select>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
       </div>
 
       {/* ── Main Card ─────────────────────────────────────────── */}

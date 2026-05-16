@@ -205,7 +205,7 @@ export default function ForgotPassword() {
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative overflow-y-auto overflow-x-hidden no-scrollbar z-10" style={{ backgroundColor: rightBg, transition: 'background-color 0.2s' }}>
+      <div className="flex-1 flex flex-col items-center p-6 sm:p-12 relative overflow-y-auto overflow-x-hidden no-scrollbar z-10" style={{ backgroundColor: rightBg, transition: 'background-color 0.2s' }}>
         <button
           onClick={toggleTheme}
           className="absolute top-5 right-5 p-2.5 rounded-xl transition-all hover:scale-105 z-30"
