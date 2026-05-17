@@ -6,7 +6,7 @@ import {
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck,
   PanelLeftClose, PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
-  HardHat, Receipt,
+  HardHat, Receipt, CalendarCheck,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -78,6 +78,7 @@ export default function DashboardLayout() {
     { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
     { name: 'Service Report', path: '/service-report', icon: HardHat,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Daily Report',   path: '/daily-report',   icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
+    { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff'] },
   ]
 
   const navLinks = allLinks.filter(link => {

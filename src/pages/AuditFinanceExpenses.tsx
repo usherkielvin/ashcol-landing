@@ -209,7 +209,17 @@ export default function AuditFinanceExpenses() {
       }
       await bulkImportAuditExpenses(result.imported)
       await reload()
-      alert(`Imported ${result.imported.length} receipt(s).` + (result.skipped > 0 ? ` Skipped ${result.skipped}.` : ''))
+      let msg = `Imported ${result.imported.length} receipt(s).`
+      if (result.skipped > 0) {
+        msg += ` Skipped ${result.skipped} row(s).`
+        if (result.errors.length > 0) {
+          msg += `\n\nReasons for skipped rows:\n` + result.errors.slice(0, 15).map(err => `• ${err}`).join('\n')
+          if (result.errors.length > 15) {
+            msg += `\n• ...and ${result.errors.length - 15} more rows.`
+          }
+        }
+      }
+      alert(msg)
     } catch { alert('Failed to read Excel file.') }
     finally { setImporting(false); e.target.value = '' }
   }

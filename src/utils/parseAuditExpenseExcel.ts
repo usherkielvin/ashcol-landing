@@ -219,32 +219,36 @@ export async function parseAuditExpenseExcelFile(
     const dateStr   = excelDateToDisplay(dateRaw)
     const dateKey   = parseExpenseDateKey(dateStr)
 
-    if (!dateStr && amount <= 0) {
+    if (!dateStr || amount <= 0) {
+      if (!dateStr && amount <= 0) {
+        skipped++
+        continue
+      }
+      if (!dateStr) {
+        errors.push(`Row ${r + 1}: missing Date (amount is "${amountRaw}")`)
+      } else {
+        errors.push(`Row ${r + 1}: amount is 0 or missing (raw="${amountRaw}")`)
+      }
       skipped++
       continue
     }
 
     if (opts.filterToMonth === true && dateKey && monthKeyFromDateKey(dateKey) !== opts.monthKey) {
+      errors.push(`Row ${r + 1}: date is outside the filtered month (${dateStr})`)
       skipped++
       continue
     }
 
-    if (amount <= 0) {
-      errors.push(`Row ${r + 1}: amount is 0 or missing (raw="${amountRaw}")`)
-      skipped++
-      continue
-    }
-
-    const description  = colIdx.description  !== undefined ? cellStr(row[colIdx.description])  : ''
-    const company      = colIdx.company       !== undefined ? cellStr(row[colIdx.company])       : ''
+    let description  = colIdx.description  !== undefined ? cellStr(row[colIdx.description])  : ''
+    let company      = colIdx.company       !== undefined ? cellStr(row[colIdx.company])       : ''
     const incurredBy   = colIdx.incurredBy    !== undefined ? cellStr(row[colIdx.incurredBy])    : 'IMPORT'
     const receiptNo    = colIdx.receiptNo     !== undefined ? cellStr(row[colIdx.receiptNo])     : ''
     const rawCategory  = colIdx.expenseCategory !== undefined ? cellStr(row[colIdx.expenseCategory]) : ''
     const sourceOfFunds = colIdx.sourceOfFunds !== undefined ? cellStr(row[colIdx.sourceOfFunds]) : ''
 
     if (!description && !company) {
-      skipped++
-      continue
+      description = 'UNSPECIFIED'
+      company = 'UNSPECIFIED'
     }
 
     const payloadKey = `${opts.branchId}|${dateStr}|${company}|${amount}|${description}`.toLowerCase()
