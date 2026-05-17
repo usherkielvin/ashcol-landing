@@ -196,8 +196,8 @@ export default function DailyAuditReport() {
   const openDrilldown = async (branchName: string) => {
     setDrillLoading(true)
     
-    // Also fetch Audit Expenses for this branch & date from localStorage
-    const allExpenses = loadAuditExpenses()
+    // Also fetch Audit Expenses for this branch & date
+    const allExpenses = await loadAuditExpenses()
     
     // Normalize date and branch matching
     const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : new Date(rangeFrom + 'T00:00:00')
