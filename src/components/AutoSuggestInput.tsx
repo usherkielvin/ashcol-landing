@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 interface Props {
   id?: string
@@ -13,11 +13,14 @@ interface Props {
   textMuted: string
   accent: string
   className?: string
+  inputClassName?: string
+  inputStyle?: React.CSSProperties
 }
 
 export default function AutoSuggestInput({
   id, value, onChange, onBlur, suggestions, placeholder,
   inputBg, inputBorder, textPrimary, textMuted, accent, className = '',
+  inputClassName = '', inputStyle = {},
 }: Props) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
@@ -64,8 +67,8 @@ export default function AutoSuggestInput({
         onFocus={() => setOpen(true)}
         onBlur={(e) => { onBlur?.(e.target.value) }}
         onKeyDown={handleKey}
-        className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
-        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+        className={`w-full rounded-lg px-3 py-2 text-sm outline-none transition-all${inputClassName ? ' ' + inputClassName : ''}`}
+        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...inputStyle }}
       />
       {open && filtered.length > 0 && (
         <ul

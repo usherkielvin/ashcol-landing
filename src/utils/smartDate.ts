@@ -62,3 +62,20 @@ export function parseSmartDate(raw: string): string | null {
 
   return null
 }
+
+/** Convert DD-Mon-YY to timestamp for proper chronological sorting. */
+export function dateToTime(s: string): number {
+  if (!s) return 0
+  const parts = s.split('-')
+  if (parts.length === 3) {
+    const d = parseInt(parts[0])
+    const mStr = parts[1].toLowerCase()
+    const m = MONTHS[mStr]
+    const y = parseInt(parts[2])
+    const fullYear = y < 100 ? 2000 + y : y
+    if (m !== undefined) {
+      return new Date(fullYear, m, d).getTime()
+    }
+  }
+  return new Date(s).getTime() || 0
+}

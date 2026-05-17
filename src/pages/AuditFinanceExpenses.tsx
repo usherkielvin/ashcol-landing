@@ -6,9 +6,9 @@ import { API_BASE_URL } from '../utils/api'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
-import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense } from '../utils/auditExpenseStorage'
+import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense, clearAuditExpensesByBranch } from '../utils/auditExpenseStorage'
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
-import { parseSmartDate } from '../utils/smartDate'
+import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
 import * as XLSX from 'xlsx'
 
@@ -46,13 +46,43 @@ export default function AuditFinanceExpenses() {
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
-  const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>(null)
+  const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
   const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError, setScanError] = useState('')
   const scanRef = useRef<HTMLInputElement>(null)
+
+  // Custom categories persisted to localStorage
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('auditExpenseCustomCategories') || '[]') } catch { return [] }
+  })
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [newCategoryInput, setNewCategoryInput] = useState('')
+  const newCategoryRef = useRef<HTMLInputElement>(null)
+
+  const allCategories = useMemo(
+    () => [...AUDIT_EXPENSE_CATEGORIES, ...customCategories.filter((c) => !AUDIT_EXPENSE_CATEGORIES.includes(c as AuditExpenseCategory))],
+    [customCategories]
+  )
+
+  const saveCustomCategory = () => {
+    const val = newCategoryInput.trim().toUpperCase()
+    if (!val) { setAddingCategory(false); setNewCategoryInput(''); return }
+    if (!allCategories.includes(val)) {
+      const updated = [...customCategories, val]
+      setCustomCategories(updated)
+      localStorage.setItem('auditExpenseCustomCategories', JSON.stringify(updated))
+    }
+    setForm((f) => ({ ...f, expenseCategory: val as AuditExpenseCategory }))
+    setAddingCategory(false)
+    setNewCategoryInput('')
+  }
+
+  useEffect(() => {
+    if (addingCategory) setTimeout(() => newCategoryRef.current?.focus(), 50)
+  }, [addingCategory])
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
 
@@ -78,10 +108,17 @@ export default function AuditFinanceExpenses() {
     } catch (e) { console.error(e) }
   }, [isManager, user?.branchId])
 
-  const reload = useCallback(() => setExpenses(loadAuditExpenses()), [])
+  const reload = useCallback(async () => {
+    try {
+      const data = await loadAuditExpenses()
+      setExpenses(data)
+    } catch (err) {
+      console.error('[AuditFinanceExpenses] Reload error:', err)
+    }
+  }, [])
 
   useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => { void reload() }, [reload])
 
   const branchExpenses = useMemo(() =>
     expenses.filter((e) => e.branchId === branchId), [expenses, branchId])
@@ -101,6 +138,14 @@ export default function AuditFinanceExpenses() {
 
     if (sortConfig) {
       rows.sort((a, b) => {
+        if (sortConfig.key === 'date') {
+          const timeA = dateToTime(a.date)
+          const timeB = dateToTime(b.date)
+          if (timeA < timeB) return sortConfig.direction === 'asc' ? -1 : 1
+          if (timeA > timeB) return sortConfig.direction === 'asc' ? 1 : -1
+          return 0
+        }
+
         let valA = a[sortConfig.key]
         let valB = b[sortConfig.key]
         if (typeof valA === 'string') valA = valA.toLowerCase()
@@ -122,7 +167,7 @@ export default function AuditFinanceExpenses() {
       if (!map[e.date]) map[e.date] = []
       map[e.date].push(e)
     }
-    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a))
+    return Object.entries(map).sort(([a], [b]) => dateToTime(b) - dateToTime(a))
   }, [filtered])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
@@ -162,14 +207,14 @@ export default function AuditFinanceExpenses() {
         alert(result.errors.length > 0 ? `No rows imported.\n${result.errors.slice(0, 5).join('\n')}` : `No rows imported (${result.skipped} skipped).`)
         return
       }
-      bulkImportAuditExpenses(result.imported, { branchId, monthKey: '', replaceExisting: false })
-      reload()
+      await bulkImportAuditExpenses(result.imported)
+      await reload()
       alert(`Imported ${result.imported.length} receipt(s).` + (result.skipped > 0 ? ` Skipped ${result.skipped}.` : ''))
     } catch { alert('Failed to read Excel file.') }
     finally { setImporting(false); e.target.value = '' }
   }
 
-  const submitReceipt = () => {
+  const submitReceipt = async () => {
     if (!branchId) return
     const amount = parseFloat(form.amount.replace(/,/g, ''))
     if (!form.company.trim() && !form.description.trim()) { alert('Enter company or description.'); return }
@@ -179,9 +224,24 @@ export default function AuditFinanceExpenses() {
     const expense: AuditExpense = editing
       ? { ...editing, date: form.date.trim(), company: form.company.trim(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
       : { id: createExpenseId(), branchId, branchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
-    upsertAuditExpense(expense)
-    reload()
+    await upsertAuditExpense(expense)
+    await reload()
     setShowForm(false); setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError('')
+  }
+
+  const handleClearBranchReceipts = async () => {
+    if (!branchId) return
+    const count = branchExpenses.length
+    if (count === 0) { alert('No receipts to clear for this branch.'); return }
+    if (!window.confirm(`Are you sure you want to delete ALL ${count} receipt(s) for ${branchName}?\n\nThis action cannot be undone and is usually done before re-adding or re-importing.`)) { return }
+    try {
+      await clearAuditExpensesByBranch(branchId)
+      await reload()
+      alert(`Cleared all receipts for ${branchName}.`)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to clear receipts for this branch.')
+    }
   }
 
   const startEdit = (row: AuditExpense) => {
@@ -332,40 +392,75 @@ export default function AuditFinanceExpenses() {
             <Upload size={16} />{importing ? 'Importing…' : 'Import Excel'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
+          {branchId && branchExpenses.length > 0 && (
+            <button type="button" onClick={handleClearBranchReceipts}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 shadow"
+              style={{ backgroundColor: danger }}>
+              <Trash2 size={16} /> Clear Branch
+            </button>
+          )}
         </div>
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="rounded-2xl p-4 flex flex-col md:flex-row flex-wrap gap-3 items-stretch md:items-end"
+      <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row gap-2 items-center"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="flex flex-col gap-1 min-w-[200px] flex-1">
-          <label className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1" style={{ color: textMuted }}><Building2 size={13} /> Branch</label>
-          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} disabled={isManager && !!user?.branchId}
-            className="rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            {branches.length === 0 ? <option value="">Loading…</option> : null}
+        {/* Branch selector */}
+        <div style={{ position: 'relative' }} className="w-full md:w-52 shrink-0">
+          <Building2 size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+          <select
+            value={branchId}
+            onChange={(e) => setBranchId(e.target.value)}
+            disabled={isManager && !!user?.branchId}
+            className="w-full rounded-lg pl-8 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+          >
+            {branches.length === 0
+              ? <option value="">Loading…</option>
+              : <option value="" disabled>Select branch…</option>
+            }
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
+          <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
         </div>
-        <div className="flex flex-col gap-1 flex-1 max-w-md">
-          <label className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1" style={{ color: textMuted }}><Search size={13} /> Search</label>
-          <div style={{ position: 'relative' }}>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, description, date, receipt no…"
-              className="w-full rounded-lg px-3 py-2 text-sm pl-9" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted }} />
-          </div>
+
+        {/* Divider */}
+        <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
+
+        {/* Search */}
+        <div style={{ position: 'relative' }} className="flex-1 w-full">
+          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search company, description, date, receipt no…"
+            className="w-full rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
+              <X size={13} />
+            </button>
+          )}
         </div>
-        {/* Summary pill */}
+
+        {/* Summary — right magnet */}
         {branchId && (
-          <div className="rounded-xl px-4 py-2 flex flex-col items-center justify-center" style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44` }}>
-            <span className="text-xs font-semibold" style={{ color: accent }}>{filtered.length} receipts</span>
-            <span className="text-base font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</span>
-          </div>
+          <>
+            <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
+            <div className="flex items-center gap-3 shrink-0 md:ml-auto">
+              <div className="text-right">
+                <div className="text-xs font-medium" style={{ color: textMuted }}>{filtered.length} receipts</div>
+                <div className="text-sm font-bold" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</div>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
       {/* ── ENTRY FORM ── */}
       {showForm && (
-        <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${accent}55`, boxShadow: `0 0 0 2px ${accent}22` }}>
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${accent}55`, boxShadow: `0 0 0 2px ${accent}22` }}>
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
               <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
@@ -431,7 +526,7 @@ export default function AuditFinanceExpenses() {
             )}
 
             {/* Form grid */}
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
               {/* Date */}
               {field(
                 <span className="flex items-center gap-1">
@@ -442,11 +537,11 @@ export default function AuditFinanceExpenses() {
                     onChange={(e) => { setDateRaw(e.target.value); setDateError(''); clearScanned('date') }}
                     onBlur={(e) => handleDateBlur(e.target.value)}
                     placeholder="May 16, 16 May, 16-May-26"
-                    className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                    className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }} />
                   {dateError
-                    ? <p className="text-xs mt-1" style={{ color: danger }}>{dateError}</p>
-                    : form.date ? <p className="text-xs mt-1" style={{ color: accent }}>✓ {form.date}</p> : null}
+                    ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
+                    : form.date ? <p className="text-xs mt-0.5" style={{ color: accent }}>✓ {form.date}</p> : null}
                 </div>
               )}
 
@@ -457,6 +552,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, incurredBy: v })); clearScanned('incurredBy') }}
                   suggestions={suggestions.people} placeholder="Who incurred this?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
                   inputBorder={scannedFields.has('incurredBy') ? scanBorder : inputBorder} />
               )}
 
@@ -467,6 +563,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, description: v })); clearScanned('description') }}
                   suggestions={suggestions.descs} placeholder="What was purchased?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
                   inputBorder={scannedFields.has('description') ? scanBorder : inputBorder} />
               )}
 
@@ -477,6 +574,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, company: v })); clearScanned('company') }}
                   suggestions={suggestions.companies} placeholder="Store or vendor name"
                   {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
                   inputBorder={scannedFields.has('company') ? scanBorder : inputBorder} />
               )}
 
@@ -486,7 +584,7 @@ export default function AuditFinanceExpenses() {
                 <input value={form.receiptNo}
                   onChange={(e) => { setForm((f) => ({ ...f, receiptNo: e.target.value })); clearScanned('receiptNo') }}
                   placeholder="OR / SI number"
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                  className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('receiptNo') }} />
               )}
 
@@ -496,7 +594,7 @@ export default function AuditFinanceExpenses() {
                 <input type="number" value={form.amount}
                   onChange={(e) => { setForm((f) => ({ ...f, amount: e.target.value })); clearScanned('amount') }}
                   placeholder="0.00"
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                  className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('amount') }} />
               )}
 
@@ -507,6 +605,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, sourceOfFunds: v })); clearScanned('sourceOfFunds') }}
                   suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
                   {...{ inputBg, textPrimary, textMuted, accent }}
+                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
                   inputBorder={scannedFields.has('sourceOfFunds') ? scanBorder : inputBorder} />
               )}
             </div>
@@ -516,13 +615,35 @@ export default function AuditFinanceExpenses() {
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>Expense Category</label>
             <div className="flex flex-wrap gap-2 mt-2">
-              {AUDIT_EXPENSE_CATEGORIES.map((cat) => (
-                <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat }))}
+              {allCategories.map((cat) => (
+                <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
                   {cat}
                 </button>
               ))}
+              {/* Add custom category */}
+              {addingCategory ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={newCategoryRef}
+                    value={newCategoryInput}
+                    onChange={(e) => setNewCategoryInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveCustomCategory() } if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryInput('') } }}
+                    placeholder="Category name"
+                    className="px-2 py-1 rounded-lg text-xs font-semibold outline-none w-32"
+                    style={{ border: `1px solid ${accent}`, backgroundColor: inputBg, color: textPrimary }}
+                  />
+                  <button type="button" onClick={saveCustomCategory} className="px-2 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: accent }}>Add</button>
+                  <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput('') }} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>✕</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setAddingCategory(true)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1"
+                  style={{ border: `1px dashed ${inputBorder}`, backgroundColor: inputBg, color: textMuted }}>
+                  <Plus size={11} /> New
+                </button>
+              )}
             </div>
           </div>
 
@@ -615,7 +736,7 @@ export default function AuditFinanceExpenses() {
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
                           <button type="button" onClick={() => startEdit(row)}><Pencil size={13} style={{ color: accent }} /></button>
-                          <button type="button" onClick={() => { if (window.confirm('Delete this receipt?')) { deleteAuditExpense(row.id); reload() } }}><Trash2 size={13} style={{ color: danger }} /></button>
+                          <button type="button" onClick={async () => { if (window.confirm('Delete this receipt?')) { await deleteAuditExpense(row.id); await reload() } }}><Trash2 size={13} style={{ color: danger }} /></button>
                         </div>
                       </td>
                     </tr>
@@ -657,7 +778,7 @@ export default function AuditFinanceExpenses() {
                         <div className="flex items-center gap-3 ml-3 shrink-0">
                           <span className="font-bold" style={{ color: textPrimary }}>₱{peso(row.amount)}</span>
                           <button type="button" onClick={() => startEdit(row)}><Pencil size={14} style={{ color: accent }} /></button>
-                          <button type="button" onClick={() => { if (window.confirm('Delete?')) { deleteAuditExpense(row.id); reload() } }}><Trash2 size={14} style={{ color: danger }} /></button>
+                          <button type="button" onClick={async () => { if (window.confirm('Delete?')) { await deleteAuditExpense(row.id); await reload() } }}><Trash2 size={14} style={{ color: danger }} /></button>
                         </div>
                       </div>
                     ))}

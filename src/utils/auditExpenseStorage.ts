@@ -1,61 +1,69 @@
 import type { AuditExpense } from '../types/auditExpense'
-import { monthKeyFromDateKey, parseExpenseDateKey } from './auditExpenseDates'
+import { API_BASE_URL } from './api'
 
-const STORAGE_KEY = 'ashcol_portal_audit_expenses'
+const BASE_URL = `${API_BASE_URL}/v1/audit-expenses`
 
-export function loadAuditExpenses(): AuditExpense[] {
+function getToken() {
+  return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+}
+
+export async function loadAuditExpenses(): Promise<AuditExpense[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as AuditExpense[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
+    const res = await fetch(BASE_URL, {
+      headers: { Authorization: `Bearer ${getToken()}` }
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch (err) {
+    console.error('[AuditExpenseStorage] Load error:', err)
     return []
   }
 }
 
-export function saveAuditExpenses(expenses: AuditExpense[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses))
+export async function upsertAuditExpense(expense: AuditExpense): Promise<AuditExpense> {
+  const res = await fetch(BASE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`
+    },
+    body: JSON.stringify(expense)
+  })
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
+  return await res.json()
 }
 
-export function upsertAuditExpense(expense: AuditExpense): AuditExpense[] {
-  const all = loadAuditExpenses()
-  const idx = all.findIndex((e) => e.id === expense.id)
-  const next = [...all]
-  if (idx >= 0) next[idx] = expense
-  else next.unshift(expense)
-  saveAuditExpenses(next)
-  return next
+export async function deleteAuditExpense(id: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` }
+  })
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
 }
 
-export function deleteAuditExpense(id: string): AuditExpense[] {
-  const next = loadAuditExpenses().filter((e) => e.id !== id)
-  saveAuditExpenses(next)
-  return next
+export async function clearAuditExpensesByBranch(branchId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/branch/${branchId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` }
+  })
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
 }
 
-export function bulkImportAuditExpenses(
-  incoming: AuditExpense[],
-  opts: { branchId: string; monthKey: string; replaceExisting: boolean }
-): AuditExpense[] {
-  const all = loadAuditExpenses()
-  const kept = opts.replaceExisting
-    ? all.filter((e) => {
-        if (e.branchId !== opts.branchId) return true
-        const mk = expenseMonthKey(e)
-        return mk !== opts.monthKey
-      })
-    : all
-  const next = [...incoming, ...kept]
-  saveAuditExpenses(next)
-  return next
-}
-
-function expenseMonthKey(e: AuditExpense): string | null {
-  const dk = parseExpenseDateKey(e.date, e.createdAt)
-  return dk ? monthKeyFromDateKey(dk) : null
+export async function bulkImportAuditExpenses(expenses: AuditExpense[]): Promise<AuditExpense[]> {
+  const res = await fetch(`${BASE_URL}/bulk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`
+    },
+    body: JSON.stringify(expenses)
+  })
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
+  return await res.json()
 }
 
 export function createExpenseId(): string {
+  // Backend now generates UUIDs, but we can provide a temporary one or let it be null for new ones
+  // We'll keep it for now as a placeholder for frontend-only state if needed
   return `exp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }

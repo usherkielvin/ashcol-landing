@@ -61,6 +61,19 @@ function contains(s: string, ...kws: string[]): boolean {
   return kws.some(k => s.includes(k))
 }
 
+function hashString(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0
+  return Math.abs(h).toString(16)
+}
+
+function generateDeterministicId(branchId: string, dateStr: string, company: string, amount: number, description: string, occurrence: number = 0): string {
+  const payload = `${branchId}|${dateStr}|${company}|${amount}|${description}|${occurrence}`.toLowerCase()
+  const hash = hashString(payload)
+  // Ensure we don't exceed 36 chars. format: ext_branch_hash
+  return `exp_${branchId.substring(0, 8)}_${hash}`.substring(0, 36)
+}
+
 // ── Core export ──────────────────────────────────────────────────────────────
 
 export async function parseAuditExpenseExcelFile(
@@ -190,6 +203,7 @@ export async function parseAuditExpenseExcelFile(
   const errors: string[] = []
   let skipped = 0
   const now = new Date().toISOString()
+  const payloadCounts: Record<string, number> = {}
 
   for (let r = headerIdx + 1; r < gridDate.length; r++) {
     const row = gridDate[r]
@@ -197,7 +211,7 @@ export async function parseAuditExpenseExcelFile(
 
     // Skip completely empty rows
     const allEmpty = row.every(c => c === null || c === '')
-    if (allEmpty) { skipped++; continue }
+    if (allEmpty) { continue }
 
     const dateRaw   = row[colIdx.date]
     const amountRaw = row[colIdx.amount]
@@ -233,8 +247,12 @@ export async function parseAuditExpenseExcelFile(
       continue
     }
 
+    const payloadKey = `${opts.branchId}|${dateStr}|${company}|${amount}|${description}`.toLowerCase()
+    const occurrence = payloadCounts[payloadKey] || 0
+    payloadCounts[payloadKey] = occurrence + 1
+
     imported.push({
-      id: createExpenseId(),
+      id: generateDeterministicId(opts.branchId, dateStr, company, amount, description, occurrence),
       branchId: opts.branchId,
       branchName: opts.branchName,
       date: dateStr,
@@ -268,6 +286,7 @@ export function rowsToAuditExpenses(
   const errors: string[] = []
   let skipped = 0
   const now = new Date().toISOString()
+  const payloadCounts: Record<string, number> = {}
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
@@ -296,8 +315,12 @@ export function rowsToAuditExpenses(
     const company     = cellStr(get('company', 'vendor', 'establishment', 'supplier', 'payee'))
     if (!description && !company) { skipped++; continue }
 
+    const payloadKey = `${opts.branchId}|${dateStr}|${company}|${amount}|${description}`.toLowerCase()
+    const occurrence = payloadCounts[payloadKey] || 0
+    payloadCounts[payloadKey] = occurrence + 1
+
     imported.push({
-      id: createExpenseId(),
+      id: generateDeterministicId(opts.branchId, dateStr, company, amount, description, occurrence),
       branchId: opts.branchId,
       branchName: opts.branchName,
       date: dateStr,
