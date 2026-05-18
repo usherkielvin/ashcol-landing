@@ -59,7 +59,7 @@ export default function Login() {
 
       const appToken = data.data.token
       const appUser = data.data.user
-      localStorage.setItem('ashcol-token', appToken)
+      sessionStorage.setItem('ashcol-token', appToken)
 
       setUser({
         name: appUser.name || email,
@@ -108,7 +108,7 @@ export default function Login() {
 
         const appToken = data.data.token
         const appUser = data.data.user
-        localStorage.setItem('ashcol-token', appToken)
+        sessionStorage.setItem('ashcol-token', appToken)
 
         setUser({
           name: appUser.name || profile.name || profile.email,

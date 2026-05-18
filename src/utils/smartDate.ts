@@ -40,8 +40,8 @@ export function parseSmartDate(raw: string): string | null {
     return fmt(dt)
   }
 
-  // "May 16"  "May 16 2026"  "16 May"  "16 May 2026"  "16 may 26"
-  const parts = s.toLowerCase().replace(/,/g, '').split(/\s+/)
+  // "May 16"  "May 16 2026"  "16 May"  "16 May 2026"  "16 may 26" "29-APRIL-26"
+  const parts = s.toLowerCase().replace(/[,/-]/g, ' ').split(/\s+/)
   if (parts.length >= 2) {
     let day: number | null = null
     let month: number | null = null
@@ -51,8 +51,14 @@ export function parseSmartDate(raw: string): string | null {
       if (MONTHS[p] !== undefined) month = MONTHS[p]
       else if (/^\d+$/.test(p)) {
         const n = parseInt(p)
-        if (n > 31) year = n < 100 ? 2000 + n : n
-        else if (day === null) day = n
+        if (n > 31) {
+          year = n < 100 ? 2000 + n : n
+        } else if (day === null) {
+          day = n
+        } else {
+          // If day is already set, this must be the year (e.g. 26 for 2026)
+          year = n < 100 ? 2000 + n : n
+        }
       }
     }
     if (day !== null && month !== null) {

@@ -32,12 +32,7 @@ const SESSION_KEY = 'ashcol-user'
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
-      // Migrate token from sessionStorage to localStorage if needed
-      const oldToken = sessionStorage.getItem('ashcol-token')
-      if (oldToken && !localStorage.getItem('ashcol-token')) {
-        localStorage.setItem('ashcol-token', oldToken)
-      }
-      const stored = localStorage.getItem(SESSION_KEY)
+      const stored = sessionStorage.getItem(SESSION_KEY)
       return stored ? JSON.parse(stored) : null
     } catch {
       return null
@@ -47,17 +42,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setUser = (u: AuthUser | null) => {
     setUserState(u)
     if (u) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(u))
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(u))
     } else {
-      localStorage.removeItem(SESSION_KEY)
+      sessionStorage.removeItem(SESSION_KEY)
     }
   }
 
   const logout = () => {
     setUser(null)
-    localStorage.removeItem(SESSION_KEY)
-    localStorage.removeItem('ashcol-token')
+    sessionStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem('ashcol-token')
+    localStorage.removeItem('ashcol-token')
+    localStorage.removeItem(SESSION_KEY) // Clean up old local storage just in case
     window.location.href = '/login'
   }
 

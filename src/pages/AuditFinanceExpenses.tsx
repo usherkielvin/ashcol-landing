@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Camera, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -46,6 +46,7 @@ export default function AuditFinanceExpenses() {
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
+  const [filterMonth, setFilterMonth] = useState('All')
   const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
   const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -86,14 +87,17 @@ export default function AuditFinanceExpenses() {
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
 
-  // Suggestions derived from past expenses
+  const branchExpenses = useMemo(() =>
+    expenses.filter((e) => e.branchId === branchId), [expenses, branchId])
+
+  // Suggestions derived from past expenses (limited to current branch)
   const suggestions = useMemo(() => {
-    const companies = [...new Set(expenses.map((e) => e.company).filter(Boolean))].sort()
-    const descs = [...new Set(expenses.map((e) => e.description).filter(Boolean))].sort()
-    const people = [...new Set(expenses.map((e) => e.incurredBy).filter(Boolean))].sort()
-    const sources = [...new Set(expenses.map((e) => e.sourceOfFunds).filter(Boolean))].sort()
+    const companies = [...new Set(branchExpenses.map((e) => e.company).filter(Boolean))].sort()
+    const descs = [...new Set(branchExpenses.map((e) => e.description).filter(Boolean))].sort()
+    const people = [...new Set(branchExpenses.map((e) => e.incurredBy).filter(Boolean))].sort()
+    const sources = [...new Set(branchExpenses.map((e) => e.sourceOfFunds).filter(Boolean))].sort()
     return { companies, descs, people, sources }
-  }, [expenses])
+  }, [branchExpenses])
 
   const loadBranches = useCallback(async () => {
     try {
@@ -104,7 +108,6 @@ export default function AuditFinanceExpenses() {
       const list: BranchOption[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
       setBranches(list)
       if (isManager && user?.branchId) setBranchId(user.branchId)
-      else if (list.length > 0) setBranchId(list[0].id)
     } catch (e) { console.error(e) }
   }, [isManager, user?.branchId])
 
@@ -120,12 +123,40 @@ export default function AuditFinanceExpenses() {
   useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
   useEffect(() => { void reload() }, [reload])
 
-  const branchExpenses = useMemo(() =>
-    expenses.filter((e) => e.branchId === branchId), [expenses, branchId])
+
+
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>()
+    // Always include current month
+    const parts = formatTodayReceiptDate().split('-')
+    if (parts.length === 3) months.add(`${parts[1]} 20${parts[2]}`)
+    
+    for (const e of branchExpenses) {
+      if (!e.date) continue
+      const p = e.date.split('-')
+      if (p.length === 3) months.add(`${p[1]} 20${p[2]}`)
+    }
+    return Array.from(months).sort((a, b) => {
+      const timeA = new Date(`01 ${a}`).getTime()
+      const timeB = new Date(`01 ${b}`).getTime()
+      return timeB - timeA
+    })
+  }, [branchExpenses])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let rows = [...branchExpenses]
+
+    if (filterMonth !== 'All') {
+      rows = rows.filter(e => {
+        const parts = e.date.split('-')
+        if (parts.length === 3) {
+          return `${parts[1]} 20${parts[2]}` === filterMonth
+        }
+        return false
+      })
+    }
+
     if (q) {
       rows = rows.filter((e) =>
         e.company.toLowerCase().includes(q) ||
@@ -146,8 +177,8 @@ export default function AuditFinanceExpenses() {
           return 0
         }
 
-        let valA = a[sortConfig.key]
-        let valB = b[sortConfig.key]
+        let valA = a[sortConfig.key] ?? ''
+        let valB = b[sortConfig.key] ?? ''
         if (typeof valA === 'string') valA = valA.toLowerCase()
         if (typeof valB === 'string') valB = valB.toLowerCase()
 
@@ -158,7 +189,7 @@ export default function AuditFinanceExpenses() {
     }
 
     return rows
-  }, [branchExpenses, search, sortConfig])
+  }, [branchExpenses, search, sortConfig, filterMonth])
 
   // Group by date for daily view
   const byDate = useMemo(() => {
@@ -232,8 +263,8 @@ export default function AuditFinanceExpenses() {
     if (!form.date.trim()) { alert('Enter a valid date.'); return }
     const now = new Date().toISOString()
     const expense: AuditExpense = editing
-      ? { ...editing, date: form.date.trim(), company: form.company.trim(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
-      : { id: createExpenseId(), branchId, branchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
+      ? { ...editing, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
+      : { id: createExpenseId(), branchId, branchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
     await upsertAuditExpense(expense)
     await reload()
     setShowForm(false); setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError('')
@@ -319,13 +350,63 @@ export default function AuditFinanceExpenses() {
       setForm((f) => {
         const next = { ...f }
         if (parsed)                          { next.date = parsed;                              filled.add('date') }
-        if (data.company)                    { next.company = String(data.company);             filled.add('company') }
-        if (data.description)                { next.description = String(data.description);     filled.add('description') }
+        if (data.company)                    { next.company = String(data.company).toUpperCase();             filled.add('company') }
+        
+        let desc = data.description ? String(data.description) : ''
+        let cat = data.expenseCategory ? String(data.expenseCategory).toUpperCase() : ''
+        
+        if (cat) { next.expenseCategory = cat as AuditExpenseCategory; filled.add('expenseCategory') }
+        
+        if (desc) {
+          if (cat === 'INSTALLATION MATERIALS' || cat === 'SERVICE MATERIALS') {
+             if (!desc.toUpperCase().startsWith('MATERIALS:')) desc = `MATERIALS: ${desc}`
+          } else if (cat === 'INCENTIVES') {
+             if (!desc.toUpperCase().startsWith('INCENTIVES:')) desc = `INCENTIVES: ${desc}`
+          } else if (cat === 'MOBILIZATION') {
+             const dUpper = desc.toUpperCase()
+             if (dUpper.includes('GAS') || dUpper.includes('FUEL') || dUpper.includes('DIESEL') || dUpper.includes('PETRON') || dUpper.includes('SHELL') || dUpper.includes('CALTEX')) {
+                if (!dUpper.startsWith('GAS:')) desc = `GAS: ${desc}`
+             } else if (dUpper.includes('TOLL') || dUpper.includes('NLEX') || dUpper.includes('SLEX') || dUpper.includes('SCTEX') || dUpper.includes('CAVITEX') || dUpper.includes('SKYWAY') || dUpper.includes('AUTOSWEEP') || dUpper.includes('EASYTRIP')) {
+                if (!dUpper.startsWith('TOLL:')) desc = `TOLL: ${desc}`
+             } else if (dUpper.includes('PASSWAY') || dUpper.includes('PARKING')) {
+                if (!dUpper.startsWith('PASSWAY:')) desc = `PASSWAY: ${desc}`
+             } else {
+                if (!dUpper.startsWith('MOBILIZATION:')) desc = `MOBILIZATION: ${desc}`
+             }
+          }
+          next.description = desc
+          filled.add('description')
+        }
+
         if (data.receiptNo)                  { next.receiptNo = String(data.receiptNo);         filled.add('receiptNo') }
-        if (data.amount != null && data.amount !== '') { next.amount = String(data.amount);     filled.add('amount') }
-        if (data.expenseCategory)            { next.expenseCategory = data.expenseCategory as AuditExpenseCategory; filled.add('expenseCategory') }
-        if (data.sourceOfFunds)              { next.sourceOfFunds = String(data.sourceOfFunds); filled.add('sourceOfFunds') }
-        if (data.incurredBy)                 { next.incurredBy = String(data.incurredBy);       filled.add('incurredBy') }
+        
+        if (data.amount != null && data.amount !== '') { 
+          const numeric = parseFloat(String(data.amount).replace(/,/g, ''))
+          if (!isNaN(numeric)) {
+             next.amount = numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          } else {
+             next.amount = String(data.amount)
+          }
+          filled.add('amount') 
+        }
+
+        let sof = data.sourceOfFunds ? String(data.sourceOfFunds) : ''
+        if (!sof && cat) {
+           const sourcesForCat = branchExpenses.filter(e => e.expenseCategory === cat && e.sourceOfFunds).map(e => e.sourceOfFunds)
+           if (sourcesForCat.length > 0) {
+             const counts = sourcesForCat.reduce((acc, curr) => {
+               acc[curr] = (acc[curr] || 0) + 1
+               return acc
+             }, {} as Record<string, number>)
+             sof = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+           }
+        }
+        if (sof) {
+           next.sourceOfFunds = sof
+           filled.add('sourceOfFunds')
+        }
+
+        if (data.incurredBy)                 { next.incurredBy = String(data.incurredBy).toUpperCase();       filled.add('incurredBy') }
         return next
       })
       if (parsed) { setDateRaw(parsed); setDateError('') }
@@ -366,12 +447,7 @@ export default function AuditFinanceExpenses() {
     }
   }
 
-  const handleScanClick = (e: React.MouseEvent) => {
-    e.preventDefault()
-    if (scanning) return
-    setScanError('')
-    scanRef.current?.click()
-  }
+
 
   // Clear the "scanned" highlight when user manually edits a field
   const clearScanned = (field: string) =>
@@ -391,10 +467,7 @@ export default function AuditFinanceExpenses() {
     </div>
   )
 
-  const inp = (style?: React.CSSProperties) => ({
-    className: 'w-full rounded-lg px-3 py-2 text-sm outline-none',
-    style: { backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...style },
-  })
+
 
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Audit finance expenses are available for managers and admins only.</div>
 
@@ -467,6 +540,22 @@ export default function AuditFinanceExpenses() {
           <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
         </div>
 
+        {/* Month selector */}
+        {branchId && (
+          <div style={{ position: 'relative' }} className="w-full md:w-36 shrink-0">
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="w-full rounded-lg pl-3 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer font-semibold"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+            >
+              <option value="All">All Months</option>
+              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+          </div>
+        )}
+
         {/* Divider */}
         <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
 
@@ -519,19 +608,6 @@ export default function AuditFinanceExpenses() {
                 title="Paste an image from your clipboard"
               >
                 <ClipboardPaste size={13} /> Paste Image
-              </button>
-              <button
-                type="button"
-                disabled={scanning}
-                onClick={handleScanClick}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
-                title="Upload a photo of the receipt to auto-fill fields"
-              >
-                {scanning
-                  ? <><Loader2 size={13} className="animate-spin" /> Scanning…</>
-                  : <><Camera size={13} /> Upload File</>
-                }
               </button>
               <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
               <button onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} style={{ color: textMuted }}><X size={18} /></button>
@@ -639,9 +715,15 @@ export default function AuditFinanceExpenses() {
               {/* Amount */}
               {field(
                 <span className="flex items-center gap-1">Amount (₱) {scannedFields.has('amount') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
-                <input type="number" value={form.amount}
+                <input type="text" value={form.amount}
                   id="receipt-amount"
                   onChange={(e) => { setForm((f) => ({ ...f, amount: e.target.value })); clearScanned('amount') }}
+                  onBlur={(e) => {
+                    const numeric = parseFloat(e.target.value.replace(/,/g, ''))
+                    if (!isNaN(numeric)) {
+                       setForm((f) => ({ ...f, amount: numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }))
+                    }
+                  }}
                   placeholder="0.00"
                   className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('amount') }} />

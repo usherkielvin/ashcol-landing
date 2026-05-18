@@ -102,6 +102,19 @@ const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> =
   freeInstallation: false,
 })
 
+const formatPhone = (raw: string | null | undefined): string => {
+  if (!raw) return ''
+  const nums = raw.replace(/\D/g, '')
+  const parts: string[] = []
+  let i = 0
+  while (i < nums.length) {
+    const chunk = nums.slice(i, i + 11).replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')
+    parts.push(chunk)
+    i += 11
+  }
+  return parts.join('\n')
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DailyServiceReport() {
@@ -135,6 +148,7 @@ export default function DailyServiceReport() {
 
   // Modal state for create / edit
   const [editing, setEditing] = useState<Partial<ServiceRow> | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
   // Pending Excel import waiting for the admin to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string } | null>(null)
@@ -349,7 +363,7 @@ export default function DailyServiceReport() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-5 pb-8">
+    <div className="flex flex-col gap-5 pb-8" onClick={() => setContextMenu(null)}>
 
       {/* Header */}
       <div
@@ -410,20 +424,7 @@ export default function DailyServiceReport() {
             </div>
           )}
 
-          {/* Daily / Weekly toggle */}
-          <div className="flex items-center rounded-xl text-xs font-bold overflow-hidden"
-               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-            {(['daily', 'weekly'] as const).map(mode => {
-              const active = viewMode === mode
-              return (
-                <button key={mode} type="button" onClick={() => setViewMode(mode)}
-                        className="px-3 py-2 transition-colors capitalize"
-                        style={{ backgroundColor: active ? '#3B82F6' : 'transparent', color: active ? '#fff' : textMuted }}>
-                  {mode}
-                </button>
-              )
-            })}
-          </div>
+
 
           {/* Date picker */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
@@ -548,119 +549,38 @@ export default function DailyServiceReport() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {['#', 'Customer', 'Destination', 'Brand / Unit', 'Commit', 'Installer', 'Papers · Costing', 'Update', 'Charges', 'Payment', 'Status', 'Actions']
+                  {["#", "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'CHARGES', 'PAYMENT']
                     .map(h => (
-                      <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                          style={{ color: textMuted }}>{h}</th>
+                      <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: textMuted, fontWeight: 600, whiteSpace: 'nowrap', borderRight: `1px solid ${border}`, letterSpacing: '0.03em', fontSize: '11px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {visible.map((r, idx) => (
-                  <tr key={r.id} style={{ borderBottom: `1px solid ${border}` }}
-                      className="transition-colors cursor-pointer"
-                      onClick={() => canEdit && setEditing(r)}
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = rowHover)}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                    <td className="px-3 py-3 font-bold align-top" style={{ color: textMuted }}>{idx + 1}</td>
-
-                    <td className="px-3 py-3 align-top max-w-[14rem]">
-                      <div className="font-bold truncate" title={r.customerName || ''} style={{ color: textPrimary }}>
-                        {r.customerName || '—'}
-                      </div>
-                      <div className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>
-                        {[r.customerPhone, r.controlNumber].filter(Boolean).join(' · ') || '\u00a0'}
-                      </div>
+                  <tr key={r.id}
+                      onContextMenu={e => {
+                        e.preventDefault()
+                        if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
+                      }}
+                      style={{ borderBottom: `1px solid ${border}`, backgroundColor: contextMenu?.row.id === r.id ? (isLight ? '#eff6ff' : '#172554') : (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
+                      onMouseEnter={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = rowHover }}
+                      onMouseLeave={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c') }}>
+                    <td style={{ padding: '6px 10px', color: textMuted, borderRight: `1px solid ${border}`, fontSize: '11px' }}>
+                      <span style={{ color: textMuted, marginRight: 4 }}>{idx + 1}</span>
                     </td>
-
-                    <td className="px-3 py-3 align-top max-w-[20rem]">
-                      <div className="truncate" title={r.customerAddress || ''} style={{ color: textPrimary }}>
-                        {r.customerAddress || '—'}
-                      </div>
-                      {r.district && (
-                        <div className="text-[10px] mt-0.5 font-bold" style={{ color: textMuted }}>{r.district}</div>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3 align-top max-w-[16rem]">
-                      <div className="truncate" title={r.unitBrandModel || ''} style={{ color: textPrimary }}>
-                        {r.unitBrandModel || '—'}
-                      </div>
-                      {r.dealer && (
-                        <div className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }} title={r.dealer}>
-                          {r.dealer}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3 align-top max-w-[12rem]">
-                      <div className="line-clamp-2" title={r.commitTerms || ''} style={{ color: textPrimary }}>
-                        {r.commitTerms || '—'}
-                      </div>
-                      {r.freeInstallation && (
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider"
-                              style={{ color: '#06B6D4', backgroundColor: 'rgba(6,182,212,0.15)' }}>
-                          Free Install
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3 align-top max-w-[12rem]">
-                      <div className="truncate" title={r.technicianName || ''} style={{ color: textPrimary }}>
-                        {r.technicianName || '—'}
-                      </div>
-                      {r.scheduleTime && (
-                        <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>{r.scheduleTime}</div>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3 align-top max-w-[10rem]">
-                      <div className="text-[11px] font-bold truncate" title={r.papers || ''} style={{ color: textPrimary }}>
-                        {r.papers || '—'}
-                      </div>
-                      <div className="text-[10px] mt-0.5 truncate" title={r.costing || ''} style={{ color: textMuted }}>
-                        {r.costing || '—'}
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top max-w-[20rem]">
-                      <div className="line-clamp-2" title={r.remarks || ''} style={{ color: textPrimary }}>
-                        {r.remarks || '—'}
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-top whitespace-nowrap font-bold" style={{ color: '#10B981' }}>
-                      ₱{peso(r.amountCharged)}
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap"
-                            style={{ color: paymentColor(r.paymentStatus), backgroundColor: `${paymentColor(r.paymentStatus)}1f` }}>
-                        {r.paymentStatus || '—'}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-3 align-top">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap"
-                            style={{ color: statusColor(r.jobStatus), backgroundColor: `${statusColor(r.jobStatus)}1f` }}>
-                        {r.jobStatus || 'SCHEDULED'}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-3 align-top" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1.5">
-                        {canEdit && (
-                          <button onClick={() => setEditing(r)}
-                                  className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400"
-                                  title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
-                        )}
-                        {canDelete && (
-                          <button onClick={() => handleDelete(r)}
-                                  className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 text-red-400"
-                                  title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
-                        )}
-                      </div>
-                    </td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 140, fontSize: '11px' }}>{r.customerName || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 160, fontSize: '11px' }}>{r.customerAddress || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.district || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, maxWidth: 130, whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '11px' }}>{formatPhone(r.customerPhone)}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.unitBrandModel || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.dealer || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 130, fontSize: '11px' }}>{r.commitTerms || ''}{r.freeInstallation ? ' (FREE)' : ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.technicianName || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, fontSize: '11px' }}>{r.note || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.serviceColumn || r.serviceType || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 130, fontSize: '11px' }}>{r.remarks || ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', textAlign: 'right', fontSize: '11px' }}>{r.amountCharged ? r.amountCharged.toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, fontSize: '11px' }}>{r.paymentStatus || ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -668,6 +588,30 @@ export default function DailyServiceReport() {
           </div>
         )}
       </div>
+
+      {/* ── Right-click context menu ─────────────────────────────────── */}
+      {contextMenu && (
+        <div className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
+             onClick={e => e.stopPropagation()}>
+          <div className="rounded-xl shadow-2xl overflow-hidden min-w-[160px]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            {canEdit && (
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-blue-500/10"
+                      style={{ color: textPrimary }}
+                      onClick={() => { setEditing(contextMenu.row); setContextMenu(null) }}>
+                <Edit3 className="w-3.5 h-3.5 text-blue-400" /> Edit row
+              </button>
+            )}
+            {canDelete && (
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10"
+                      style={{ color: '#EF4444' }}
+                      onClick={() => { handleDelete(contextMenu.row); setContextMenu(null) }}>
+                <Trash2 className="w-3.5 h-3.5" /> Delete row
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Branch Picker (admin Excel import) ─────────────────────── */}
       {pendingImport && (
@@ -720,236 +664,292 @@ export default function DailyServiceReport() {
 
       {/* ── Edit / Create Modal ─────────────────────────────────────── */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-             onClick={() => setEditing(null)}>
-          <div className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
-               onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-                {editing.id ? 'Edit Service Record' : 'New Service Record'}
-              </h3>
-              <button onClick={() => setEditing(null)} className="p-1.5 rounded-lg" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
+        <div className="fixed inset-0 z-[9999] flex flex-col" style={{ backgroundColor: isLight ? '#f8fafc' : '#0a1628' }}>
+
+          {/* Sticky Header Bar */}
+          <div className="px-6 py-4 flex flex-wrap gap-4 items-center justify-between shrink-0 shadow-sm"
+               style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setEditing(null)} className="p-2 rounded-lg transition-colors"
+                      style={{ color: textMuted }} title="Close">
+                <X className="w-5 h-5" />
               </button>
+              <div>
+                <h3 className="font-black text-base tracking-tight" style={{ color: textPrimary }}>
+                  {editing.id ? 'Edit Service Record' : 'New Service Record'}
+                </h3>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
+                  {editing.id || 'Draft'}
+                </p>
+              </div>
             </div>
-
-            <div className="overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Branch (admins only — managers locked to their branch) */}
-              <Field label="Branch" required={!isManager}>
-                {isManager ? (
-                  <input value={branches.find(b => b.id === user?.branchId)?.name || 'Your Branch'} disabled
-                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold opacity-70"
-                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                ) : (
-                  <select value={editing.branchId || ''}
-                          onChange={e => setEditing({ ...editing, branchId: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                    <option value="" style={{ color: '#000' }}>— Choose branch —</option>
-                    {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
-                  </select>
-                )}
-              </Field>
-
-              <Field label="Date" required>
-                <input type="date" value={editing.reportDate || ''}
-                       onChange={e => setEditing({ ...editing, reportDate: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Customer Name" required>
-                <input value={editing.customerName || ''} onChange={e => setEditing({ ...editing, customerName: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Phone">
-                <input value={editing.customerPhone || ''} onChange={e => setEditing({ ...editing, customerPhone: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Destination / Address" full>
-                <input value={editing.customerAddress || ''} onChange={e => setEditing({ ...editing, customerAddress: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="District / City">
-                <input value={editing.district || ''} onChange={e => setEditing({ ...editing, district: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Brand / Unit Model">
-                <input value={editing.unitBrandModel || ''} onChange={e => setEditing({ ...editing, unitBrandModel: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Dealer (DLR)">
-                <input value={editing.dealer || ''} onChange={e => setEditing({ ...editing, dealer: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Service Type">
-                <select value={editing.serviceType || ''} onChange={e => {
-                          const v = e.target.value
-                          setEditing({ ...editing, serviceType: v, statusCode: v === 'INSTALLATION' ? 'I' : v === 'SERVICE' ? 'S' : editing.statusCode })
-                        }}
-                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {SERVICE_TYPES.map(t => <option key={t} value={t} style={{ color: '#000' }}>{t}</option>)}
-                </select>
-              </Field>
-
-              <Field label="Status Code (S/I)">
-                <input value={editing.statusCode || ''} onChange={e => setEditing({ ...editing, statusCode: e.target.value })}
-                       maxLength={4}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold uppercase"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Quantity">
-                <input type="number" min={1} value={editing.quantity ?? 1}
-                       onChange={e => setEditing({ ...editing, quantity: parseInt(e.target.value || '1', 10) })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label='Commit Terms — e.g. "FREE 1ST IDFT" flips Free Installation on' full>
-                <textarea rows={2} value={editing.commitTerms || ''}
-                          onChange={e => {
-                            const v = e.target.value
-                            const free = detectFreeInstall(v)
-                            setEditing({
-                              ...editing,
-                              commitTerms: v,
-                              freeInstallation: free,
-                              serviceType: free && (editing.serviceType === 'INSTALLATION' || !editing.serviceType)
-                                ? 'FREE_INSTALLATION'
-                                : (!free && editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType),
-                            })
-                          }}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                <label className="flex items-center gap-2 mt-1.5 text-[11px] font-bold cursor-pointer"
-                       style={{ color: editing.freeInstallation ? '#06B6D4' : textMuted }}>
-                  <input type="checkbox" checked={!!editing.freeInstallation}
-                         onChange={e => setEditing({
-                           ...editing,
-                           freeInstallation: e.target.checked,
-                           serviceType: e.target.checked ? 'FREE_INSTALLATION'
-                             : (editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType),
-                         })} />
-                  Free Installation
-                </label>
-              </Field>
-
-              <Field label="Installer / Technician">
-                <input value={editing.technicianName || ''} onChange={e => setEditing({ ...editing, technicianName: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Negotiator">
-                <input value={editing.negotiator || ''} onChange={e => setEditing({ ...editing, negotiator: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Schedule Time (e.g. 9:00 AM)">
-                <input value={editing.scheduleTime || ''} onChange={e => setEditing({ ...editing, scheduleTime: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Schedule Status">
-                <input value={editing.scheduleStatus || ''} onChange={e => setEditing({ ...editing, scheduleStatus: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Time Started">
-                <input value={editing.timeStarted || ''} onChange={e => setEditing({ ...editing, timeStarted: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Time Ended">
-                <input value={editing.timeEnded || ''} onChange={e => setEditing({ ...editing, timeEnded: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Installation Charges (PHP)">
-                <input type="number" min={0} step="0.01" value={editing.amountCharged ?? 0}
-                       onChange={e => setEditing({ ...editing, amountCharged: parseFloat(e.target.value || '0') })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Mode of Payment">
-                <select value={editing.paymentStatus || 'CASH'} onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
-                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {PAYMENT_MODES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
-                </select>
-              </Field>
-
-              <Field label="Job Status">
-                <select value={editing.jobStatus || 'SCHEDULED'} onChange={e => setEditing({ ...editing, jobStatus: e.target.value })}
-                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {JOB_STATUSES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
-                </select>
-              </Field>
-              <Field label="Control # / SI">
-                <input value={editing.controlNumber || ''} onChange={e => setEditing({ ...editing, controlNumber: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Papers (e.g. SEND, PENDING)">
-                <input value={editing.papers || ''} onChange={e => setEditing({ ...editing, papers: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Costing (e.g. FOR ACTUAL)">
-                <input value={editing.costing || ''} onChange={e => setEditing({ ...editing, costing: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="Relay Status">
-                <input value={editing.relayStatus || ''} onChange={e => setEditing({ ...editing, relayStatus: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-              <Field label="15 Questions (DONE / notes)">
-                <input value={editing.fifteenQuestions || ''} onChange={e => setEditing({ ...editing, fifteenQuestions: e.target.value })}
-                       className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Update / Remarks" full>
-                <textarea rows={2} value={editing.remarks || ''} onChange={e => setEditing({ ...editing, remarks: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-
-              <Field label="Internal Note" full>
-                <textarea rows={2} value={editing.note || ''} onChange={e => setEditing({ ...editing, note: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-            </div>
-
-            <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
+            <div className="flex items-center gap-3">
               <button onClick={() => setEditing(null)}
-                      className="px-4 py-2 rounded-xl text-xs font-bold border"
-                      style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                      className="px-5 py-2 text-xs font-bold rounded-xl"
+                      style={{ border: `1px solid ${inputBorder}`, color: textMuted, backgroundColor: 'transparent' }}>
                 Cancel
               </button>
               <button onClick={handleSave}
-                      className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                      className="px-6 py-2 text-xs font-bold text-white rounded-xl shadow-md"
                       style={{ backgroundColor: '#3B82F6' }}>
                 {editing.id ? 'Save Changes' : 'Create Record'}
               </button>
             </div>
+          </div>
+
+          {/* Scrollable Form Body */}
+          <div className="flex-1 overflow-y-auto p-5 md:p-10">
+            <div className="max-w-6xl mx-auto flex flex-col gap-6 pb-16">
+
+              {/* Section 1 — Customer & Location */}
+              <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: '#3B82F6' }}>① Customer &amp; Location</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Field label="Branch" required={!isManager}>
+                    {isManager ? (
+                      <input value={branches.find(b => b.id === user?.branchId)?.name || 'Your Branch'} disabled
+                             className="w-full rounded-lg px-3 py-2 text-xs font-semibold opacity-70"
+                             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <select value={editing.branchId || ''}
+                              onChange={e => setEditing({ ...editing, branchId: e.target.value })}
+                              className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        <option value="" style={{ color: '#000' }}>— Choose branch —</option>
+                        {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                      </select>
+                    )}
+                  </Field>
+                  <Field label="Date" required>
+                    <input type="date" value={editing.reportDate || ''}
+                           onChange={e => setEditing({ ...editing, reportDate: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Customer Name" required>
+                    <input value={editing.customerName || ''}
+                           onChange={e => setEditing({ ...editing, customerName: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Contact Number">
+                    <input value={editing.customerPhone || ''}
+                           onChange={e => setEditing({ ...editing, customerPhone: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="District / City">
+                    <input value={editing.district || ''}
+                           onChange={e => setEditing({ ...editing, district: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Full Address">
+                    <input value={editing.customerAddress || ''}
+                           onChange={e => setEditing({ ...editing, customerAddress: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Section 2 — Equipment & Service */}
+              <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: '#8B5CF6' }}>② Equipment &amp; Service</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Field label="Brand / Unit Model">
+                    <input value={editing.unitBrandModel || ''}
+                           onChange={e => setEditing({ ...editing, unitBrandModel: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Dealer (DLR)">
+                    <input value={editing.dealer || ''}
+                           onChange={e => setEditing({ ...editing, dealer: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Service Type">
+                    <select value={editing.serviceType || ''}
+                            onChange={e => {
+                              const v = e.target.value
+                              setEditing({ ...editing, serviceType: v, statusCode: v === 'INSTALLATION' ? 'I' : v === 'SERVICE' ? 'S' : editing.statusCode })
+                            }}
+                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      {SERVICE_TYPES.map(t => <option key={t} value={t} style={{ color: '#000' }}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Quantity">
+                    <input type="number" min={1} value={editing.quantity ?? 1}
+                           onChange={e => setEditing({ ...editing, quantity: parseInt(e.target.value || '1', 10) })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Status Code (S/I)">
+                    <input value={editing.statusCode || ''}
+                           onChange={e => setEditing({ ...editing, statusCode: e.target.value })}
+                           maxLength={4}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold uppercase"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <div className="lg:col-span-3">
+                    <Field label='Commit Terms — e.g. "FREE 1ST IDFT"' full>
+                      <textarea rows={2} value={editing.commitTerms || ''}
+                                onChange={e => {
+                                  const v = e.target.value
+                                  const free = detectFreeInstall(v)
+                                  setEditing({ ...editing, commitTerms: v, freeInstallation: free,
+                                    serviceType: free && (editing.serviceType === 'INSTALLATION' || !editing.serviceType) ? 'FREE_INSTALLATION'
+                                      : (!free && editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType) })
+                                }}
+                                className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      <label className="flex items-center gap-2 mt-1.5 text-[11px] font-bold cursor-pointer"
+                             style={{ color: editing.freeInstallation ? '#06B6D4' : textMuted }}>
+                        <input type="checkbox" checked={!!editing.freeInstallation}
+                               onChange={e => setEditing({ ...editing, freeInstallation: e.target.checked,
+                                 serviceType: e.target.checked ? 'FREE_INSTALLATION'
+                                   : (editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType) })} />
+                        Free Installation Verified
+                      </label>
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3 — Personnel & Schedule */}
+              <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: '#F59E0B' }}>③ Personnel &amp; Schedule</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Field label="Installer / Technician">
+                    <input value={editing.technicianName || ''}
+                           onChange={e => setEditing({ ...editing, technicianName: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Negotiator">
+                    <input value={editing.negotiator || ''}
+                           onChange={e => setEditing({ ...editing, negotiator: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Schedule Time (e.g. 9:00 AM)">
+                    <input value={editing.scheduleTime || ''}
+                           onChange={e => setEditing({ ...editing, scheduleTime: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Time Started">
+                    <input value={editing.timeStarted || ''}
+                           onChange={e => setEditing({ ...editing, timeStarted: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Time Ended">
+                    <input value={editing.timeEnded || ''}
+                           onChange={e => setEditing({ ...editing, timeEnded: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Schedule Status">
+                    <input value={editing.scheduleStatus || ''}
+                           onChange={e => setEditing({ ...editing, scheduleStatus: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Section 4 — Finance & Closing */}
+              <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: '#10B981' }}>④ Finance &amp; Closing</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Field label="Installation Charges (PHP)">
+                    <input type="number" min={0} step="0.01" value={editing.amountCharged ?? 0}
+                           onChange={e => setEditing({ ...editing, amountCharged: parseFloat(e.target.value || '0') })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Mode of Payment">
+                    <select value={editing.paymentStatus || 'CASH'}
+                            onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
+                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      {PAYMENT_MODES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Job Status">
+                    <select value={editing.jobStatus || 'SCHEDULED'}
+                            onChange={e => setEditing({ ...editing, jobStatus: e.target.value })}
+                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      {JOB_STATUSES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Control # / SI">
+                    <input value={editing.controlNumber || ''}
+                           onChange={e => setEditing({ ...editing, controlNumber: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Relay Status">
+                    <input value={editing.relayStatus || ''}
+                           onChange={e => setEditing({ ...editing, relayStatus: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Costing (e.g. FOR ACTUAL)">
+                    <input value={editing.costing || ''}
+                           onChange={e => setEditing({ ...editing, costing: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Papers (e.g. SEND, PENDING)">
+                    <input value={editing.papers || ''}
+                           onChange={e => setEditing({ ...editing, papers: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="15 Questions (DONE / notes)">
+                    <input value={editing.fifteenQuestions || ''}
+                           onChange={e => setEditing({ ...editing, fifteenQuestions: e.target.value })}
+                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                           style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="Update / Remarks" full>
+                      <textarea rows={2} value={editing.remarks || ''}
+                                onChange={e => setEditing({ ...editing, remarks: e.target.value })}
+                                className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    </Field>
+                    <Field label="Internal Note" full>
+                      <textarea rows={2} value={editing.note || ''}
+                                onChange={e => setEditing({ ...editing, note: e.target.value })}
+                                className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          {/* Bottom Action Bar */}
+          <div className="shrink-0 px-6 py-4 flex items-center justify-end gap-3"
+               style={{ backgroundColor: cardBg, borderTop: `2px solid ${border}` }}>
+            <button onClick={() => setEditing(null)}
+                    className="px-5 py-2.5 text-xs font-bold rounded-xl"
+                    style={{ border: `1px solid ${inputBorder}`, color: textMuted, backgroundColor: 'transparent' }}>
+              Cancel
+            </button>
+            <button onClick={handleSave}
+                    className="px-7 py-2.5 text-xs font-bold text-white rounded-xl"
+                    style={{ backgroundColor: '#3B82F6' }}>
+              {editing.id ? 'Save Changes' : 'Create Record'}
+            </button>
+          </div>
           </div>
         </div>
       )}
