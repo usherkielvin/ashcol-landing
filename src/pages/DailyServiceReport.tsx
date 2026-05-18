@@ -102,17 +102,40 @@ const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> =
   freeInstallation: false,
 })
 
-const formatPhone = (raw: string | null | undefined): string => {
-  if (!raw) return ''
-  const nums = raw.replace(/\D/g, '')
-  const parts: string[] = []
-  let i = 0
-  while (i < nums.length) {
-    const chunk = nums.slice(i, i + 11).replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')
-    parts.push(chunk)
-    i += 11
+const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNode => {
+  if (!raw) return null
+  
+  let digits = raw.replace(/\D/g, '')
+  const numbers: string[] = []
+
+  while (digits.length >= 10) {
+    if (digits.startsWith('63') && digits.length >= 12) {
+      numbers.push('0' + digits.slice(2, 12))
+      digits = digits.slice(12)
+    } else if (digits.startsWith('09') && digits.length >= 11) {
+      numbers.push(digits.slice(0, 11))
+      digits = digits.slice(11)
+    } else if (digits.startsWith('9') && digits.length >= 10) {
+      numbers.push('0' + digits.slice(0, 10))
+      digits = digits.slice(10)
+    } else {
+      digits = digits.slice(1) // Shift 1 if invalid format to keep looking
+    }
   }
-  return parts.join('\n')
+
+  const finalNumbers = numbers.slice(0, 2).map(num => {
+    return num.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')
+  })
+
+  if (finalNumbers.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-1">
+      {finalNumbers.map((num, i) => (
+        <span key={i} className="whitespace-nowrap">{num}</span>
+      ))}
+    </div>
+  )
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -175,6 +198,12 @@ export default function DailyServiceReport() {
       setBranches(list.map(b => ({ id: b.id, name: b.name })))
     } catch (e) { console.error(e) }
   }, [])
+
+  useEffect(() => {
+    if (isAdmin && !branchFilter && branches.length > 0) {
+      setBranchFilter(branches[0].id)
+    }
+  }, [isAdmin, branchFilter, branches])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -405,40 +434,6 @@ export default function DailyServiceReport() {
             )}
           </div>
 
-          {/* Branch filter (admin only — managers always see their own branch) */}
-          {isAdmin && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
-                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-              <Building2 className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-              <select
-                value={branchFilter}
-                onChange={e => setBranchFilter(e.target.value)}
-                className="bg-transparent outline-none text-xs"
-                style={{ color: textPrimary }}
-              >
-                <option value="" style={{ color: '#000' }}>All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-
-
-          {/* Date picker */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
-               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <CalendarDays className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                   className="bg-transparent outline-none text-xs" style={{ color: textPrimary }} />
-            {viewMode === 'weekly' && (
-              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#3B82F6' }}>
-                {weekRange.label}
-              </span>
-            )}
-          </div>
-
           {/* Refresh */}
           <button type="button" onClick={fetchRows}
                   className="p-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
@@ -509,14 +504,45 @@ export default function DailyServiceReport() {
 
       {/* Table */}
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${border}` }}>
-          <Wrench className="w-4 h-4" style={{ color: '#3B82F6' }} />
-          <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Service Records — {viewMode === 'weekly'
-              ? `Week of ${weekRange.label}`
-              : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </h3>
-          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+        <div className="px-5 py-4 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-blue-400"
+                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                <Building2 className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
+                <select
+                  value={branchFilter}
+                  onChange={e => setBranchFilter(e.target.value)}
+                  className="bg-transparent outline-none text-xs font-bold cursor-pointer"
+                  style={{ color: textPrimary }}
+                >
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-sm"
+                 style={{ backgroundColor: 'rgba(59,130,246,0.12)', border: `1px solid rgba(59,130,246,0.2)`, color: '#3B82F6' }}>
+              <CalendarDays className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                {viewMode !== 'weekly' && (
+                  <span className="uppercase tracking-widest opacity-80 border-r border-blue-500/20 pr-2">
+                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
+                  </span>
+                )}
+                {viewMode === 'weekly' ? (
+                  <span className="tracking-tight">{weekRange.label}</span>
+                ) : (
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                         className="bg-transparent outline-none cursor-pointer" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
                 style={{ color: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.12)' }}>
             {visible.length} records
           </span>
@@ -549,7 +575,7 @@ export default function DailyServiceReport() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {["#", "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'CHARGES', 'PAYMENT']
+                  {["CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'CHARGES', 'PAYMENT']
                     .map(h => (
                       <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: textMuted, fontWeight: 600, whiteSpace: 'nowrap', borderRight: `1px solid ${border}`, letterSpacing: '0.03em', fontSize: '11px' }}>{h}</th>
                   ))}
@@ -565,13 +591,14 @@ export default function DailyServiceReport() {
                       style={{ borderBottom: `1px solid ${border}`, backgroundColor: contextMenu?.row.id === r.id ? (isLight ? '#eff6ff' : '#172554') : (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
                       onMouseEnter={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = rowHover }}
                       onMouseLeave={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c') }}>
-                    <td style={{ padding: '6px 10px', color: textMuted, borderRight: `1px solid ${border}`, fontSize: '11px' }}>
-                      <span style={{ color: textMuted, marginRight: 4 }}>{idx + 1}</span>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 140, fontSize: '11px' }}>
+                      <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>{r.customerName || ''}
                     </td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 140, fontSize: '11px' }}>{r.customerName || ''}</td>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 160, fontSize: '11px' }}>{r.customerAddress || ''}</td>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.district || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, maxWidth: 130, whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '11px' }}>{formatPhone(r.customerPhone)}</td>
+                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, maxWidth: 130, whiteSpace: 'nowrap', lineHeight: '1.6', fontSize: '11px' }}>
+                      <FormatPhone raw={r.customerPhone} />
+                    </td>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.unitBrandModel || ''}</td>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.dealer || ''}</td>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 130, fontSize: '11px' }}>{r.commitTerms || ''}{r.freeInstallation ? ' (FREE)' : ''}</td>
