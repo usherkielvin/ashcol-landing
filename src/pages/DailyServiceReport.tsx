@@ -396,58 +396,36 @@ export default function DailyServiceReport() {
 
       {/* Header */}
       <div
-        className="rounded-2xl p-5 md:p-7 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        className="rounded-2xl p-5 md:p-6 relative overflow-hidden"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
       >
-        <div className="absolute -top-10 -right-10 w-52 h-52 rounded-full opacity-[0.05] pointer-events-none"
-             style={{ background: 'radial-gradient(circle, #3B82F6, transparent)' }} />
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#3B82F6' }}>
-            Service Hub
-          </p>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-            Daily Service Report
-          </h2>
-          <p className="text-sm" style={{ color: textMuted }}>
-            Per-branch service / installation visits, customer details &amp; technician schedule
+        {/* Title Section */}
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Wrench className="w-5 h-5" style={{ color: '#3B82F6' }} />
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight" style={{ color: textPrimary }}>
+              Daily Service Report
+            </h2>
+          </div>
+          <p className="text-xs" style={{ color: textMuted }}>
+            Service and installation records
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {/* Search — one bar filters all visible columns */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold min-w-0"
-               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
-            <input
-              type="text"
-              placeholder="Search name, address, phone, installer, dealer, status, amount…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs min-w-0 flex-1 w-40 md:w-72 lg:w-96"
-              style={{ color: textPrimary }}
-            />
-            {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery('')} title="Clear search"
-                      className="shrink-0 p-0.5 rounded-md hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+        {/* Actions */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Record Counter */}
+          <div className="px-4 py-2 rounded-lg text-sm font-bold"
+               style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6' }}>
+            {visible.length} {visible.length === 1 ? 'record' : 'records'}
           </div>
 
-          {/* Refresh */}
-          <button type="button" onClick={fetchRows}
-                  className="p-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}
-                  title="Refresh">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          {/* Add */}
+          {/* Add Service */}
           {canEdit && (
             <button type="button"
                     onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : ''))}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                    style={{ backgroundColor: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.35)', color: '#3B82F6' }}>
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105"
+                    style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#3B82F6' }}>
               <Plus className="w-4 h-4" /> Add Service
             </button>
           )}
@@ -463,16 +441,10 @@ export default function DailyServiceReport() {
                         : isManager
                           ? `Import only YOUR branch's rows into ${date}`
                           : `Import every branch into ${date}`}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                      style={{
-                        backgroundColor: '#3B82F6', borderColor: '#3B82F6', color: '#fff',
-                        opacity: (importing || viewMode === 'weekly') ? 0.5 : 1,
-                        cursor: viewMode === 'weekly' ? 'not-allowed' : undefined,
-                      }}>
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: '#3B82F6', color: '#fff' }}>
                 <Upload className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
-                {importing
-                  ? 'Importing…'
-                  : `${isManager ? 'Import My Branch' : 'Import Excel'} for ${new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                {importing ? 'Importing…' : 'Import'}
               </button>
             </>
           )}
@@ -539,6 +511,26 @@ export default function DailyServiceReport() {
                          className="bg-transparent outline-none cursor-pointer" />
                 )}
               </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs min-w-0"
+                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-xs min-w-0 w-32 md:w-48"
+                style={{ color: textPrimary }}
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery('')} title="Clear"
+                        className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 

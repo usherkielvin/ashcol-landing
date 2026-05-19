@@ -99,6 +99,42 @@ export default function AuditFinanceExpenses() {
     return { companies, descs, people, sources }
   }, [branchExpenses])
 
+  const latestDateStr = useMemo(() => {
+    let maxTime = 0
+    let maxDateStr = ''
+    for (const e of branchExpenses) {
+      if (!e.date) continue
+      const t = dateToTime(e.date)
+      if (t > maxTime) {
+        maxTime = t
+        maxDateStr = e.date
+      }
+    }
+    let targetDate = new Date()
+    if (maxDateStr) {
+      const parts = maxDateStr.split('-')
+      if (parts.length === 3) {
+        const d = parseInt(parts[0])
+        const mStr = parts[1].toLowerCase()
+        const y = parseInt(parts[2])
+        const fullYear = y < 100 ? 2000 + y : y
+        const monthNames: Record<string, number> = {
+          jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+          jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+        }
+        const mIdx = monthNames[mStr]
+        if (mIdx !== undefined) {
+          targetDate = new Date(fullYear, mIdx, d)
+        }
+      }
+    }
+    return targetDate.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    })
+  }, [branchExpenses])
+
   const loadBranches = useCallback(async () => {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -122,6 +158,14 @@ export default function AuditFinanceExpenses() {
 
   useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
   useEffect(() => { void reload() }, [reload])
+
+  useEffect(() => {
+    if (showForm) {
+      setTimeout(() => {
+        document.getElementById('receipt-date')?.focus()
+      }, 50)
+    }
+  }, [showForm])
 
 
 
@@ -267,7 +311,17 @@ export default function AuditFinanceExpenses() {
       : { id: createExpenseId(), branchId, branchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
     await upsertAuditExpense(expense)
     await reload()
-    setShowForm(false); setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError('')
+    if (editing) {
+      // Updating an existing receipt — close the form
+      setShowForm(false); setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError('')
+      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+    } else {
+      // New receipt saved — keep form open, clear fields (including date) for next entry
+      setForm({ ...emptyForm(), date: '' }); setDateRaw(''); setDateError('')
+      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+      // Focus the first field for quick next entry
+      setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
+    }
   }
 
   const handleClearBranchReceipts = async () => {
@@ -491,7 +545,7 @@ export default function AuditFinanceExpenses() {
               if (showForm) {
                 setShowForm(false); setEditing(null)
               } else {
-                setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError(''); setShowForm(true)
+                setEditing(null); setForm({ ...emptyForm(), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
               }
             }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-200"
@@ -508,13 +562,6 @@ export default function AuditFinanceExpenses() {
             <Upload size={16} />{importing ? 'Importing…' : 'Import Excel'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
-          {branchId && branchExpenses.length > 0 && (
-            <button type="button" onClick={handleClearBranchReceipts}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 shadow"
-              style={{ backgroundColor: danger }}>
-              <Trash2 size={16} /> Clear Branch
-            </button>
-          )}
         </div>
       </div>
 
@@ -522,7 +569,7 @@ export default function AuditFinanceExpenses() {
       <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row gap-2 items-center"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         {/* Branch selector */}
-        <div style={{ position: 'relative' }} className="w-full md:w-52 shrink-0">
+        <div style={{ position: 'relative' }} className="w-full md:w-64 shrink-0">
           <Building2 size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
           <select
             value={branchId}
@@ -656,7 +703,7 @@ export default function AuditFinanceExpenses() {
                     id="receipt-date"
                     onChange={(e) => { setDateRaw(e.target.value); setDateError(''); clearScanned('date') }}
                     onBlur={(e) => handleDateBlur(e.target.value)}
-                    placeholder="May 16, 16 May, 16-May-26"
+                    placeholder={latestDateStr}
                     className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }} />
                   {dateError
@@ -917,6 +964,24 @@ export default function AuditFinanceExpenses() {
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {/* ── Danger zone footer ── */}
+          {branchExpenses.length > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 mt-0"
+              style={{ borderTop: `1px solid ${danger}33`, backgroundColor: `${danger}08` }}>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: danger }}>Danger Zone</span>
+                <span className="text-xs" style={{ color: textMuted }}>Permanently deletes all {branchExpenses.length} receipt{branchExpenses.length !== 1 ? 's' : ''} for <strong style={{ color: textPrimary }}>{branchName}</strong>. This cannot be undone.</span>
+              </div>
+              <button type="button" onClick={handleClearBranchReceipts}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
+                style={{ backgroundColor: 'transparent', border: `1.5px solid ${danger}`, color: danger }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = danger; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = danger }}>
+                <Trash2 size={14} /> Clear All Receipts
+              </button>
             </div>
           )}
         </div>
