@@ -20,6 +20,7 @@ import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import DailySalesForm from './pages/DailySalesForm'
 import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
+import DTRScanner from './pages/DTRScanner'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -76,6 +77,7 @@ export default function App() {
               <Route path="/daily-report" element={<DailySalesForm />} />
               <Route path="/lineup" element={<LineUp />} />
               <Route path="/service-report" element={<DailyServiceReport />} />
+              <Route path="/dtr-scanner" element={<DTRScanner />} />
             </Route>
           </Routes>
         </BrowserRouter>

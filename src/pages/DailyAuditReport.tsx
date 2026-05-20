@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
-  Search, ArrowUp, ArrowDown, Trophy, Award, Crown
+  Search, ArrowUp, ArrowDown, Trophy, Award, Crown, Trash2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -66,6 +66,7 @@ export default function DailyAuditReport() {
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [importing, setImporting] = useState(false)
+  const [clearing, setClearing]   = useState(false)
   const [viewMode, setViewMode] = useState<'single' | 'range'>('single')
   // NOTE: use LOCAL date (not toISOString which is UTC) so a Filipino user at
   // 1 AM doesn't see "yesterday" as the default.
@@ -190,6 +191,42 @@ export default function DailyAuditReport() {
     } finally {
       setImporting(false)
       e.target.value = ''
+    }
+  }
+
+  const handleClearDate = async () => {
+    const targetDate = viewMode === 'single' ? date : rangeFrom
+    const prettyDate = viewMode === 'single'
+      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+
+    const confirmationMsg = isManager
+      ? `Are you sure you want to clear your branch's daily report for ${prettyDate}? This cannot be undone.`
+      : `Are you sure you want to clear ALL branch reports for ${prettyDate}? This will permanently delete all records for this date.`
+
+    const confirmed = window.confirm(confirmationMsg)
+    if (!confirmed) return
+
+    setClearing(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${encodeURIComponent(targetDate)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      if (res.ok) {
+        alert('Data cleared successfully.')
+        fetchAudit()
+      } else {
+        const error = await res.json().catch(() => ({}))
+        alert(error.error || `Clear failed (HTTP ${res.status})`)
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Network error during delete operation')
+    } finally {
+      setClearing(false)
     }
   }
 
@@ -496,6 +533,29 @@ export default function DailyAuditReport() {
                 {importing
                   ? 'Importing…'
                   : `Import Excel for ${viewMode === 'single' ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+              </button>
+
+              <button
+                id="audit-clear-btn"
+                type="button"
+                disabled={clearing || (viewMode === 'range' && rangeFrom !== rangeTo)}
+                onClick={handleClearDate}
+                title={viewMode === 'range' && rangeFrom !== rangeTo
+                  ? 'Clear data is per-day. Switch to Daily Snapshot or select a single day range.'
+                  : isManager
+                    ? `Will clear only YOUR branch's row for ${viewMode === 'single' ? date : rangeFrom}.`
+                    : `Will clear every branch row for ${viewMode === 'single' ? date : rangeFrom}.`}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                style={{
+                  backgroundColor: 'transparent',
+                  borderColor: '#EF4444',
+                  color: '#EF4444',
+                  opacity: (clearing || (viewMode === 'range' && rangeFrom !== rangeTo)) ? 0.5 : 1,
+                  cursor: (viewMode === 'range' && rangeFrom !== rangeTo) ? 'not-allowed' : undefined,
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                {clearing ? 'Clearing…' : 'Clear Reports'}
               </button>
             </>
           )}
