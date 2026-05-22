@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck, ShieldCheck,
+  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck,
   PanelLeftClose, PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
   HardHat, Receipt, CalendarCheck, Scan
 } from 'lucide-react'
@@ -31,11 +31,15 @@ export default function DashboardLayout() {
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
   // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
-  useEffect(() => { setNavPicBroken(false) }, [user?.picture])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNavPicBroken(false)
+  }, [user?.picture])
 
   useEffect(() => {
     const r = (user?.role || '').toLowerCase()
     if (r !== 'manager' || !user?.branchId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBranchLabel(null)
       return
     }
@@ -69,7 +73,6 @@ export default function DashboardLayout() {
     { name: 'Overview',   path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',    path: '/tickets',   icon: TicketIcon },
     { name: 'Branches',   path: '/branches',  icon: Building2,  roles: ['admin'] },
-    { name: 'Managers',   path: '/managers',  icon: ShieldCheck, roles: ['admin'] },
     { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
     { name: 'Inventory',     path: '/inventory',    icon: Package,           roles: ['admin', 'manager'] },

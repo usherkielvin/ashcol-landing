@@ -12,7 +12,6 @@ import Customers from './pages/Customers'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
-import Managers from './pages/Managers'
 import Inventory from './pages/Inventory'
 import Analytics from './pages/Analytics'
 import DailyAuditReport from './pages/DailyAuditReport'
@@ -67,7 +66,6 @@ export default function App() {
               <Route path="/create-ticket" element={<CreateTicket />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
-              <Route path="/managers" element={<Managers />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/inventory" element={<Inventory />} />
