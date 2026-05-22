@@ -6,7 +6,6 @@ import type {
 } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { monthKeyFromDateKey, parseExpenseDateKey } from './auditExpenseDates'
-import { createExpenseId } from './auditExpenseStorage'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

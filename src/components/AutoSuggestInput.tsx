@@ -19,7 +19,7 @@ interface Props {
 
 export default function AutoSuggestInput({
   id, value, onChange, onBlur, suggestions, placeholder,
-  inputBg, inputBorder, textPrimary, textMuted, accent, className = '',
+  inputBg, inputBorder, textPrimary, accent, className = '',
   inputClassName = '', inputStyle = {},
 }: Props) {
   const [open, setOpen] = useState(false)

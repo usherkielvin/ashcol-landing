@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Wrench, RefreshCw, CalendarDays, Upload, Plus, Edit3, Trash2,
+  Wrench, CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -165,7 +165,7 @@ export default function DailyServiceReport() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [date, setDate] = useState(todayLocal)
-  const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily')
+  const [viewMode] = useState<'daily' | 'weekly'>('daily')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -370,25 +370,6 @@ export default function DailyServiceReport() {
     }),
     { count: 0, qty: 0, amount: 0, completed: 0, cancelled: 0, freeInstalls: 0 }
   ), [visible])
-
-  const statusColor = (s: string | null) => {
-    switch (s) {
-      case 'COMPLETED':   return '#10B981'
-      case 'IN_PROGRESS': return '#3B82F6'
-      case 'CANCELLED':   return '#EF4444'
-      case 'RESCHEDULED': return '#F59E0B'
-      case 'SCHEDULED':   return '#8B5CF6'
-      default: return textMuted
-    }
-  }
-
-  const paymentColor = (p: string | null) => {
-    const u = (p || '').toUpperCase()
-    if (u === 'PAID' || u === 'CASH' || u === 'GCASH' || u === 'BANK TRANSFER' || u === 'CHEQUE') return '#10B981'
-    if (u === 'PARTIAL' || u === 'BALANCE') return '#F59E0B'
-    if (u === 'UNPAID' || u === '') return '#EF4444'
-    return '#3B82F6'
-  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
