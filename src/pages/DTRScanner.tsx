@@ -192,9 +192,40 @@ export default function DTRScanner() {
     await processImage(file)
   }
 
+  const processImageRef = useRef(processImage)
+  useEffect(() => {
+    processImageRef.current = processImage
+  })
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (scanning) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (blob) {
+            const file = new File([blob], 'pasted-dtr.png', { type: item.type })
+            void processImageRef.current(file)
+            return
+          }
+        }
+      }
+    }
+    window.addEventListener('paste', handleGlobalPaste)
+    return () => window.removeEventListener('paste', handleGlobalPaste)
+  }, [scanning])
+
   const handlePasteClick = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (scanning) return
+
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      setScanError('Clipboard button is disabled on HTTP. Please press Ctrl+V (or Cmd+V) anywhere on the page to paste the image.')
+      return
+    }
+
     try {
       const items = await navigator.clipboard.read()
       for (const item of items) {

@@ -3,7 +3,7 @@ import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
   Search, ArrowUp, ArrowDown, Trophy, Award, Crown, Trash2,
-  Minimize2, Maximize2, Pencil, Check
+  Minimize2, Maximize2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'

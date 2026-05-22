@@ -287,9 +287,40 @@ export default function LineUp() {
     const f = e.target.files?.[0]; if (f) processLineupImage(f)
   }
 
+  const processLineupImageRef = useRef(processLineupImage)
+  useEffect(() => {
+    processLineupImageRef.current = processLineupImage
+  })
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (scanning) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (blob) {
+            const file = new File([blob], 'pasted.png', { type: item.type })
+            void processLineupImageRef.current(file)
+            return
+          }
+        }
+      }
+    }
+    window.addEventListener('paste', handleGlobalPaste)
+    return () => window.removeEventListener('paste', handleGlobalPaste)
+  }, [scanning])
+
   const handlePasteScan = async () => {
     if (scanning) return
     setScanError('')
+
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      setScanError('Clipboard button is disabled on HTTP. Please press Ctrl+V (or Cmd+V) anywhere on the page to paste the image.')
+      return
+    }
+
     try {
       const items = await navigator.clipboard.read()
       for (const item of items) {
