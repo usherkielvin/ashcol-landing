@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, MapPin, CheckCircle, XCircle, Users, Phone, Mail, ShieldCheck, RefreshCw } from 'lucide-react'
+import { Search, MapPin, Users, Phone, Mail, RefreshCw, Building2, ExternalLink } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
@@ -39,7 +39,6 @@ export default function Branches() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterActive, setFilterActive] = useState<boolean | null>(null)
 
   const isAllowed = user?.role?.toLowerCase() === 'admin'
 
@@ -52,11 +51,6 @@ export default function Branches() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const theadBg     = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
   const rowHover    = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
-
-  const getBranchActive = (branch: Branch) => {
-    const hasManager = !!(branch.managerName || branch.manager_name)
-    return !!branch.isActive && hasManager
-  }
 
   const fetchBranches = async () => {
     if (!isAllowed) { setLoading(false); return }
@@ -101,14 +95,17 @@ export default function Branches() {
         }
       })
       setBranches(merged)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load branches')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load branches')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { fetchBranches() }, [isAllowed, user?.role, user?.branchId])
+  useEffect(() => {
+    fetchBranches()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAllowed, user?.role, user?.branchId])
 
   if (!isAllowed) {
     return (
@@ -123,8 +120,6 @@ export default function Branches() {
   }
 
   const filteredBranches = branches.filter(b => {
-    const active = getBranchActive(b)
-    if (filterActive !== null && active !== filterActive) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       return b.name.toLowerCase().includes(q)
@@ -135,8 +130,9 @@ export default function Branches() {
     return true
   })
 
-  const activeCnt   = branches.filter(b => getBranchActive(b)).length
-  const inactiveCnt = branches.length - activeCnt
+  const headOffice = filteredBranches.find(b => b.isHQ)
+  const serviceLocations = filteredBranches.filter(b => !b.isHQ)
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,9 +142,7 @@ export default function Branches() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: textPrimary }}>Branches</h2>
           <p className="text-sm" style={{ color: textMuted }}>
-            {user?.role?.toLowerCase() === 'manager'
-              ? (loading ? 'Loading…' : 'Your assigned service area and contact details.')
-              : (loading ? 'Loading…' : `${branches.length} branch${branches.length !== 1 ? 'es' : ''} · ${activeCnt} active`)}
+            {loading ? 'Loading…' : 'Centrally managed from our Head Office in Taguig, delivering services across all branch locations.'}
           </p>
         </div>
         <button
@@ -171,37 +165,16 @@ export default function Branches() {
       )}
 
       {/* ── Toolbar ──────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        {/* Tabs */}
-        <div className="flex p-1 rounded-xl border w-full sm:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
-          {[
-            { label: 'All', value: null, color: 'slate' },
-            { label: 'Active', value: true, color: 'emerald' },
-            { id: 'inactive', label: 'Inactive', value: false, color: 'amber' }
-          ].map(t => (
-            <button
-              key={t.label}
-              onClick={() => setFilterActive(t.value)}
-              className={`flex-1 sm:flex-none px-5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-widest ${
-                filterActive === t.value 
-                  ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-sm' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-600 text-white shadow-sm'
-                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
+      <div className="flex justify-between items-center gap-4">
         {/* Search */}
         <div
           style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-          className="flex items-center border rounded-xl px-3 py-2.5 w-full sm:w-64 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
+          className="flex items-center border rounded-xl px-3 py-2.5 w-full sm:w-80 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
         >
           <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
           <input
             type="text"
-            placeholder="Search branches…"
+            placeholder="Search branches by name, city, address…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{ color: textPrimary }}
@@ -223,165 +196,186 @@ export default function Branches() {
             <MapPin className="w-7 h-7" style={{ color: textMuted }} />
           </div>
           <h3 className="text-base font-bold mb-1" style={{ color: textPrimary }}>No branches found</h3>
-          <p className="text-sm" style={{ color: textMuted }}>Try adjusting your search or filter.</p>
+          <p className="text-sm" style={{ color: textMuted }}>Try adjusting your search.</p>
         </div>
 
       ) : (
-        <>
-          {/* ── Mobile / sm  –  stacked cards ──────────────── */}
-          <div className="flex flex-col gap-3 lg:hidden">
-            {filteredBranches.map((branch, idx) => {
-              const accent = accentFor(idx)
-              const manager  = branch.managerName || branch.manager_name
-              const isActive = getBranchActive(branch)
-              const staffCount = manager ? (branch.employee_count ?? 0) : 0
-              return (
-                <div key={branch.id ?? idx} className="rounded-2xl border overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, borderColor: border }}>
-                  {/* accent strip */}
-                  <div className="h-1" style={{ backgroundColor: accent }} />
-
-                  <div className="p-4 flex flex-col gap-3">
-                    {/* title row */}
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
-                        <MapPin className="w-5 h-5" style={{ color: accent }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-[15px] leading-tight" style={{ color: textPrimary }}>{branch.name}</div>
-                        <div className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{branch.location}</div>
-                      </div>
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wide shrink-0 ${isActive ? 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800' : 'text-red-500 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
-                        {isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        {isActive ? 'Active' : 'Inactive'}
-                      </span>
+        <div className="flex flex-col gap-6">
+          {/* ── Head Office (Taguig) Central Headquarters ── */}
+          {headOffice && (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-[#10B981]" style={{ letterSpacing: '0.1em' }}>Central Headquarters</h3>
+              <div 
+                className="rounded-2xl border p-5 flex flex-col md:flex-row gap-5 items-start transition-all duration-300" 
+                style={{ 
+                  backgroundColor: cardBg, 
+                  borderColor: '#10B981', 
+                  boxShadow: '0 4px 20px -2px rgba(16, 185, 129, 0.08)' 
+                }}
+              >
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
+                  <Building2 className="w-6 h-6 text-[#10B981]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+                    <h4 className="text-base font-black leading-none" style={{ color: textPrimary }}>{headOffice.name}</h4>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900">
+                      Managing Headquarters
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium mb-3" style={{ color: textMuted }}>{headOffice.address}</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t animate-fade-in" style={{ borderColor: border }}>
+                    <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: textPrimary }}>
+                      <Phone className="w-4 h-4 text-[#10B981] shrink-0" />
+                      <span>{headOffice.phones ? headOffice.phones.join(' · ') : headOffice.phone}</span>
                     </div>
-
-                    {/* info */}
-                    <div className="flex flex-col gap-1.5 text-sm">
-                      {branch.address && (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: textMuted }} />
-                          <span style={{ color: textPrimary }}>{branch.address}</span>
-                        </div>
-                      )}
-                      {branch.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                          <span style={{ color: textPrimary }}>{branch.phone}</span>
-                        </div>
-                      )}
-                      {branch.email && (
-                        <div className="flex items-center gap-2">
-                          <Mail className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                          <span className="truncate" style={{ color: textPrimary }}>{branch.email}</span>
-                        </div>
-                      )}
+                    <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: textPrimary }}>
+                      <Mail className="w-4 h-4 text-[#10B981] shrink-0" />
+                      <span className="truncate">{headOffice.email}</span>
                     </div>
-
-                    {/* footer stats */}
-                    <div className="flex items-center gap-3 pt-2 border-t" style={{ borderColor: border }}>
-                      {manager ? (
-                        <div className="flex items-center gap-1.5 text-xs font-medium flex-1 min-w-0">
-                          <ShieldCheck className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
-                          <span className="truncate" style={{ color: textPrimary }}>{manager}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs flex-1" style={{ color: textMuted }}>
-                          <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                          <span className="italic">No manager</span>
-                        </div>
-                      )}
-                      {staffCount > 0 && (
-                        <div className="flex items-center gap-1.5 text-xs font-medium">
-                          <Users className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
-                          <span style={{ color: textPrimary }}>{staffCount} staff</span>
-                        </div>
-                      )}
-                    </div>
+                    {headOffice.mapUrl && (
+                      <a
+                        href={headOffice.mapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs font-bold text-[#10B981] hover:underline hover:opacity-80 transition-opacity"
+                      >
+                        <span>Open in Google Maps</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
                   </div>
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            </div>
+          )}
 
-          {/* Desktop Table */}
-          <div className="hidden lg:block overflow-hidden rounded-2xl border shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
-            <table className="w-full text-left border-collapse table-fixed">
-              <thead>
-                <tr style={{ backgroundColor: theadBg }}>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Branch</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Address</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[20%]" style={{ color: textMuted }}>Contact</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%]" style={{ color: textMuted }}>Manager</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[15%] text-center" style={{ color: textMuted }}>Status</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                {filteredBranches.map((branch, idx) => {
-                  const accent   = accentFor(idx)
-                  const manager  = branch.managerName || branch.manager_name
-                  const isActive = getBranchActive(branch)
+          {/* ── Service Locations ── */}
+          {serviceLocations.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-xs font-bold uppercase tracking-widest mt-2" style={{ color: textMuted, letterSpacing: '0.1em' }}>Service Locations</h3>
+              
+              {/* Mobile / sm - stacked cards */}
+              <div className="flex flex-col gap-3 lg:hidden">
+                {serviceLocations.map((branch, idx) => {
+                  const accent = accentFor(idx)
+                  const staffCount = branch.employee_count ?? 0
                   return (
-                    <tr key={branch.id ?? idx} className="group transition-colors" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover} onMouseLeave={e => e.currentTarget.style.backgroundColor = cardBg}>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
-                            <MapPin className="w-4 h-4" style={{ color: accent }} />
+                    <div key={branch.id ?? idx} className="rounded-2xl border overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, borderColor: border }}>
+                      {/* accent strip */}
+                      <div className="h-1" style={{ backgroundColor: accent }} />
+
+                      <div className="p-4 flex flex-col gap-3">
+                        {/* title row */}
+                        <div className="flex items-start gap-3 justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
+                              <MapPin className="w-4.5 h-4.5" style={{ color: accent }} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-[14px] leading-tight" style={{ color: textPrimary }}>{branch.name}</div>
+                              <div className="text-[11px] mt-0.5" style={{ color: textMuted }}>{branch.location}</div>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{branch.name}</div>
-                            <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }}>{branch.location}</div>
-                          </div>
+                          {staffCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide shrink-0 text-slate-500 bg-slate-50 border-slate-200 dark:text-slate-400 dark:bg-slate-900/20 dark:border-slate-800">
+                              <Users className="w-3 h-3 text-[#10B981]" />
+                              {staffCount} staff
+                            </span>
+                          )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-xs leading-relaxed line-clamp-2" style={{ color: textPrimary }}>{branch.address || '—'}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
+
+                        {/* info */}
+                        <div className="flex flex-col gap-1.5 text-xs pt-1">
+                          {branch.address && (
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: textMuted }} />
+                              <span className="leading-relaxed" style={{ color: textPrimary }}>{branch.address}</span>
+                            </div>
+                          )}
                           {branch.phone && (
-                            <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: textPrimary }}>
-                              <Phone className="w-3.5 h-3.5 text-emerald-500" /> {branch.phone}
+                            <div className="flex items-center gap-2">
+                              <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                              <span style={{ color: textPrimary }}>{branch.phone}</span>
                             </div>
                           )}
                           {branch.email && (
-                            <div className="flex items-center gap-1.5 text-[11px] font-medium truncate" style={{ color: textMuted }}>
-                              <Mail className="w-3.5 h-3.5" /> {branch.email}
+                            <div className="flex items-center gap-2">
+                              <Mail className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                              <span className="truncate" style={{ color: textPrimary }}>{branch.email}</span>
                             </div>
                           )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {manager ? (
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: border, color: textPrimary }}>
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> <span className="truncate">{manager}</span>
-                          </div>
-                        ) : <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 ${isActive ? 'text-emerald-500 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800 shadow-sm shadow-emerald-500/10' : 'text-red-400 bg-red-50 border-red-100 dark:text-red-500 dark:bg-red-900/20 dark:border-red-900'}`}>
-                          {isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                          {isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   )
                 })}
-              </tbody>
-            </table>
-            {/* Footer */}
-            <div style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.3)' }} className="p-4 border-t flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                {filteredBranches.length} branch{filteredBranches.length !== 1 ? 'es' : ''} listed
-              </span>
-              <div className="flex items-center gap-3 text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
-                <span className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> {activeCnt}</span>
-                <span className="flex items-center gap-1"><XCircle className="w-3.5 h-3.5 text-red-500" /> {inactiveCnt}</span>
+              </div>
+
+              {/* Desktop Table */}
+              <div className="hidden lg:block overflow-hidden rounded-2xl border shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
+                <table className="w-full text-left border-collapse table-fixed">
+                  <thead>
+                    <tr style={{ backgroundColor: theadBg }}>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[30%]" style={{ color: textMuted }}>Branch</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[45%]" style={{ color: textMuted }}>Address</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.1em] w-[25%]" style={{ color: textMuted }}>Contact</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {serviceLocations.map((branch, idx) => {
+                      const accent = accentFor(idx)
+                      return (
+                        <tr key={branch.id ?? idx} className="group transition-colors" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover} onMouseLeave={e => e.currentTarget.style.backgroundColor = cardBg}>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18` }}>
+                                <MapPin className="w-4 h-4" style={{ color: accent }} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{branch.name}</div>
+                                <div className="text-[11px] font-medium opacity-60 truncate" style={{ color: textMuted }}>{branch.location}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="text-xs leading-relaxed line-clamp-2" style={{ color: textPrimary }}>{branch.address || '—'}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              {branch.phone && (
+                                <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: textPrimary }}>
+                                  <Phone className="w-3.5 h-3.5 text-emerald-500" /> {branch.phone}
+                                </div>
+                              )}
+                              {branch.email && (
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium truncate" style={{ color: textMuted }}>
+                                  <Mail className="w-3.5 h-3.5" /> {branch.email}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {/* Footer */}
+                <div style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.3)' }} className="p-4 border-t flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                    {serviceLocations.length} service location{serviceLocations.length !== 1 ? 's' : ''} listed
+                  </span>
+                  <span className="text-[11px] font-black uppercase tracking-widest text-[#10B981]" style={{ letterSpacing: '0.1em' }}>
+                    Centrally Overseen
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </>
+          )}
+        </div>
       )}
     </div>
   )
 }
+
