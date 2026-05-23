@@ -25,58 +25,58 @@ Address: Unit 2A & 2B, 2/F Genesis Bldg., 182-A 19th Ave., East Rembo, Taguig
 Mobile: 0917 828 5595, 0917 506 2090, 0998 566 4801
 Email: headoffice@ashcol.com.ph
 
-Ashcol Valenzuela - Metro Manila
+ASHCOL Valenzuela - Metro Manila
 Address: 0147 M.H. Del Pilar St., Arkong Bato, District 1, Valenzuela City
 Mobile: 0943 358 4220, 0905 420 1556
 Email: ashcolnorth@ashcol.com.ph
 
-Ashcol Bulacan
+ASHCOL Bulacan
 Address: Ground Floor, RME Building, Salangan, San Miguel, Bulacan
 Mobile: 0917 506 2090, 0939 973 3163
 Email: ashcolbulacan@gmail.com
 
-Ashcol Pampanga
+ASHCOL Pampanga
 Address: Unit 202, CitiCorp Building, Brgy. San Isidro, City of San Fernando, Pampanga
 Mobile: 0917 103 8743. Landline: 045 300 8533
 Email: ashcolpampanga@ashcol.com.ph
 
-Ashcol Rizal
+ASHCOL Rizal
 Address: 2nd Flr Norika Bldg #70 E. Rodriguez Sr., San Jose Hi-way, Rodriguez, Rizal
 Mobile: 0917 682 8328, 0920 923 2071
 Email: ashcolrodriguezrizal@gmail.com
 
-Ashcol Laguna
+ASHCOL Laguna
 Address: Purok 4, Kalye Pogi, Bangyas, Calauan, Laguna
 Mobile: 0999 990 5224, 0949 994 3299
 Email: ashcolcalauan@gmail.com
 
-Ashcol Batangas
+ASHCOL Batangas
 Address: Ground Floor, BMI Building, 12 Laguile, Taal, Batangas
 Mobile: 0998 999 3041, 0919 005 9032
 Email: ashcolbatangas@ashcol.com.ph
 
-Ashcol Candelaria (Quezon)
+ASHCOL Candelaria (Quezon)
 Address: Maharlika Highway, Malabanban Norte, Candelaria, Quezon Province
 Mobile: 0917 159 6995, 0947 993 9208
 Email: ashcolcandelaria@gmail.com
 
-Ashcol Gen. Trias (Cavite)
+ASHCOL Gen. Trias (Cavite)
 Address: Blk 9 Lot 16, South Square Village, Pasong Kawayan II, General Trias, Cavite
 Mobile: 0995 014 6891, 0949 307 1625
 Email: ashcolcavite@ashcol.com.ph
 
-Ashcol Dasmarinas (Cavite)
+ASHCOL Dasmarinas (Cavite)
 Address: 2/F Unit 5, Blk 94 Lot 5 & 6, Governor's Drive, Metro Gate Subd., San Agustin 1, City of Dasmarinas, Cavite
 Mobile: 0917 505 4925, 0949 994 3299. Landline: 046 413 1726
 Email: ashcoldasma@gmail.com
 
-Ashcol Silang (Cavite)
+ASHCOL Silang (Cavite)
 Address: 2nd Floor, Rheayanelle Building, 9015 Pandan St., Brgy. Puting Kahoy, Sta. Rosa Tagaytay Road, Silang, Cavite
 Mobile: 0998 577 0421, 0917 714 3810
 Email: ashcolsouth@ashcol.com.ph`
 
 const SYSTEM =
-  `You are the Ashcol AI, a professional and friendly air conditioning services assistant for Ashcol Corporation. ` +
+  `You are the ASHCOL AI, a professional and friendly air conditioning services assistant for ASHCOL Corporation. ` +
   `ASHCOL ORIGIN: Family-run business founded in 2014. The name ASHCOL comes from the founder's two daughters: Ashanti and Coleene. ` +
   `Tagline: "Keeping YOU Cool" - give people the comfort they deserve. ` +
   `LOCATION: Units 2A & 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig. ` +

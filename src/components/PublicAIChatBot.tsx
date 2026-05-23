@@ -32,7 +32,7 @@ interface PublicAIChatBotProps {
 
 export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAIChatBotProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: "Hi! I'm the Ashcol AI. Ask me about aircon service, booking, or basic troubleshooting.", sender: 'ai' },
+    { id: '1', text: "Hi! I'm the ASHCOL AI. Ask me about aircon service, booking, or basic troubleshooting.", sender: 'ai' },
   ])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -194,7 +194,7 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
             <Bot className="w-4 h-4 text-[#10B981]" />
           </div>
           <div>
-            <h3 className="text-sm font-bold" style={{ color: textPrimary }}>Ashcol AI</h3>
+            <h3 className="text-sm font-bold" style={{ color: textPrimary }}>ASHCOL AI</h3>
             <p className="text-[10px]" style={{ color: textMuted }}>Ask about services or booking</p>
           </div>
         </div>

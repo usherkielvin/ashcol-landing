@@ -1,8 +1,4 @@
-export type AuditExpenseCategory =
-  | 'MISCELLANEOUS FEES'
-  | 'SERVICE MATERIALS'
-  | 'MOBILIZATION'
-  | 'OTHER'
+export type AuditExpenseCategory = string
 
 export interface AuditExpense {
   id: string

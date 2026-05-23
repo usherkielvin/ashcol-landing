@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -7,6 +7,7 @@ import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
 import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense, clearAuditExpensesByBranch } from '../utils/auditExpenseStorage'
+import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpenseCategory, reorderAuditExpenseCategories, type AuditExpenseCategoryDetail } from '../utils/auditExpenseCategoryStorage'
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
@@ -14,7 +15,7 @@ import * as XLSX from 'xlsx'
 
 interface BranchOption { id: string; name: string }
 const peso = (v: number) => v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const emptyForm = () => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '' })
+const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
 export default function AuditFinanceExpenses() {
   const { theme } = useTheme()
@@ -42,6 +43,11 @@ export default function AuditFinanceExpenses() {
   const [importing, setImporting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
+  const [duplicateModal, setDuplicateModal] = useState<{
+    isOpen: boolean;
+    existingExpense: AuditExpense;
+    newExpense: AuditExpense;
+  } | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
@@ -55,30 +61,112 @@ export default function AuditFinanceExpenses() {
   const [scanError, setScanError] = useState('')
   const scanRef = useRef<HTMLInputElement>(null)
 
-  // Custom categories persisted to localStorage
-  const [customCategories, setCustomCategories] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('auditExpenseCustomCategories') || '[]') } catch { return [] }
-  })
+  // Dynamic categories state
+  const [categories, setCategories] = useState<AuditExpenseCategoryDetail[]>([])
+  const [isEditingCategories, setIsEditingCategories] = useState(false)
+  const [editingCategoryDetail, setEditingCategoryDetail] = useState<AuditExpenseCategoryDetail | null>(null)
+  const [editingCategoryName, setEditingCategoryName] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCategoryInput, setNewCategoryInput] = useState('')
   const newCategoryRef = useRef<HTMLInputElement>(null)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
-  const allCategories = useMemo(
-    () => [...AUDIT_EXPENSE_CATEGORIES, ...customCategories.filter((c) => !AUDIT_EXPENSE_CATEGORIES.includes(c as AuditExpenseCategory))],
-    [customCategories]
-  )
+  const reloadCategories = useCallback(async () => {
+    try {
+      const data = await loadAuditExpenseCategories()
+      setCategories(data)
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
 
-  const saveCustomCategory = () => {
+  const resolveFormBranchId = useCallback((id: string) => {
+    if (!id) return ''
+    const exists = branches.some(b => b.id === id)
+    if (!exists) {
+      const splitOption = branches.find(b => b.id.startsWith(`${id}-`))
+      if (splitOption) {
+        const salesOption = branches.find(b => b.id === `${id}-sales`)
+        return salesOption ? salesOption.id : splitOption.id
+      }
+    }
+    return id
+  }, [branches])
+
+  useEffect(() => {
+    void reloadCategories()
+  }, [reloadCategories])
+
+  const allCategories = useMemo(() => {
+    if (categories.length > 0) {
+      return categories.map(c => c.name)
+    }
+    return AUDIT_EXPENSE_CATEGORIES
+  }, [categories])
+
+  const saveCustomCategory = async () => {
     const val = newCategoryInput.trim().toUpperCase()
     if (!val) { setAddingCategory(false); setNewCategoryInput(''); return }
     if (!allCategories.includes(val)) {
-      const updated = [...customCategories, val]
-      setCustomCategories(updated)
-      localStorage.setItem('auditExpenseCustomCategories', JSON.stringify(updated))
+      try {
+        await saveAuditExpenseCategory({ name: val })
+        await reloadCategories()
+      } catch (err) {
+        console.error(err)
+        alert('Failed to save category.')
+      }
     }
     setForm((f) => ({ ...f, expenseCategory: val as AuditExpenseCategory }))
     setAddingCategory(false)
     setNewCategoryInput('')
+  }
+
+  const startEditingCategoryName = (cat: AuditExpenseCategoryDetail) => {
+    setEditingCategoryDetail(cat)
+    setEditingCategoryName(cat.name)
+  }
+
+  const handleSaveCategoryName = async (cat: AuditExpenseCategoryDetail) => {
+    const val = editingCategoryName.trim().toUpperCase()
+    if (!val) { setEditingCategoryDetail(null); return }
+    try {
+      await saveAuditExpenseCategory({ ...cat, name: val })
+      setEditingCategoryDetail(null)
+      await reloadCategories()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update category name.')
+    }
+  }
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', index.toString())
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === index) return
+
+    const updated = [...categories]
+    const draggedItem = updated[draggedIndex]
+    updated.splice(draggedIndex, 1)
+    updated.splice(index, 0, draggedItem)
+    setDraggedIndex(index)
+    setCategories(updated)
+  }
+
+  const handleDragEnd = async () => {
+    setDraggedIndex(null)
+    try {
+      const ids = categories.map(c => c.id)
+      await reorderAuditExpenseCategories(ids)
+      await reloadCategories()
+    } catch (err) {
+      console.error('Failed to save category order:', err)
+      alert('Failed to save category order.')
+    }
   }
 
   useEffect(() => {
@@ -87,8 +175,17 @@ export default function AuditFinanceExpenses() {
 
   const branchName = branches.find((b) => b.id === branchId)?.name ?? ''
 
-  const branchExpenses = useMemo(() =>
-    expenses.filter((e) => e.branchId === branchId), [expenses, branchId])
+  const branchExpenses = useMemo(() => {
+    return expenses.filter((e) => {
+      if (e.branchId === branchId) return true
+      if (branchId.endsWith('-sales')) {
+        const baseId = branchId.slice(0, -6)
+        if (e.branchId === baseId) return true
+        if (e.branchName.toUpperCase() === 'ASHCOL TAGUIG' || e.branchName.toUpperCase() === 'TAGUIG') return true
+      }
+      return false
+    })
+  }, [expenses, branchId])
 
   // Suggestions derived from past expenses (limited to current branch)
   const suggestions = useMemo(() => {
@@ -142,10 +239,41 @@ export default function AuditFinanceExpenses() {
       if (!res.ok) return
       const data = await res.json()
       const list: BranchOption[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
-      setBranches(list)
-      if (isManager && user?.branchId) setBranchId(user.branchId)
+      
+      const newList: BranchOption[] = []
+      for (const b of list) {
+        const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
+        if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
+          newList.push({ id: `${b.id}-sales`, name: 'Taguig - Sales' })
+          newList.push({ id: `${b.id}-services`, name: 'Taguig - Services' })
+        } else {
+          newList.push({ id: b.id, name: cleanName })
+        }
+      }
+
+      newList.sort((a, b) => a.name.localeCompare(b.name))
+
+      let finalList = newList
+      if (isManager && user?.branchId) {
+        finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+      }
+
+      setBranches(finalList)
+
+      if (finalList.length > 0) {
+        if (isManager && user?.branchId) {
+          const matched = finalList.find(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+          if (matched) {
+            setBranchId(matched.id)
+          } else {
+            setBranchId(finalList[0].id)
+          }
+        } else if (!branchId) {
+          setBranchId(finalList[0].id)
+        }
+      }
     } catch (e) { console.error(e) }
-  }, [isManager, user?.branchId])
+  }, [isManager, user?.branchId, branchId])
 
   const reload = useCallback(async () => {
     try {
@@ -166,6 +294,12 @@ export default function AuditFinanceExpenses() {
       }, 50)
     }
   }, [showForm])
+
+  useEffect(() => {
+    if (!editing && branchId) {
+      setForm((f) => ({ ...f, branchId: resolveFormBranchId(branchId) }))
+    }
+  }, [branchId, editing, resolveFormBranchId])
 
 
 
@@ -268,7 +402,7 @@ export default function AuditFinanceExpenses() {
     const ws = XLSX.utils.json_to_sheet(wsData)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Receipts')
-    XLSX.writeFile(wb, `Ashcol_Receipts_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
+    XLSX.writeFile(wb, `ASHCOL_Receipts_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -299,29 +433,78 @@ export default function AuditFinanceExpenses() {
     finally { setImporting(false); e.target.value = '' }
   }
 
+  const saveExpense = async (expense: AuditExpense) => {
+    await upsertAuditExpense(expense)
+    await reload()
+    if (editing) {
+      // Updating an existing receipt — close the form
+      setShowForm(false); setEditing(null); setForm(emptyForm(branchId)); setDateRaw(formatTodayReceiptDate()); setDateError('')
+      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+    } else {
+      // New receipt saved — keep form open, clear fields (including date) for next entry
+      setForm({ ...emptyForm(branchId), date: '' }); setDateRaw(''); setDateError('')
+      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+      // Focus the first field for quick next entry
+      setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
+    }
+  }
+
+  const confirmUpdateDuplicate = async () => {
+    if (!duplicateModal) return
+    const { existingExpense, newExpense } = duplicateModal
+    const updatedExpense: AuditExpense = {
+      ...newExpense,
+      id: existingExpense.id,
+      createdAt: existingExpense.createdAt || newExpense.createdAt
+    }
+    setDuplicateModal(null)
+    await saveExpense(updatedExpense)
+  }
+
   const submitReceipt = async () => {
     if (!branchId) return
     const amount = parseFloat(form.amount.replace(/,/g, ''))
     if (!form.company.trim() && !form.description.trim()) { alert('Enter company or description.'); return }
     if (!amount || amount <= 0) { alert('Enter a valid amount.'); return }
     if (!form.date.trim()) { alert('Enter a valid date.'); return }
-    const now = new Date().toISOString()
-    const expense: AuditExpense = editing
-      ? { ...editing, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
-      : { id: createExpenseId(), branchId, branchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
-    await upsertAuditExpense(expense)
-    await reload()
-    if (editing) {
-      // Updating an existing receipt — close the form
-      setShowForm(false); setEditing(null); setForm(emptyForm()); setDateRaw(formatTodayReceiptDate()); setDateError('')
-      setScanPreview(null); setScannedFields(new Set()); setScanError('')
-    } else {
-      // New receipt saved — keep form open, clear fields (including date) for next entry
-      setForm({ ...emptyForm(), date: '' }); setDateRaw(''); setDateError('')
-      setScanPreview(null); setScannedFields(new Set()); setScanError('')
-      // Focus the first field for quick next entry
-      setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
+
+    // Check future date
+    const parsedDate = parseSmartDate(form.date.trim())
+    if (parsedDate) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const inputDate = new Date(parsedDate)
+      if (inputDate > today) {
+        if (!window.confirm(`Warning: The date entered (${form.date.trim()}) is in the future. Are you sure you want to save this receipt?`)) {
+          return
+        }
+      }
     }
+
+    const now = new Date().toISOString()
+    const targetBranchId = form.branchId || branchId
+    const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || branchName
+
+    const expense: AuditExpense = editing
+      ? { ...editing, branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
+      : { id: createExpenseId(), branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
+
+    const normalizedReceiptNo = form.receiptNo.trim().toUpperCase()
+    if (normalizedReceiptNo) {
+      const duplicate = expenses.find(
+        (e) => e.receiptNo.trim().toUpperCase() === normalizedReceiptNo && e.id !== (editing?.id || '')
+      )
+      if (duplicate) {
+        setDuplicateModal({
+          isOpen: true,
+          existingExpense: duplicate,
+          newExpense: expense
+        })
+        return
+      }
+    }
+
+    await saveExpense(expense)
   }
 
   const handleClearBranchReceipts = async () => {
@@ -345,6 +528,7 @@ export default function AuditFinanceExpenses() {
     if (!activeEl) return
 
     const fields = [
+      'receipt-branch',
       'receipt-date',
       'receipt-incurredBy',
       'receipt-description',
@@ -374,7 +558,8 @@ export default function AuditFinanceExpenses() {
 
   const startEdit = (row: AuditExpense) => {
     setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(null)
-    setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy })
+    const resolvedBranchId = resolveFormBranchId(row.branchId)
+    setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
     setShowForm(true)
   }
 
@@ -576,7 +761,7 @@ export default function AuditFinanceExpenses() {
               if (showForm) {
                 setShowForm(false); setEditing(null)
               } else {
-                setEditing(null); setForm({ ...emptyForm(), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                setEditing(null); setForm({ ...emptyForm(branchId), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
               }
             }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-200"
@@ -605,7 +790,7 @@ export default function AuditFinanceExpenses() {
           <select
             value={branchId}
             onChange={(e) => setBranchId(e.target.value)}
-            disabled={isManager && !!user?.branchId}
+            disabled={isManager && !!user?.branchId && branches.length <= 1}
             className="w-full rounded-lg pl-8 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
           >
@@ -680,22 +865,22 @@ export default function AuditFinanceExpenses() {
               <button
                 type="button"
                 disabled={scanning}
-                onClick={() => scanRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
-                style={{ backgroundColor: '#3B82F6', color: 'white' }}
-                title="Upload or scan a receipt image"
-              >
-                <Upload size={13} /> Upload Receipt
-              </button>
-              <button
-                type="button"
-                disabled={scanning}
                 onClick={handlePasteClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Paste an image from your clipboard"
               >
                 <ClipboardPaste size={13} /> Paste Image
+              </button>
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={() => scanRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                style={{ backgroundColor: '#3B82F6', color: 'white' }}
+                title="Upload or scan a receipt image"
+              >
+                <Upload size={13} /> Upload Receipt
               </button>
               <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
               <button onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} style={{ color: textMuted }}><X size={18} /></button>
@@ -734,6 +919,27 @@ export default function AuditFinanceExpenses() {
 
             {/* Form grid */}
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2" onKeyDown={handleFormKeyDown}>
+              {/* Branch */}
+              {field(
+                'Branch',
+                <div style={{ position: 'relative' }}>
+                  <Building2 size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+                  <select
+                    id="receipt-branch"
+                    value={form.branchId}
+                    onChange={(e) => {
+                      const selectedId = e.target.value
+                      setForm((f) => ({ ...f, branchId: selectedId }))
+                    }}
+                    className="w-full rounded-lg pl-7 pr-7 py-1.5 text-xs appearance-none outline-none cursor-pointer font-medium"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                  >
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+                </div>
+              )}
+
               {/* Date */}
               {field(
                 <span className="flex items-center gap-1">
@@ -833,15 +1039,102 @@ export default function AuditFinanceExpenses() {
 
           {/* Category chips */}
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>Expense Category</label>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {allCategories.map((cat) => (
-                <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                  style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
-                  {cat}
-                </button>
-              ))}
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>Expense Category</label>
+              <button
+                type="button"
+                onClick={() => setIsEditingCategories(!isEditingCategories)}
+                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all hover:scale-105"
+                style={{
+                  border: `1.5px solid ${isEditingCategories ? accent : inputBorder}`,
+                  backgroundColor: isEditingCategories ? `${accent}18` : inputBg,
+                  color: isEditingCategories ? accent : textMuted
+                }}
+              >
+                <Settings size={12} />
+                {isEditingCategories ? 'Done Managing' : 'Manage Categories'}
+              </button>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 mt-3">
+              {isEditingCategories ? (
+                // --- Edit Mode / Reorder Mode ---
+                categories.map((cat, idx) => {
+                  const isEditingThis = editingCategoryDetail?.id === cat.id
+                  return (
+                    <div
+                      key={cat.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-move select-none shadow-sm"
+                      style={{
+                        border: `1.5px dashed ${draggedIndex === idx ? accent : inputBorder}`,
+                        backgroundColor: inputBg,
+                        color: textPrimary,
+                        opacity: draggedIndex === idx ? 0.4 : 1,
+                      }}
+                    >
+                      {isEditingThis ? (
+                        <input
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              await handleSaveCategoryName(cat)
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingCategoryDetail(null)
+                            }
+                          }}
+                          className="px-1 py-0.5 rounded border text-xs outline-none bg-transparent"
+                          style={{ borderColor: accent, color: textPrimary, width: 90 }}
+                          autoFocus
+                        />
+                      ) : (
+                        <span onDoubleClick={() => startEditingCategoryName(cat)} className="truncate max-w-[120px]" title="Double click to edit">{cat.name}</span>
+                      )}
+                      
+                      <div className="flex items-center gap-1 border-l pl-2" style={{ borderColor: inputBorder }}>
+                        {isEditingThis ? (
+                          <button type="button" onClick={() => handleSaveCategoryName(cat)} style={{ color: accent }} className="font-bold">✓</button>
+                        ) : (
+                          <button type="button" onClick={() => startEditingCategoryName(cat)} style={{ color: textMuted }} className="hover:text-emerald-500"><Pencil size={11} /></button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Delete category "${cat.name}"?`)) {
+                              try {
+                                await deleteAuditExpenseCategory(cat.id)
+                                await reloadCategories()
+                              } catch {
+                                alert('Failed to delete category.')
+                              }
+                            }
+                          }}
+                          style={{ color: danger }}
+                          className="hover:opacity-80"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                // --- Normal Mode ---
+                allCategories.map((cat) => (
+                  <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-102"
+                    style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
+                    {cat}
+                  </button>
+                ))
+              )}
+
               {/* Add custom category */}
               {addingCategory ? (
                 <div className="flex items-center gap-1">
@@ -849,17 +1142,17 @@ export default function AuditFinanceExpenses() {
                     ref={newCategoryRef}
                     value={newCategoryInput}
                     onChange={(e) => setNewCategoryInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveCustomCategory() } if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryInput('') } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveCustomCategory() } if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryInput('') } }}
                     placeholder="Category name"
                     className="px-2 py-1 rounded-lg text-xs font-semibold outline-none w-32"
                     style={{ border: `1px solid ${accent}`, backgroundColor: inputBg, color: textPrimary }}
                   />
-                  <button type="button" onClick={saveCustomCategory} className="px-2 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: accent }}>Add</button>
+                  <button type="button" onClick={() => void saveCustomCategory()} className="px-2 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90" style={{ backgroundColor: accent }}>Add</button>
                   <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput('') }} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>✕</button>
                 </div>
               ) : (
                 <button type="button" onClick={() => setAddingCategory(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 hover:scale-102"
                   style={{ border: `1px dashed ${inputBorder}`, backgroundColor: inputBg, color: textMuted }}>
                   <Plus size={11} /> New
                 </button>
@@ -1036,6 +1329,207 @@ export default function AuditFinanceExpenses() {
           <strong style={{ color: textPrimary }}>Excel import</strong> — The importer automatically scans all sheet tabs and finds the one with <strong>DATE</strong> and <strong>AMOUNT</strong> columns. Headers can be on any row. All data from that sheet is imported.
         </div>
       </div>
+
+      {duplicateModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: cardBg,
+            border: `1px solid ${border}`,
+            borderRadius: '1rem',
+            width: '100%',
+            maxWidth: '680px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3)',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: `1px solid ${border}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{
+                backgroundColor: `${danger}22`,
+                padding: '0.5rem',
+                borderRadius: '0.75rem'
+              }}>
+                <AlertTriangle size={20} style={{ color: danger }} />
+              </div>
+              <div>
+                <h3 style={{ color: textPrimary, fontWeight: 'bold', fontSize: '1.125rem', margin: 0 }}>
+                  Duplicate Receipt Number Detected
+                </h3>
+                <p style={{ color: textMuted, fontSize: '0.875rem', margin: '0.25rem 0 0 0' }}>
+                  Receipt number <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: textPrimary }}>{duplicateModal.newExpense.receiptNo}</span> already exists.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Body - Side-by-Side Comparison */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                
+                {/* Existing Record */}
+                <div style={{
+                  border: `1px solid ${border}`,
+                  borderRadius: '0.75rem',
+                  padding: '1rem',
+                  backgroundColor: isLight ? '#f8fafc' : '#0F1A2E'
+                }}>
+                  <div style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold',
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    marginBottom: '0.75rem',
+                    borderBottom: `1px solid ${border}`,
+                    paddingBottom: '0.25rem'
+                  }}>
+                    Existing Receipt
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
+                    <div>
+                      <strong style={{ color: textMuted }}>Branch:</strong> <span style={{ color: textPrimary }}>{duplicateModal.existingExpense.branchName}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Date:</strong> <span style={{
+                        color: duplicateModal.existingExpense.date === duplicateModal.newExpense.date ? textPrimary : '#EF4444',
+                        fontWeight: duplicateModal.existingExpense.date === duplicateModal.newExpense.date ? 'normal' : 'bold'
+                      }}>{duplicateModal.existingExpense.date}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Company:</strong> <span style={{ color: textPrimary }}>{duplicateModal.existingExpense.company}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Amount:</strong> <span style={{ color: textPrimary, fontWeight: 'bold' }}>₱{peso(duplicateModal.existingExpense.amount)}</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: textMuted, marginTop: '0.5rem', fontStyle: 'italic' }}>
+                      Incurred By: {duplicateModal.existingExpense.incurredBy}
+                    </div>
+                  </div>
+                </div>
+
+                {/* New Record */}
+                <div style={{
+                  border: `1px solid ${accent}44`,
+                  borderRadius: '0.75rem',
+                  padding: '1rem',
+                  backgroundColor: `${accent}05`
+                }}>
+                  <div style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold',
+                    color: accent,
+                    textTransform: 'uppercase',
+                    marginBottom: '0.75rem',
+                    borderBottom: `1px solid ${accent}22`,
+                    paddingBottom: '0.25rem'
+                  }}>
+                    New Receipt Details
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
+                    <div>
+                      <strong style={{ color: textMuted }}>Branch:</strong> <span style={{ color: textPrimary }}>{duplicateModal.newExpense.branchName}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Date:</strong> <span style={{
+                        color: duplicateModal.existingExpense.date === duplicateModal.newExpense.date ? textPrimary : '#EF4444',
+                        fontWeight: duplicateModal.existingExpense.date === duplicateModal.newExpense.date ? 'normal' : 'bold'
+                      }}>{duplicateModal.newExpense.date}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Company:</strong> <span style={{ color: textPrimary }}>{duplicateModal.newExpense.company}</span>
+                    </div>
+                    <div>
+                      <strong style={{ color: textMuted }}>Amount:</strong> <span style={{ color: textPrimary, fontWeight: 'bold' }}>₱{peso(duplicateModal.newExpense.amount)}</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: textMuted, marginTop: '0.5rem', fontStyle: 'italic' }}>
+                      Incurred By: {duplicateModal.newExpense.incurredBy}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {duplicateModal.existingExpense.date !== duplicateModal.newExpense.date && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: isLight ? '#FFFBEB' : '#3C2204',
+                  border: `1px solid ${isLight ? '#F59E0B' : '#B45309'}`,
+                  borderRadius: '0.5rem',
+                  padding: '0.75rem',
+                  color: isLight ? '#B45309' : '#FBBF24',
+                  fontSize: '0.825rem'
+                }}>
+                  <AlertTriangle size={16} />
+                  <span>Notice: The dates of these two receipts differ. Please double check before updating.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              backgroundColor: isLight ? '#f8fafc' : '#0B132B',
+              borderTop: `1px solid ${border}`,
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem'
+            }}>
+              <button
+                type="button"
+                onClick={() => setDuplicateModal(null)}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${border}`,
+                  color: textPrimary,
+                  padding: '0.5rem 1rem',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  fontWeight: 'semibold'
+                }}
+              >
+                Cancel / Edit
+              </button>
+              <button
+                type="button"
+                onClick={confirmUpdateDuplicate}
+                style={{
+                  backgroundColor: danger,
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+              >
+                Update Existing Receipt
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -146,7 +146,7 @@ export default function Login() {
 
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3">
-          <img src={logoImg} alt="Ashcol Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
+          <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
           <span className="font-black tracking-widest text-[#F0F6FF] text-xl drop-shadow-md">ASHCOL</span>
         </div>
 
@@ -156,7 +156,7 @@ export default function Login() {
             <span className="text-[10px] font-bold tracking-widest text-[#10B981] uppercase">Premium AC Service</span>
           </div>
           <h2 className="text-4xl xl:text-5xl font-black leading-tight mb-4 drop-shadow-lg text-white">
-            Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">Back</span><br/>to Ashcol.
+            Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">Back</span><br/>to ASHCOL.
           </h2>
           <p className="text-[#A2B7D0] text-lg leading-relaxed drop-shadow-md">
             Login to manage your bookings, track service requests, and stay cool with priority support.
@@ -196,13 +196,13 @@ export default function Login() {
           {/* Mobile-only logo/header */}
           <div className="flex flex-col items-center mb-8 lg:hidden">
             <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-6">
-              <img src={logoImg} alt="Ashcol Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
+              <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
             </a>
             <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
               Welcome Back
             </h1>
             <p className="text-[14px] text-center max-w-[280px]" style={{ color: textMuted }}>
-              Login to access your Ashcol account.
+              Login to access your ASHCOL account.
             </p>
           </div>
 

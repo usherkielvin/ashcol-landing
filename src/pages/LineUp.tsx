@@ -355,7 +355,7 @@ export default function LineUp() {
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'LineUp')
-    XLSX.writeFile(wb, `Ashcol_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.xlsx`)
+    XLSX.writeFile(wb, `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.xlsx`)
   }
 
   // ── Import Excel ──────────────────────────────────────────────────────────

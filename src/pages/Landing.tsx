@@ -227,15 +227,15 @@ const FEATURED_PROJECTS = [
 
 const FAQS = [
   {
-    q: 'What types of air conditioning services does Ashcol offer?',
-    a: 'Ashcol provides a comprehensive range of AC services including installation and dismantling, preventive maintenance (general cleaning), repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial & industrial air conditioning services solutions.',
+    q: 'What types of air conditioning services does ASHCOL offer?',
+    a: 'ASHCOL provides a comprehensive range of AC services including installation and dismantling, preventive maintenance (general cleaning), repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial & industrial air conditioning services solutions.',
   },
   {
     q: 'How do I book a service?',
     a: 'You can book a service directly through this portal by creating an account and submitting a service ticket. Alternatively, you can reach us by phone at +63 (917) 7143810 or by email at headoffice@ashcol.com.ph.',
   },
   {
-    q: 'What AC brands does Ashcol service?',
+    q: 'What AC brands does ASHCOL service?',
     a: 'Our technicians are trained across all major residential and commercial brands including Carrier, Daikin, Panasonic, Samsung, LG, Koppel, Mitsubishi Electric, York, Gree, Midea, Sharp, Haier, TCL, Aux, Fuji-Aire, and Kolin — 16+ brands in total.',
   },
   {
@@ -244,14 +244,14 @@ const FAQS = [
   },
   {
     q: 'Do you provide services outside Metro Manila?',
-    a: 'Yes! Ashcol operates 11 branches across Luzon — 8 owned branches (Taguig, Bulacan, Pampanga, Rizal, Laguna, Candelaria, Dasmariñas, and Silang) plus 3 franchise branches (Valenzuela, Batangas, and General Trias).',
+    a: 'Yes! ASHCOL operates 11 branches across Luzon — 8 owned branches (Taguig, Bulacan, Pampanga, Rizal, Laguna, Candelaria, Dasmariñas, and Silang) plus 3 franchise branches (Valenzuela, Batangas, and General Trias).',
   },
   {
     q: 'Is there a warranty on your services?',
-    a: 'Yes. All Ashcol services come with a workmanship warranty. Warranty terms vary by service type. Parts and equipment replacements are covered by their respective manufacturer warranties. Contact us for specific warranty details on your service.',
+    a: 'Yes. All ASHCOL services come with a workmanship warranty. Warranty terms vary by service type. Parts and equipment replacements are covered by their respective manufacturer warranties. Contact us for specific warranty details on your service.',
   },
   {
-    q: 'Can Ashcol handle large commercial or industrial AC projects?',
+    q: 'Can ASHCOL handle large commercial or industrial AC projects?',
     a: 'Absolutely. We specialize in commercial and industrial air conditioning services installations including centralized systems, VRF/VRV multi-zone systems, chiller systems, custom ductwork fabrication, and large-scale electrical works for malls, restaurants, office buildings, hospitals, and factories.',
   },
   {
@@ -279,7 +279,7 @@ function ComingSoonModal({ onClose }: { onClose: () => void }) {
         </div>
         <h3 className="text-xl font-black text-white mb-2">Coming Soon</h3>
         <p className="text-[#7A95B8] text-sm leading-relaxed mb-6">
-          The Ashcol mobile app is still in development. We will launch soon on Google Play and the App Store.
+          The ASHCOL mobile app is still in development. We will launch soon on Google Play and the App Store.
         </p>
         <button
           onClick={onClose}
@@ -491,9 +491,9 @@ export default function Landing() {
 
           {/* Brand */}
           <button onClick={() => scrollTo('hero')} className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-            <img src={logoImg} alt="Ashcol Logo" className="w-9 h-9 object-contain rounded-lg" />
+            <img src={logoImg} alt="ASHCOL Logo" className="w-9 h-9 object-contain rounded-lg" />
             <div className="text-left">
-              <div className="text-[16px] font-extrabold tracking-wide leading-none" style={{ color: t.text }}>Ashcol</div>
+              <div className="text-[16px] font-extrabold tracking-wide leading-none" style={{ color: t.text }}>ASHCOL</div>
               <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block" style={{ color: t.textFaint }}>Airconditioning Corp.</div>
             </div>
           </button>
@@ -531,7 +531,7 @@ export default function Landing() {
               onClick={() => setPublicAiOpen(true)}
               className="hidden sm:flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg transition-all hover:opacity-90 active:scale-95"
               style={{ color: t.accent, backgroundColor: t.accentBg }}
-              title="Chat with Ashcol AI"
+              title="Chat with ASHCOL AI"
             >
               <span className="flex items-center justify-center w-6 h-6 rounded-full" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)' }}>
                 <Bot className="w-3.5 h-3.5" />
@@ -593,7 +593,7 @@ export default function Landing() {
               <span className="flex items-center justify-center w-7 h-7 rounded-full" style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)' }}>
                 <Bot className="w-4 h-4 shrink-0" />
               </span>
-              Ashcol AI — chat now
+              ASHCOL AI — chat now
             </button>
             <div className="flex gap-2 mt-1">
               <a
@@ -624,7 +624,7 @@ export default function Landing() {
         {/* Badge */}
         <div className="relative flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] px-3 py-1.5 rounded-full mb-6">
           <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
-          <span className="text-[10px] sm:text-xs font-bold text-[#10B981] tracking-wide">Ashcol Airconditioning · Since 2014</span>
+          <span className="text-[10px] sm:text-xs font-bold text-[#10B981] tracking-wide">ASHCOL Airconditioning · Since 2014</span>
         </div>
 
         {/* Headline */}
@@ -698,7 +698,7 @@ export default function Landing() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {BRANCHES.filter(b => !b.isFranchise).map((branch, i) => {
-                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
+                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
                 return <OwnedBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
               })}
             </div>
@@ -713,7 +713,7 @@ export default function Landing() {
             </div>
             <div className="flex flex-col sm:flex-row gap-4">
               {BRANCHES.filter(b => b.isFranchise).map((branch, i) => {
-                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Ashcol Airconditioning ' + branch.name + ' ' + branch.address)}`
+                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
                 return <FranchiseBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
               })}
             </div>
@@ -792,7 +792,7 @@ export default function Landing() {
               <span className="text-[#10B981]">right from the app.</span>
             </h2>
             <p className="text-[14px] leading-relaxed max-w-md mx-auto lg:mx-0 mb-2" style={{ color: t.textMuted }}>
-              The <span className="font-semibold" style={{ color: t.text }}>Ashcol Service App</span> lets you submit a service request, track your ticket status in real time, and get notified when a technician is on the way — all from your phone.
+              The <span className="font-semibold" style={{ color: t.text }}>ASHCOL Service App</span> lets you submit a service request, track your ticket status in real time, and get notified when a technician is on the way — all from your phone.
             </p>
             <p className="text-[12px] mb-5" style={{ color: t.textFaint }}>Coming Soon</p>
 
@@ -959,7 +959,7 @@ export default function Landing() {
             Real jobs. Real results.
           </h2>
           <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-            From residential retrofits to large-scale commercial installations — see how Ashcol delivers across every project type.
+            From residential retrofits to large-scale commercial installations — see how ASHCOL delivers across every project type.
           </p>
         </div>
 
@@ -1086,8 +1086,8 @@ export default function Landing() {
             <Briefcase className="w-3 h-3 text-[#3B82F6]" />
             <span className="text-[10px] font-bold text-[#3B82F6] tracking-[2px]">TRUSTED BY</span>
           </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>Clients who trust Ashcol</h2>
-          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>From fast food chains to banking institutions and luxury residential towers — Ashcol is the trusted AC partner across Metro Manila.</p>
+          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>Clients who trust ASHCOL</h2>
+          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>From fast food chains to banking institutions and luxury residential towers — ASHCOL is the trusted AC partner across Metro Manila.</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-w-5xl mx-auto">
           {CLIENTS.map((client, i) => (
@@ -1219,7 +1219,7 @@ export default function Landing() {
               Frequently asked questions
             </h2>
             <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-              Everything you need to know before booking your first service with Ashcol.
+              Everything you need to know before booking your first service with ASHCOL.
             </p>
           </div>
 
@@ -1286,7 +1286,7 @@ export default function Landing() {
       {/* ── CTA Banner ──────────────────────────────────────────────── */}
       <section className="relative overflow-hidden px-5 md:px-11 lg:px-20 py-16 md:py-24 flex flex-col items-center text-center" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
         <div className="absolute inset-0 orb-green opacity-30 pointer-events-none" />
-        <img src={logoImg} alt="Ashcol" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
+        <img src={logoImg} alt="ASHCOL" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
         <h2 className="relative text-[clamp(1.4rem,4vw,2.5rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
           Ready to stay cool?<br />Book a service today.
         </h2>
@@ -1320,9 +1320,9 @@ export default function Landing() {
 
           {/* Brand */}
           <div className="flex items-center gap-3 sm:col-span-2 md:col-span-1">
-            <img src={logoImg} alt="Ashcol" className="w-11 h-11 object-contain rounded-xl flex-shrink-0" />
+            <img src={logoImg} alt="ASHCOL" className="w-11 h-11 object-contain rounded-xl flex-shrink-0" />
             <div>
-              <div className="text-[15px] font-bold leading-tight" style={{ color: t.text }}>Ashcol Airconditioning</div>
+              <div className="text-[15px] font-bold leading-tight" style={{ color: t.text }}>ASHCOL Airconditioning</div>
               <div className="text-[12px] italic mt-0.5" style={{ color: t.textFaint }}>"Keeping YOU Cool" since 2014</div>
             </div>
           </div>
@@ -1357,13 +1357,13 @@ export default function Landing() {
               <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#10B981]/20">
                 <Bot className="w-3 h-3 text-[#10B981]" />
               </span>
-              Ashcol AI
+              ASHCOL AI
             </button>
           </div>
         </div>
 
         <div className="pt-6 text-center text-[12px]" style={{ borderTop: `1px solid ${t.border}`, color: t.textFaint }}>
-          © 2026 Ashcol Airconditioning Services Corporation. All rights reserved.
+          © 2026 ASHCOL Airconditioning Services Corporation. All rights reserved.
         </div>
       </footer>
 
@@ -1374,8 +1374,8 @@ export default function Landing() {
           type="button"
           onClick={() => setPublicAiOpen(true)}
           className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[70] p-3.5 sm:p-4 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center bg-gradient-to-r from-[#10B981] to-[#059669] text-white"
-          aria-label="Open Ashcol AI chat"
-          title="Chat with Ashcol AI"
+          aria-label="Open ASHCOL AI chat"
+          title="Chat with ASHCOL AI"
         >
           <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>

@@ -46,7 +46,7 @@ const CHARS_PER_TICK = 3           // characters revealed per tick — increase 
 export default function AIChatBot() {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: "Hi! I'm the Ashcol Agentic Assistant. How can I help you today?", sender: 'ai' }
+    { id: '1', text: "Hi! I'm the ASHCOL Agentic Assistant. How can I help you today?", sender: 'ai' }
   ])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -250,7 +250,7 @@ export default function AIChatBot() {
                 <Bot className="w-4 h-4 text-[#10B981]" />
               </div>
               <div>
-                <h3 className="text-sm font-bold" style={{ color: textPrimary }}>Ashcol AI</h3>
+                <h3 className="text-sm font-bold" style={{ color: textPrimary }}>ASHCOL AI</h3>
                 <p className="text-[10px]" style={{ color: textMuted }}>Ask about services or booking</p>
               </div>
             </div>

@@ -26,7 +26,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Metro Manila',
   },
   {
-    name: 'Ashcol Valenzuela',
+    name: 'ASHCOL Valenzuela',
     tag: 'Valenzuela',
     color: '#6366F1',
     address: '0147 M.H. Del Pilar St., Arkong Bato, District 1, Valenzuela City',
@@ -37,7 +37,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     isFranchise: true,
   },
   {
-    name: 'Ashcol Bulacan',
+    name: 'ASHCOL Bulacan',
     tag: 'Bulacan',
     color: '#F59E0B',
     address: 'Ground Floor, RME Building, Salangan, San Miguel, Bulacan',
@@ -47,7 +47,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Bulacan',
   },
   {
-    name: 'Ashcol Pampanga',
+    name: 'ASHCOL Pampanga',
     tag: 'Pampanga',
     color: '#14B8A6',
     address: 'Unit 202, CitiCorp Building, Brgy. San Isidro, City of San Fernando, Pampanga',
@@ -58,7 +58,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Pampanga',
   },
   {
-    name: 'Ashcol Rizal',
+    name: 'ASHCOL Rizal',
     tag: 'Rizal',
     color: '#F97316',
     address: '2nd Flr Norika Bldg #70 E. Rodriguez Sr., San Jose Hi-way, Rodriguez, Rizal',
@@ -68,7 +68,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Rizal',
   },
   {
-    name: 'Ashcol Laguna',
+    name: 'ASHCOL Laguna',
     tag: 'Laguna',
     color: '#8B5CF6',
     address: 'Purok 4, Kalye Pogi, Bangyas, Calauan, Laguna',
@@ -78,7 +78,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Laguna',
   },
   {
-    name: 'Ashcol Batangas',
+    name: 'ASHCOL Batangas',
     tag: 'Batangas',
     color: '#3B82F6',
     address: 'Ground Floor, BMI Building, 12 Laguile, Taal, Batangas',
@@ -89,7 +89,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     isFranchise: true,
   },
   {
-    name: 'Ashcol Gen. Trias',
+    name: 'ASHCOL Gen. Trias',
     tag: 'Gen. Trias, Cavite',
     color: '#A855F7',
     address: 'Blk 9 Lot 16, South Square Village, Pasong Kawayan II, General Trias, Cavite',
@@ -100,7 +100,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     isFranchise: true,
   },
   {
-    name: 'Ashcol Candelaria',
+    name: 'ASHCOL Candelaria',
     tag: 'Quezon',
     color: '#EF4444',
     address: 'Maharlika Highway, Malabanban Norte, Candelaria, Quezon Province',
@@ -110,7 +110,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Quezon',
   },
   {
-    name: 'Ashcol Dasmariñas',
+    name: 'ASHCOL Dasmariñas',
     tag: 'Dasmarinas, Cavite',
     color: '#06B6D4',
     address: "2/F Unit 5, Blk 94 Lot 5 & 6, Governor's Drive, Metro Gate Subd., San Agustin 1, City of Dasmarinas, Cavite",
@@ -121,7 +121,7 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     region: 'Cavite',
   },
   {
-    name: 'Ashcol Silang',
+    name: 'ASHCOL Silang',
     tag: 'Silang, Cavite',
     color: '#EC4899',
     address: '2nd Floor, Rheayanelle Building, 9015 Pandan St., Brgy. Puting Kahoy, Sta. Rosa Tagaytay Road, Silang, Cavite',

@@ -22,7 +22,7 @@ export function buildAshcolBranchesKnowledgeBlock(): string {
   const rows = PUBLIC_BRANCHES.map(formatBranchBlock)
   return (
     'OFFICIAL ASHCOL BRANCH DIRECTORY — Use only this data for addresses, phones, emails, and regions. ' +
-    'If the user asks for a branch not listed, say Ashcol may have updated locations and suggest Head Office or the portal. ' +
+    'If the user asks for a branch not listed, say ASHCOL may have updated locations and suggest Head Office or the portal. ' +
     'Do not invent phone numbers or addresses.\n\n' +
     rows.join('\n\n')
   )

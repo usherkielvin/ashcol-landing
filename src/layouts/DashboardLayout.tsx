@@ -138,13 +138,13 @@ export default function DashboardLayout() {
           {/* Logo - always visible, click to toggle collapse on desktop */}
           <img
             src={logoImg}
-            alt="Ashcol"
+            alt="ASHCOL"
             onClick={() => setSidebarCollapsed(c => !c)}
             className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
           />
           <img
             src={logoImg}
-            alt="Ashcol"
+            alt="ASHCOL"
             className="w-9 h-9 object-contain rounded-lg shrink-0 md:hidden"
           />
 
@@ -153,7 +153,7 @@ export default function DashboardLayout() {
             className="flex-1 min-w-0 ml-3 transition-all duration-200"
             style={{ opacity: sidebarCollapsed ? 0 : 1, width: sidebarCollapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
           >
-            <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>Ashcol</div>
+            <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>ASHCOL</div>
             <div className="text-[9px] font-bold tracking-[3px] text-[#10B981] uppercase">Portal</div>
           </div>
 
@@ -266,7 +266,7 @@ export default function DashboardLayout() {
                   ? `Branch · ${branchLabel}`
                   : (user?.role || '').toLowerCase() === 'employee'
                     ? 'Technician View'
-                    : 'Ashcol Service Portal'}
+                    : 'ASHCOL Service Portal'}
               </p>
             </div>
           </div>

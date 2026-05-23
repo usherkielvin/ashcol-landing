@@ -189,7 +189,7 @@ export default function CreateAccount() {
         </div>
 
         <div className="relative z-10 flex items-center gap-3">
-          <img src={logoImg} alt="Ashcol Logo" className="w-14 h-14 object-contain drop-shadow-xl rounded-xl" />
+          <img src={logoImg} alt="ASHCOL Logo" className="w-14 h-14 object-contain drop-shadow-xl rounded-xl" />
           <span className="font-black tracking-widest text-[#F0F6FF] text-lg drop-shadow-md">ASHCOL</span>
         </div>
 
@@ -245,11 +245,11 @@ export default function CreateAccount() {
           {/* Mobile logo */}
           <div className="flex flex-col items-center mb-10 lg:hidden">
             <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-5">
-              <img src={logoImg} alt="Ashcol Logo" className="w-14 h-14 object-contain rounded-2xl shadow-[0_0_24px_rgba(16,185,129,0.3)]" />
+              <img src={logoImg} alt="ASHCOL Logo" className="w-14 h-14 object-contain rounded-2xl shadow-[0_0_24px_rgba(16,185,129,0.3)]" />
             </a>
             <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>Create Account</h1>
             <p className="text-sm text-center max-w-[260px]" style={{ color: textMuted }}>
-              Join Ashcol to access our professional AC services.
+              Join ASHCOL to access our professional AC services.
             </p>
           </div>
 
@@ -347,7 +347,7 @@ export default function CreateAccount() {
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" required className="mt-0.5 accent-[#10B981] w-4 h-4 flex-shrink-0" />
                 <span className="text-[13px] leading-relaxed" style={{ color: textMuted }}>
-                  I agree to Ashcol's{' '}
+                  I agree to ASHCOL's{' '}
                   <a href="#" className="text-[#10B981] hover:underline font-medium">Terms</a>{' '}
                   and{' '}
                   <a href="#" className="text-[#10B981] hover:underline font-medium">Privacy Policy</a>.

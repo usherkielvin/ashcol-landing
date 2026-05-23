@@ -188,7 +188,7 @@ export default function ForgotPassword() {
         </div>
 
         <div className="relative z-10 flex items-center gap-3">
-          <img src={logoImg} alt="Ashcol Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
+          <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
           <span className="font-black tracking-widest text-[#F0F6FF] text-xl drop-shadow-md">ASHCOL</span>
         </div>
 
@@ -200,7 +200,7 @@ export default function ForgotPassword() {
             We’ll help you get back <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">in</span>.
           </h2>
           <p className="text-[#A2B7D0] text-lg leading-relaxed drop-shadow-md">
-            Reset your password and regain access to your Ashcol account in a few quick steps.
+            Reset your password and regain access to your ASHCOL account in a few quick steps.
           </p>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function ForgotPassword() {
         <div className="w-full max-w-[440px] relative z-20 my-auto py-8">
           <div className="flex flex-col items-center mb-8 lg:hidden">
             <Link to="/login" className="hover:scale-105 transition-transform mb-6">
-              <img src={logoImg} alt="Ashcol Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
+              <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
             </Link>
             <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
               Forgot password
