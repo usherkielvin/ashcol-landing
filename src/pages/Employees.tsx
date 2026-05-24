@@ -10,6 +10,7 @@ interface Employee {
   email: string
   phone?: string
   role: string
+  jobTitle?: string
   branchId?: string
   branchName?: string
   isActive: boolean
@@ -75,7 +76,7 @@ export default function Employees() {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', email: '', branchId: '' })
+  const [createForm, setCreateForm] = useState({ name: '', email: '', branchId: '', role: 'Technician' })
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [createSaving, setCreateSaving] = useState(false)
   /** Shown once after successful create — technician can log in with this password (also emailed when SMTP is configured). */
@@ -109,6 +110,7 @@ export default function Employees() {
         email: s.email || '',
         phone: s.phone || '',
         role: (s.role || 'EMPLOYEE').toUpperCase(),
+        jobTitle: s.jobTitle || '',
         branchId: s.branchId || '',
         branchName: s.branchId ? (branchMap[s.branchId] || '') : '',
         isActive: s.isActive !== false,
@@ -220,15 +222,23 @@ export default function Employees() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const url = isAdmin ? `${API_BASE_URL}/admin/technicians` : `${API_BASE_URL}/manager/employees`
+      const isManagerOrAdmin = createForm.role === 'MANAGER' || createForm.role === 'ADMIN';
+      const roleToSend = isManagerOrAdmin ? createForm.role : 'EMPLOYEE';
+      const jobTitleToSend = isManagerOrAdmin ? '' : createForm.role;
+
       const body = isAdmin
         ? {
             name: createForm.name.trim(),
             email: createForm.email.trim(),
             branchId: createForm.branchId.trim(),
+            role: roleToSend,
+            jobTitle: jobTitleToSend,
           }
         : {
             name: createForm.name.trim(),
             email: createForm.email.trim(),
+            role: roleToSend,
+            jobTitle: jobTitleToSend,
           }
       const res = await fetch(url, {
         method: 'POST',
@@ -246,7 +256,7 @@ export default function Employees() {
         setNewTechCreds({ email: u.email, password: temp })
       }
       setShowCreate(false)
-      setCreateForm({ name: '', email: '', branchId: '' })
+      setCreateForm({ name: '', email: '', branchId: '', role: 'Technician' })
       fetchEmployees()
     } catch {
       setErr('Network error.')
@@ -314,10 +324,10 @@ export default function Employees() {
         {(isManager || isAdmin) && (
           <button
             type="button"
-            onClick={() => { setShowCreate(true); setErr(''); setCreateForm({ name: '', email: '', branchId: '' }) }}
+            onClick={() => { setShowCreate(true); setErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'Technician' }) }}
             className="flex items-center gap-2 bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0"
           >
-            <Plus className="w-4 h-4" /> Add technician
+            <Plus className="w-4 h-4" /> Add member
           </button>
         )}
         <button
@@ -377,7 +387,7 @@ export default function Employees() {
                   <div className="font-bold truncate" style={{ color: textPrimary }}>{e.name}</div>
                   <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] mt-0.5" style={{ color: '#3B82F6' }}>
                     <UserCheck className="w-3 h-3" />
-                    {isManager ? 'Technician' : e.role}
+                    {e.jobTitle || e.role}
                   </div>
                 </div>
                 <button
@@ -454,7 +464,7 @@ export default function Employees() {
                   <td className="px-6 py-4">
                     <div className="inline-flex items-center gap-1.5 font-black uppercase tracking-[0.05em] text-[10px] px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
                       <UserCheck className="w-3 h-3" />
-                      {isManager ? 'Technician' : e.role}
+                      {e.jobTitle || e.role}
                     </div>
                   </td>
                   {!isManager && (
@@ -589,6 +599,24 @@ export default function Employees() {
             <div>
               <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Work email (login)</label>
               <input type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+            </div>
+            <div>
+              <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Role / Job Title</label>
+              <select
+                value={createForm.role}
+                onChange={e => setCreateForm(p => ({ ...p, role: e.target.value }))}
+                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              >
+                <option value="Technician">Technician</option>
+                <option value="Helper">Helper</option>
+                <option value="Driver">Driver</option>
+                <option value="Coordinator">Coordinator</option>
+                <option value="Payroll">Payroll</option>
+                <option value="Inventory">Inventory</option>
+                <option value="MANAGER">Manager</option>
+                {isAdmin && <option value="ADMIN">Admin</option>}
+              </select>
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setShowCreate(false)} className="flex-1 border rounded-xl py-2.5 text-sm font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>Cancel</button>
