@@ -4,6 +4,7 @@ import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRi
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import DateRangeFilter, { type DateRange, buildDateRange, isInDateRange } from '../components/DateRangeFilter'
+import FleetMap from '../components/FleetMap'
 
 interface Ticket {
   id: string
@@ -970,6 +971,17 @@ export default function Tickets() {
 
                 {/* ── Left column ── */}
                 <div className="flex flex-col gap-4">
+
+                  {isCustomer && (selectedTicket.status.toUpperCase() === 'IN_PROGRESS' || selectedTicket.status.toUpperCase() === 'ON_THE_WAY') && (getTicketField(selectedTicket, 'assignedTo') !== '—' || getTicketField(selectedTicket, 'assigned_to') !== '—' || getTicketField(selectedTicket, 'assigned_employee_id') !== '—') && (
+                    <div className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${border}`, height: '300px' }}>
+                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest flex items-center gap-2" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: '#10B981', borderBottom: `1px solid ${border}` }}>
+                        <Navigation className="w-3.5 h-3.5 shrink-0" /> Technician is on the way!
+                      </div>
+                      <div className="flex-1 relative">
+                        <FleetMap driverId={getTicketField(selectedTicket, 'assignedTo', 'assigned_to', 'assigned_employee_id')} />
+                      </div>
+                    </div>
+                  )}
 
                   {!isCustomer && (
                     <div

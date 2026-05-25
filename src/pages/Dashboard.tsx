@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import FleetMap from '../components/FleetMap'
 
 interface Ticket {
   id: string
@@ -700,6 +701,19 @@ export default function Dashboard() {
                    </div>
                 )}
              </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Fleet Map for Managers ── */}
+      {role === 'manager' && (
+        <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, height: '400px' }}>
+          <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
+            <h3 className="font-black text-base" style={{ color: textPrimary }}>Fleet Map</h3>
+            <span className="text-[11px] font-bold px-2 py-1 uppercase tracking-wider" style={{ color: textMuted }}>Live tracking</span>
+          </div>
+          <div className="flex-1 relative">
+            <FleetMap />
           </div>
         </div>
       )}
