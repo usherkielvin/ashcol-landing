@@ -153,6 +153,11 @@ export default function DailyServiceReport() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
 
+  const primaryGreen      = '#16A34A' // Green-600
+  const primaryGreenBg    = 'rgba(22, 163, 74, 0.08)'
+  const primaryGreenBgAlt = 'rgba(22, 163, 74, 0.12)'
+  const primaryGreenBorder = 'rgba(22, 163, 74, 0.25)'
+
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
@@ -174,7 +179,7 @@ export default function DailyServiceReport() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
   // Pending Excel import waiting for the admin to choose a target branch
-  const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string } | null>(null)
+  const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
 
   // ── Week helpers ──────────────────────────────────────────────────────────
   const weekRange = useMemo(() => {
@@ -194,10 +199,27 @@ export default function DailyServiceReport() {
       const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) return
       const data = await res.json()
-      const list = (data?.data || []) as { id: string; name: string }[]
-      setBranches(list.map(b => ({ id: b.id, name: b.name })))
+      const list = ((data?.data || data || []) as { id: string; name: string }[])
+      
+      const newList: BranchOption[] = []
+      for (const b of list) {
+        const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
+        if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
+          newList.push({ id: `${b.id}-sales`, name: 'Taguig - Sales' })
+          newList.push({ id: `${b.id}-services`, name: 'Taguig - Services' })
+        } else {
+          newList.push({ id: b.id, name: cleanName })
+        }
+      }
+      newList.sort((a, b) => a.name.localeCompare(b.name))
+
+      let finalList = newList
+      if (isManager && user?.branchId) {
+        finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+      }
+      setBranches(finalList)
     } catch (e) { console.error(e) }
-  }, [])
+  }, [isManager, user?.branchId])
 
   useEffect(() => {
     if (isAdmin && !branchFilter && branches.length > 0) {
@@ -210,7 +232,13 @@ export default function DailyServiceReport() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ date, weekly: String(viewMode === 'weekly') })
-      if (branchFilter) params.set('branchId', branchFilter)
+      
+      let apiBranchId = branchFilter
+      if (branchFilter && (branchFilter.endsWith('-sales') || branchFilter.endsWith('-services'))) {
+        apiBranchId = branchFilter.split('-')[0]
+      }
+      if (apiBranchId) params.set('branchId', apiBranchId)
+
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -228,20 +256,91 @@ export default function DailyServiceReport() {
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
 
-  // ── Excel import ──────────────────────────────────────────────────────────
+  // ── Detect branch from filename ───────────────────────────────────────────
+  const guessBranchFromFilename = (filename: string): string => {
+    const base = filename.replace(/\.[^.]+$/, '').toLowerCase().replace(/[_\-]/g, ' ')
+    let bestId = branchFilter || (branches[0]?.id || '')
+    let bestScore = -1
+    for (const b of branches) {
+      const nameLower = b.name.toLowerCase()
+      const keywords = nameLower.split(/[\s\-–]+/).filter(w => w.length >= 3)
+      const score = keywords.reduce((acc, kw) => acc + (base.includes(kw) ? 1 : 0), 0)
+      if (score > bestScore) { bestScore = score; bestId = b.id }
+    }
+    return bestScore > 0 ? bestId : (branchFilter || (branches[0]?.id || ''))
+  }
+
+  // ── Detect date from filename ─────────────────────────────────────────────
+  const guessDateFromFilename = (filename: string): string | null => {
+    const base = filename.replace(/\.[^.]+$/, '')
+    const toISO = (y: number, m: number, d: number): string | null => {
+      if (m < 1 || m > 12 || d < 1 || d > 31) return null
+      const full = y < 100 ? 2000 + y : y
+      return `${full}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    }
+
+    // 1. YYYY-MM-DD  e.g. 2026-05-26  or  2026.05.26
+    let m = base.match(/(\d{4})[\.\-\/](\d{1,2})[\.\-\/](\d{1,2})/)
+    if (m) return toISO(+m[1], +m[2], +m[3])
+
+    // 2. Compact YYYYMMDD  e.g. 20260526
+    m = base.match(/(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])(?!\d)/)
+    if (m) return toISO(+m[1], +m[2], +m[3])
+
+    // 3. MM-DD-YYYY or MM.DD.YYYY  e.g. 05-26-2026
+    m = base.match(/(\d{1,2})[\.\-\/](\d{1,2})[\.\-\/](\d{4})/)
+    if (m) {
+      const [, a, b2, y] = m
+      // Determine if first chunk is month (1-12) vs day
+      if (+a <= 12) return toISO(+y, +a, +b2)
+      if (+b2 <= 12) return toISO(+y, +b2, +a)
+    }
+
+    // 4. Month name  e.g. May26, May 26 2026, 26May2026
+    const MONTHS: Record<string, number> = {
+      jan:1, feb:2, mar:3, apr:4, may:5, jun:6,
+      jul:7, aug:8, sep:9, oct:10, nov:11, dec:12,
+      january:1, february:2, march:3, april:4, june:6,
+      july:7, august:8, september:9, october:10, november:11, december:12,
+    }
+    const monthPat = Object.keys(MONTHS).sort((a,b) => b.length - a.length).join('|')
+    const re = new RegExp(`(?:(\\d{1,2})[\\s\\-\\.])?(${monthPat})[\\s\\-\\.](\\d{1,2})?[\\s\\-\\.,]*(\\d{2,4})?`, 'i')
+    const mn = base.match(re)
+    if (mn) {
+      const moNum = MONTHS[mn[2].toLowerCase()]
+      const day = +(mn[1] || mn[3] || '1')
+      const yr = mn[4] ? +mn[4] : new Date().getFullYear()
+      if (moNum) return toISO(yr, moNum, day)
+    }
+
+    return null
+  }
+
   const handleImportFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+
+    // Auto-detect date from filename and update the date picker
+    const detectedDate = guessDateFromFilename(file.name)
+    if (detectedDate && detectedDate !== date) {
+      setDate(detectedDate)
+    }
+
     if (isManager) {
-      // Manager → branch is implicit (their own); skip picker
       runImport(file, user?.branchId || '')
     } else {
-      // Admin → must pick which branch this workbook is for
-      const seedBranch = branchFilter || (branches[0]?.id || '')
-      setPendingImport({ file, branchId: seedBranch })
+      const detectedId = guessBranchFromFilename(file.name)
+      if (detectedId && detectedId !== branchFilter) setBranchFilter(detectedId)
+      setPendingImport({
+        file,
+        branchId: detectedId || branchFilter || (branches[0]?.id || ''),
+        detectedDate: detectedDate || null,
+      })
+      console.info(`[Import] "${file.name}" → branch: ${branches.find(b => b.id === detectedId)?.name || '?'}, date: ${detectedDate || 'not detected'}`)
     }
   }
+
 
   const runImport = async (file: File, branchId: string) => {
     if (!isManager && !branchId) {
@@ -266,7 +365,9 @@ export default function DailyServiceReport() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ date: targetDate })
-      if (!isManager && branchId) params.set('branchId', branchId)
+      if (!isManager && branchId) {
+        params.set('branchId', branchId.replace(/-sales$|-services$/, ''))
+      }
       const url = `${API_BASE_URL}/v1/service-reports/import?${params.toString()}`
       const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
       if (res.ok) {
@@ -301,10 +402,14 @@ export default function DailyServiceReport() {
       const url = isNew
         ? `${API_BASE_URL}/v1/service-reports`
         : `${API_BASE_URL}/v1/service-reports/${editing.id}`
+      const payload = {
+        ...editing,
+        branchId: editing.branchId ? editing.branchId.replace(/-sales$|-services$/, '') : null
+      }
       const res = await fetch(url, {
         method: isNew ? 'POST' : 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(editing),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -337,6 +442,40 @@ export default function DailyServiceReport() {
     }
   }
 
+  const handleClearAll = async () => {
+    if (!isAdmin) {
+      alert('Access denied: Only administrator accounts can clear all records.')
+      return
+    }
+    // Strip the -sales/-services virtual suffix to get the real branch UUID
+    const realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : ''
+    if (!realBranchId) { alert('No branch selected'); return }
+    const branchLabel = branches.find(b => b.id === branchFilter)?.name || realBranchId
+    const prettyDate = new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    const confirmed = window.confirm(
+      `⚠️ DANGER ZONE\n\nPermanently delete all ${visible.length} service record${visible.length !== 1 ? 's' : ''} for ${branchLabel} on ${prettyDate}?\n\nThis CANNOT be undone.`
+    )
+    if (!confirmed) return
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const params = new URLSearchParams({ branchId: realBranchId, date })
+      const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Clear failed (HTTP ${res.status})`)
+        return
+      }
+      const result = await res.json()
+      alert(`Deleted ${result.deleted} service record${result.deleted !== 1 ? 's' : ''} for ${branchLabel}.`)
+      fetchRows()
+    } catch (e) {
+      console.error(e); alert('Network error while clearing records')
+    }
+  }
+
   // ── Derived data ──────────────────────────────────────────────────────────
   const rowSearchBlob = (r: ServiceRow) => {
     const amt = r.amountCharged != null ? String(r.amountCharged) : ''
@@ -355,9 +494,25 @@ export default function DailyServiceReport() {
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery])
+    let filtered = rows
+    
+    if (branchFilter && branchFilter.endsWith('-sales')) {
+      filtered = rows.filter(r => {
+        const type = (r.serviceType || '').toUpperCase()
+        const code = (r.statusCode || '').toUpperCase()
+        return type.includes('INSTALL') || code === 'I'
+      })
+    } else if (branchFilter && branchFilter.endsWith('-services')) {
+      filtered = rows.filter(r => {
+        const type = (r.serviceType || '').toUpperCase()
+        const code = (r.statusCode || '').toUpperCase()
+        return !type.includes('INSTALL') && code !== 'I'
+      })
+    }
+
+    if (!q) return filtered
+    return filtered.filter(r => rowSearchBlob(r).includes(q))
+  }, [rows, searchQuery, branchFilter])
 
   const totals = useMemo(() => visible.reduce(
     (acc, r) => ({
@@ -383,7 +538,7 @@ export default function DailyServiceReport() {
         {/* Title Section */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-1">
-            <Wrench className="w-5 h-5" style={{ color: '#3B82F6' }} />
+            <Wrench className="w-5 h-5" style={{ color: primaryGreen }} />
             <h2 className="text-xl md:text-2xl font-bold tracking-tight" style={{ color: textPrimary }}>
               Daily Service Report
             </h2>
@@ -397,16 +552,16 @@ export default function DailyServiceReport() {
         <div className="flex items-center gap-3 flex-wrap">
           {/* Record Counter */}
           <div className="px-4 py-2 rounded-lg text-sm font-bold"
-               style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6' }}>
+               style={{ backgroundColor: primaryGreenBg, color: primaryGreen }}>
             {visible.length} {visible.length === 1 ? 'record' : 'records'}
           </div>
 
           {/* Add Service */}
           {canEdit && (
             <button type="button"
-                    onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : ''))}
+                    onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105"
-                    style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#3B82F6' }}>
+                    style={{ backgroundColor: primaryGreenBgAlt, color: primaryGreen }}>
               <Plus className="w-4 h-4" /> Add Service
             </button>
           )}
@@ -423,7 +578,7 @@ export default function DailyServiceReport() {
                           ? `Import only YOUR branch's rows into ${date}`
                           : `Import every branch into ${date}`}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: '#3B82F6', color: '#fff' }}>
+                      style={{ backgroundColor: primaryGreen, color: '#fff' }}>
                 <Upload className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
                 {importing ? 'Importing…' : 'Import'}
               </button>
@@ -432,95 +587,93 @@ export default function DailyServiceReport() {
         </div>
       </div>
 
+      {/* Filter toolbar */}
+      <div className="flex items-center gap-2 flex-wrap mt-3">
+        {/* Branch filter */}
+        {isAdmin && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-green-400"
+               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+            <Building2 className="w-3.5 h-3.5" style={{ color: primaryGreen }} />
+            <select
+              value={branchFilter}
+              onChange={e => setBranchFilter(e.target.value)}
+              className="bg-transparent outline-none text-xs font-bold cursor-pointer"
+              style={{ color: textPrimary }}
+            >
+              {branches.map(b => (
+                <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Date picker */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-sm"
+             style={{ backgroundColor: primaryGreenBgAlt, border: `1px solid ${primaryGreenBorder}`, color: primaryGreen }}>
+          <CalendarDays className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            {viewMode !== 'weekly' && (
+              <span className="uppercase tracking-widest opacity-80 border-r border-green-500/20 pr-2">
+                {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
+              </span>
+            )}
+            {viewMode === 'weekly' ? (
+              <span className="tracking-tight">{weekRange.label}</span>
+            ) : (
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                     className="bg-transparent outline-none cursor-pointer" />
+            )}
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs min-w-0"
+             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+          <Search className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="bg-transparent outline-none text-xs min-w-0 w-32 md:w-48"
+            style={{ color: textPrimary }}
+          />
+          {searchQuery && (
+            <button type="button" onClick={() => setSearchQuery('')} title="Clear"
+                    className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
+              style={{ color: primaryGreen, backgroundColor: primaryGreenBgAlt }}>
+          {visible.length} records
+        </span>
+      </div>
+
       {/* KPI strip */}
       {!loading && rows.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           {[
-            { label: 'Service Records', value: totals.count.toString(), color: '#3B82F6' },
-            { label: 'Total Units',     value: totals.qty.toString(),   color: '#8B5CF6' },
-            { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#10B981' },
-            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#06B6D4' },
-            { label: 'Completed',       value: totals.completed.toString(), color: '#10B981' },
+            { label: 'Service Records', value: totals.count.toString(), color: primaryGreen },
+            { label: 'Total Units',     value: totals.qty.toString(),   color: '#059669' },
+            { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#15803D' },
+            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#10B981' },
+            { label: 'Completed',       value: totals.completed.toString(), color: '#22C55E' },
             { label: 'Cancelled',       value: totals.cancelled.toString(), color: '#EF4444' },
           ].map((k, i) => (
-            <div key={i} className="rounded-2xl p-4 relative overflow-hidden"
+            <div key={i} className="rounded-xl p-3 flex flex-col gap-1 shadow-sm"
                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-              <div className="absolute top-0 left-0 w-1 h-full rounded-l-2xl" style={{ backgroundColor: k.color }} />
-              <div className="pl-2">
-                <div className="text-lg font-black tracking-tight" style={{ color: k.color }}>{k.value}</div>
-                <div className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: textMuted }}>{k.label}</div>
-              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
+              <span className="text-lg font-bold" style={{ color: k.color }}>{k.value}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Table */}
+      {/* Data table */}
       <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="px-5 py-4 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-          <div className="flex flex-wrap items-center gap-3">
-            {isAdmin && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-blue-400"
-                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                <Building2 className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-                <select
-                  value={branchFilter}
-                  onChange={e => setBranchFilter(e.target.value)}
-                  className="bg-transparent outline-none text-xs font-bold cursor-pointer"
-                  style={{ color: textPrimary }}
-                >
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-sm"
-                 style={{ backgroundColor: 'rgba(59,130,246,0.12)', border: `1px solid rgba(59,130,246,0.2)`, color: '#3B82F6' }}>
-              <CalendarDays className="w-4 h-4" />
-              <div className="flex items-center gap-2">
-                {viewMode !== 'weekly' && (
-                  <span className="uppercase tracking-widest opacity-80 border-r border-blue-500/20 pr-2">
-                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
-                  </span>
-                )}
-                {viewMode === 'weekly' ? (
-                  <span className="tracking-tight">{weekRange.label}</span>
-                ) : (
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                         className="bg-transparent outline-none cursor-pointer" />
-                )}
-              </div>
-            </div>
-
-            {/* Search Bar */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs min-w-0"
-                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-xs min-w-0 w-32 md:w-48"
-                style={{ color: textPrimary }}
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} title="Clear"
-                        className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-                style={{ color: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.12)' }}>
-            {visible.length} records
-          </span>
-        </div>
-
         {loading ? (
           <div className="flex flex-col gap-2 p-5">
             {[1,2,3,4].map(i => (
@@ -537,10 +690,10 @@ export default function DailyServiceReport() {
             </p>
             {searchQuery.trim() ? (
               <button type="button" onClick={() => setSearchQuery('')}
-                      className="text-xs font-bold text-[#3B82F6] hover:underline">Clear search</button>
+                      className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>Clear search</button>
             ) : canEdit && (
-              <button onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : ''))}
-                      className="text-xs font-bold text-[#3B82F6] hover:underline">+ Add the first one</button>
+              <button onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
+                      className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>+ Add the first one</button>
             )}
           </div>
         ) : (
@@ -561,7 +714,7 @@ export default function DailyServiceReport() {
                         e.preventDefault()
                         if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
                       }}
-                      style={{ borderBottom: `1px solid ${border}`, backgroundColor: contextMenu?.row.id === r.id ? (isLight ? '#eff6ff' : '#172554') : (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
+                      style={{ borderBottom: `1px solid ${border}`, backgroundColor: contextMenu?.row.id === r.id ? (isLight ? '#f0fdf4' : '#14532d') : (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
                       onMouseEnter={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = rowHover }}
                       onMouseLeave={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c') }}>
                     <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 140, fontSize: '11px' }}>
@@ -587,6 +740,34 @@ export default function DailyServiceReport() {
             </table>
           </div>
         )}
+
+        {/* ── Danger Zone footer ── */}
+        {isAdmin && visible.length > 0 && (
+          <div className="flex items-center justify-between px-5 py-3"
+               style={{ borderTop: '1px solid rgba(239,68,68,0.2)', backgroundColor: 'rgba(239,68,68,0.04)' }}>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#EF4444' }}>Danger Zone</span>
+              <span className="text-xs" style={{ color: textMuted }}>
+                Permanently deletes all{' '}
+                <strong style={{ color: textPrimary }}>{visible.length}</strong>{' '}
+                record{visible.length !== 1 ? 's' : ''} for{' '}
+                <strong style={{ color: textPrimary }}>
+                  {branches.find(b => b.id === branchFilter)?.name || 'this branch'}
+                </strong>{' '}on{' '}
+                <strong style={{ color: textPrimary }}>
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </strong>. This cannot be undone.
+              </span>
+            </div>
+            <button type="button" onClick={handleClearAll}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
+              style={{ backgroundColor: 'transparent', border: '1.5px solid #EF4444', color: '#EF4444' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#EF4444'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#EF4444' }}>
+              <Trash2 className="w-3.5 h-3.5" /> Clear All Records
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Right-click context menu ─────────────────────────────────── */}
@@ -596,10 +777,10 @@ export default function DailyServiceReport() {
           <div className="rounded-xl shadow-2xl overflow-hidden min-w-[160px]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             {canEdit && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-blue-500/10"
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-green-500/10"
                       style={{ color: textPrimary }}
                       onClick={() => { setEditing(contextMenu.row); setContextMenu(null) }}>
-                <Edit3 className="w-3.5 h-3.5 text-blue-400" /> Edit row
+                <Edit3 className="w-3.5 h-3.5 text-green-500" /> Edit row
               </button>
             )}
             {canDelete && (
@@ -622,20 +803,44 @@ export default function DailyServiceReport() {
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
                onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <h3 className="font-black text-sm" style={{ color: textPrimary }}>Choose Target Branch</h3>
+              <h3 className="font-black text-sm" style={{ color: textPrimary }}>Import to Branch</h3>
               <button onClick={() => setPendingImport(null)} className="p-1.5 rounded-lg" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 flex flex-col gap-3">
+            <div className="p-5 flex flex-col gap-4">
+              {/* File info row */}
+              <div className="flex items-start gap-3 p-3 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <Upload className="w-4 h-4 mt-0.5 shrink-0" style={{ color: primaryGreen }} />
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{pendingImport.file.name}</span>
+                  {/* Auto-detected badges */}
+                  <div className="flex flex-col gap-0.5">
+                    {branches.find(b => b.id === pendingImport.branchId) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold"
+                            style={{ color: primaryGreen }}>
+                        ✦ Branch: <span style={{ color: textPrimary }}>{branches.find(b => b.id === pendingImport.branchId)?.name}</span>
+                      </span>
+                    )}
+                    {pendingImport.detectedDate && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold"
+                            style={{ color: '#059669' }}>
+                        ✦ Date: <span style={{ color: textPrimary }}>
+                          {new Date(pendingImport.detectedDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <p className="text-xs" style={{ color: textMuted }}>
-                Every row in <span className="font-bold" style={{ color: textPrimary }}>{pendingImport.file.name}</span> will be saved
-                under the branch you pick. Existing rows for that branch on{' '}
+                Existing rows for the selected branch on{' '}
                 <span className="font-bold" style={{ color: textPrimary }}>
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </span>{' '}will be replaced.
+                </span>{' '}will be replaced. You can change the branch below if needed.
               </p>
-              <Field label="Branch" required>
+              <Field label="Target Branch" required>
                 <select value={pendingImport.branchId}
                         onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
@@ -654,13 +859,14 @@ export default function DailyServiceReport() {
               <button onClick={() => runImport(pendingImport.file, pendingImport.branchId)}
                       disabled={!pendingImport.branchId || importing}
                       className="px-4 py-2 rounded-xl text-xs font-bold text-white"
-                      style={{ backgroundColor: '#3B82F6', opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
+                      style={{ backgroundColor: primaryGreen, opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
                 {importing ? 'Importing…' : 'Import'}
               </button>
             </div>
           </div>
         </div>
       )}
+
 
       {/* ── Edit / Create Modal ─────────────────────────────────────── */}
       {editing && (
@@ -691,7 +897,7 @@ export default function DailyServiceReport() {
               </button>
               <button onClick={handleSave}
                       className="px-6 py-2 text-xs font-bold text-white rounded-xl shadow-md"
-                      style={{ backgroundColor: '#3B82F6' }}>
+                      style={{ backgroundColor: primaryGreen }}>
                 {editing.id ? 'Save Changes' : 'Create Record'}
               </button>
             </div>
@@ -703,7 +909,7 @@ export default function DailyServiceReport() {
 
               {/* Section 1 — Customer & Location */}
               <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: '#3B82F6' }}>① Customer &amp; Location</p>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: primaryGreen }}>① Customer &amp; Location</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <Field label="Branch" required={!isManager}>
                     {isManager ? (
@@ -946,7 +1152,7 @@ export default function DailyServiceReport() {
             </button>
             <button onClick={handleSave}
                     className="px-7 py-2.5 text-xs font-bold text-white rounded-xl"
-                    style={{ backgroundColor: '#3B82F6' }}>
+                    style={{ backgroundColor: primaryGreen }}>
               {editing.id ? 'Save Changes' : 'Create Record'}
             </button>
           </div>

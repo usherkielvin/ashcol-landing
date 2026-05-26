@@ -578,7 +578,20 @@ export default function AuditFinanceExpenses() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       })
-      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      if (!res.ok) {
+        let errorMsg = `Server error ${res.status}`
+        try {
+          const errData = await res.json() as Record<string, any>
+          if (errData && errData.error) {
+            errorMsg = String(errData.error)
+          } else if (errData && errData.message) {
+            errorMsg = String(errData.message)
+          }
+        } catch (_) {
+          // ignore
+        }
+        throw new Error(errorMsg)
+      }
       const data = await res.json() as Record<string, unknown>
       if (data.error) { setScanError(`Scan failed: ${data.error}`); return }
 
@@ -650,9 +663,9 @@ export default function AuditFinanceExpenses() {
       })
       if (parsed) { setDateRaw(parsed); setDateError('') }
       setScannedFields(filled)
-    } catch (err) {
+    } catch (err: any) {
       console.error('[ReceiptScan]', err)
-      setScanError('Could not scan receipt. Make sure the backend is running.')
+      setScanError(err?.message || 'Could not scan receipt. Make sure the backend is running.')
     } finally {
       setScanning(false)
       if (scanRef.current) scanRef.current.value = ''

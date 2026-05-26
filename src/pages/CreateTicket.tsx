@@ -162,6 +162,7 @@ export default function CreateTicket() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const isLight = theme === 'light'
+  const isStaffOrAdmin = ['admin', 'manager', 'staff'].includes((user?.role || '').toLowerCase())
 
   // Colour tokens
   const pageBg      = isLight ? '#f1f5f9' : '#060B18'
@@ -190,6 +191,7 @@ export default function CreateTicket() {
   })
   const [description, setDescription] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
+  const [sourceVendor, setSourceVendor] = useState('Direct')
   const [images, setImages] = useState<{ file: File; url: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -266,6 +268,7 @@ export default function CreateTicket() {
           contactPhone: contactPhone.trim(),
           preferredDate: selectedDate || undefined,
           location: fullLoc.trim(),
+          sourceVendor: sourceVendor,
         })
       })
       if (!res.ok) throw new Error('Failed')
@@ -427,6 +430,18 @@ export default function CreateTicket() {
                 className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
                 style={inputSty} />
             </div>
+            {isStaffOrAdmin && (
+              <div>
+                <FL label="Store / B2B Vendor Source" />
+                <select value={sourceVendor} onChange={e => setSourceVendor(e.target.value)}
+                  className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
+                  style={inputSty}>
+                  <option value="Direct" style={{ color: '#000' }}>Direct Client</option>
+                  <option value="Robinsons B2B" style={{ color: '#000' }}>Robinsons B2B</option>
+                  <option value="Abenson B2B" style={{ color: '#000' }}>Abenson B2B</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* 4 · Location */}

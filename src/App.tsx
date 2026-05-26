@@ -20,6 +20,7 @@ import DailySalesForm from './pages/DailySalesForm'
 import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
 import DTRScanner from './pages/DTRScanner'
+import ClientMasterlist from './pages/ClientMasterlist'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -64,6 +65,7 @@ export default function App() {
               <Route path="/tickets" element={<Tickets />} />
               <Route path="/tickets/create" element={<CreateTicket />} />
               <Route path="/create-ticket" element={<CreateTicket />} />
+              <Route path="/client-masterlist" element={<ClientMasterlist />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
               <Route path="/employees" element={<Employees />} />

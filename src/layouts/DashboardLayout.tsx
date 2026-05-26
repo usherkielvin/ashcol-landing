@@ -72,6 +72,7 @@ export default function DashboardLayout() {
   const allLinks = [
     { name: 'Overview',   path: '/dashboard', icon: LayoutDashboard },
     { name: 'Tickets',    path: '/tickets',   icon: TicketIcon },
+    { name: 'Client Masterlist', path: '/client-masterlist', icon: ClipboardList, roles: ['admin', 'manager', 'staff'] },
     { name: 'Branches',   path: '/branches',  icon: Building2,  roles: ['admin'] },
     { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
