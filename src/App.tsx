@@ -39,12 +39,22 @@ function RootRouter() {
     new URLSearchParams(window.location.search).get('portal') === 'true'
   
   if (isPortalSubdomain) {
-    // If on portal subdomain, go to schedules if logged in, otherwise login
-    return user ? <Navigate to="/schedules" replace /> : <Navigate to="/login" replace />
+    if (user) {
+      const role = (user.role || '').toLowerCase()
+      return <Navigate to={role === 'admin' ? '/dashboard-home' : '/schedules'} replace />
+    }
+    return <Navigate to="/login" replace />
   }
   
   // Otherwise, show the public landing page
   return <Landing />
+}
+
+function DashboardRedirect() {
+  const { user } = useAuth()
+  if (!user) return <Navigate to="/login" replace />
+  const role = (user.role || '').toLowerCase()
+  return <Navigate to={role === 'admin' ? '/dashboard-home' : '/schedules'} replace />
 }
 
 export default function App() {
@@ -61,7 +71,7 @@ export default function App() {
               <Route path="/create-account" element={<CreateAccount />} />
               {/* Portal Routes */}
               <Route element={<DashboardLayout />}>
-                <Route path="/dashboard" element={<Navigate to={localStorage.getItem('ashcol-lite-mode') === 'true' ? '/schedules' : '/dashboard-home'} replace />} />
+                <Route path="/dashboard" element={<DashboardRedirect />} />
                 <Route path="/dashboard-home" element={<Dashboard />} />
               <Route path="/tickets" element={<Tickets />} />
               <Route path="/tickets/create" element={<CreateTicket />} />

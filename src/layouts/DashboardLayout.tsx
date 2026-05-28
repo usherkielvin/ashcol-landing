@@ -86,15 +86,15 @@ export default function DashboardLayout() {
     { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff'] },
   ]
 
-  const liteMode = localStorage.getItem('ashcol-lite-mode') === 'true'
+  const role = (user?.role || '').toLowerCase()
+  const isAdmin = role === 'admin'
 
-  const navLinks = liteMode
-    ? allLinks.filter(link => link.name === 'Schedules')
-    : allLinks.filter(link => {
+  const navLinks = isAdmin
+    ? allLinks.filter(link => {
         if (!link.roles) return true // visible to everyone (Overview, Tickets)
-        const role = (user?.role || '').toLowerCase()
         return link.roles.includes(role)
       })
+    : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Line-Up' || link.name === 'Service Report')
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'
