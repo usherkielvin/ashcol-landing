@@ -697,13 +697,13 @@ export default function DailyServiceReport() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto', overflowX: 'auto' }}>
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                   {["CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'CHARGES', 'PAYMENT']
                     .map(h => (
-                      <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: textMuted, fontWeight: 600, whiteSpace: 'nowrap', borderRight: `1px solid ${border}`, letterSpacing: '0.03em', fontSize: '11px' }}>{h}</th>
+                      <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: textMuted, fontWeight: 600, whiteSpace: 'nowrap', borderRight: `1px solid ${border}`, letterSpacing: '0.03em', fontSize: '11px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: inputBg }}>{h}</th>
                   ))}
                 </tr>
               </thead>
