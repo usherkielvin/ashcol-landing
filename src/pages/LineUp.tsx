@@ -357,26 +357,29 @@ export default function LineUp() {
         {/* Mobile Header */}
         <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div style={{ background: 'linear-gradient(135deg, #059669, #047857)', padding: '16px 20px' }}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[3px] text-emerald-200 mb-0.5">Scheduling</p>
-                <h2 className="text-xl font-black text-white tracking-tight">Team Line-Up</h2>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Date picker */}
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white">
+            <div className="mb-3">
+              <p className="text-[10px] font-black uppercase tracking-[3px] text-emerald-200 mb-0.5">Scheduling</p>
+              <h2 className="text-xl font-black text-white tracking-tight">Team Line-Up</h2>
+            </div>
+
+            <div className="lineup-toolbar">
+              {/* Date picker */}
+              <div className="lineup-date-control">
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
                   <ClipboardList className="w-3.5 h-3.5 shrink-0" />
                   <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                    className="bg-transparent outline-none text-xs font-bold text-white w-[112px]" />
+                    className="bg-transparent outline-none text-xs font-bold text-white w-full" />
                 </div>
-                {/* + Add */}
+              </div>
+
+              {/* + and ⋯ buttons */}
+              <div className="lineup-actions">
                 {canEdit && (
                   <button onClick={() => setEditing({ ...BLANK_ROW(date, branchId), sortOrder: rows.length })}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/20 border border-white/25 text-white active:scale-95">
                     <Plus className="w-4 h-4" />
                   </button>
                 )}
-                {/* ⋯ More */}
                 <div className="relative" ref={moreMenuRef}>
                   <button onClick={() => setMoreMenuOpen(o => !o)}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 active:scale-95">
@@ -385,30 +388,9 @@ export default function LineUp() {
                   {moreMenuOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-                      <div className="absolute right-0 top-11 z-50 w-52 rounded-2xl overflow-hidden shadow-2xl"
+                      <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl overflow-hidden shadow-2xl"
                         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                        {/* Branch */}
-                        <div className="px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
-                          <p className="text-[9px] font-black uppercase tracking-widest mb-1.5" style={{ color: textMuted }}>Branch</p>
-                          <div className="flex items-center gap-2">
-                            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                            <select value={branchId} onChange={e => { setBranchId(e.target.value); setMoreMenuOpen(false) }}
-                              disabled={isManager && !!user?.branchId}
-                              className="bg-transparent outline-none text-xs font-bold w-full" style={{ color: textPrimary }}>
-                              {branches.length === 0 && <option value="">Loading…</option>}
-                              {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
-                            </select>
-                            <ChevronDown className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
-                          </div>
-                        </div>
-                        {/* Actions */}
                         <div className="py-1.5">
-                          {canEdit && (
-                            <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import Excel" color="#10B981"
-                              onClick={() => { fileInputRef.current?.click(); setMoreMenuOpen(false) }} />
-                          )}
-                          <DropdownItem icon={<Download className="w-3.5 h-3.5" />} label="Export Excel" color="#3B82F6"
-                            onClick={() => { handleExportExcel(); setMoreMenuOpen(false) }} />
                           {canEdit && (
                             <>
                               <DropdownItem
@@ -427,8 +409,35 @@ export default function LineUp() {
                   )}
                 </div>
               </div>
+
+              {/* Branch — full width row */}
+              <div className="lineup-branch-control">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
+                  <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6ee7b7' }} />
+                  <select value={branchId} onChange={e => setBranchId(e.target.value)}
+                    disabled={isManager && !!user?.branchId}
+                    className="bg-transparent outline-none text-xs font-bold w-full text-white">
+                    {branches.length === 0 && <option value="">Loading…</option>}
+                    {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Import + Export — 2-column grid row */}
+              <div className="lineup-import-export-actions">
+                {canEdit && (
+                  <button onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-white/10 border border-white/20 text-emerald-300">
+                    <Upload className="w-3.5 h-3.5" /> Import
+                  </button>
+                )}
+                <button onClick={handleExportExcel}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-white/10 border border-white/20 text-blue-300">
+                  <Download className="w-3.5 h-3.5" /> Export
+                </button>
+              </div>
             </div>
-            <p className="text-[10px] font-semibold text-emerald-200 mt-2 tracking-wider">{englishLabel(date)}</p>
+            <p className="text-[10px] font-semibold text-emerald-200 mt-3 tracking-wider">{englishLabel(date)}</p>
           </div>
 
           {/* Stat pills */}

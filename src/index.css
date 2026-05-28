@@ -119,3 +119,53 @@
     filter: blur(80px);
   }
 }
+
+@media (max-width: 640px) {
+  .lineup-toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .lineup-date-control {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .lineup-branch-control {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    order: 3;
+  }
+
+  .lineup-branch-control select,
+  .lineup-branch-control button,
+  .lineup-branch-control [role="combobox"] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .lineup-actions {
+    display: contents;
+  }
+
+  .lineup-import-export-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    order: 4;
+  }
+
+  .lineup-import-export-actions button {
+    width: 100%;
+  }
+
+  .lineup-import-export-actions button:only-child {
+    grid-column: 1 / -1;
+  }
+}
+
