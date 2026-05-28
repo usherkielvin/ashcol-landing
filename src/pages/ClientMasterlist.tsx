@@ -347,7 +347,6 @@ export default function ClientMasterlist() {
   }
 
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
@@ -439,7 +438,6 @@ export default function ClientMasterlist() {
   // Load Initial Data
   const fetchData = async () => {
     try {
-      setRefreshing(true)
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       
       // Fetch Tickets
@@ -465,7 +463,6 @@ export default function ClientMasterlist() {
       console.error('Error fetching data:', e)
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }
 
@@ -949,46 +946,6 @@ export default function ClientMasterlist() {
     }
   }
 
-  const handleClearBranchRecords = async () => {
-    const isAll = branchFilter === 'ALL'
-    const branchName = isAll ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'the selected branch')
-    const ticketsToDelete = isAll ? tickets : tickets.filter(t => resolveBranch(t.branchId)?.id === branchFilter)
-
-    if (ticketsToDelete.length === 0) {
-      alert(`No tickets found for "${branchName}".`)
-      return
-    }
-
-    const confirmMsg = isAll
-      ? `WARNING: Are you sure you want to delete ALL ${ticketsToDelete.length} tickets across ALL branches?\n\nThis will permanently delete all client scheduling records globally. This action cannot be undone.`
-      : `WARNING: Are you sure you want to delete ALL ${ticketsToDelete.length} tickets assigned to "${branchName}"?\n\nThis will permanently delete all these scheduling records. This action cannot be undone.`
-
-    if (!window.confirm(confirmMsg)) {
-      return
-    }
-
-    setRefreshing(true)
-    let deletedCount = 0
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-
-    for (const ticket of ticketsToDelete) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (res.ok) {
-          deletedCount++
-        }
-      } catch (err) {
-        console.error('Failed to delete ticket:', ticket.id, err)
-      }
-    }
-
-    alert(`Successfully deleted ${deletedCount} of ${ticketsToDelete.length} tickets for "${branchName}".`)
-    fetchData()
-  }
-
   // Open action drawer for a ticket
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
@@ -1297,14 +1254,6 @@ export default function ClientMasterlist() {
                   {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
                 </select>
               </div>
-              {isAdmin && (
-                <button type="button" onClick={handleClearBranchRecords} disabled={refreshing}
-                  title={branchFilter === 'ALL' ? 'Clear all records (all branches)' : 'Clear records for this branch'}
-                  className="p-2 rounded-xl border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"
-                  style={{ width: 32, height: 32 }}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
 
             {/* Store/Vendor Filter */}
