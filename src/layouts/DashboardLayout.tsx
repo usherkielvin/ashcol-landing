@@ -11,7 +11,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import { useNotifications } from '../contexts/NotificationContext'
-import AIChatBot from '../components/AIChatBot'
+// import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 
 export default function DashboardLayout() {
@@ -70,9 +70,9 @@ export default function DashboardLayout() {
   }, [])
 
   const allLinks = [
-    { name: 'Overview',   path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Overview',   path: '/dashboard-home', icon: LayoutDashboard },
     { name: 'Tickets',    path: '/tickets',   icon: TicketIcon },
-    { name: 'Client Masterlist', path: '/client-masterlist', icon: ClipboardList, roles: ['admin', 'manager', 'staff'] },
+    { name: 'Schedules',   path: '/schedules', icon: ClipboardList, roles: ['admin', 'manager', 'staff'] },
     { name: 'Branches',   path: '/branches',  icon: Building2,  roles: ['admin'] },
     { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
@@ -86,10 +86,15 @@ export default function DashboardLayout() {
     { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff'] },
   ]
 
-  const navLinks = allLinks.filter(link => {
-    if (!link.roles) return true
-    return link.roles.includes((user?.role || 'customer').toLowerCase())
-  })
+  const liteMode = localStorage.getItem('ashcol-lite-mode') === 'true'
+
+  const navLinks = liteMode
+    ? allLinks.filter(link => link.name === 'Schedules')
+    : allLinks.filter(link => {
+        if (!link.roles) return true // visible to everyone (Overview, Tickets)
+        const role = (user?.role || '').toLowerCase()
+        return link.roles.includes(role)
+      })
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'
@@ -262,13 +267,13 @@ export default function DashboardLayout() {
               <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
                 {currentPage}
               </h1>
-              <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
-                {(user?.role || '').toLowerCase() === 'manager' && branchLabel
-                  ? `Branch · ${branchLabel}`
-                  : (user?.role || '').toLowerCase() === 'employee'
-                    ? 'Technician View'
-                    : 'ASHCOL Service Portal'}
-              </p>
+              {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
+                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
+                  {(user?.role || '').toLowerCase() === 'manager'
+                    ? `Branch · ${branchLabel}`
+                    : 'Technician View'}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -457,7 +462,7 @@ export default function DashboardLayout() {
       </div>
 
       {/* ── Global Agentic Chat UI ────────────────────── */}
-      <AIChatBot />
+      {/* <AIChatBot /> */}
     </div>
   )
 }

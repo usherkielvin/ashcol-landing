@@ -433,13 +433,41 @@ export default function CreateTicket() {
             {isStaffOrAdmin && (
               <div>
                 <FL label="Store / B2B Vendor Source" />
-                <select value={sourceVendor} onChange={e => setSourceVendor(e.target.value)}
+                <select
+                  value={
+                    (sourceVendor || '').toLowerCase().includes('robinsons')
+                      ? 'Robinsons B2B'
+                      : (sourceVendor || '').toLowerCase().includes('abenson')
+                      ? 'Abenson B2B'
+                      : 'Direct'
+                  }
+                  onChange={e => setSourceVendor(e.target.value)}
                   className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
                   style={inputSty}>
                   <option value="Direct" style={{ color: '#000' }}>Direct Client</option>
                   <option value="Robinsons B2B" style={{ color: '#000' }}>Robinsons B2B</option>
                   <option value="Abenson B2B" style={{ color: '#000' }}>Abenson B2B</option>
                 </select>
+                {((sourceVendor || '').toLowerCase().includes('robinsons') || (sourceVendor || '').toLowerCase().includes('abenson')) && (
+                  <div className="mt-3">
+                    <FL label={((sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson') + ' Branch Name'} />
+                    <input
+                      type="text"
+                      value={
+                        sourceVendor === 'Robinsons B2B' || sourceVendor === 'Abenson B2B'
+                          ? ''
+                          : sourceVendor
+                      }
+                      onChange={e => {
+                        const prefix = (sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons B2B' : 'Abenson B2B'
+                        setSourceVendor(e.target.value || prefix)
+                      }}
+                      placeholder={(sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
+                      style={inputSty}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

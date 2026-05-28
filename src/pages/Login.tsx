@@ -18,12 +18,14 @@ export default function Login() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
+  const [liteMode, setLiteMode] = useState(() => localStorage.getItem('ashcol-lite-mode') === 'true')
 
   useEffect(() => {
     if (user) {
-      navigate('/dashboard', { replace: true })
+      const target = liteMode ? '/schedules' : '/dashboard-home'
+      navigate(target, { replace: true })
     }
-  }, [user, navigate])
+  }, [user, navigate, liteMode])
 
   // ── Color tokens ──────────────────────────────────────────────
   const rightBg     = isLight ? '#f1f5f9'               : '#060B18'
@@ -71,7 +73,8 @@ export default function Login() {
         branchId: appUser.branchId ?? null,
       })
 
-      navigate('/dashboard')
+      const target = liteMode ? '/schedules' : '/dashboard-home'
+      navigate(target)
     } catch (err: any) {
       console.error('Login Error:', err)
       setError(err.message || 'Failed to login. Please check your credentials.')
@@ -119,7 +122,8 @@ export default function Login() {
           initials: getInitials(appUser.name || profile.name || profile.email),
           branchId: appUser.branchId ?? null,
         })
-        navigate('/dashboard')
+        const target = liteMode ? '/schedules' : '/dashboard-home'
+        navigate(target)
       } catch (err: any) {
         console.error('Google Auth Error:', err)
         setError(err.message || 'Google login failed. Please try again.')
@@ -266,6 +270,25 @@ export default function Login() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+              </div>
+
+              {/* Schedules-Only Mode Toggle */}
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="checkbox"
+                  id="liteMode"
+                  checked={liteMode}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setLiteMode(checked)
+                    localStorage.setItem('ashcol-lite-mode', checked ? 'true' : 'false')
+                  }}
+                  className="rounded border-slate-300 text-[#10B981] focus:ring-[#10B981] w-4 h-4 cursor-pointer"
+                  style={{ accentColor: '#10B981' }}
+                />
+                <label htmlFor="liteMode" className="text-xs font-semibold cursor-pointer select-none" style={{ color: textMuted }}>
+                  Schedules-Only Mode (Lite View)
+                </label>
               </div>
 
               {error && (

@@ -39,8 +39,8 @@ function RootRouter() {
     new URLSearchParams(window.location.search).get('portal') === 'true'
   
   if (isPortalSubdomain) {
-    // If on portal subdomain, go to dashboard if logged in, otherwise login
-    return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />
+    // If on portal subdomain, go to schedules if logged in, otherwise login
+    return user ? <Navigate to="/schedules" replace /> : <Navigate to="/login" replace />
   }
   
   // Otherwise, show the public landing page
@@ -53,19 +53,20 @@ export default function App() {
       <AuthProvider>
         <NotificationProvider>
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<RootRouter />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/create-account" element={<CreateAccount />} />
-            {/* Portal Routes */}
-            <Route element={<DashboardLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<RootRouter />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/create-account" element={<CreateAccount />} />
+              {/* Portal Routes */}
+              <Route element={<DashboardLayout />}>
+                <Route path="/dashboard" element={<Navigate to={localStorage.getItem('ashcol-lite-mode') === 'true' ? '/schedules' : '/dashboard-home'} replace />} />
+                <Route path="/dashboard-home" element={<Dashboard />} />
               <Route path="/tickets" element={<Tickets />} />
               <Route path="/tickets/create" element={<CreateTicket />} />
               <Route path="/create-ticket" element={<CreateTicket />} />
-              <Route path="/client-masterlist" element={<ClientMasterlist />} />
+              <Route path="/schedules" element={<ClientMasterlist />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
               <Route path="/employees" element={<Employees />} />

@@ -9,6 +9,8 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import FleetMap from '../components/FleetMap'
+import GlobalSearch from '../components/GlobalSearch'
+import SearchResultDetailModal from '../components/SearchResultDetailModal'
 
 interface Ticket {
   id: string
@@ -157,6 +159,7 @@ export default function Dashboard() {
   const [filterStatus, setFilterStatus] = useState('ALL')
   const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
   const [assignLoading, setAssignLoading] = useState<string | null>(null)
+  const [selectedSearchResult, setSelectedSearchResult] = useState<any>(null)
 
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
@@ -553,6 +556,13 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-5 pb-8" style={{ backgroundColor: pageBg }}>
 
+      {/* Global Search Bar - Only for admin/manager/staff */}
+      {isAdminOrManager && (
+        <div className="flex justify-center">
+          <GlobalSearch onResultClick={(result) => setSelectedSearchResult(result)} />
+        </div>
+      )}
+
       <div
         className="rounded-2xl p-5 md:p-7 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
@@ -877,6 +887,12 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Search Result Detail Modal */}
+      <SearchResultDetailModal
+        result={selectedSearchResult}
+        onClose={() => setSelectedSearchResult(null)}
+      />
     </div>
   )
 }

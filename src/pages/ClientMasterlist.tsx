@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  Search, RefreshCw, Upload, FileSpreadsheet, AlertTriangle, X, FileText, Loader2, Building2, Trash2
+  Search, RefreshCw, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
+  Building2, Trash2, User, MapPin, Wrench, Calendar,
+  ChevronRight, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -58,6 +60,200 @@ interface ParsedVoucher {
   installationCharges?: number
   modeOfPayment?: string
   controlNumber?: string
+  landmarks?: string
+  brand?: string
+  capacity?: string
+  sku?: string
+  serialNumber?: string
+  imagePath?: string
+  preferredDate?: string
+  relayedDate?: string
+  finalDate?: string
+}
+
+const guessDistrict = (address: string): string => {
+  if (!address) return ''
+  const addr = address.toLowerCase()
+
+  // 1. Direct Regex checks for explicit district declarations
+  const districtRegexes = [
+    /district\s*([0-9]+)/i,
+    /dist\.\s*([0-9]+)/i,
+    /dist\s*([0-9]+)/i,
+    /district\s*([ivxldcm]+)/i,
+    /zone\s*([0-9]+)/i,
+    /zone\s*([ivxldcm]+)/i
+  ]
+
+  for (const regex of districtRegexes) {
+    const match = address.match(regex)
+    if (match && match[1]) {
+      const val = match[1].trim()
+      if (/^[0-9]+$/.test(val)) {
+        return `District ${val}`
+      }
+      return `District ${val.toUpperCase()}`
+    }
+  }
+
+  // 2. Keyword-based matching for Valenzuela City
+  if (addr.includes('valenzuela')) {
+    const d1Barangays = [
+      'arkong bato', 'balangkas', 'bignay', 'bisig', 'canumay east', 'canumay west',
+      'coloong', 'dalandanan', 'isla', 'lawang bato', 'lingunan', 'mabolo', 'malanday',
+      'malinta', 'palasan', 'pasolo', 'poblacion', 'punturin', 'rincon', 'tagalag',
+      'veinte reales', 'wawang pulo'
+    ]
+    const d2Barangays = [
+      'bagbaguin', 'karuhatan', 'gen. t. de leon', 'gtdl', 'mapulang lupa', 'marulas',
+      'maysan', 'parada', 'paso de blas', 'ugong'
+    ]
+
+    for (const brgy of d1Barangays) {
+      if (addr.includes(brgy)) return 'District 1'
+    }
+    for (const brgy of d2Barangays) {
+      if (addr.includes(brgy)) return 'District 2'
+    }
+    return 'Valenzuela'
+  }
+
+  // 3. Keyword-based matching for Bulacan
+  if (addr.includes('bulacan')) {
+    if (addr.includes('san miguel') || addr.includes('san ildefonso') || addr.includes('san rafael') || addr.includes('dona remedios trinidad') || addr.includes('drt')) {
+      return 'District 3'
+    }
+    if (addr.includes('malolos') || addr.includes('bulakan') || addr.includes('calumpit') || addr.includes('hagonoy') || addr.includes('paombong') || addr.includes('pulilan')) {
+      return 'District 1'
+    }
+    if (addr.includes('baliuag') || addr.includes('bustos') || addr.includes('plaridel')) {
+      return 'District 2'
+    }
+    if (addr.includes('meycauayan') || addr.includes('marilao') || addr.includes('obando')) {
+      return 'District 4'
+    }
+    if (addr.includes('guiguinto') || addr.includes('balagtas') || addr.includes('pandi') || addr.includes('bocaue')) {
+      return 'District 5'
+    }
+    if (addr.includes('san jose del monte') || addr.includes('sjdm')) {
+      return 'District 6'
+    }
+  }
+
+  // 4. Active branch coverage areas town/city matching (Cavite, Laguna, Batangas, Rizal, Quezon, Pampanga, Taguig)
+  const towns = [
+    // Cavite
+    { key: 'dasmarinas', label: 'Dasmarinas' },
+    { key: 'dasma', label: 'Dasmarinas' },
+    { key: 'silang', label: 'Silang' },
+    { key: 'bacoor', label: 'Bacoor' },
+    { key: 'imus', label: 'Imus' },
+    { key: 'general trias', label: 'General Trias' },
+    { key: 'gen. trias', label: 'General Trias' },
+    { key: 'gentri', label: 'General Trias' },
+    { key: 'tagaytay', label: 'Tagaytay' },
+    { key: 'trece martires', label: 'Trece Martires' },
+    { key: 'cavite city', label: 'Cavite City' },
+    { key: 'kawit', label: 'Kawit' },
+    { key: 'noveleta', label: 'Noveleta' },
+    { key: 'rosario', label: 'Rosario' },
+    { key: 'carmona', label: 'Carmona' },
+    { key: 'indang', label: 'Indang' },
+    { key: 'naic', label: 'Naic' },
+    { key: 'tanza', label: 'Tanza' },
+    { key: 'amadeo', label: 'Amadeo' },
+    { key: 'alfonso', label: 'Alfonso' },
+    
+    // Laguna
+    { key: 'calauan', label: 'Calauan' },
+    { key: 'santa rosa', label: 'Santa Rosa' },
+    { key: 'sta. rosa', label: 'Santa Rosa' },
+    { key: 'sta rosa', label: 'Santa Rosa' },
+    { key: 'cabuyao', label: 'Cabuyao' },
+    { key: 'calamba', label: 'Calamba' },
+    { key: 'binan', label: 'Binan' },
+    { key: 'biñan', label: 'Binan' },
+    { key: 'san pedro', label: 'San Pedro' },
+    { key: 'santa cruz', label: 'Santa Cruz' },
+    { key: 'sta. cruz', label: 'Santa Cruz' },
+    { key: 'sta cruz', label: 'Santa Cruz' },
+    { key: 'san pablo', label: 'San Pablo' },
+    { key: 'siniloan', label: 'Siniloan' },
+    { key: 'pangil', label: 'Pangil' },
+    { key: 'bay', label: 'Bay' },
+    { key: 'los banos', label: 'Los Banos' },
+    { key: 'los baños', label: 'Los Banos' },
+    { key: 'pagsanjan', label: 'Pagsanjan' },
+    { key: 'pila', label: 'Pila' },
+
+    // Batangas
+    { key: 'sto. tomas', label: 'Sto. Tomas Batangas' },
+    { key: 'sto tomas', label: 'Sto. Tomas Batangas' },
+    { key: 'batangas city', label: 'Batangas City' },
+    { key: 'lipa', label: 'Lipa' },
+    { key: 'tanauan', label: 'Tanauan' },
+    { key: 'nasugbu', label: 'Nasugbu' },
+    { key: 'calaca', label: 'Calaca' },
+    { key: 'lemery', label: 'Lemery' },
+    { key: 'bauan', label: 'Bauan' },
+    { key: 'balayan', label: 'Balayan' },
+
+    // Rizal
+    { key: 'rodriguez', label: 'Rodriguez' },
+    { key: 'montalban', label: 'Rodriguez' },
+    { key: 'san mateo', label: 'San Mateo' },
+    { key: 'antipolo', label: 'Antipolo' },
+    { key: 'cainta', label: 'Cainta' },
+    { key: 'taytay', label: 'Taytay' },
+    { key: 'angono', label: 'Angono' },
+    { key: 'binangonan', label: 'Binangonan' },
+    { key: 'tayuman', label: 'Binangonan' },
+    { key: 'teresa', label: 'Teresa' },
+    { key: 'morong', label: 'Morong' },
+    { key: 'tanay', label: 'Tanay' },
+    { key: 'pililla', label: 'Pililla' },
+
+    // Quezon Province
+    { key: 'candelaria', label: 'Candelaria' },
+    { key: 'lucena', label: 'Lucena' },
+    { key: 'sariaya', label: 'Sariaya' },
+    { key: 'tiaong', label: 'Tiaong' },
+    { key: 'pagbilao', label: 'Pagbilao' },
+    { key: 'tayabas', label: 'Tayabas' },
+
+    // Pampanga
+    { key: 'san fernando', label: 'San Fernando' },
+    { key: 'angeles', label: 'Angeles' },
+    { key: 'mabalacat', label: 'Mabalacat' },
+    { key: 'guagua', label: 'Guagua' },
+    { key: 'floridablanca', label: 'Floridablanca' },
+    { key: 'lubao', label: 'Lubao' },
+    { key: 'apalit', label: 'Apalit' },
+    { key: 'mexico', label: 'Mexico' },
+    { key: 'porac', label: 'Porac' },
+
+    // Taguig / Metro Manila
+    { key: 'taguig', label: 'Taguig' },
+    { key: 'pateros', label: 'Pateros' },
+    { key: 'pasig', label: 'Pasig' },
+    { key: 'makati', label: 'Makati' }
+  ]
+
+  for (const town of towns) {
+    if (addr.includes(town.key)) {
+      return town.label
+    }
+  }
+
+  // General Province Fallbacks
+  if (addr.includes('cavite')) return 'Cavite'
+  if (addr.includes('laguna')) return 'Laguna'
+  if (addr.includes('batangas')) return 'Batangas'
+  if (addr.includes('rizal')) return 'Rizal'
+  if (addr.includes('quezon')) return 'Quezon'
+  if (addr.includes('pampanga')) return 'Pampanga'
+
+  return ''
 }
 
 const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNode => {
@@ -115,7 +311,41 @@ export default function ClientMasterlist() {
   // State
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
-  const [employees, setEmployees] = useState<{ id: string; name: string; branchId?: string }[]>([])
+  
+  const resolveBranch = (branchIdOrName?: string) => {
+    if (!branchIdOrName) return null
+    // 1. Direct ID match
+    let found = branches.find(b => b.id === branchIdOrName)
+    if (found) return found
+
+    // 2. Name-based match if branchIdOrName is a branch name
+    found = branches.find(b => b.name.toLowerCase() === branchIdOrName.toLowerCase())
+    if (found) return found
+
+    // 3. Legacy hardcoded ID mapping
+    const idLower = branchIdOrName.toLowerCase()
+    let keyword = ''
+    if (idLower === '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'calauan'
+    else if (idLower === '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'silang'
+    else if (idLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'taguig'
+    else if (idLower === '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'rizal'
+    else if (idLower === '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'pampanga'
+    else if (idLower === '2880c407-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'bulacan'
+    else if (idLower === '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'dasma'
+    else if (idLower === '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'candelaria'
+
+    if (keyword) {
+      found = branches.find(b => b.name.toLowerCase().includes(keyword))
+      if (found) return found
+    }
+
+    // 4. Loose substring name match
+    found = branches.find(b => b.name.toLowerCase().includes(idLower) || idLower.includes(b.name.toLowerCase()))
+    if (found) return found
+
+    return null
+  }
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -138,25 +368,36 @@ export default function ClientMasterlist() {
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [addForm, setAddForm] = useState({
-    title: 'Installation service',
+    title: 'S/I service',
     description: '',
-    serviceType: 'Installation',
+    serviceType: 'S/I',
     customerName: '',
     contactPhone: '',
     locationRaw: '',
-    sourceVendor: 'Robinsons B2B',
+    sourceVendor: 'Robinsons',
     unitType: 'Split AC',
     preferredDate: '',
     slaExpirationDate: '',
     priorityTag: '',
     district: '',
-    commitType: '',
+    commitType: 'FREE FIRST 10 FEET',
     installerName: '',
     serviceVehicle: '',
     remarksUpdate: '',
     installationCharges: 0,
     modeOfPayment: '',
-    controlNumber: ''
+    controlNumber: '',
+    landmarks: '',
+    brand: '',
+    capacity: '',
+    sku: '',
+    serialNumber: '',
+    alternatePhone: '',
+    images: '',
+    status: 'PENDING',
+    branchId: '',
+    relayedDate: new Date().toISOString().split('T')[0],
+    finalDate: ''
   })
   const [formSubmitting, setFormSubmitting] = useState(false)
 
@@ -169,6 +410,8 @@ export default function ClientMasterlist() {
   const [actionSaving, setActionSaving] = useState(false)
 
   // Edit Modal / Drawer spreadsheet fields
+  const [editLocation, setEditLocation] = useState('')
+  const [editPreferredDate, setEditPreferredDate] = useState('')
   const [editPriorityTag, setEditPriorityTag] = useState('')
   const [editDistrict, setEditDistrict] = useState('')
   const [editCommitType, setEditCommitType] = useState('')
@@ -178,7 +421,20 @@ export default function ClientMasterlist() {
   const [editInstallationCharges, setEditInstallationCharges] = useState(0)
   const [editModeOfPayment, setEditModeOfPayment] = useState('')
   const [editControlNumber, setEditControlNumber] = useState('')
+  const [editContactPhone, setEditContactPhone] = useState('')
+  const [editSourceVendor, setEditSourceVendor] = useState('')
+  const [editUnitType, setEditUnitType] = useState('')
+  const [editServiceType, setEditServiceType] = useState('')
   const [editCustomerName, setEditCustomerName] = useState('')
+  const [editLandmarks, setEditLandmarks] = useState('')
+  const [editBrand, setEditBrand] = useState('')
+  const [editCapacity, setEditCapacity] = useState('')
+  const [editSku, setEditSku] = useState('')
+  const [editSerialNumber, setEditSerialNumber] = useState('')
+  const [editAlternatePhone, setEditAlternatePhone] = useState('')
+  const [editImages, setEditImages] = useState('')
+  const [editRelayedDate, setEditRelayedDate] = useState('')
+  const [editFinalDate, setEditFinalDate] = useState('')
 
   // Load Initial Data
   const fetchData = async () => {
@@ -203,15 +459,6 @@ export default function ClientMasterlist() {
       if (branchRes.ok) {
         const payload = await branchRes.json()
         setBranches(payload?.data || payload || [])
-      }
-
-      // Fetch Employees
-      const employeeRes = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (employeeRes.ok) {
-        const payload = await employeeRes.json()
-        setEmployees(payload?.data || payload || [])
       }
 
     } catch (e) {
@@ -247,26 +494,71 @@ export default function ClientMasterlist() {
 
       const parsed: ParsedVoucher = await res.json()
       if (parsed.customerName) {
+        const locationVal = parsed.location || (parsed as any).address || ''
+        const customerNameVal = parsed.customerName || (parsed as any).name || ''
+        const contactPhoneVal = parsed.contactPhone || (parsed as any).phone || (parsed as any).mobile || (parsed as any).contact || ''
+        const brandVal = parsed.brand || ''
+        const capacityVal = parsed.capacity || ''
+        const skuVal = parsed.sku || (parsed as any).stock || (parsed as any).model || ''
+        const serialNumberVal = parsed.serialNumber || (parsed as any).serial || ''
+
+        const preferredDateRaw = parsed.preferredDate || (parsed as any).preferred_date || ''
+        let preferredDateFormatted = ''
+        if (preferredDateRaw) {
+          try {
+            const d = new Date(preferredDateRaw)
+            if (!isNaN(d.getTime())) {
+              preferredDateFormatted = d.toISOString().split('T')[0]
+            } else {
+              preferredDateFormatted = preferredDateRaw
+            }
+          } catch (e) {}
+        }
+
+        const rawSvc = parsed.serviceType || 'S/I'
+        let mappedSvc = rawSvc
+        const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
+        const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
+        if (isInstall) {
+          mappedSvc = 'S/I'
+        } else if (isSurvey) {
+          mappedSvc = 'SURVEY'
+        }
+
+        const defaultCommit = isInstall ? 'FREE FIRST 10 FEET' : (parsed.commitType || '')
+        const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
+
         setAddForm({
-          title: `${parsed.serviceType || 'Installation'} service`,
+          title: `${mappedSvc} service`,
           description: parsed.description || 'Voucher scanned via Gemini AI.',
-          serviceType: parsed.serviceType || 'Installation',
-          customerName: parsed.customerName || '',
-          contactPhone: parsed.contactPhone || '',
-          locationRaw: parsed.location || '',
-          sourceVendor: parsed.sourceVendor || 'Robinsons B2B',
-          unitType: parsed.unitType || 'Split AC',
-          preferredDate: '',
+          serviceType: mappedSvc,
+          customerName: customerNameVal,
+          contactPhone: contactPhoneVal,
+          locationRaw: locationVal,
+          sourceVendor: parsed.sourceVendor || 'Robinsons',
+          unitType: parsed.unitType || (brandVal && capacityVal ? `${brandVal} ${capacityVal}` : 'Split AC'),
+          preferredDate: preferredDateFormatted,
           slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
           priorityTag: parsed.priorityTag || '',
-          district: parsed.district || '',
-          commitType: parsed.commitType || '',
+          district: parsed.district || guessDistrict(locationVal) || '',
+          commitType: defaultCommit,
           installerName: parsed.installerName || '',
           serviceVehicle: parsed.serviceVehicle || '',
           remarksUpdate: parsed.remarksUpdate || '',
           installationCharges: parsed.installationCharges || 0,
           modeOfPayment: parsed.modeOfPayment || '',
-          controlNumber: parsed.controlNumber || ''
+          controlNumber: parsed.controlNumber || '',
+          landmarks: parsed.landmarks || '',
+          brand: brandVal,
+          capacity: capacityVal,
+          sku: skuVal,
+          serialNumber: serialNumberVal,
+          alternatePhone: '',
+          images: parsed.imagePath || '',
+          status: 'PENDING',
+          branchId: '',
+          relayedDate: defaultRelayedDate,
+          finalDate: ''
         })
         setIsAddModalOpen(true)
       } else {
@@ -361,17 +653,29 @@ export default function ClientMasterlist() {
             const chargesStr = getVal(row, colIndices.installationCharges)
             const cleanCharges = chargesStr ? parseFloat(chargesStr.replace(/[^0-9.]/g, '')) || 0 : 0
 
+            const rawSvc = getVal(row, colIndices.serviceType) || 'S/I'
+            let mappedSvc = rawSvc
+            const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
+            const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
+            if (isInstall) {
+              mappedSvc = 'S/I'
+            } else if (isSurvey) {
+              mappedSvc = 'SURVEY'
+            }
+            const rawCommit = getVal(row, colIndices.commitType)
+            const defaultCommit = isInstall ? (rawCommit || 'FREE FIRST 10 FEET') : rawCommit
+
             return {
               id: `excel-${idx}-${Date.now()}`,
               priorityTag: getVal(row, colIndices.priorityTag),
               customerName: getVal(row, colIndices.customerName) || 'Unknown Customer',
               location: getVal(row, colIndices.location),
-              district: getVal(row, colIndices.district),
+              district: getVal(row, colIndices.district) || guessDistrict(getVal(row, colIndices.location)) || '',
               contactPhone: getVal(row, colIndices.contactPhone),
               unitType: getVal(row, colIndices.unitType) || 'Split AC',
               sourceVendor: getVal(row, colIndices.sourceVendor) || 'Direct',
-              serviceType: getVal(row, colIndices.serviceType) || 'Installation',
-              commitType: getVal(row, colIndices.commitType),
+              serviceType: mappedSvc,
+              commitType: defaultCommit,
               installerName: getVal(row, colIndices.installerName),
               serviceVehicle: getVal(row, colIndices.serviceVehicle),
               remarksUpdate: getVal(row, colIndices.remarksUpdate),
@@ -412,10 +716,10 @@ export default function ClientMasterlist() {
             Authorization: `Bearer ${token}`
           },
           body: JSON.stringify({
-            title: `${item.serviceType || 'Installation'} service`,
+            title: `${item.serviceType || 'S/I'} service`,
             description: item.remarksUpdate || item.description || 'Excel imported ticket',
             customerName: item.customerName,
-            serviceType: item.serviceType || 'Installation',
+            serviceType: item.serviceType || 'S/I',
             unitType: item.unitType,
             contactPhone: item.contactPhone,
             location: item.location,
@@ -453,6 +757,16 @@ export default function ClientMasterlist() {
     setFormSubmitting(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const acDetailsObj = {
+        landmarks: addForm.landmarks || '',
+        brand: addForm.brand || '',
+        capacity: addForm.capacity || '',
+        sku: addForm.sku || '',
+        serialNumber: addForm.serialNumber || '',
+        alternatePhone: addForm.alternatePhone || '',
+        relayedDate: addForm.relayedDate || '',
+        finalDate: addForm.finalDate || ''
+      }
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -478,7 +792,11 @@ export default function ClientMasterlist() {
           remarksUpdate: addForm.remarksUpdate || undefined,
           installationCharges: Number(addForm.installationCharges) || 0,
           modeOfPayment: addForm.modeOfPayment || undefined,
-          controlNumber: addForm.controlNumber || undefined
+          controlNumber: addForm.controlNumber || undefined,
+          acDetails: JSON.stringify(acDetailsObj),
+          images: addForm.images || undefined,
+          status: addForm.status,
+          branchId: (addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
         })
       })
 
@@ -492,7 +810,7 @@ export default function ClientMasterlist() {
         customerName: '',
         contactPhone: '',
         locationRaw: '',
-        sourceVendor: 'Robinsons B2B',
+        sourceVendor: 'Robinsons',
         unitType: 'Split AC',
         preferredDate: '',
         slaExpirationDate: '',
@@ -504,7 +822,18 @@ export default function ClientMasterlist() {
         remarksUpdate: '',
         installationCharges: 0,
         modeOfPayment: '',
-        controlNumber: ''
+        controlNumber: '',
+        landmarks: '',
+        brand: '',
+        capacity: '',
+        sku: '',
+        serialNumber: '',
+        alternatePhone: '',
+        images: '',
+        status: 'PENDING',
+        branchId: '',
+        relayedDate: new Date().toISOString().split('T')[0],
+        finalDate: ''
       })
       fetchData()
     } catch (e) {
@@ -522,21 +851,26 @@ export default function ClientMasterlist() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const payload: Record<string, any> = {}
 
-      if (assignBranchId !== (selectedTicket.branchId || '')) {
-        payload.branchId = assignBranchId || null
-      }
-      if (assignTechId !== (selectedTicket.assignedTo || '')) {
-        payload.assignedTo = assignTechId || null
-        if (assignTechId && selectedTicket.status === 'PENDING') {
-          payload.status = 'ASSIGNED'
-        }
-      }
-      if (updateStatus && updateStatus !== selectedTicket.status) {
+      if (updateStatus === 'PENDING' || updateStatus === 'CANCELLED') {
+        payload.branchId = ""
+        payload.assignedTo = ""
         payload.status = updateStatus
+      } else {
+        if (assignBranchId !== (selectedTicket.branchId || '')) {
+          payload.branchId = assignBranchId || ""
+        }
+        if (assignTechId !== (selectedTicket.assignedTo || '')) {
+          payload.assignedTo = assignTechId || ""
+        }
+        if (updateStatus && updateStatus !== selectedTicket.status) {
+          payload.status = updateStatus
+        }
       }
       
       // Update spreadsheet fields
       payload.customerName = editCustomerName || null
+      payload.location = editLocation || null
+      payload.preferredDate = editPreferredDate ? new Date(editPreferredDate).toISOString() : null
       payload.priorityTag = editPriorityTag || null
       payload.district = editDistrict || null
       payload.commitType = editCommitType || null
@@ -546,6 +880,23 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
+      
+      const acDetailsObj = {
+        landmarks: editLandmarks || '',
+        brand: editBrand || '',
+        capacity: editCapacity || '',
+        sku: editSku || '',
+        serialNumber: editSerialNumber || '',
+        alternatePhone: editAlternatePhone || '',
+        relayedDate: editRelayedDate || '',
+        finalDate: editFinalDate || ''
+      }
+      payload.acDetails = JSON.stringify(acDetailsObj)
+      payload.images = editImages || null
+      payload.contactPhone = editContactPhone || null
+      payload.sourceVendor = editSourceVendor || null
+      payload.unitType = editUnitType || null
+      payload.serviceType = editServiceType || null
 
       const res = await fetch(`${API_BASE_URL}/tickets/${selectedTicket.id}`, {
         method: 'PATCH',
@@ -556,13 +907,17 @@ export default function ClientMasterlist() {
         body: JSON.stringify(payload)
       })
 
-      if (!res.ok) throw new Error('Update failed')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        const errMsg = errData?.message || errData?.error || `Status ${res.status}`
+        throw new Error(errMsg)
+      }
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
       fetchData()
-    } catch (e) {
-      alert('Failed to update ticket action.')
+    } catch (e: any) {
+      alert(`Failed to update ticket action: ${e.message}`)
     } finally {
       setActionSaving(false)
     }
@@ -597,7 +952,7 @@ export default function ClientMasterlist() {
   const handleClearBranchRecords = async () => {
     const isAll = branchFilter === 'ALL'
     const branchName = isAll ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'the selected branch')
-    const ticketsToDelete = isAll ? tickets : tickets.filter(t => t.branchId === branchFilter)
+    const ticketsToDelete = isAll ? tickets : tickets.filter(t => resolveBranch(t.branchId)?.id === branchFilter)
 
     if (ticketsToDelete.length === 0) {
       alert(`No tickets found for "${branchName}".`)
@@ -637,8 +992,10 @@ export default function ClientMasterlist() {
   // Open action drawer for a ticket
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
-    setAssignBranchId(ticket.branchId || '')
+    setAssignBranchId(resolveBranch(ticket.branchId)?.id || '')
     setEditCustomerName(ticket.customerName || '')
+    setEditLocation(ticket.location || '')
+    setEditPreferredDate(ticket.preferredDate ? ticket.preferredDate.split('T')[0] : '')
     setAssignTechId(ticket.assignedTo || '')
     setUpdateStatus(ticket.status)
     setEditPriorityTag(ticket.priorityTag || '')
@@ -650,6 +1007,30 @@ export default function ClientMasterlist() {
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
+    setEditContactPhone(ticket.contactPhone || '')
+    setEditSourceVendor(ticket.sourceVendor || '')
+    setEditUnitType(ticket.unitType || '')
+    setEditServiceType(ticket.serviceType || '')
+
+    // Parse acDetails JSON
+    let parsedDetails = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
+    if (ticket.acDetails) {
+      try {
+        parsedDetails = { ...parsedDetails, ...JSON.parse(ticket.acDetails) }
+      } catch (e) {
+        // Safe fallback
+      }
+    }
+    setEditLandmarks(parsedDetails.landmarks || '')
+    setEditBrand(parsedDetails.brand || '')
+    setEditCapacity(parsedDetails.capacity || '')
+    setEditSku(parsedDetails.sku || '')
+    setEditSerialNumber(parsedDetails.serialNumber || '')
+    setEditAlternatePhone(parsedDetails.alternatePhone || '')
+    setEditImages(ticket.images || '')
+    setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
+    setEditFinalDate(parsedDetails.finalDate || '')
+
     setIsActionDrawerOpen(true)
   }
 
@@ -673,19 +1054,22 @@ export default function ClientMasterlist() {
 
     // Vendor filter
     if (storeFilter !== 'ALL') {
-      if ((t.sourceVendor || 'Direct').toUpperCase() !== storeFilter.toUpperCase()) return false
+      const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+      const filterLower = storeFilter.toLowerCase()
+      if (!vendorLower.includes(filterLower)) return false
     }
 
     // Branch filter
     if (branchFilter !== 'ALL') {
-      if (t.branchId !== branchFilter) return false
+      const resolved = resolveBranch(t.branchId)
+      if (!resolved || resolved.id !== branchFilter) return false
     }
 
     // Search query
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       const custName = (t.customerName || '').toLowerCase()
-      const branchName = branches.find(b => b.id === t.branchId)?.name?.toLowerCase() || ''
+      const branchName = resolveBranch(t.branchId)?.name?.toLowerCase() || ''
       const techName = (t.assignedEmployeeName || '').toLowerCase()
       const id = t.id.toLowerCase()
       const loc = (t.location || '').toLowerCase()
@@ -700,9 +1084,9 @@ export default function ClientMasterlist() {
   const getStoreStyle = (store?: string) => {
     const s = (store || 'Direct').toLowerCase()
     if (s.includes('robinsons')) {
-      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: 'Robinsons B2B' }
+      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: store || 'Robinsons' }
     } else if (s.includes('abenson')) {
-      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: 'Abenson B2B' }
+      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: store || 'Abenson' }
     } else if (s.includes('direct')) {
       return { bg: 'rgba(99,102,241,0.1)', color: '#6366F1', label: 'Direct Client' }
     }
@@ -712,11 +1096,6 @@ export default function ClientMasterlist() {
 
 
 
-  // Format charges helper
-  const formatCharges = (amount?: number) => {
-    if (amount === undefined || amount === null) return '—'
-    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount)
-  }
 
   // Priority Row Highlight Helper
   const getRowStyleByPriority = (priority?: string) => {
@@ -740,426 +1119,506 @@ export default function ClientMasterlist() {
     return {}
   }
 
+  // Helper to determine if a field was auto-extracted from voucher scan
+  const isFieldExtracted = (fieldValue: any) => {
+    if (!addForm.images) return false
+    if (fieldValue === undefined || fieldValue === null) return false
+    const str = String(fieldValue).trim()
+    if (str === '' || str === '0' || str === '0.00' || str === '00' || str === '000') return false
+    if (str === 'Installation' || str === 'Installation service' || str === 'Voucher scanned via Gemini AI.') return false
+    return true
+  }
+
   return (
-    <div className="flex flex-col gap-6" style={{ minHeight: '100%', backgroundColor: pageBg }}>
-      
-      {/* Top Banner Control Block */}
-      <div className="rounded-2xl p-6 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 transition-all shadow-md"
-           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-widest mb-1 text-[#10B981]">
-            DTI Guard Compliance Panel
-          </p>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-            Client Scheduling Masterlist
-          </h2>
-          <p className="text-sm" style={{ color: textMuted }}>
-            Monitor SLA thresholds, upload bulk Excel client lists, and scan PDF/receipt voucher files via Gemini.
-          </p>
-        </div>
+    <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
 
-        <div className="flex items-center gap-3 flex-wrap w-full xl:w-auto">
-          {/* Scan Image button */}
-          <input
-            ref={scanFileInputRef}
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            onChange={e => {
-              const file = e.target.files?.[0]
-              if (file) handleVoucherScan(file)
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => scanFileInputRef.current?.click()}
-            disabled={scanning}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm disabled:opacity-60"
-            style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)', color: '#10B981' }}
-          >
-            {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            Scan PDF/Photo Voucher
-          </button>
+      {/* ── HEADER: Pipeline Flow Card ──────────────────────────── */}
+      <div className="rounded-2xl overflow-hidden shadow-lg" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="p-5 flex flex-col gap-4">
 
-          {/* Import Excel button */}
-          <input
-            ref={excelFileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={handleExcelImport}
-          />
-          <button
-            type="button"
-            onClick={() => excelFileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm"
-            style={{ backgroundColor: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.2)', color: '#3B82F6' }}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Import Client Excel
-          </button>
+          {/* Title + Actions row */}
+          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[3px] text-[#10B981] mb-1">Scheduling System</p>
+              <h2 className="text-xl font-black tracking-tight" style={{ color: textPrimary }}>Schedules</h2>
+              <p className="text-xs mt-0.5" style={{ color: textMuted }}>Assign schedules to branch and updates</p>
+            </div>
 
-          {/* Manual creation */}
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-600 transition-all hover:scale-[1.02] shadow-md shadow-emerald-500/10"
-          >
-            + Add Client Ticket
-          </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Scan PDF/Photo */}
+              <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
+              <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm disabled:opacity-60"
+                style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
+                {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+                {scanning ? 'Scanning...' : 'Scan PDF / Photo'}
+              </button>
 
-          {/* Refresh */}
-          <button
-            type="button"
-            onClick={fetchData}
-            disabled={refreshing}
-            className="p-2.5 rounded-xl border transition-all hover:scale-[1.02]"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
+              {/* Import Excel */}
+              <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
+              <button type="button" onClick={() => excelFileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm"
+                style={{ backgroundColor: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Import Excel
+              </button>
+
+              {/* Add Client */}
+              <button type="button" onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs text-white transition-all hover:scale-[1.02] shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                <Plus className="w-3.5 h-3.5" />
+                Add Client
+              </button>
+            </div>
+          </div>
+
+          {/* ── Scheduling Pipeline Flow Indicator ── */}
+          <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+            {[
+              {
+                label: 'Unassigned', icon: AlertCircle, color: '#F59E0B',
+                bg: isLight ? 'rgba(245,158,11,0.07)' : 'rgba(245,158,11,0.1)',
+                borderColor: 'rgba(245,158,11,0.25)',
+                count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length
+              },
+              {
+                label: 'Scheduled', icon: Clock, color: '#3B82F6',
+                bg: isLight ? 'rgba(59,130,246,0.07)' : 'rgba(59,130,246,0.1)',
+                borderColor: 'rgba(59,130,246,0.25)',
+                count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length
+              },
+              {
+                label: 'Installed', icon: CheckCircle2, color: '#10B981',
+                bg: isLight ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.1)',
+                borderColor: 'rgba(16,185,129,0.25)',
+                count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length
+              },
+              {
+                label: 'Cancelled', icon: X, color: '#EF4444',
+                bg: isLight ? 'rgba(239,68,68,0.07)' : 'rgba(239,68,68,0.1)',
+                borderColor: 'rgba(239,68,68,0.25)',
+                count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length
+              },
+            ].map((stage, idx, arr) => (
+              <div key={stage.label} className="flex items-center gap-2">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl min-w-[145px] shrink-0 transition-all"
+                  style={{ backgroundColor: stage.bg, border: `1px solid ${stage.borderColor}` }}>
+                  <stage.icon className="w-4 h-4 shrink-0" style={{ color: stage.color }} />
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: stage.color }}>{stage.label}</p>
+                    <p className="text-2xl font-black leading-none mt-0.5" style={{ color: stage.color }}>{stage.count}</p>
+                  </div>
+                </div>
+                {idx < arr.length - 1 && (
+                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted, opacity: 0.5 }} />
+                )}
+              </div>
+            ))}
+            <div className="ml-auto flex items-center shrink-0">
+              <div className="px-4 py-3 rounded-xl" style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                <p className="text-[9px] font-black uppercase tracking-widest text-[#10B981]">Total</p>
+                <p className="text-2xl font-black leading-none mt-0.5 text-[#10B981]">{tickets.length}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* OCR/Scan Error Warning banner */}
+      {/* ── Scan Error Banner ──────────────────────────────────── */}
       {scanError && (
-        <div className="p-4 rounded-xl border flex items-center justify-between gap-3 shadow-sm"
-             style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' }}>
+        <div className="p-4 rounded-xl border flex items-center justify-between gap-3"
+          style={{ backgroundColor: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
           <div className="flex items-center gap-2 text-xs font-semibold text-red-500">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{scanError}</span>
           </div>
-          <button onClick={() => setScanError('')} className="p-1 rounded-lg text-red-500 hover:bg-red-500/10">
+          <button onClick={() => setScanError('')} className="p-1 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Search & Vendor Selection Toolbar moved inside Table Container */}
-
-      {/* Category Tabs */}
-      <div className="flex p-1 rounded-xl border w-full md:w-fit"
-           style={{ backgroundColor: cardBg, borderColor: border }}>
-        {(['ALL', 'UNASSIGNED', 'PENDING', 'INSTALLED', 'CANCELLED'] as const).map(tab => {
-          const active = activeTab === tab
-          let label = tab === 'ALL' ? 'All' : tab === 'UNASSIGNED' ? 'Not Assigned' : tab === 'INSTALLED' ? 'Installed' : tab.toLowerCase()
-          label = label.charAt(0).toUpperCase() + label.slice(1)
-          
-          let count = tickets.filter(t => {
+      {/* ── Status Tab Bar ────────────────────────────────────── */}
+      <div className="flex items-center gap-1 p-1 rounded-2xl w-full md:w-fit"
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        {([
+          { key: 'ALL',        label: 'All Clients',  activeBg: '#475569' },
+          { key: 'UNASSIGNED', label: 'Unassigned',   activeBg: '#F59E0B' },
+          { key: 'PENDING',    label: 'Scheduled',    activeBg: '#3B82F6' },
+          { key: 'INSTALLED',  label: 'Installed',    activeBg: '#10B981' },
+          { key: 'CANCELLED',  label: 'Cancelled',    activeBg: '#EF4444' },
+        ] as const).map(tab => {
+          const active = activeTab === tab.key
+          const count = tickets.filter(t => {
             const stat = t.status.toUpperCase()
-            const isAssigned = !!t.assignedTo || !!t.branchId
-            if (tab === 'ALL') return true
-            if (tab === 'UNASSIGNED') return !isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
-            if (tab === 'PENDING') return isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
-            if (tab === 'INSTALLED') return stat === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)
+            const isAssigned = !!(t.assignedTo || t.branchId)
+            if (tab.key === 'ALL') return true
+            if (tab.key === 'UNASSIGNED') return !isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
+            if (tab.key === 'PENDING') return isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
+            if (tab.key === 'INSTALLED') return stat === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)
             return stat === 'CANCELLED'
           }).length
-
           return (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2.5 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest flex items-center gap-2 ${
-                active
-                  ? tab === 'ALL' ? 'bg-slate-700 text-white shadow-md' : tab === 'UNASSIGNED' ? 'bg-amber-500 text-white shadow-md' : tab === 'PENDING' ? 'bg-blue-500 text-white shadow-md' : tab === 'INSTALLED' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
-                  : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <span>{label}</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>{count}</span>
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 whitespace-nowrap"
+              style={active
+                ? { backgroundColor: tab.activeBg, color: '#ffffff' }
+                : { color: textMuted }}>
+              {tab.label}
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                style={active
+                  ? { backgroundColor: 'rgba(255,255,255,0.22)', color: '#fff' }
+                  : { backgroundColor: isLight ? '#e2e8f0' : '#1E2D48', color: textMuted }}>
+                {count}
+              </span>
             </button>
           )
         })}
       </div>
 
-      {/* Main Masterlist Table Container */}
-      <div className="border rounded-2xl overflow-hidden shadow-sm"
-           style={{ backgroundColor: cardBg, borderColor: border }}>
-        
-        {/* Table Header Toolbar */}
-        <div className="px-5 py-4 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-          <div className="flex flex-wrap items-center gap-3">
-            
-            {/* Branch Filter Dropdown */}
+      {/* ── Main Table Container ──────────────────────────────── */}
+      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+
+        {/* Toolbar */}
+        <div className="px-5 py-3.5 flex flex-col md:flex-row items-start md:items-center gap-3 justify-between"
+          style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="flex flex-wrap items-center gap-2">
+
+            {/* Branch Filter */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-[#10B981]"
-                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                <Building2 className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                <select
-                  value={branchFilter}
-                  onChange={e => setBranchFilter(e.target.value)}
-                  className="bg-transparent outline-none text-xs font-bold cursor-pointer"
-                  style={{ color: textPrimary }}
-                >
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+                <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+                  className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
                   <option value="ALL" style={{ color: '#000' }}>All Branches</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
-                  ))}
+                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
                 </select>
               </div>
               {isAdmin && (
-                <button
-                  type="button"
-                  onClick={handleClearBranchRecords}
-                  disabled={refreshing}
-                  className="p-2 rounded-xl border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all shadow-sm flex items-center justify-center"
-                  style={{ width: '32px', height: '32px' }}
-                  title={branchFilter === 'ALL' ? "Clear all records for all branches" : "Clear all records for this branch"}
-                >
+                <button type="button" onClick={handleClearBranchRecords} disabled={refreshing}
+                  title={branchFilter === 'ALL' ? 'Clear all records (all branches)' : 'Clear records for this branch'}
+                  className="p-2 rounded-xl border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"
+                  style={{ width: 32, height: 32 }}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Store Vendor Filter Dropdown */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-[#10B981]"
-                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-              <Building2 className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-              <select
-                value={storeFilter}
-                onChange={e => setStoreFilter(e.target.value)}
-                className="bg-transparent outline-none text-xs font-bold cursor-pointer"
-                style={{ color: textPrimary }}
-              >
+            {/* Store/Vendor Filter */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+              <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
+              <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
+                className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
                 <option value="ALL" style={{ color: '#000' }}>All Stores</option>
-                <option value="Robinsons B2B" style={{ color: '#000' }}>Robinsons B2B</option>
-                <option value="Abenson B2B" style={{ color: '#000' }}>Abenson B2B</option>
+                <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
+                <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
                 <option value="Direct" style={{ color: '#000' }}>Direct Store</option>
               </select>
             </div>
 
-            {/* Search Bar */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs min-w-0"
-                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+            {/* Search */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
+              <input type="text" placeholder="Search client, location..." value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-xs min-w-0 w-32 md:w-48"
-                style={{ color: textPrimary }}
-              />
+                className="bg-transparent outline-none text-xs w-36 md:w-52" style={{ color: textPrimary }} />
               {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} title="Clear"
-                        className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
-                  <X className="w-3.5 h-3.5" />
+                <button onClick={() => setSearchQuery('')} className="shrink-0 p-0.5 rounded hover:opacity-70" style={{ color: textMuted }}>
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
-
           </div>
 
-          <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-                style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.12)' }}>
+          <span className="shrink-0 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider"
+            style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)' }}>
             {filtered.length} client{filtered.length === 1 ? '' : 's'}
           </span>
         </div>
 
+        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr style={{ backgroundColor: inputBg, color: textMuted, borderBottom: `2px solid ${border}` }}>
+              <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                 {[
-                  { label: "PRIORITY / TAG", width: 120 },
-                  { label: "CUSTOMER'S NAME", width: 160 },
-                  { label: "DESTINATION", width: 220 },
-                  { label: "DISTRICT", width: 110 },
-                  { label: "CONTACT NO.", width: 120 },
-                  { label: "BRAND", width: 120 },
-                  { label: "DLR", width: 120 },
-                  { label: "STATUS", width: 120 },
-                  { label: "COMMIT", width: 110 },
-                  { label: "INSTALLER", width: 130 },
-                  { label: "VEHICLE", width: 120 },
-                  { label: "UPDATE / REMARKS", width: 200 },
-                  { label: "CHARGES", width: 100, alignRight: true },
-                  { label: "PAYMENT", width: 110 },
-                  { label: "CONTROL# / SI", width: 110 },
-                  { label: "ACTIONS", width: 80, alignRight: true }
+                  { label: 'STATUS', w: 125 },
+                  { label: "CUSTOMER'S NAME", w: 160 },
+                  { label: 'DESTINATION', w: 200 },
+                  { label: 'CONTACT NO.', w: 115 },
+                  { label: 'BRAND / UNIT', w: 120 },
+                  { label: 'DLR / STORE', w: 100 },
+                  { label: 'RELAYED SCHED', w: 110, center: true },
+                  { label: 'COMMIT', w: 110, center: true },
+                  { label: 'RELAYED DATE', w: 110 },
+                  { label: 'PREFERRED DATE', w: 110 },
+                  { label: 'FINAL DATE', w: 110 },
+                  { label: 'REMARKS / UPDATE', w: 180 },
+                  { label: 'ACTIONS', w: 90, right: true },
                 ].map(col => (
-                  <th
-                    key={col.label}
-                    style={{
-                      padding: '7px 10px',
-                      textAlign: col.alignRight ? 'right' : 'left',
-                      color: textMuted,
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      borderRight: `1px solid ${border}`,
-                      letterSpacing: '0.03em',
-                      fontSize: '11px',
-                      width: col.width
-                    }}
-                  >
-                    {col.label}
-                  </th>
+                  <th key={col.label} style={{
+                    padding: '9px 10px',
+                    textAlign: col.right ? 'right' : col.center ? 'center' : 'left',
+                    color: textMuted,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    borderRight: `1px solid ${border}`,
+                    fontSize: '10px',
+                    letterSpacing: '0.07em',
+                    width: col.w,
+                  }}>{col.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={16} className="py-24 text-center text-sm font-semibold" style={{ color: textMuted }}>
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-[#10B981]" />
-                    Loading Client Scheduling Masterlist...
+                  <td colSpan={13} className="py-20 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#10B981]" />
+                    <p className="text-sm font-semibold" style={{ color: textMuted }}>Loading masterlist...</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="py-24 text-center">
-                    <FileText className="w-12 h-12 opacity-25 mx-auto mb-3" style={{ color: textMuted }} />
+                  <td colSpan={13} className="py-20 text-center">
+                    <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
                     <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
-                    <p className="text-xs mt-1" style={{ color: textMuted }}>Try altering your search query, filter tabs, or upload a spreadsheet.</p>
+                    <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
                   </td>
                 </tr>
               ) : (
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
                   const rowStyle = getRowStyleByPriority(ticket.priorityTag)
+                  const isInstalled = ticket.status.toUpperCase() === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)
+                  const isAssigned = !!(ticket.assignedTo || ticket.branchId)
+                  const isCancelled = ticket.status.toUpperCase() === 'CANCELLED'
 
                   return (
-                    <tr
-                      key={ticket.id}
+                    <tr key={ticket.id}
                       style={{
                         borderBottom: `1px solid ${border}`,
                         backgroundColor: idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c'),
-                        ...rowStyle
+                        ...rowStyle,
+                        cursor: 'pointer',
                       }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.backgroundColor = rowStyle.backgroundColor || (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c'))
-                      }}
-                      className="text-xs transition-colors"
-                    >
-                      {/* 1. Priority Tag */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', fontWeight: 600 }}>
-                        {ticket.priorityTag ? (
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                            ticket.priorityTag.toUpperCase().includes('MORNING') ? 'bg-red-500/15 text-red-500 border border-red-500/30' :
-                            ticket.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30' :
-                            'bg-blue-500/15 text-blue-500 border border-blue-500/30'
-                          }`}>
-                            {ticket.priorityTag}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 font-normal italic">—</span>
-                        )}
-                      </td>
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36' }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowStyle.backgroundColor || (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
+                      onClick={() => openDrawer(ticket)}
+                      className="transition-colors">
 
-                      {/* 2. Customer's Name */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }} className="font-bold">
-                        <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
-                        {ticket.customerName || 'Direct Client'}
-                      </td>
-
-                      {/* 3. Destination (Address) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary, minWidth: 220 }}>
-                        <span className="line-clamp-2 leading-relaxed" title={ticket.location}>
-                          {ticket.location || '—'}
-                        </span>
-                      </td>
-
-                      {/* 4. District */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }}>
-                        {ticket.district || <span className="text-slate-400 font-normal italic">—</span>}
-                      </td>
-
-                      {/* 5. Contact No. */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: '#10B981' }}>
-                        <FormatPhone raw={ticket.contactPhone} />
-                      </td>
-
-                      {/* 6. Brand (Unit Type) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted }}>
-                        {ticket.unitType || <span className="text-slate-400 font-normal italic">—</span>}
-                      </td>
-
-                      {/* 7. DLR (Store Source) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px' }}>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider"
-                              style={{ backgroundColor: storeStyle.bg, color: storeStyle.color }}>
-                          {storeStyle.label}
-                        </span>
-                      </td>
-
-                      {/* 8. Status (Service Type) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }}>
-                        <div className="flex flex-col gap-1">
-                          <span className="font-semibold">{ticket.serviceType || 'Installation'}</span>
-                          {!!(ticket.installationCharges && ticket.installationCharges > 0) && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-500 border border-emerald-500/25 w-fit">
-                              ✓ Installed
+                      {/* 1. Status Tag */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px' }}>
+                        <div className="flex flex-col gap-1.5 items-start">
+                          {(() => {
+                            const status = (ticket.status || '').toUpperCase()
+                            if (isCancelled) {
+                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
+                            }
+                            if (isInstalled) {
+                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
+                            }
+                            if (status === 'IN_PROGRESS') {
+                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">In Progress</span>
+                            }
+                            if (status === 'ON_THE_WAY') {
+                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">On the Way</span>
+                            }
+                            if (status === 'ASSIGNED' || isAssigned) {
+                              let parsedDetails: any = null
+                              if (ticket.acDetails) {
+                                try {
+                                  parsedDetails = JSON.parse(ticket.acDetails)
+                                } catch (e) {}
+                              }
+                              const hasFinalDate = !!parsedDetails?.finalDate
+                              if (ticket.branchId && hasFinalDate) {
+                                return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Scheduled</span>
+                              }
+                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
+                            }
+                            return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
+                          })()}
+                          {ticket.branchId ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider block w-fit"
+                              style={{ 
+                                backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.15)', 
+                                color: isLight ? '#059669' : '#10B981',
+                                border: isLight ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(16,185,129,0.25)'
+                              }}>
+                              {resolveBranch(ticket.branchId)?.name || 'Assigned'}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider block w-fit"
+                              style={{ 
+                                backgroundColor: isLight ? '#f1f5f9' : '#1E2D48', 
+                                color: textMuted,
+                                border: `1px solid ${border}`
+                              }}>
+                              No Branch
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* 9. Commit */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted }}>
-                        {ticket.commitType || <span className="text-slate-400 font-normal italic">—</span>}
+                      {/* 2. Customer Name */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary }} className="font-bold">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-start gap-1.5">
+                            <span style={{ color: textMuted, fontSize: '9px', marginTop: '2px' }} className="shrink-0">{idx + 1}</span>
+                            <div className="flex flex-col">
+                              <span className="text-xs truncate max-w-[130px] block" title={ticket.customerName || 'Direct Client'}>
+                                {ticket.customerName || 'Direct Client'}
+                              </span>
+                              {ticket.controlNumber && (
+                                <span className="text-[9px] font-black font-mono tracking-wider mt-0.5 text-slate-400 dark:text-slate-500 block">
+                                  {ticket.controlNumber}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </td>
 
-                      {/* 10. Installer */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }} className="font-semibold">
-                        {ticket.installerName || ticket.assignedEmployeeName || <span className="text-amber-500 italic">Not Assigned</span>}
+                      {/* 3. Destination */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, minWidth: 200 }}>
+                        <span className="line-clamp-2 text-[11px] leading-relaxed" title={ticket.location || ''}>{ticket.location || '—'}</span>
                       </td>
 
-                      {/* 11. Service (Vehicle) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }} className="font-mono text-[11px]">
-                        {ticket.serviceVehicle || <span className="text-slate-400 font-normal italic">—</span>}
+                      {/* 4. Contact */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: '#10B981', fontSize: '11px' }}>
+                        <FormatPhone raw={ticket.contactPhone} />
                       </td>
 
-                      {/* 12. Update (Remarks) */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted, minWidth: 200 }}>
-                        <span className="line-clamp-2 leading-relaxed" title={ticket.remarksUpdate || ticket.description}>
+                      {/* 5. Unit/Brand */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px' }}>
+                        {(() => {
+                          let parsedDetails: any = null
+                          if (ticket.acDetails) {
+                            try {
+                              parsedDetails = JSON.parse(ticket.acDetails)
+                            } catch (e) {}
+                          }
+                          const brand = parsedDetails?.brand || ''
+                          const capacity = parsedDetails?.capacity || ''
+                          const sku = parsedDetails?.sku || ''
+                          
+                          if (brand || capacity || sku) {
+                            return (
+                              <div className="flex flex-col gap-0.5 font-semibold">
+                                {(brand || capacity) && <span style={{ color: textPrimary }}>{brand} {capacity}</span>}
+                                {sku && <span className="text-[10px] text-slate-400">{sku}</span>}
+                              </div>
+                            )
+                          }
+                          return ticket.unitType || <span className="italic">—</span>
+                        })()}
+                      </td>
+
+                      {/* 6. DLR/Store */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px' }}>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider"
+                          style={{ backgroundColor: storeStyle.bg, color: storeStyle.color }}>{storeStyle.label}</span>
+                      </td>
+
+                      {/* 6b. Relayed Sched */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center' }}>
+                        {ticket.serviceType ? (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                            {ticket.serviceType}
+                          </span>
+                        ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
+                      </td>
+
+                      {/* 6c. Commit */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center' }}>
+                        {ticket.commitType ? (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-pink-500/10 text-pink-500 border border-pink-500/20">
+                            {ticket.commitType}
+                          </span>
+                        ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
+                      </td>
+
+                      {/* 8. Relayed Date */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                        {(() => {
+                          let parsedDetails: any = null
+                          if (ticket.acDetails) {
+                            try {
+                              parsedDetails = JSON.parse(ticket.acDetails)
+                            } catch (e) {}
+                          }
+                          const relayed = parsedDetails?.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : '')
+                          if (!relayed) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
+                          try {
+                            const d = new Date(relayed)
+                            if (isNaN(d.getTime())) return <span>{relayed}</span>
+                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          } catch (e) {
+                            return <span>{relayed}</span>
+                          }
+                        })()}
+                      </td>
+
+                      {/* 9. Preferred Date */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                        {(() => {
+                          if (!ticket.preferredDate) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
+                          try {
+                            const d = new Date(ticket.preferredDate)
+                            if (isNaN(d.getTime())) return <span>{ticket.preferredDate}</span>
+                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          } catch (e) {
+                            return <span>{ticket.preferredDate}</span>
+                          }
+                        })()}
+                      </td>
+
+                      {/* 10. Final Date */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                        {(() => {
+                          let parsedDetails: any = null
+                          if (ticket.acDetails) {
+                            try {
+                              parsedDetails = JSON.parse(ticket.acDetails)
+                            } catch (e) {}
+                          }
+                          const finalDate = parsedDetails?.finalDate || ''
+                          if (!finalDate) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
+                          try {
+                            const d = new Date(finalDate)
+                            if (isNaN(d.getTime())) return <span>{finalDate}</span>
+                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          } catch (e) {
+                            return <span>{finalDate}</span>
+                          }
+                        })()}
+                      </td>
+
+                      {/* 11. Remarks */}
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, minWidth: 180 }}>
+                        <span className="line-clamp-2 text-[11px] leading-relaxed" title={ticket.remarksUpdate || ticket.description || ''}>
                           {ticket.remarksUpdate || ticket.description || '—'}
                         </span>
                       </td>
 
-                      {/* 13. Installation Charges */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'right' }}>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className={`font-mono font-bold ${ticket.installationCharges && ticket.installationCharges > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                            {formatCharges(ticket.installationCharges)}
-                          </span>
-                          {!!(ticket.installationCharges && ticket.installationCharges > 0) && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 opacity-80">paid</span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 14. Mode of Payment */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }} className="font-semibold">
-                        {ticket.modeOfPayment || <span className="text-slate-400 font-normal italic">—</span>}
-                      </td>
-
-                      {/* 15. Control# / SI */}
-                      <td style={{ padding: '6px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textPrimary }} className="font-mono font-bold">
-                        {ticket.controlNumber || <span className="text-slate-400 font-normal italic">—</span>}
-                      </td>
-
                       {/* 16. Actions */}
-                      <td style={{ padding: '6px 10px', fontSize: '11px', textAlign: 'right' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                         <div className="flex justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openDrawer(ticket)}
-                            className="px-2 py-1 rounded text-xs font-bold border transition-colors hover:border-[#10B981] hover:text-[#10B981]"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-                          >
-                            Manage
+                          <button type="button" onClick={() => openDrawer(ticket)}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                            Edit
                           </button>
                           {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTicket(ticket.id, ticket.customerName)}
-                              className="px-2 py-1 rounded text-xs font-bold border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-colors"
-                              title="Delete Ticket"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <button type="button" onClick={() => handleDeleteTicket(ticket.id, ticket.customerName)}
+                              className="px-2 py-1 rounded-lg border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all">
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -1173,538 +1632,913 @@ export default function ClientMasterlist() {
         </div>
       </div>
 
-      {/* Action Drawer (Assign Branch/Tech, Update Status, Edit Dispatch Fields) */}
+      {/* Full-Page Edit Ticket (replacing Action Drawer) */}
       {isActionDrawerOpen && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-end"
-             style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-             onClick={() => setIsActionDrawerOpen(false)}>
-          <div className="w-full max-w-md h-full flex flex-col p-6 shadow-2xl transition-all"
-               style={{ backgroundColor: cardBg, borderLeft: `1px solid ${border}` }}
-               onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between pb-4 border-b" style={{ borderColor: border }}>
-              <div>
-                <h3 className="font-black text-base" style={{ color: textPrimary }}>
-                  Manage Ticket
-                </h3>
-                <p className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>
-                  ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()}
-                </p>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
+          {/* Header */}
+          <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+            <div className="px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
+                  <Wrench className="w-5 h-5 text-[#10B981]" />
+                </div>
+                <div>
+                  <h2 className="font-black text-base leading-none" style={{ color: textPrimary }}>Manage Client Ticket</h2>
+                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>
+                    ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()} · Edit details and branch assignments
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setIsActionDrawerOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
-                <X className="w-5 h-5" />
+              <button type="button" onClick={() => setIsActionDrawerOpen(false)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02]"
+                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
+                <X className="w-4 h-4" /> Close
               </button>
             </div>
-
-            <div className="flex-1 overflow-y-auto py-5 flex flex-col gap-5 pr-1">
-              {/* Customer summary */}
-              <div className="p-4 rounded-xl flex flex-col gap-2" style={{ backgroundColor: inputBg }}>
-                <p className="text-xs font-black uppercase text-slate-400">Customer Details</p>
-                <div className="text-sm font-bold" style={{ color: textPrimary }}>{selectedTicket.customerName || 'Direct Client'}</div>
-                <div className="text-xs" style={{ color: textMuted }}>{selectedTicket.location}</div>
-                {selectedTicket.contactPhone && <div className="text-xs font-semibold text-emerald-500">📞 {selectedTicket.contactPhone}</div>}
+          </div>
+          <div className="flex-1 overflow-y-auto px-6 py-8 max-w-5xl mx-auto w-full">
+            <div className="flex flex-col gap-6">
+              
+              {/* Section 1: Customer Details */}
+              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
+                    <User className="w-3.5 h-3.5 text-[#10B981]" />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Client Information</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Customer Name</label>
+                    <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
+                      placeholder="Customer Name" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Primary Phone</label>
+                    <input type="text" value={editContactPhone} onChange={e => setEditContactPhone(e.target.value)}
+                      placeholder="Primary Contact Number" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Alternate Contact</label>
+                    <input type="text" value={editAlternatePhone} onChange={e => setEditAlternatePhone(e.target.value)}
+                      placeholder="e.g. Email or Phone number" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Store / Vendor Source</label>
+                    <select
+                      value={
+                        editSourceVendor.toLowerCase().includes('robinsons')
+                          ? 'Robinsons'
+                          : editSourceVendor.toLowerCase().includes('abenson')
+                          ? 'Abenson'
+                          : 'Direct'
+                      }
+                      onChange={e => setEditSourceVendor(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                      <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
+                      <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
+                      <option value="Direct" style={{ color: '#000' }}>Direct Store</option>
+                    </select>
+                    {(editSourceVendor.toLowerCase().includes('robinsons') || editSourceVendor.toLowerCase().includes('abenson')) && (
+                      <div className="mt-3">
+                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>
+                          {editSourceVendor.toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
+                        </label>
+                        <input
+                          type="text"
+                          value={
+                            editSourceVendor === 'Robinsons' || editSourceVendor === 'Abenson'
+                              ? ''
+                              : editSourceVendor
+                          }
+                          onChange={e => {
+                            const prefix = editSourceVendor.toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
+                            setEditSourceVendor(e.target.value || prefix)
+                          }}
+                          placeholder={editSourceVendor.toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Assign Branch */}
-              <div>
-                <label className="text-xs font-black uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Assign Branch Zone</label>
-                <select
-                  value={assignBranchId}
-                  onChange={e => {
-                    setAssignBranchId(e.target.value)
-                    setAssignTechId('') // Clear tech when branch changes
-                  }}
-                  className="w-full rounded-xl px-3 py-2.5 text-xs font-semibold outline-none border"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <option value="">Select Branch Zone...</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Assign Technician */}
-              <div>
-                <label className="text-xs font-black uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Assign Installer / Tech</label>
-                <select
-                  value={assignTechId}
-                  onChange={e => setAssignTechId(e.target.value)}
-                  disabled={!assignBranchId}
-                  className="w-full rounded-xl px-3 py-2.5 text-xs font-semibold outline-none border disabled:opacity-50"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <option value="">Select Technician...</option>
-                  {employees
-                    .filter(e => !assignBranchId || e.branchId === assignBranchId)
-                    .map(emp => (
-                      <option key={emp.id} value={emp.id} style={{ color: '#000' }}>{emp.name}</option>
-                    ))}
-                </select>
-                {!assignBranchId && <span className="text-[10px] text-amber-500 mt-1 block">Please select a branch first to filter technicians.</span>}
-              </div>
-
-              {/* Status Update */}
-              <div>
-                <label className="text-xs font-black uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Update Service Status</label>
-                <select
-                  value={updateStatus}
-                  onChange={e => setUpdateStatus(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2.5 text-xs font-semibold outline-none border"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <option value="PENDING">Pending (Ingested)</option>
-                  <option value="ASSIGNED">Assigned</option>
-                  <option value="ON_THE_WAY">On the Way</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="COMPLETED">Installed (Completed)</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-
-              {/* Dispatch spreadsheet updates */}
-              <div className="border-t pt-4 mt-2 flex flex-col gap-4" style={{ borderColor: border }}>
-                <p className="text-xs font-black uppercase text-slate-400">Edit Dispatch / Excel Fields</p>
-                
+              {/* Section 2: Destination & Address */}
+              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
+                    <MapPin className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#3B82F6' }}>Destination & Address</p>
+                </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Customer's Name</label>
-                  <input
-                    type="text"
-                    value={editCustomerName}
-                    onChange={e => setEditCustomerName(e.target.value)}
-                    placeholder="Customer Name"
-                    className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
+                  <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Full Address / Destination *</label>
+                  <textarea value={editLocation} rows={3}
+                    onChange={e => {
+                      const val = e.target.value
+                      setEditLocation(val)
+                      const guessed = guessDistrict(val)
+                      if (guessed) setEditDistrict(guessed)
+                    }} 
+                    placeholder="e.g. Blk 7 Lot 34 Grand Acacia Grove Subd. Brgy Banay-Banay, Cabuyao City Laguna" 
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                 </div>
-                
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Priority Tag</label>
-                    <input
-                      type="text"
-                      value={editPriorityTag}
-                      onChange={e => setEditPriorityTag(e.target.value)}
-                      placeholder="e.g. PRIORITY MORNING"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Landmarks / Directions</label>
+                    <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
+                      placeholder="e.g. Landmark details" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Control# / SI</label>
-                    <input
-                      type="text"
-                      value={editControlNumber}
-                      onChange={e => setEditControlNumber(e.target.value)}
-                      placeholder="e.g. SI830343"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>District</label>
+                    <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
+                      placeholder="e.g. District 1" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>District</label>
-                    <input
-                      type="text"
-                      value={editDistrict}
-                      onChange={e => setEditDistrict(e.target.value)}
-                      placeholder="e.g. District 1"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Commit Type</label>
-                    <input
-                      type="text"
-                      value={editCommitType}
-                      onChange={e => setEditCommitType(e.target.value)}
-                      placeholder="e.g. 9AM-12PM"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Installer Name</label>
-                    <input
-                      type="text"
-                      value={editInstallerName}
-                      onChange={e => setEditInstallerName(e.target.value)}
-                      placeholder="e.g. John Doe Tech"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Service Vehicle</label>
-                    <input
-                      type="text"
-                      value={editServiceVehicle}
-                      onChange={e => setEditServiceVehicle(e.target.value)}
-                      placeholder="e.g. FB11 - MIKE"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Charges (PHP)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editInstallationCharges || ''}
-                      onChange={e => setEditInstallationCharges(parseFloat(e.target.value) || 0)}
-                      placeholder="0.00"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Payment Mode</label>
-                    <input
-                      type="text"
-                      value={editModeOfPayment}
-                      onChange={e => setEditModeOfPayment(e.target.value)}
-                      placeholder="e.g. Cash, G-Cash"
-                      className="w-full rounded-xl px-3 py-2 text-xs outline-none border"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider mb-1 block" style={{ color: textMuted }}>Remarks / Field Update</label>
-                  <textarea
-                    value={editRemarksUpdate}
-                    onChange={e => setEditRemarksUpdate(e.target.value)}
-                    rows={3}
-                    placeholder="e.g. Completed today"
-                    className="w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
                 </div>
               </div>
+
+              {/* Section 3: Aircon Unit Details */}
+              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(139,92,246,0.12)' }}>
+                    <Package className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#8B5CF6' }}>Aircon Unit Details</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Brand</label>
+                    <input type="text" value={editBrand} onChange={e => setEditBrand(e.target.value)}
+                      placeholder="e.g. Midea" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Capacity</label>
+                    <input type="text" value={editCapacity} onChange={e => setEditCapacity(e.target.value)}
+                      placeholder="e.g. 1.5HP" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>SKU</label>
+                    <input type="text" value={editSku} onChange={e => setEditSku(e.target.value)}
+                      placeholder="e.g. 47980" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Serial Number</label>
+                    <input type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)}
+                      placeholder="e.g. 54122000ZAMB3230730794" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Control # / SI Voucher</label>
+                    <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
+                      placeholder="e.g. SI830343" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Type</label>
+                    <input type="text" value={editServiceType} onChange={e => {
+                      const val = e.target.value
+                      const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
+                      const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
+                      let mappedSvc = val
+                      if (isInstall) {
+                        mappedSvc = 'S/I'
+                        setEditCommitType('FREE FIRST 10 FEET')
+                      } else if (isSurvey) {
+                        mappedSvc = 'SURVEY'
+                      }
+                      setEditServiceType(mappedSvc)
+                    }}
+                      placeholder="e.g. Installation" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Commit Type / Promo</label>
+                    <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
+                      placeholder="e.g. Free Installation" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  {editImages && (
+                    <div className="md:col-span-2 rounded-xl p-4 flex items-center justify-between border mt-2" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold" style={{ color: textPrimary }}>Scanned Voucher Document Attached</p>
+                          <p className="text-[10px]" style={{ color: textMuted }}>File: {editImages.split('/').pop()}</p>
+                        </div>
+                      </div>
+                      <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
+                         target="_blank" rel="noreferrer"
+                         className="px-4 py-2 bg-[#10B981]/10 hover:bg-[#10B981]/25 text-[#10B981] rounded-xl text-xs font-bold transition-all">
+                        View Document
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 4: Scheduling & Assignment */}
+              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)' }}>
+                    <Calendar className="w-3.5 h-3.5" style={{ color: '#F59E0B' }} />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#F59E0B' }}>Scheduling & Assignment</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Status</label>
+                    <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                      <option value="PENDING" style={{ color: '#000' }}>Not Assigned (Pending)</option>
+                      <option value="ASSIGNED" style={{ color: '#000' }}>Scheduled (Assigned)</option>
+                      <option value="ON_THE_WAY" style={{ color: '#000' }}>On the Way</option>
+                      <option value="IN_PROGRESS" style={{ color: '#000' }}>In Progress</option>
+                      <option value="COMPLETED" style={{ color: '#000' }}>Installed (Completed)</option>
+                      <option value="CANCELLED" style={{ color: '#000' }}>Cancelled</option>
+                    </select>
+                  </div>
+                  {updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Branch Zone</label>
+                      <select value={assignBranchId}
+                        onChange={e => setAssignBranchId(e.target.value)}
+                        className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                        <option value="">Select Branch...</option>
+                        {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Relayed Date by Store</label>
+                    <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Preferred Date by Customer</label>
+                    <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                  </div>
+                  {assignBranchId && updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
+                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                        className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Remarks / Update Notes</label>
+                  <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={3}
+                    placeholder="e.g. Free Installation..." className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                </div>
+              </div>
+
             </div>
+          </div>
 
-            <div className="pt-4 border-t flex flex-col gap-3" style={{ borderColor: border }}>
+            {/* Sticky Footer */}
+            <div className="shrink-0 px-8 py-4 flex items-center justify-between gap-4" style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
+              {isAdmin ? (
+                <button type="button" onClick={() => handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)}
+                  disabled={actionSaving}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all disabled:opacity-50 hover:bg-red-500 hover:text-white hover:border-red-500"
+                  style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Ticket
+                </button>
+              ) : <div />}
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsActionDrawerOpen(false)}
-                  className="flex-1 border rounded-xl py-2.5 text-xs font-bold"
-                  style={{ borderColor: inputBorder, color: textMuted }}
-                >
+                <button type="button" onClick={() => setIsActionDrawerOpen(false)}
+                  className="px-6 py-2.5 border rounded-xl text-xs font-bold transition-colors"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDrawerActionSave}
-                  disabled={actionSaving}
-                  className="flex-1 bg-[#10B981] hover:bg-emerald-500 text-white rounded-xl py-2.5 text-xs font-bold transition-all disabled:opacity-50"
-                >
-                  {actionSaving ? 'Saving...' : 'Apply Changes'}
+                <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
+                  className="px-10 py-2.5 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                  {actionSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)}
-                  disabled={actionSaving}
-                  className="w-full bg-red-500/10 hover:bg-red-500 hover:text-white text-red-500 rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 border border-red-500/20 transition-all disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete Ticket
-                </button>
-              )}
-            </div>
           </div>
         </div>
       )}
 
-      {/* Manual / Scan Add Modal */}
+
+      {/* Full-Page Create Ticket */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-          <form onSubmit={handleFormCreateTicket}
-                className="w-full max-w-2xl rounded-2xl p-6 flex flex-col gap-4 shadow-2xl transition-all"
-                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: border }}>
-              <h3 className="text-base font-black" style={{ color: textPrimary }}>
-                Create Client Ticket
-              </h3>
-              <button type="button" onClick={() => setIsAddModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
+          <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+            <div className="px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(16,185,129,0.12)" }}>
+                  <User className="w-5 h-5 text-[#10B981]" />
+                </div>
+                <div>
+                  <h2 className="font-black text-base leading-none" style={{ color: textPrimary }}>Create Client Ticket</h2>
+                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fill in client details to schedule a service appointment</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsAddModalOpen(false)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02]"
+                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
+                <X className="w-4 h-4" /> Cancel
               </button>
             </div>
+          </div>
+          <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex overflow-hidden">
+              {/* Form Panel - Centered & Full Width */}
+              <div className="flex-1 overflow-y-auto px-6 py-8 max-w-5xl mx-auto w-full">
+                <div className="flex flex-col gap-6">
+                  
+                  {/* AI Extraction Success Banner */}
+                  {addForm.images && (
+                    <div className="rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)',
+                        borderColor: 'rgba(16, 185, 129, 0.25)',
+                        backdropFilter: 'blur(10px)'
+                      }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}>
+                          <CheckCircle2 className="w-5 h-5 text-[#10B981] animate-bounce" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-sm text-[#10B981]">Gemini AI Parser Active</h3>
+                          <p className="text-xs" style={{ color: textMuted }}>
+                            Client details were successfully extracted from the uploaded voucher. Please review and verify the highlighted fields below.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
+                          target="_blank" rel="noreferrer"
+                          className="px-4 py-2 border rounded-xl text-xs font-bold transition-all hover:scale-[1.02] shadow-sm flex items-center gap-1.5"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                          <FileText className="w-3.5 h-3.5" /> View Original Doc
+                        </a>
+                      </div>
+                    </div>
+                  )}
 
-            <div className="max-h-[65vh] overflow-y-auto pr-1 flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Customer Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={addForm.customerName}
-                    onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Contact Phone</label>
-                  <input
-                    type="text"
-                    value={addForm.contactPhone}
-                    onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
+                  {/* Section 1: Client Info */}
+                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(16,185,129,0.12)" }}><User className="w-3.5 h-3.5 text-[#10B981]" /></div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Client Information</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Customer Name *</span>
+                          {isFieldExtracted(addForm.customerName) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={addForm.customerName}
+                          onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))}
+                          placeholder="e.g. Juan Dela Cruz"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.customerName) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.customerName) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.customerName) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Contact Number</span>
+                          {isFieldExtracted(addForm.contactPhone) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.contactPhone}
+                          onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
+                          placeholder="e.g. 0917 123 4567"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.contactPhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.contactPhone) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.contactPhone) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Alternate Contact</span>
+                          {isFieldExtracted(addForm.alternatePhone) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.alternatePhone}
+                          onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))}
+                          placeholder="e.g. Email or Phone number"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.alternatePhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.alternatePhone) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.alternatePhone) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Store / Vendor Source</span>
+                          {isFieldExtracted(addForm.sourceVendor) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                         <select
+                          value={
+                            (addForm.sourceVendor || '').toLowerCase().includes('robinsons')
+                              ? 'Robinsons'
+                              : (addForm.sourceVendor || '').toLowerCase().includes('abenson')
+                              ? 'Abenson'
+                              : 'Direct'
+                          }
+                          onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.sourceVendor) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.sourceVendor) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.sourceVendor) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        >
+                          <option value="Robinsons" style={{ color: "#000" }}>Robinsons</option>
+                          <option value="Abenson" style={{ color: "#000" }}>Abenson</option>
+                          <option value="Direct" style={{ color: "#000" }}>Direct Store</option>
+                        </select>
+                        {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
+                          <div className="mt-3">
+                            <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>
+                              {(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
+                            </label>
+                            <input
+                              type="text"
+                              value={
+                                addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson'
+                                  ? ''
+                                  : addForm.sourceVendor
+                              }
+                              onChange={e => {
+                                const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
+                                setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
+                              }}
+                              placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
+                              className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: Location */}
+                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(59,130,246,0.12)" }}><MapPin className="w-3.5 h-3.5" style={{ color: "#3B82F6" }} /></div>
+                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#3B82F6" }}>Destination & Address</p>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                        <span>Full Address / Destination *</span>
+                        {isFieldExtracted(addForm.locationRaw) && (
+                          <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                            ✓ Auto-extracted
+                          </span>
+                        )}
+                      </label>
+                      <textarea
+                        required
+                        value={addForm.locationRaw}
+                        onChange={e => {
+                          const val = e.target.value
+                          setAddForm(prev => {
+                            const guessed = guessDistrict(val)
+                            return {
+                              ...prev,
+                              locationRaw: val,
+                              district: guessed || prev.district
+                            }
+                          })
+                        }}
+                        placeholder="e.g. Blk 7 Lot 34 Grand Acacia Grove Subd. Brgy Banay-Banay, Cabuyao City Laguna"
+                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none transition-all duration-200"
+                        style={{
+                          backgroundColor: isFieldExtracted(addForm.locationRaw) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                          borderColor: isFieldExtracted(addForm.locationRaw) ? '#10B981' : inputBorder,
+                          boxShadow: isFieldExtracted(addForm.locationRaw) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                          color: textPrimary
+                        }}
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Landmarks / Directions</span>
+                          {isFieldExtracted(addForm.landmarks) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.landmarks}
+                          onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))}
+                          placeholder="e.g. Landmark details"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.landmarks) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.landmarks) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.landmarks) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>District / Zone</span>
+                          {isFieldExtracted(addForm.district) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-assigned
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.district}
+                          onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))}
+                          placeholder="e.g. District 1"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.district) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.district) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.district) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 3: Aircon Unit Details */}
+                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(139,92,246,0.12)" }}><Package className="w-3.5 h-3.5" style={{ color: "#8B5CF6" }} /></div>
+                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Aircon Unit Details</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Brand</span>
+                          {isFieldExtracted(addForm.brand) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.brand}
+                          onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))}
+                          placeholder="e.g. Midea"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.brand) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.brand) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.brand) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Capacity</span>
+                          {isFieldExtracted(addForm.capacity) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.capacity}
+                          onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))}
+                          placeholder="e.g. 1.5HP"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.capacity) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.capacity) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.capacity) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>SKU</span>
+                          {isFieldExtracted(addForm.sku) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.sku}
+                          onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))}
+                          placeholder="e.g. 47980"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.sku) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.sku) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.sku) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Serial Number</span>
+                          {isFieldExtracted(addForm.serialNumber) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.serialNumber}
+                          onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))}
+                          placeholder="e.g. 54122000ZAMB3230730794"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.serialNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.serialNumber) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.serialNumber) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Control # / SI Voucher</span>
+                          {isFieldExtracted(addForm.controlNumber) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.controlNumber}
+                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
+                          placeholder="e.g. SI830343"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.controlNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.controlNumber) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.controlNumber) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Service Type</span>
+                          {isFieldExtracted(addForm.serviceType) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.serviceType}
+                          onChange={e => {
+                            const val = e.target.value
+                            setAddForm(prev => {
+                              let mappedSvc = val
+                              const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
+                              const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
+                              if (isInstall) {
+                                mappedSvc = 'S/I'
+                              } else if (isSurvey) {
+                                mappedSvc = 'SURVEY'
+                              }
+                              return {
+                                ...prev,
+                                serviceType: mappedSvc,
+                                title: `${mappedSvc} service`,
+                                commitType: isInstall ? 'FREE FIRST 10 FEET' : prev.commitType
+                              }
+                            })
+                          }}
+                          placeholder="e.g. Installation"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.serviceType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.serviceType) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.serviceType) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                          <span>Commit Type / Promo</span>
+                          {isFieldExtracted(addForm.commitType) && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              ✓ Auto-extracted
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={addForm.commitType}
+                          onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))}
+                          placeholder="e.g. Free Installation"
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.commitType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.commitType) ? '#10B981' : inputBorder,
+                            boxShadow: isFieldExtracted(addForm.commitType) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 4: Scheduling & Assignment */}
+                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(245,158,11,0.12)" }}><Calendar className="w-3.5 h-3.5" style={{ color: "#F59E0B" }} /></div>
+                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#F59E0B" }}>Scheduling & Assignment</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Status</label>
+                        <select value={addForm.status} onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                          <option value="PENDING" style={{ color: '#000' }}>Not Assigned (Pending)</option>
+                          <option value="ASSIGNED" style={{ color: '#000' }}>Scheduled (Assigned)</option>
+                          <option value="ON_THE_WAY" style={{ color: '#000' }}>On the Way</option>
+                          <option value="IN_PROGRESS" style={{ color: '#000' }}>In Progress</option>
+                          <option value="COMPLETED" style={{ color: '#000' }}>Installed (Completed)</option>
+                          <option value="CANCELLED" style={{ color: '#000' }}>Cancelled</option>
+                        </select>
+                      </div>
+                      {addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                        <div>
+                          <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Branch Zone Assignment</label>
+                          <select value={addForm.branchId} onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
+                            className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold animate-fade-in"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                            <option value="">Select Branch...</option>
+                            {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Relayed Date by Store</label>
+                        <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))}
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Preferred Date by Customer</label>
+                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))}
+                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                        <div className="md:col-span-2">
+                          <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
+                          <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                            className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
+                        <span>Remarks / Special Instructions</span>
+                        {isFieldExtracted(addForm.description) && (
+                          <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                            ✓ Auto-extracted
+                          </span>
+                        )}
+                      </label>
+                      <textarea
+                        value={addForm.description}
+                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                        rows={3}
+                        placeholder="e.g. Free Installation..."
+                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none transition-all duration-200"
+                        style={{
+                          backgroundColor: isFieldExtracted(addForm.description) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                          borderColor: isFieldExtracted(addForm.description) ? '#10B981' : inputBorder,
+                          boxShadow: isFieldExtracted(addForm.description) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
+                          color: textPrimary
+                        }}
+                      />
+                    </div>
+                  </div>
+
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Address / Location *</label>
-                  <input
-                    type="text"
-                    required
-                    value={addForm.locationRaw}
-                    onChange={e => setAddForm(prev => ({ ...prev, locationRaw: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">District / Zone</label>
-                  <input
-                    type="text"
-                    value={addForm.district}
-                    onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))}
-                    placeholder="e.g. District 1, Quezon City"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Store Vendor Source</label>
-                  <select
-                    value={addForm.sourceVendor}
-                    onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  >
-                    <option value="Robinsons B2B" style={{ color: '#000' }}>Robinsons B2B</option>
-                    <option value="Abenson B2B" style={{ color: '#000' }}>Abenson B2B</option>
-                    <option value="Direct" style={{ color: '#000' }}>Direct Store</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Aircon Unit Type / Brand</label>
-                  <input
-                    type="text"
-                    value={addForm.unitType}
-                    onChange={e => setAddForm(prev => ({ ...prev, unitType: e.target.value }))}
-                    placeholder="e.g. Split AC, Window AC"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Priority Tag</label>
-                  <input
-                    type="text"
-                    value={addForm.priorityTag}
-                    onChange={e => setAddForm(prev => ({ ...prev, priorityTag: e.target.value }))}
-                    placeholder="e.g. PRIORITY MORNING"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Control# / SI Voucher</label>
-                  <input
-                    type="text"
-                    value={addForm.controlNumber}
-                    onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
-                    placeholder="e.g. SI830343"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Commit Window</label>
-                  <input
-                    type="text"
-                    value={addForm.commitType}
-                    onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))}
-                    placeholder="e.g. 9AM-12PM"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Service Type / Status</label>
-                  <input
-                    type="text"
-                    value={addForm.serviceType}
-                    onChange={e => setAddForm(prev => ({ ...prev, serviceType: e.target.value }))}
-                    placeholder="e.g. Installation, Cleaning"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Installer Name (External)</label>
-                  <input
-                    type="text"
-                    value={addForm.installerName}
-                    onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
-                    placeholder="e.g. John Doe Tech"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Service Vehicle & Driver</label>
-                  <input
-                    type="text"
-                    value={addForm.serviceVehicle}
-                    onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
-                    placeholder="e.g. FB11 - MIKE"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Installation Charges (PHP)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={addForm.installationCharges || ''}
-                    onChange={e => setAddForm(prev => ({ ...prev, installationCharges: parseFloat(e.target.value) || 0 }))}
-                    placeholder="0.00"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Mode of Payment</label>
-                  <input
-                    type="text"
-                    value={addForm.modeOfPayment}
-                    onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))}
-                    placeholder="e.g. Cash, G-Cash"
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Preferred Date</label>
-                  <input
-                    type="date"
-                    value={addForm.preferredDate}
-                    onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">SLA Expiration Date</label>
-                  <input
-                    type="date"
-                    value={addForm.slaExpirationDate}
-                    onChange={e => setAddForm(prev => ({ ...prev, slaExpirationDate: e.target.value }))}
-                    className="w-full border rounded-xl px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase block mb-1 text-slate-400">Update / Remarks / Ticket Description</label>
-                <textarea
-                  value={addForm.description}
-                  onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                  rows={3}
-                  className="w-full border rounded-xl px-3 py-2 text-xs outline-none resize-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
-              </div>
             </div>
-
-            <div className="pt-3 border-t flex gap-3" style={{ borderColor: border }}>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="flex-1 border rounded-xl py-2.5 text-xs font-bold"
-                style={{ borderColor: inputBorder, color: textMuted }}
-              >
-                Cancel
+            {/* Sticky Footer - Restored */}
+            <div className="shrink-0 px-8 py-4 flex items-center justify-between gap-4" style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
+              <button type="button" onClick={() => setIsAddModalOpen(false)} className="flex items-center gap-2 px-6 py-2.5 border rounded-xl text-sm font-bold transition-all hover:scale-[1.02]" style={{ borderColor: inputBorder, color: textMuted }}>
+                ← Back to Masterlist
               </button>
-              <button
-                type="submit"
-                disabled={formSubmitting}
-                className="flex-1 bg-[#10B981] hover:bg-emerald-500 text-white rounded-xl py-2.5 text-xs font-bold transition-all disabled:opacity-50"
-              >
-                {formSubmitting ? 'Creating...' : 'Create Ticket'}
+              <button type="submit" disabled={formSubmitting} className="px-10 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-lg hover:scale-[1.01]" style={{ background: "linear-gradient(135deg, #10B981, #059669)" }}>
+                {formSubmitting ? "Creating..." : "+ Create Client Ticket"}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Excel Sheet Upload Preview Modal */}
+
+      {/* ── Excel Sheet Preview Modal ────────────────────────── */}
       {isExcelModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-5xl rounded-2xl p-6 flex flex-col gap-4 shadow-2xl transition-all"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: border }}>
-              <div>
-                <h3 className="text-base font-black" style={{ color: textPrimary }}>
-                  Spreadsheet Ingestion Preview
-                </h3>
-                <p className="text-xs mt-0.5" style={{ color: textMuted }}>
-                  Verify the parsed customer data entries below before bulk uploading.
-                </p>
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-5xl rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}>
+
+            {/* Header */}
+            <div className="shrink-0">
+              <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
+                    <FileSpreadsheet className="w-5 h-5" style={{ color: '#3B82F6' }} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm" style={{ color: textPrimary }}>Spreadsheet Ingestion Preview</h3>
+                    <p className="text-[10px]" style={{ color: textMuted }}>{excelPreview.length} client records parsed — verify before importing</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId('') }}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{ color: textMuted }}>
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button type="button" onClick={() => {
-                setExcelPreview([])
-                setIsExcelModalOpen(false)
-                setImportTargetBranchId('')
-              }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            <div className="max-h-[50vh] overflow-y-auto overflow-x-auto border rounded-xl" style={{ borderColor: border }}>
-              <table className="w-full text-left text-xs min-w-[2000px]">
+            {/* Table */}
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-left text-xs min-w-[1400px]">
                 <thead>
                   <tr style={{ backgroundColor: inputBg, color: textMuted, borderBottom: `1px solid ${border}` }}
-                      className="font-black uppercase tracking-wider text-[9px]">
+                    className="font-black uppercase tracking-wider text-[9px]">
                     <th className="px-4 py-3 w-[150px]">Priority Tag</th>
                     <th className="px-4 py-3 w-[200px]">Client Name</th>
                     <th className="px-4 py-3 w-[250px]">Address</th>
@@ -1712,14 +2546,9 @@ export default function ClientMasterlist() {
                     <th className="px-4 py-3 w-[120px]">Phone</th>
                     <th className="px-4 py-3 w-[120px]">AC Type</th>
                     <th className="px-4 py-3 w-[140px]">Store Source</th>
-                    <th className="px-4 py-3 w-[120px]">Status (Service)</th>
-                    <th className="px-4 py-3 w-[120px]">Commit</th>
-                    <th className="px-4 py-3 w-[150px]">Installer</th>
-                    <th className="px-4 py-3 w-[150px]">Service Vehicle</th>
+                    <th className="px-4 py-3 w-[120px]">Service Type</th>
+                    <th className="px-4 py-3 w-[120px]">Control # / SI</th>
                     <th className="px-4 py-3 w-[250px]">Update / Remarks</th>
-                    <th className="px-4 py-3 w-[120px]">Charges</th>
-                    <th className="px-4 py-3 w-[120px]">Payment Mode</th>
-                    <th className="px-4 py-3 w-[120px]">Control# / SI</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1727,74 +2556,51 @@ export default function ClientMasterlist() {
                     <tr key={item.id} style={{ borderBottom: index < excelPreview.length - 1 ? `1px solid ${border}` : 'none' }}>
                       <td className="px-4 py-2.5 font-semibold">
                         {item.priorityTag ? (
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
                             item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-red-500/10 text-red-500' :
                             item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500' :
                             'bg-blue-500/10 text-blue-500'
-                          }`}>
-                            {item.priorityTag}
-                          </span>
+                          }`}>{item.priorityTag}</span>
                         ) : '—'}
                       </td>
                       <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.customerName}</td>
                       <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.location}</td>
                       <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.district || '—'}</td>
-                      <td className="px-4 py-2.5 text-emerald-500">
-                        <FormatPhone raw={item.contactPhone} />
-                      </td>
+                      <td className="px-4 py-2.5 text-emerald-500"><FormatPhone raw={item.contactPhone} /></td>
                       <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.unitType}</td>
                       <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.sourceVendor}</td>
                       <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.serviceType}</td>
-                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.commitType || '—'}</td>
-                      <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.installerName || '—'}</td>
-                      <td className="px-4 py-2.5 font-mono" style={{ color: textPrimary }}>{item.serviceVehicle || '—'}</td>
-                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.remarksUpdate || item.description || '—'}</td>
-                      <td className="px-4 py-2.5 font-mono font-bold text-emerald-500">{formatCharges(item.installationCharges)}</td>
-                      <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.modeOfPayment || '—'}</td>
                       <td className="px-4 py-2.5 font-mono font-bold" style={{ color: textPrimary }}>{item.controlNumber || '—'}</td>
+                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.remarksUpdate || item.description || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="pt-3 border-t flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: border }}>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-xs font-black uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
-                  Assign to Branch:
-                </label>
-                <select
-                  value={importTargetBranchId}
-                  onChange={e => setImportTargetBranchId(e.target.value)}
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+              style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
+                <select value={importTargetBranchId} onChange={e => setImportTargetBranchId(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-bold outline-none border w-full sm:w-56"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <option value="" style={{ color: '#000' }}>Select Branch Zone...</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
-                  ))}
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                  <option value="" style={{ color: '#000' }}>Assign to Branch...</option>
+                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
                 </select>
               </div>
               <div className="flex gap-3 w-full sm:w-auto justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExcelPreview([])
-                    setIsExcelModalOpen(false)
-                    setImportTargetBranchId('')
-                  }}
-                  className="px-6 py-2.5 border rounded-xl text-xs font-bold w-full sm:w-auto"
-                  style={{ borderColor: inputBorder, color: textMuted }}
-                >
+                <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId('') }}
+                  className="px-5 py-2.5 border rounded-xl text-xs font-bold"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={handleBulkUploadSubmit}
+                <button type="button" onClick={handleBulkUploadSubmit}
                   disabled={bulkUploading || !importTargetBranchId}
-                  className="px-6 py-2.5 bg-[#3B82F6] hover:bg-blue-600 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {bulkUploading ? 'Uploading...' : 'Confirm Bulk Import'}
+                  className="px-6 py-2.5 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md"
+                  style={{ background: bulkUploading || !importTargetBranchId ? undefined : 'linear-gradient(135deg, #3B82F6, #6366F1)', backgroundColor: bulkUploading || !importTargetBranchId ? '#475569' : undefined }}>
+                  {bulkUploading ? 'Uploading...' : `Import ${excelPreview.length} Records`}
                 </button>
               </div>
             </div>
