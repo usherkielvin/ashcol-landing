@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
-  ChevronRight, ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
+  ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
   Users, XCircle, Printer, Eye
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
