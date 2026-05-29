@@ -88,7 +88,7 @@ export default function LineUp() {
 
   const role      = (user?.role || '').toLowerCase()
   const isManager = role === 'manager'
-  const canEdit   = role === 'admin' || role === 'manager' || role === 'staff'
+  const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee'
 
   const [date, setDate]         = useState(tomorrowStr)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
