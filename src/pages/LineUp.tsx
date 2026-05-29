@@ -110,27 +110,37 @@ export default function LineUp() {
 
   // ── Data ─────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
+  const fetchLineup = useCallback(async () => {
+    // Fallback/placeholder using local storage first
     const all = lsLoad()
     const filtered = branchId
       ? all.filter(r => r.lineupDate === date && r.branchId === branchId).sort((a, b) => a.sortOrder - b.sortOrder)
       : []
     setRows(filtered)
+
     if (!branchId) return
     setLoading(true)
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${branchId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => { if (res.ok) return res.json().then(data => { if (Array.isArray(data)) setRows(data) }) })
-      .catch(() => {}).finally(() => setLoading(false))
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${branchId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          setRows(data)
+        }
+      }
+    } catch (e) {
+      console.error("Error loading lineup from backend:", e)
+    } finally {
+      setLoading(false)
+    }
   }, [date, branchId])
 
-  const loadRows = useCallback(() => {
-    const all = lsLoad()
-    const filtered = branchId
-      ? all.filter(r => r.lineupDate === date && r.branchId === branchId).sort((a, b) => a.sortOrder - b.sortOrder)
-      : []
-    setRows(filtered)
-  }, [date, branchId])
+  useEffect(() => {
+    void fetchLineup()
+  }, [fetchLineup])
 
   // ── Save ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +163,7 @@ export default function LineUp() {
     let saved = false
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const isNew = !editing.id
+      const isNew = !editing.id || editing.id.startsWith("local-")
       const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${editing.id}`
       const res = await fetch(url, {
         method: isNew ? 'POST' : 'PUT',
@@ -170,7 +180,7 @@ export default function LineUp() {
     }
     setEditing(null)
     setSaving(false)
-    void loadRows()
+    void fetchLineup()
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -184,7 +194,7 @@ export default function LineUp() {
       if (res.ok) deleted = true
     } catch { /* fall through */ }
     if (!deleted) { const all = lsLoad().filter(r => r.id !== row.id); lsSave(all) }
-    void loadRows()
+    void fetchLineup()
   }
 
   // ── Totals ───────────────────────────────────────────────────────────────
