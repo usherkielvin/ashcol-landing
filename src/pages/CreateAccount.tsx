@@ -181,7 +181,7 @@ export default function CreateAccount() {
     <div className="flex h-screen w-full font-['Inter',sans-serif] overflow-hidden" style={{ backgroundColor: rightBg, color: textPrimary }}>
 
       {/* ── Left Branding Panel ── */}
-      <div className="hidden lg:flex lg:w-[46%] xl:w-[48%] relative flex-col justify-between p-14 overflow-hidden flex-shrink-0 border-r border-[#1E2D48]/40">
+      <div className="hidden lg:flex lg:w-[45%] xl:w-1/2 relative flex-col justify-between p-12 overflow-hidden flex-shrink-0 border-r border-[#1E2D48]/50">
         <div className="absolute inset-0 z-0">
           <img src={splitBgImg} alt="" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#060B18]/70 via-[#060B18]/20 to-[#060B18]" />
@@ -193,26 +193,46 @@ export default function CreateAccount() {
           <span className="font-black tracking-widest text-[#F0F6FF] text-lg drop-shadow-md">ASHCOL</span>
         </div>
 
-        <div className="relative z-10 max-w-lg mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#10B981]/20 border border-[#10B981]/30 backdrop-blur-md mb-6">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-            <span className="text-[11px] font-bold tracking-widest text-[#10B981] uppercase">Premium AC Service</span>
+        {/* Middle / lower left glass panel */}
+        <div className="relative z-10 max-w-md my-auto p-8 rounded-3xl bg-[#060B18]/65 border border-[#1E2D48]/50 backdrop-blur-md shadow-2xl flex flex-col gap-6">
+          <div>
+            <h2 className="text-3xl xl:text-4xl font-black leading-tight mb-2 drop-shadow-lg text-white">
+              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">ASHCOL Portal</span>
+            </h2>
+            <p className="text-[#7A95B8] text-xs leading-relaxed">
+              Manage schedules, service reports, and branch updates in one place.
+            </p>
           </div>
-          <h2 className="text-4xl xl:text-5xl font-black leading-tight mb-5 text-white drop-shadow-lg">
-            Keeping <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">YOU</span><br />Cool Always.
-          </h2>
-          <p className="text-[#A2B7D0] text-base leading-relaxed">
-            Join the leading air conditioning services provider. Seamless booking, professional maintenance, and priority support — all in one place.
-          </p>
-          <div className="mt-8 flex flex-col gap-3">
-            {['Book services in minutes', 'Real-time job tracking', 'Certified technicians'].map(item => (
-              <div key={item} className="flex items-center gap-3">
-                <div className="w-5 h-5 rounded-full bg-[#10B981]/20 border border-[#10B981]/40 flex items-center justify-center flex-shrink-0">
+
+          <div className="flex flex-col gap-4 border-t border-[#1E2D48]/45 pt-4">
+            {[
+              {
+                title: 'Schedule Monitoring',
+                desc: 'Track scheduled, installed, cancelled, and pending clients.'
+              },
+              {
+                title: 'Service Reports',
+                desc: 'View technician updates and service progress faster.'
+              },
+              {
+                title: 'Branch Line-Up',
+                desc: 'Monitor branch assignments and daily activity.'
+              }
+            ].map(feat => (
+              <div key={feat.title} className="flex gap-3">
+                <div className="w-5 h-5 rounded-full bg-[#10B981]/25 border border-[#10B981]/40 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
                 </div>
-                <span className="text-[#C0D0E0] text-sm">{item}</span>
+                <div className="flex flex-col gap-0.5">
+                  <h4 className="text-xs font-bold text-white tracking-wide">{feat.title}</h4>
+                  <p className="text-[#A2B7D0] text-[11px] leading-relaxed">{feat.desc}</p>
+                </div>
               </div>
             ))}
+          </div>
+          
+          <div className="text-[10px] font-semibold text-[#64748b] tracking-wider uppercase pt-2 border-t border-[#1E2D48]/30">
+            Built for faster aircon service coordination.
           </div>
         </div>
       </div>

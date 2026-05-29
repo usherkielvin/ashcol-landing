@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { Sun, Moon, Eye, EyeOff } from 'lucide-react'
+import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
@@ -155,17 +155,47 @@ export default function Login() {
           <span className="font-black tracking-widest text-[#F0F6FF] text-xl drop-shadow-md">ASHCOL</span>
         </div>
 
-        {/* Bottom branding copy */}
-        <div className="relative z-10 max-w-md mt-auto mb-10">
-          <div className="inline-block px-3 py-1.5 rounded-full bg-[#10B981]/20 border border-[#10B981]/30 backdrop-blur-md mb-4">
-            <span className="text-[10px] font-bold tracking-widest text-[#10B981] uppercase">Premium AC Service</span>
+        {/* Middle / lower left glass panel */}
+        <div className="relative z-10 max-w-md my-auto p-8 rounded-3xl bg-[#060B18]/65 border border-[#1E2D48]/50 backdrop-blur-md shadow-2xl flex flex-col gap-6">
+          <div>
+            <h2 className="text-3xl xl:text-4xl font-black leading-tight mb-2 drop-shadow-lg text-white">
+              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">ASHCOL Portal</span>
+            </h2>
+            <p className="text-[#7A95B8] text-xs leading-relaxed">
+              Manage schedules, service reports, and branch updates in one place.
+            </p>
           </div>
-          <h2 className="text-4xl xl:text-5xl font-black leading-tight mb-4 drop-shadow-lg text-white">
-            Welcome <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">Back</span><br/>to ASHCOL.
-          </h2>
-          <p className="text-[#A2B7D0] text-lg leading-relaxed drop-shadow-md">
-            Login to manage your bookings, track service requests, and stay cool with priority support.
-          </p>
+
+          <div className="flex flex-col gap-4 border-t border-[#1E2D48]/45 pt-4">
+            {[
+              {
+                title: 'Schedule Monitoring',
+                desc: 'Track scheduled, installed, cancelled, and pending clients.'
+              },
+              {
+                title: 'Service Reports',
+                desc: 'View technician updates and service progress faster.'
+              },
+              {
+                title: 'Branch Line-Up',
+                desc: 'Monitor branch assignments and daily activity.'
+              }
+            ].map(feat => (
+              <div key={feat.title} className="flex gap-3">
+                <div className="w-5 h-5 rounded-full bg-[#10B981]/25 border border-[#10B981]/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <h4 className="text-xs font-bold text-white tracking-wide">{feat.title}</h4>
+                  <p className="text-[#A2B7D0] text-[11px] leading-relaxed">{feat.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="text-[10px] font-semibold text-[#64748b] tracking-wider uppercase pt-2 border-t border-[#1E2D48]/30">
+            Built for faster aircon service coordination.
+          </div>
         </div>
       </div>
 
@@ -203,21 +233,21 @@ export default function Login() {
             <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-6">
               <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
             </a>
-            <h1 className="text-3xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
-              Welcome Back
+            <h1 className="text-2xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
+              Sign in to your workspace
             </h1>
-            <p className="text-[14px] text-center max-w-[280px]" style={{ color: textMuted }}>
-              Login to access your ASHCOL account.
+            <p className="text-xs text-center max-w-[280px]" style={{ color: textMuted }}>
+              Access your ASHCOL monitoring dashboard.
             </p>
           </div>
 
           {/* Desktop heading */}
           <div className="hidden lg:block mb-8">
             <h1 className="text-3xl font-black tracking-tight mb-2" style={{ color: textPrimary }}>
-              Login
+              Sign in to your workspace
             </h1>
             <p className="text-[15px]" style={{ color: textMuted }}>
-              Enter your credentials to continue.
+              Access your ASHCOL monitoring dashboard.
             </p>
           </div>
 
@@ -321,11 +351,8 @@ export default function Login() {
             </button>
           </div>
 
-          <p className="mt-8 text-center text-[13px] font-medium" style={{ color: textMuted }}>
-            Don't have an account?{' '}
-            <Link to="/create-account" className="text-[#10B981] font-bold hover:underline transition-all">
-              Get Started
-            </Link>
+          <p className="mt-8 text-center text-[12px] font-medium" style={{ color: textMuted }}>
+            For account access, contact your administrator.
           </p>
         </div>
       </div>
