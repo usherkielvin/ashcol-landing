@@ -9,6 +9,23 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import * as XLSX from 'xlsx'
 
+const VEHICLE_OPTIONS = ['STRADA', 'T3', 'FB19', 'T2']
+const DRIVER_OPTIONS = ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC']
+const INSTALLER_OPTIONS = ['RANIL', 'JHUMAR', 'KENNAN', 'CRIS', 'SONNY', 'RYAN', 'ALLAN']
+const ROUTE_OPTIONS = [
+  'QC - MANILA',
+  'TAGUIG - TAGUIG - TAGUIG - TAGUIG',
+  'MANDALUYONG - QC',
+  'QC - QC',
+  'CAINTA - CAINTA - MARIKINA'
+]
+const REMARKS_OPTIONS = [
+  'INSTALL - INSTALL - (3UNITS)',
+  'INSTALL - INSTALL - INSTALL - INSTALL (TEAMWORK) - 4 UNITS',
+  'INSTALL - INSTALL (2 UNITS)',
+  'INSTALL - INSTALL (3 UNITS)'
+]
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toLocalDateStr(d: Date) {
@@ -90,6 +107,99 @@ export default function LineUp() {
   const [scanError, setScanError]     = useState('')
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
+
+  const [customFields, setCustomFields] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!editing) {
+      setCustomFields({})
+      return
+    }
+    const newCustoms: Record<string, boolean> = {}
+    if (editing.service && !VEHICLE_OPTIONS.includes(editing.service)) {
+      newCustoms.service = true
+    }
+    if (editing.driverName && !DRIVER_OPTIONS.includes(editing.driverName)) {
+      newCustoms.driverName = true
+    }
+    if (editing.installerName && !INSTALLER_OPTIONS.includes(editing.installerName)) {
+      newCustoms.installerName = true
+    }
+    if (editing.route && !ROUTE_OPTIONS.includes(editing.route)) {
+      newCustoms.route = true
+    }
+    if (editing.remarks && !REMARKS_OPTIONS.includes(editing.remarks)) {
+      newCustoms.remarks = true
+    }
+    setCustomFields(newCustoms)
+  }, [editing])
+
+  const renderFlexField = (
+    label: string,
+    field: keyof LineUpRow,
+    options: string[],
+    placeholder: string,
+    required = false,
+    full = false
+  ) => {
+    if (!editing) return null
+    const isCustom = !!customFields[field as string]
+    const value = (editing[field] as string) || ''
+
+    const handleToggle = () => {
+      setCustomFields(prev => ({ ...prev, [field]: !prev[field] }))
+    }
+
+    return (
+      <F label={label} required={required} full={full}>
+        <div className="flex gap-1.5 items-center">
+          {isCustom ? (
+            field === 'remarks' ? (
+              <textarea
+                value={value}
+                placeholder={placeholder}
+                onChange={e => setEditing({ ...editing, [field]: e.target.value })}
+                rows={3}
+                className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold resize-none"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              />
+            ) : (
+              <input
+                value={value}
+                placeholder={placeholder}
+                onChange={e => setEditing({ ...editing, [field]: e.target.value })}
+                className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              />
+            )
+          ) : (
+            <select
+              value={value}
+              onChange={e => setEditing({ ...editing, [field]: e.target.value })}
+              className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold cursor-pointer"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            >
+              <option value="">Select option...</option>
+              {options.map(opt => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={handleToggle}
+            title={isCustom ? "Select from list" : "Type custom name"}
+            className="p-3 rounded-xl border shrink-0 transition-all hover:scale-105"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+          >
+            {isCustom ? <ClipboardList className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+          </button>
+        </div>
+      </F>
+    )
+  }
 
   // ── Load Branches ────────────────────────────────────────────────────────
 
@@ -786,12 +896,7 @@ export default function LineUp() {
             </div>
 
             <div className="overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <F label="Service (Vehicle Code)" required>
-                <input value={editing.service || ''} placeholder="e.g. T3, T2, FB19, STRADA"
-                  onChange={e => setEditing({ ...editing, service: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
+              {renderFlexField("Service (Vehicle Code)", "service", VEHICLE_OPTIONS, "e.g. T3, T2, FB19, STRADA", true)}
               <F label="Branch" required>
                 <select value={editing.branchId || branchId} onChange={e => setEditing({ ...editing, branchId: e.target.value })}
                   disabled={isManager && !!user?.branchId}
@@ -800,24 +905,14 @@ export default function LineUp() {
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </F>
-              <F label="Driver Name">
-                <input value={editing.driverName || ''} placeholder="Driver's name"
-                  onChange={e => setEditing({ ...editing, driverName: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
+              {renderFlexField("Driver Name", "driverName", DRIVER_OPTIONS, "Driver's name")}
               <F label="Driver Time In">
                 <input value={editing.driverTime || ''} placeholder="e.g. 8:00AM"
                   onChange={e => setEditing({ ...editing, driverTime: e.target.value })}
                   className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </F>
-              <F label="Installer Name">
-                <input value={editing.installerName || ''} placeholder="Installer's name"
-                  onChange={e => setEditing({ ...editing, installerName: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
+              {renderFlexField("Installer Name", "installerName", INSTALLER_OPTIONS, "Installer's name")}
               <F label="Installer Time In">
                 <input value={editing.installerTime || ''} placeholder="e.g. 7:00AM"
                   onChange={e => setEditing({ ...editing, installerTime: e.target.value })}
@@ -836,18 +931,8 @@ export default function LineUp() {
                   className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </F>
-              <F label="Route" full>
-                <input value={editing.route || ''} placeholder="e.g. VALENZUELA – MALABON – MANILA"
-                  onChange={e => setEditing({ ...editing, route: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
-              <F label="Remarks" full>
-                <textarea value={editing.remarks || ''} placeholder="e.g. INSTALL – INSTALL – INSTALL (3UNITS)"
-                  onChange={e => setEditing({ ...editing, remarks: e.target.value })}
-                  rows={3} className="w-full rounded-xl px-3 py-3 text-sm font-semibold resize-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
+              {renderFlexField("Route", "route", ROUTE_OPTIONS, "e.g. VALENZUELA – MALABON – MANILA", false, true)}
+              {renderFlexField("Remarks", "remarks", REMARKS_OPTIONS, "e.g. INSTALL – INSTALL – INSTALL (3UNITS)", false, true)}
             </div>
 
             <div className="px-5 py-4 flex items-center gap-2" style={{ borderTop: `1px solid ${border}` }}>
