@@ -205,7 +205,7 @@ export default function DailyServiceReport() {
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
-          newList.push({ id: `${b.id}-sales`, name: 'Taguig - Sales' })
+          newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
           newList.push({ id: `${b.id}-services`, name: 'Taguig - Services' })
         } else {
           newList.push({ id: b.id, name: cleanName })

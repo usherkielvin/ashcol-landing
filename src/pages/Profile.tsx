@@ -137,10 +137,6 @@ export default function Profile() {
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return setNameErr('Name is required.')
-    // Only validate address fields for non-admin users
-    if (user?.role !== 'admin' && (!address.region || !address.city || !address.barangay || !address.street)) {
-      return setNameErr('Please complete all required address fields.')
-    }
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
       // For admin, only send name. For others, send all fields including address.
@@ -447,17 +443,17 @@ export default function Profile() {
                       </div>
                     )}
 
-                    {/* Phone row (hidden for admin) */}
-                    {user?.role !== 'admin' && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
-                        <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
-                        <input
-                          type="tel" value={phone}
-                          onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
-                          style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
-                        />
-                      </div>
-                    )}
+                     {/* Phone row (hidden for admin)
+                     {user?.role !== 'admin' && (
+                       <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                         <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
+                         <input
+                           type="tel" value={phone}
+                           onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
+                           style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
+                         />
+                       </div>
+                     )} */}
 
                     {/* Role row (read-only) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">

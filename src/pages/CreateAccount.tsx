@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { Sun, Moon, Eye, EyeOff, User, Mail, Phone, Lock, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { Sun, Moon, Eye, EyeOff, User, Mail, Lock, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import splitBgImg from '../assets/split_screen_bg.png'
 
@@ -11,7 +11,7 @@ export default function CreateAccount() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
+  const phone = ''
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -303,7 +303,7 @@ export default function CreateAccount() {
                 </div>
               </div>
 
-              {/* Phone */}
+              {/* Phone
               <div>
                 <label className="block text-[12px] font-semibold mb-2" style={{ color: textMuted }}>Phone Number</label>
                 <div className="relative">
@@ -316,6 +316,7 @@ export default function CreateAccount() {
                   />
                 </div>
               </div>
+              */}
 
               {/* Password */}
               <div>

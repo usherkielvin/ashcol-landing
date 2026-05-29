@@ -123,8 +123,8 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
 
       {/* Region */}
       <div>
-        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Region *</label>
-        <select required value={value.region} onChange={e => set('region', e.target.value)} className={sel} style={sty}>
+        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Region</label>
+        <select value={value.region} onChange={e => set('region', e.target.value)} className={sel} style={sty}>
           <option value="">Select region</option>
           {regions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
@@ -132,8 +132,8 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
 
       {/* City / Municipality */}
       <div>
-        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>City / Municipality *</label>
-        <select required value={value.city} onChange={e => set('city', e.target.value)} disabled={!value.region} className={sel} style={{ ...sty, opacity: value.region ? 1 : 0.5 }}>
+        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>City / Municipality</label>
+        <select value={value.city} onChange={e => set('city', e.target.value)} disabled={!value.region} className={sel} style={{ ...sty, opacity: value.region ? 1 : 0.5 }}>
           <option value="">Select city / municipality</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -141,8 +141,8 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
 
       {/* Barangay */}
       <div>
-        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Barangay *</label>
-        <select required value={value.barangay} onChange={e => set('barangay', e.target.value)} disabled={!value.city} className={sel} style={{ ...sty, opacity: value.city ? 1 : 0.5 }}>
+        <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>Barangay</label>
+        <select value={value.barangay} onChange={e => set('barangay', e.target.value)} disabled={!value.city} className={sel} style={{ ...sty, opacity: value.city ? 1 : 0.5 }}>
           <option value="">Select barangay</option>
           {barangays.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
@@ -151,10 +151,10 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
       {/* Street */}
       <div>
         <label className="text-[11px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: textMuted }}>
-          House / Unit No. & Street *
+          House / Unit No. & Street
         </label>
         <input
-          type="text" required value={value.street}
+          type="text" value={value.street}
           onChange={e => set('street', e.target.value)}
           placeholder="e.g. 123 Rizal St."
           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
