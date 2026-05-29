@@ -343,9 +343,27 @@ export default function LineUp() {
       }
       if (parsedRows.length > 0) {
         if (window.confirm(`Scanner found ${parsedRows.length} row(s). Replace current lineup for this date?`)) {
+          // Save to backend API so all devices can see it
+          let savedRows: LineUpRow[] = []
+          for (const row of parsedRows) {
+            try {
+              const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(row),
+              })
+              if (apiRes.ok) {
+                const saved = await apiRes.json() as LineUpRow
+                savedRows.push(saved)
+              } else {
+                savedRows.push(row)
+              }
+            } catch { savedRows.push(row) }
+          }
+          // Also update localStorage as local cache
           const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-          lsSave([...all, ...parsedRows])
-          setRows(parsedRows)
+          lsSave([...all, ...savedRows])
+          void fetchLineup()
         }
       } else {
         setScanError('Scanner could not extract lineup rows. Check the image or add rows manually.')
@@ -406,7 +424,7 @@ export default function LineUp() {
     const file = e.target.files?.[0]
     if (!file || !branchId) return
     const reader = new FileReader()
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(evt.target?.result, { type: 'binary' })
         const rawData = XLSX.utils.sheet_to_json<any>(wb.Sheets[wb.SheetNames[0]])
@@ -426,11 +444,46 @@ export default function LineUp() {
           }
         })
         if (parsedRows.length === 0) { alert('No valid lineup rows found.'); return }
-        if (!window.confirm(`Import ${parsedRows.length} lineup entries? This will replace current entries.`)) return
+        if (!window.confirm(`Import ${parsedRows.length} lineup entries? This will replace current entries for ${branchName} on ${date}.`)) return
+
+        // ── Save to backend API so all devices see the lineup ──
+        setSaving(true)
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        let savedCount = 0
+        const savedRows: LineUpRow[] = []
+        for (const row of parsedRows) {
+          try {
+            const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(row),
+            })
+            if (apiRes.ok) {
+              const saved = await apiRes.json() as LineUpRow
+              savedRows.push(saved)
+              savedCount++
+            } else {
+              savedRows.push(row) // keep local row if API fails
+            }
+          } catch {
+            savedRows.push(row) // fallback to local
+          }
+        }
+        setSaving(false)
+
+        // Also keep localStorage as local cache
         const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-        lsSave([...all, ...parsedRows])
-        setRows(parsedRows)
-        alert(`Successfully imported ${parsedRows.length} rows for ${branchName}!`)
+        lsSave([...all, ...savedRows])
+
+        // Refresh from backend to reflect the saved state
+        void fetchLineup()
+
+        const apiNote = savedCount === parsedRows.length
+          ? 'Synced to server ✓'
+          : savedCount > 0
+            ? `${savedCount}/${parsedRows.length} synced to server`
+            : 'Saved locally only (server offline)'
+        alert(`Imported ${parsedRows.length} rows for ${branchName}! ${apiNote}`)
       } catch { alert('Error parsing Excel file.') }
     }
     reader.readAsBinaryString(file)
