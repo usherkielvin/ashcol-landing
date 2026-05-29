@@ -65,16 +65,17 @@
   }
   ::-webkit-scrollbar {
     width: 6px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #0C1426;
+    background: transparent;
   }
   html.light ::-webkit-scrollbar-track {
-    background: #e2e8f0;
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
     background: #1E2D48;
-    border-radius: 3px;
+    border-radius: 9999px;
   }
   html.light ::-webkit-scrollbar-thumb {
     background: #94a3b8;

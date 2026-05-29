@@ -1400,9 +1400,9 @@ export default function ClientMasterlist() {
       )}
 
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+            <thead>
               <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                 {columns.map(col => (
                   <th key={col.label}
@@ -1425,10 +1425,11 @@ export default function ClientMasterlist() {
                       cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
                       userSelect: 'none',
                       transition: 'all 0.15s ease-in-out',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: col.sticky ? 25 : 20,
                       ...(col.sticky ? {
-                        position: 'sticky' as const,
                         left: col.left,
-                        zIndex: 15,
                       } : {}),
                       ...(col.freeze ? {
                         borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
