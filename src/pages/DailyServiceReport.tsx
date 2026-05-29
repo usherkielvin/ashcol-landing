@@ -181,6 +181,52 @@ export default function DailyServiceReport() {
   // Pending Excel import waiting for the admin to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
 
+  // Column configuration for expand / collapse functionality
+  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+
+  const toggleColumn = useCallback((colLabel: string) => {
+    setExpandedCols(prev => ({
+      ...prev,
+      [colLabel]: !prev[colLabel]
+    }))
+  }, [])
+
+  const columns = useMemo(() => {
+    const rawCols = [
+      { label: "CUSTOMER'S NAME", defaultW: 160, expW: 280, sticky: true, freeze: false, right: false },
+      { label: 'DESTINATION', defaultW: 200, expW: 450, sticky: true, freeze: true, right: false },
+      { label: 'DISTRICT', defaultW: 100, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'CONTACT NO.', defaultW: 115, expW: 180, sticky: false, freeze: false, right: false },
+      { label: 'BRAND / MODEL', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
+      { label: 'DLR', defaultW: 100, expW: 180, sticky: false, freeze: false, right: false },
+      { label: 'COMMIT', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
+      { label: 'INSTALLER', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
+      { label: 'NOTE', defaultW: 140, expW: 280, sticky: false, freeze: false, right: false },
+      { label: 'SERVICE', defaultW: 110, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'UPDATE', defaultW: 150, expW: 350, sticky: false, freeze: false, right: false },
+      { label: 'CHARGES', defaultW: 110, expW: 180, sticky: false, freeze: false, right: true },
+      { label: 'PAYMENT', defaultW: 100, expW: 160, sticky: false, freeze: false, right: false },
+    ]
+
+    let accumulatedLeft = 0
+    return rawCols.map(col => {
+      const isExpanded = !!expandedCols[col.label]
+      const currentWidth = isExpanded ? col.expW : col.defaultW
+      const leftVal = col.sticky ? accumulatedLeft : 0
+      
+      if (col.sticky) {
+        accumulatedLeft += currentWidth
+      }
+
+      return {
+        ...col,
+        isExpanded,
+        w: currentWidth,
+        left: leftVal
+      }
+    })
+  }, [expandedCols])
+
   // ── Week helpers ──────────────────────────────────────────────────────────
   const weekRange = useMemo(() => {
     const d = new Date(date + 'T00:00:00')
@@ -532,41 +578,37 @@ export default function DailyServiceReport() {
 
       {/* Header */}
       <div
-        className="rounded-2xl p-5 md:p-6 relative overflow-hidden"
+        className="rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.2)]"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
       >
-        {/* Title Section */}
-        <div className="mb-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Wrench className="w-5 h-5" style={{ color: primaryGreen }} />
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight" style={{ color: textPrimary }}>
-              Daily Service Report
-            </h2>
+        <div className="flex items-center gap-4">
+          <div className="rounded-2xl p-3 flex items-center justify-center shrink-0 shadow-inner" 
+               style={{ backgroundColor: primaryGreenBg, border: `1.5px solid ${primaryGreenBorder}` }}>
+            <Wrench className="w-6 h-6" style={{ color: primaryGreen }} />
           </div>
-          <p className="text-xs" style={{ color: textMuted }}>
-            Service and installation records
-          </p>
+          <div>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight" style={{ color: textPrimary }}>
+              Daily Service Report
+            </h1>
+            <p className="text-xs mt-1 font-medium" style={{ color: textMuted }}>
+              Centrally log, update, and manage daily field service and equipment installations
+            </p>
+          </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Record Counter */}
-          <div className="px-4 py-2 rounded-lg text-sm font-bold"
-               style={{ backgroundColor: primaryGreenBg, color: primaryGreen }}>
-            {visible.length} {visible.length === 1 ? 'record' : 'records'}
-          </div>
-
-          {/* Add Service */}
+          {/* Add Service Button */}
           {canEdit && (
             <button type="button"
                     onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105"
-                    style={{ backgroundColor: primaryGreenBgAlt, color: primaryGreen }}>
-              <Plus className="w-4 h-4" /> Add Service
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white shadow-md shadow-[#16A34A]/10 hover:shadow-[#16A34A]/20 transition-all hover:scale-[1.02] active:scale-95"
+                    style={{ backgroundColor: primaryGreen }}>
+              <Plus className="w-4 h-4" /> Add Service Row
             </button>
           )}
 
-          {/* Excel Import */}
+          {/* Excel Import Button */}
           {canImport && (
             <>
               <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
@@ -577,103 +619,108 @@ export default function DailyServiceReport() {
                         : isManager
                           ? `Import only YOUR branch's rows into ${date}`
                           : `Import every branch into ${date}`}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: primaryGreen, color: '#fff' }}>
-                <Upload className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
-                {importing ? 'Importing…' : 'Import'}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                <Upload className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} style={{ color: primaryGreen }} />
+                {importing ? 'Importing…' : 'Import Spreadsheet'}
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Filter toolbar */}
-      <div className="flex items-center gap-2 flex-wrap mt-3">
-        {/* Branch filter */}
-        {isAdmin && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs shadow-sm transition-colors hover:border-green-400"
-               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Building2 className="w-3.5 h-3.5" style={{ color: primaryGreen }} />
-            <select
-              value={branchFilter}
-              onChange={e => setBranchFilter(e.target.value)}
-              className="bg-transparent outline-none text-xs font-bold cursor-pointer"
-              style={{ color: textPrimary }}
-            >
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Date picker */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-sm"
-             style={{ backgroundColor: primaryGreenBgAlt, border: `1px solid ${primaryGreenBorder}`, color: primaryGreen }}>
-          <CalendarDays className="w-4 h-4" />
-          <div className="flex items-center gap-2">
-            {viewMode !== 'weekly' && (
-              <span className="uppercase tracking-widest opacity-80 border-r border-green-500/20 pr-2">
-                {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
-              </span>
-            )}
-            {viewMode === 'weekly' ? (
-              <span className="tracking-tight">{weekRange.label}</span>
-            ) : (
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                     className="bg-transparent outline-none cursor-pointer" />
-            )}
-          </div>
-        </div>
-
-        {/* Search bar */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs min-w-0"
-             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-          <Search className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="bg-transparent outline-none text-xs min-w-0 w-32 md:w-48"
-            style={{ color: textPrimary }}
-          />
-          {searchQuery && (
-            <button type="button" onClick={() => setSearchQuery('')} title="Clear"
-                    className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
-              <X className="w-3.5 h-3.5" />
-            </button>
+      {/* Control Deck */}
+      <div className="rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm"
+           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Branch filter */}
+          {isAdmin && (
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all focus-within:border-emerald-500"
+                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Building2 className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
+              <select
+                value={branchFilter}
+                onChange={e => setBranchFilter(e.target.value)}
+                className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-2"
+                style={{ color: textPrimary }}
+              >
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
           )}
+
+          {/* Date picker */}
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            <CalendarDays className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
+            <div className="flex items-center gap-2">
+              {viewMode !== 'weekly' && (
+                <span className="uppercase tracking-wider text-[10px] font-black opacity-60 border-r pr-2" style={{ borderColor: border }}>
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
+                </span>
+              )}
+              {viewMode === 'weekly' ? (
+                <span className="tracking-tight">{weekRange.label}</span>
+              ) : (
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                       className="bg-transparent outline-none cursor-pointer font-bold" style={{ color: textPrimary }} />
+              )}
+            </div>
+          </div>
+
+          {/* Search bar */}
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs border focus-within:border-emerald-500 transition-all min-w-0"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
+            <input
+              type="text"
+              placeholder="Search customers, address, model, tech..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs min-w-0 w-44 md:w-64 font-medium"
+              style={{ color: textPrimary }}
+            />
+            {searchQuery && (
+              <button type="button" onClick={() => setSearchQuery('')} title="Clear"
+                      className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <span className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-              style={{ color: primaryGreen, backgroundColor: primaryGreenBgAlt }}>
-          {visible.length} records
-        </span>
+        {/* Counter Badge */}
+        <div className="flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-xl"
+             style={{ color: primaryGreen, backgroundColor: primaryGreenBg }}>
+          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryGreen }} />
+          {visible.length} {visible.length === 1 ? 'Record' : 'Records'} Found
+        </div>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI statistics strip */}
       {!loading && rows.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {[
-            { label: 'Service Records', value: totals.count.toString(), color: primaryGreen },
-            { label: 'Total Units',     value: totals.qty.toString(),   color: '#059669' },
-            { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#15803D' },
-            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#10B981' },
-            { label: 'Completed',       value: totals.completed.toString(), color: '#22C55E' },
-            { label: 'Cancelled',       value: totals.cancelled.toString(), color: '#EF4444' },
+            { label: 'Service Records', value: totals.count.toString(), color: primaryGreen, bgTint: 'rgba(22,163,74,0.08)', borderTint: 'rgba(22,163,74,0.2)' },
+            { label: 'Total Units',     value: totals.qty.toString(),   color: '#0284C7', bgTint: 'rgba(2,132,199,0.08)', borderTint: 'rgba(2,132,199,0.2)' },
+            { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#D97706', bgTint: 'rgba(217,119,6,0.08)', borderTint: 'rgba(217,119,6,0.2)' },
+            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#0D9488', bgTint: 'rgba(13,148,136,0.08)', borderTint: 'rgba(13,148,136,0.2)' },
+            { label: 'Completed Jobs',  value: totals.completed.toString(), color: '#16A34A', bgTint: 'rgba(22,163,74,0.08)', borderTint: 'rgba(22,163,74,0.2)' },
+            { label: 'Cancelled Jobs',  value: totals.cancelled.toString(), color: '#DC2626', bgTint: 'rgba(220,38,38,0.08)', borderTint: 'rgba(220,38,38,0.2)' },
           ].map((k, i) => (
-            <div key={i} className="rounded-xl p-3 flex flex-col gap-1 shadow-sm"
-                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
-              <span className="text-lg font-bold" style={{ color: k.color }}>{k.value}</span>
+            <div key={i} className="rounded-2xl p-4 flex flex-col justify-between gap-1 shadow-sm transition-all hover:scale-[1.02]"
+                 style={{ backgroundColor: cardBg, border: `1.5px solid ${border}`, borderLeft: `4px solid ${k.color}` }}>
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
+              <span className="text-xl font-black tracking-tight mt-1.5" style={{ color: k.color }}>{k.value}</span>
             </div>
           ))}
         </div>
       )}
 
       {/* Data table */}
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         {loading ? (
           <div className="flex flex-col gap-2 p-5">
             {[1,2,3,4].map(i => (
@@ -697,45 +744,257 @@ export default function DailyServiceReport() {
             )}
           </div>
         ) : (
-          <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto', overflowX: 'auto' }}>
-            <table className="w-full text-xs">
-              <thead>
+          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {["CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'CHARGES', 'PAYMENT']
-                    .map(h => (
-                      <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: textMuted, fontWeight: 600, whiteSpace: 'nowrap', borderRight: `1px solid ${border}`, letterSpacing: '0.03em', fontSize: '11px', position: 'sticky', top: 0, zIndex: 10, backgroundColor: inputBg }}>{h}</th>
+                  {columns.map(col => (
+                    <th key={col.label}
+                      onClick={() => toggleColumn(col.label)}
+                      title={`Click to ${col.isExpanded ? 'collapse' : 'expand'} column`}
+                      style={{
+                        padding: '9px 10px',
+                        textAlign: col.right ? 'right' : 'left',
+                        color: col.isExpanded ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        borderRight: `1px solid ${border}`,
+                        borderBottom: `2px solid ${border}`,
+                        fontSize: '10px',
+                        letterSpacing: '0.07em',
+                        width: col.w,
+                        minWidth: col.w,
+                        maxWidth: col.w,
+                        backgroundColor: inputBg,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        transition: 'all 0.15s ease-in-out',
+                        ...(col.sticky ? {
+                          position: 'sticky' as const,
+                          left: col.left,
+                          zIndex: 15,
+                        } : {}),
+                        ...(col.freeze ? {
+                          borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                          boxShadow: isLight
+                            ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                            : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                        } : {}),
+                    }}>
+                      <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : 'justify-between'}`}>
+                        <span>{col.label}</span>
+                        <span className="text-[9px] opacity-60 transition-transform duration-200" style={{ transform: col.isExpanded ? 'rotate(180deg)' : 'none' }}>
+                          {col.isExpanded ? '◀' : '▶'}
+                        </span>
+                      </div>
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r, idx) => (
-                  <tr key={r.id}
-                      onContextMenu={e => {
-                        e.preventDefault()
-                        if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
-                      }}
-                      style={{ borderBottom: `1px solid ${border}`, backgroundColor: contextMenu?.row.id === r.id ? (isLight ? '#f0fdf4' : '#14532d') : (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
-                      onMouseEnter={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = rowHover }}
-                      onMouseLeave={e => { if (contextMenu?.row.id !== r.id) e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c') }}>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 140, fontSize: '11px' }}>
-                      <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>{r.customerName || ''}
-                    </td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 160, fontSize: '11px' }}>{r.customerAddress || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.district || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, maxWidth: 130, whiteSpace: 'nowrap', lineHeight: '1.6', fontSize: '11px' }}>
-                      <FormatPhone raw={r.customerPhone} />
-                    </td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.unitBrandModel || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, maxWidth: 120, wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px' }}>{r.dealer || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 130, fontSize: '11px' }}>{r.commitTerms || ''}{r.freeInstallation ? ' (FREE)' : ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.technicianName || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 120, fontSize: '11px' }}>{r.note || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', fontSize: '11px' }}>{r.serviceColumn || r.serviceType || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, minWidth: 130, fontSize: '11px' }}>{r.remarks || ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap', textAlign: 'right', fontSize: '11px' }}>{r.amountCharged ? r.amountCharged.toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</td>
-                    <td style={{ padding: '6px 10px', color: textPrimary, fontSize: '11px' }}>{r.paymentStatus || ''}</td>
-                  </tr>
-                ))}
+                {visible.map((r, idx) => {
+                  const rowBaseBg = contextMenu?.row.id === r.id
+                    ? (isLight ? '#f0fdf4' : '#14532d')
+                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
+                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+
+                  return (
+                    <tr key={r.id}
+                        onContextMenu={e => {
+                          e.preventDefault()
+                          if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
+                        }}
+                        style={{
+                          borderBottom: `1px solid ${border}`,
+                          backgroundColor: rowBaseBg,
+                          cursor: 'pointer',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
+                        onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
+                        className="transition-colors">
+                      
+                      {/* 1. Customer's Name — sticky 1 */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        position: 'sticky', left: columns[0].left, zIndex: 5,
+                        backgroundColor: rowBaseBg,
+                        width: columns[0].w, minWidth: columns[0].w, maxWidth: columns[0].w,
+                        fontSize: '11px', fontWeight: 600,
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
+                        {columns[0].isExpanded ? (
+                          <span className="break-words font-semibold leading-relaxed">{r.customerName || ''}</span>
+                        ) : (
+                          <span className="truncate inline-block align-middle" style={{ maxWidth: 'calc(100% - 25px)' }} title={r.customerName || ''}>{r.customerName || ''}</span>
+                        )}
+                      </td>
+
+                      {/* 2. Destination — sticky 2 */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary,
+                        position: 'sticky', left: columns[1].left, zIndex: 5,
+                        backgroundColor: rowBaseBg,
+                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                        boxShadow: isLight
+                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                        width: columns[1].w, minWidth: columns[1].w, maxWidth: columns[1].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        <span className={columns[1].isExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={r.customerAddress || ''}>
+                          {r.customerAddress || ''}
+                        </span>
+                      </td>
+
+                      {/* 3. District */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[2].w, minWidth: columns[2].w, maxWidth: columns[2].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out',
+                        wordBreak: columns[2].isExpanded ? 'break-word' : undefined,
+                        whiteSpace: columns[2].isExpanded ? 'normal' : 'nowrap',
+                        overflow: columns[2].isExpanded ? undefined : 'hidden',
+                        textOverflow: columns[2].isExpanded ? undefined : 'ellipsis'
+                      }}>
+                        {r.district || ''}
+                      </td>
+
+                      {/* 4. Contact */}
+                      <td style={{
+                        padding: '8px 10px', color: '#10B981', borderRight: `1px solid ${border}`,
+                        width: columns[3].w, minWidth: columns[3].w, maxWidth: columns[3].w,
+                        whiteSpace: 'nowrap', lineHeight: '1.6', fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        <FormatPhone raw={r.customerPhone} />
+                      </td>
+
+                      {/* 5. Brand */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[4].w, minWidth: columns[4].w, maxWidth: columns[4].w,
+                        wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px', fontWeight: 600,
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        {columns[4].isExpanded ? (
+                          r.unitBrandModel || ''
+                        ) : (
+                          <span className="truncate block" title={r.unitBrandModel || ''}>{r.unitBrandModel || ''}</span>
+                        )}
+                      </td>
+
+                      {/* 6. Dlr */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[5].w, minWidth: columns[5].w, maxWidth: columns[5].w,
+                        wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        {columns[5].isExpanded ? (
+                          r.dealer || ''
+                        ) : (
+                          <span className="truncate block" title={r.dealer || ''}>{r.dealer || ''}</span>
+                        )}
+                      </td>
+
+                      {/* 7. Commit */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[6].w, minWidth: columns[6].w, maxWidth: columns[6].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out',
+                        wordBreak: columns[6].isExpanded ? 'break-word' : undefined,
+                        whiteSpace: columns[6].isExpanded ? 'normal' : 'nowrap',
+                        overflow: columns[6].isExpanded ? undefined : 'hidden',
+                        textOverflow: columns[6].isExpanded ? undefined : 'ellipsis'
+                      }}>
+                        {r.commitTerms || ''}{r.freeInstallation ? ' (FREE)' : ''}
+                      </td>
+
+                      {/* 8. Installer */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[7].w, minWidth: columns[7].w, maxWidth: columns[7].w,
+                        whiteSpace: columns[7].isExpanded ? 'normal' : 'nowrap', fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out',
+                        wordBreak: columns[7].isExpanded ? 'break-word' : undefined,
+                        overflow: columns[7].isExpanded ? undefined : 'hidden',
+                        textOverflow: columns[7].isExpanded ? undefined : 'ellipsis'
+                      }}>
+                        {r.technicianName || ''}
+                      </td>
+
+                      {/* 9. Note */}
+                      <td style={{
+                        padding: '8px 10px', color: textMuted, borderRight: `1px solid ${border}`,
+                        width: columns[8].w, minWidth: columns[8].w, maxWidth: columns[8].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out',
+                        wordBreak: columns[8].isExpanded ? 'break-word' : undefined,
+                        whiteSpace: columns[8].isExpanded ? 'normal' : 'nowrap',
+                        overflow: columns[8].isExpanded ? undefined : 'hidden',
+                        textOverflow: columns[8].isExpanded ? undefined : 'ellipsis'
+                      }}>
+                        {r.note || ''}
+                      </td>
+
+                      {/* 10. Service */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[9].w, minWidth: columns[9].w, maxWidth: columns[9].w,
+                        whiteSpace: 'nowrap', fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase truncate block text-center ${
+                          (r.serviceColumn || r.serviceType || '').includes('INSTALL') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20'
+                        }`}>
+                          {r.serviceColumn || r.serviceType || ''}
+                        </span>
+                      </td>
+
+                      {/* 11. Update */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[10].w, minWidth: columns[10].w, maxWidth: columns[10].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out',
+                        wordBreak: columns[10].isExpanded ? 'break-word' : undefined,
+                        whiteSpace: columns[10].isExpanded ? 'normal' : 'nowrap',
+                        overflow: columns[10].isExpanded ? undefined : 'hidden',
+                        textOverflow: columns[10].isExpanded ? undefined : 'ellipsis'
+                      }}>
+                        {r.remarks || ''}
+                      </td>
+
+                      {/* 12. Charges */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
+                        width: columns[11].w, minWidth: columns[11].w, maxWidth: columns[11].w,
+                        whiteSpace: 'nowrap', textAlign: 'right', fontSize: '11px', fontWeight: 600,
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        {r.amountCharged ? r.amountCharged.toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}
+                      </td>
+
+                      {/* 13. Payment */}
+                      <td style={{
+                        padding: '8px 10px', color: textPrimary,
+                        width: columns[12].w, minWidth: columns[12].w, maxWidth: columns[12].w,
+                        fontSize: '11px',
+                        transition: 'all 0.15s ease-in-out'
+                      }}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase truncate block text-center ${
+                          r.paymentStatus === 'PAID' || r.paymentStatus === 'GCASH' || r.paymentStatus === 'BANK TRANSFER' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                        }`}>
+                          {r.paymentStatus || ''}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
