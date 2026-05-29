@@ -2509,7 +2509,6 @@ export default function ClientMasterlist() {
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}
       {isExcelModalOpen && (() => {
-        const allIds = new Set(excelPreview.map(x => x.id))
         const allSelected = selectedPreviewIds.size === excelPreview.length && excelPreview.length > 0
         const someSelected = selectedPreviewIds.size > 0
 
