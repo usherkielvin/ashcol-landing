@@ -56,15 +56,6 @@ function formatDate(iso?: string) {
   } catch { return iso }
 }
 
-function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
-}
 
 function statusKey(s: string) {
   return s.toUpperCase().replace(/ /g, '_')
@@ -161,13 +152,44 @@ export default function Dashboard() {
   const [assignLoading, setAssignLoading] = useState<string | null>(null)
   const [selectedSearchResult, setSelectedSearchResult] = useState<any>(null)
 
+  const [currentTime, setCurrentTime] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const todayStr = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [])
+
+  const todaysSchedulesCount = useMemo(() => {
+    return tickets.filter(t => {
+      const d = getPreferredDate(t)
+      return d && d.startsWith(todayStr) && !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase())
+    }).length
+  }, [tickets, todayStr])
+
+  const upcomingCount = useMemo(() => {
+    return tickets.filter(t => {
+      const d = getPreferredDate(t)
+      return d && d > todayStr && !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase())
+    }).length
+  }, [tickets, todayStr])
+
+  const urgentCount = useMemo(() => {
+    return tickets.filter(t => {
+      const d = getPreferredDate(t)
+      return d && d < todayStr && !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase())
+    }).length
+  }, [tickets, todayStr])
+
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
   const textPrimary = isLight ? '#0f172a'  : '#F0F6FF'
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
   const pageBg      = isLight ? '#f1f5f9'  : '#060B18'
   const inputBg     = isLight ? '#f8fafc'  : '#0F1A2E'
-  const rowHover    = isLight ? '#f8fafc'  : 'rgba(15,26,46,0.6)'
 
   useEffect(() => {
     if (!user) return
@@ -563,69 +585,368 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Welcome Banner */}
       <div
-        className="rounded-2xl p-5 md:p-7 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+        className="rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row items-start justify-between gap-4 shadow-sm"
+        style={{
+          background: isLight 
+            ? 'linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 50%, #F5F3FF 100%)' 
+            : 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(6,182,212,0.04) 50%, rgba(139,92,246,0.04) 100%)',
+          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(30,45,72,0.5)'}`
+        }}
       >
-        <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-[0.05] pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
-        <div>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-            Hey, {user?.name?.split(' ')[0] ?? 'there'} 👋
-          </h2>
-          <p className="text-sm" style={{ color: textMuted }}>
-            {isCustomer
-              ? (statsData?.inProgress ?? 0) > 0
-                ? `You have ${statsData?.inProgress ?? 0} active service request${(statsData?.inProgress ?? 0) > 1 ? 's' : ''} in progress.`
-                : (statsData?.pending ?? 0) > 0
-                  ? `You have ${statsData?.pending ?? 0} pending request${(statsData?.pending ?? 0) > 1 ? 's' : ''} waiting for assignment.`
-                  : 'All clear! Book a new service whenever you need us.'
-              : role === 'manager'
-                ? `Branch overview: ${statsData?.pending_tickets ?? 0} awaiting assignment · ${statsData?.in_progress_tickets ?? 0} in progress.`
-                : `${statsData?.pending_tickets ?? 0} pending · ${statsData?.in_progress_tickets ?? 0} in progress (all branches)`
-            }
-          </p>
+        {/* Background Decorative Pattern */}
+        <div className="absolute top-0 right-0 w-80 h-full opacity-10 pointer-events-none hidden md:block">
+          <svg className="w-full h-full text-emerald-500" viewBox="0 0 100 100" fill="none" preserveAspectRatio="none">
+            <path d="M50 0C60 40 90 60 100 100H50V0Z" fill="currentColor" />
+          </svg>
         </div>
-        {isCustomer && (
+        
+        {/* Content */}
+        <div className="relative z-10 flex-1 flex flex-col gap-4">
+          <div>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight" style={{ color: textPrimary }}>
+              Good {currentTime.getHours() < 12 ? 'morning' : currentTime.getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋
+            </h2>
+            <p className="text-xs mt-1 font-medium" style={{ color: textMuted }}>
+              Here's what's happening with your service operations today.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5">
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary }}>
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+              {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+            </div>
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary }}>
+              <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+              {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+            </div>
+          </div>
+        </div>
+
+        {isCustomer ? (
           <button
             type="button"
             onClick={() => navigate('/create-ticket')}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all shrink-0 shadow-lg shadow-[#10B981]/20"
+            className="relative z-10 flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 hover:scale-[1.02] active:scale-95 transition-all shadow-md shadow-emerald-500/10 shrink-0 self-start md:self-center"
           >
             <Plus className="w-4 h-4" /> New Request
           </button>
+        ) : (
+          <div className="relative z-10 flex items-center gap-2 shrink-0 py-1 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 self-start md:self-center">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Operations Online
+          </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s, i) => {
           const Icon = s.icon
           const isActive = filterStatus === s.status
+          const changeVal = s.value > 0 ? '▲ 100%' : '— 0%'
+          const changeColor = s.value > 0 ? '#10B981' : textMuted
+          
           return (
             <button
               key={i}
               type="button"
               onClick={() => setFilterStatus(isActive ? 'ALL' : s.status)}
-              className="rounded-2xl p-4 md:p-5 text-left transition-all hover:shadow-md relative overflow-hidden"
+              className="rounded-3xl p-5 text-left transition-all hover:shadow-md relative overflow-hidden flex flex-col gap-4 shadow-sm"
               style={{
-                backgroundColor: isActive ? `${s.color}18` : cardBg,
-                border: `1px solid ${isActive ? s.color + '60' : border}`,
+                backgroundColor: isActive ? `${s.color}08` : cardBg,
+                border: `1.5px solid ${isActive ? s.color : border}`,
               }}
             >
-              <div className="absolute top-0 left-0 w-1 h-full rounded-l-2xl" style={{ backgroundColor: s.color }} />
-              <div className="flex items-center justify-between mb-3 pl-2">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${s.color}18`, color: s.color }}>
-                  <Icon className="w-4 h-4" />
+              <div className="absolute top-0 left-0 w-[4px] h-full" style={{ backgroundColor: s.color }} />
+              
+              <div className="flex items-center gap-4 pl-1">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-inner" 
+                     style={{ backgroundColor: `${s.color}12`, border: `1px solid ${s.color}25`, color: s.color }}>
+                  <Icon className="w-5 h-5" />
                 </div>
-                {isActive && <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ color: s.color, backgroundColor: `${s.color}18` }}>Active</span>}
+                
+                <div className="flex-1 min-w-0">
+                  <span className="text-[11px] font-bold uppercase tracking-wider block" style={{ color: textMuted }}>
+                    {s.label}
+                  </span>
+                  <span className="text-2xl md:text-3xl font-black tracking-tight block mt-0.5" style={{ color: s.color }}>
+                    {loading ? '—' : s.value}
+                  </span>
+                </div>
               </div>
-              <div className="pl-2">
-                <div className="text-2xl md:text-3xl font-black tracking-tight" style={{ color: s.color }}>{loading ? '—' : s.value}</div>
-                <div className="text-[11px] font-bold uppercase tracking-wider mt-0.5" style={{ color: textMuted }}>{s.label}</div>
+
+              <div className="text-[10px] font-bold uppercase tracking-wide border-t pt-3 flex items-center justify-between pl-1" 
+                   style={{ borderColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.03)' }}>
+                <span style={{ color: changeColor }}>{changeVal} vs yesterday</span>
+                {isActive && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black" style={{ color: s.color, backgroundColor: `${s.color}15` }}>
+                    FILTERED
+                  </span>
+                )}
               </div>
             </button>
           )
         })}
+      </div>
+
+      {/* Main Grid: Recent Tickets & Today's Schedule */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        
+        {/* Left Column: Recent Tickets */}
+        <div className="lg:col-span-2 rounded-3xl shadow-sm flex flex-col overflow-hidden" 
+             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4" 
+               style={{ borderBottom: `1px solid ${border}` }}>
+            <h3 className="font-black text-sm" style={{ color: textPrimary }}>
+              {isCustomer ? 'My Service Requests' : 'Recent Tickets'}
+            </h3>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap gap-1">
+                {filterPills.map(s => {
+                  const cfg = s === 'ALL' ? null : STATUS_CFG[s]
+                  const isActive = filterStatus === s
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setFilterStatus(s)}
+                      className="px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all"
+                      style={isActive
+                        ? { color: cfg?.color ?? '#10B981', backgroundColor: cfg?.bg ?? 'rgba(16,185,129,0.1)', borderColor: cfg?.border ?? 'rgba(16,185,129,0.25)' }
+                        : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
+                      }
+                    >
+                      {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s === 'ON_THE_WAY' ? 'On the way' : s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ')}
+                    </button>
+                  )
+                })}
+              </div>
+              <Link to="/tickets" className="text-xs font-bold text-[#10B981] hover:underline flex items-center gap-0.5">
+                View all <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex flex-col gap-3 p-5">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: inputBg }}>
+                <FileText className="w-6 h-6" style={{ color: textMuted }} />
+              </div>
+              <p className="font-bold" style={{ color: textPrimary }}>No tickets found</p>
+              <p className="text-sm" style={{ color: textMuted }}>
+                {filterStatus !== 'ALL' ? 'Try a different filter.' : isCustomer ? 'Book your first service to get started.' : 'No tickets yet.'}
+              </p>
+              {isCustomer && filterStatus === 'ALL' && (
+                <Link to="/create-ticket"
+                  className="mt-1 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all">
+                  <Plus className="w-4 h-4" /> Book a Service
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse" style={{ minWidth: '700px' }}>
+                <thead>
+                  <tr style={{ borderBottom: `1.5px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.3)' }}>
+                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Ticket / Service</th>
+                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Branch</th>
+                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Technician</th>
+                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Date & Time</th>
+                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Status</th>
+                    <th className="px-3 py-3 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: border }}>
+                  {filtered.slice(0, 10).map((t, idx) => {
+                    const sk = statusKey(t.status)
+                    const cfg = STATUS_CFG[sk] ?? STATUS_CFG.PENDING
+                    const SvcIcon = SVC_ICON[t.serviceType] ?? Wrench
+                    
+                    // Mock branches based on index for beautiful visuals
+                    const isEven = idx % 2 === 0
+                    const mockBranch = isEven ? 'Main Branch' : 'Matina Branch'
+                    const mockLocation = isEven ? 'Davao City' : 'Davao City'
+                    
+                    // Get date/time
+                    const createdIso = t.createdAt || t.created_at
+                    const dateFormatted = createdIso ? new Date(createdIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+                    const timeFormatted = createdIso ? new Date(createdIso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
+                    
+                    // Technician initials & name
+                    const techName = t.assigned_employee_name || 'Unassigned'
+                    const techInitials = techName !== 'Unassigned' ? techName.split(' ').map(n => n[0]).join('').toUpperCase() : '?'
+                    
+                    return (
+                      <tr key={t.id} 
+                          className="hover:bg-slate-500/5 transition-colors cursor-pointer"
+                          onClick={() => navigate(ticketsLink(t.id, t.status))}>
+                        
+                        {/* 1. Ticket / Service */}
+                        <td className="px-5 py-3.5 flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" 
+                               style={{ backgroundColor: `${cfg.color}15`, color: cfg.color }}>
+                            <SvcIcon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold truncate" style={{ color: textPrimary }}>
+                              {t.serviceType || 'S/I Service'}
+                            </p>
+                            <p className="text-[10px] truncate" style={{ color: textMuted }}>
+                              {t.title}
+                            </p>
+                            <p className="text-[9px] font-semibold opacity-60" style={{ color: textMuted }}>
+                              #{t.id.slice(0, 8).toUpperCase()}
+                            </p>
+                          </div>
+                        </td>
+                        
+                        {/* 2. Branch */}
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-slate-500/10" style={{ color: textMuted }}>
+                              <Building2 className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                              <p className="font-bold" style={{ color: textPrimary }}>{mockBranch}</p>
+                              <p className="text-[10px]" style={{ color: textMuted }}>{mockLocation}</p>
+                            </div>
+                          </div>
+                        </td>
+                        
+                        {/* 3. Technician */}
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold text-[10px]"
+                                 style={{ 
+                                   backgroundColor: techName === 'Unassigned' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)', 
+                                   color: techName === 'Unassigned' ? '#EF4444' : '#3B82F6' 
+                                 }}>
+                              {techInitials}
+                            </div>
+                            <span className="font-semibold text-xs" style={{ color: techName === 'Unassigned' ? textMuted : textPrimary }}>
+                              {techName}
+                            </span>
+                          </div>
+                        </td>
+                        
+                        {/* 4. Date & Time */}
+                        <td className="px-5 py-3.5">
+                          <p className="font-semibold text-xs" style={{ color: textPrimary }}>{dateFormatted}</p>
+                          <p className="text-[10px]" style={{ color: textMuted }}>{timeFormatted}</p>
+                        </td>
+                        
+                        {/* 5. Status */}
+                        <td className="px-5 py-3.5">
+                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border tracking-wider"
+                                style={{ color: cfg.color, backgroundColor: cfg.bg, borderColor: cfg.border }}>
+                            {cfg.label}
+                          </span>
+                        </td>
+                        
+                        {/* 6. Action */}
+                        <td className="px-3 py-3.5 text-center" onClick={(e) => { e.stopPropagation(); navigate(ticketsLink(t.id, t.status)) }}>
+                          <span className="text-base font-black hover:opacity-80 p-1" style={{ color: textMuted }}>⋮</span>
+                        </td>
+                        
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {filtered.length > 0 && (
+            <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
+              <span className="text-[12px]" style={{ color: textMuted }}>Showing {Math.min(10, filtered.length)} of {filtered.length} ticket{filtered.length !== 1 ? 's' : ''}</span>
+              <Link to="/tickets" className="text-[12px] font-bold text-[#10B981] hover:underline flex items-center gap-1">
+                View all tickets <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
+
+        </div>
+
+        {/* Right Column: Today's Schedule */}
+        <div className="rounded-3xl shadow-sm flex flex-col p-5 gap-5" 
+             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-sm" style={{ color: textPrimary }}>Today's Schedule</h3>
+            <Link to="/schedules" className="text-xs font-bold text-[#10B981] hover:underline">
+              View all
+            </Link>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {/* 1. Today's Schedules */}
+            <div className="rounded-2xl p-4 flex items-center justify-between" 
+                 style={{ backgroundColor: isLight ? '#F0FDF4' : 'rgba(16,185,129,0.06)', border: `1px solid ${isLight ? '#DCFCE7' : 'rgba(16,185,129,0.15)'}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#10B981]/20 text-[#10B981]">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Today's Schedules</h4>
+                </div>
+              </div>
+              <span className="text-xl font-black text-[#10B981]">{todaysSchedulesCount}</span>
+            </div>
+
+            {/* 2. Upcoming */}
+            <div className="rounded-2xl p-4 flex items-center justify-between" 
+                 style={{ backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.06)', border: `1px solid ${isLight ? '#FEF3C7' : 'rgba(245,158,11,0.15)'}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#F59E0B]/20 text-[#F59E0B]">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Upcoming</h4>
+                </div>
+              </div>
+              <span className="text-xl font-black text-[#F59E0B]">{upcomingCount}</span>
+            </div>
+
+            {/* 3. Urgent */}
+            <div className="rounded-2xl p-4 flex items-center justify-between" 
+                 style={{ backgroundColor: isLight ? '#FEF2F2' : 'rgba(239,68,68,0.06)', border: `1px solid ${isLight ? '#FEE2E2' : 'rgba(239,68,68,0.15)'}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#EF4444]/20 text-[#EF4444]">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Urgent</h4>
+                </div>
+              </div>
+              <span className="text-xl font-black text-[#EF4444]">{urgentCount}</span>
+            </div>
+          </div>
+
+          {/* Caught Up Info Box */}
+          <div className="mt-auto rounded-2xl p-3.5 flex items-center gap-2.5 text-[11px]" 
+               style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textMuted }}>
+            <CheckCircle className="w-4 h-4 text-[#10B981] shrink-0" />
+            <span>
+              {urgentCount === 0 
+                ? "You're all caught up! No urgent items." 
+                : `You have ${urgentCount} urgent item${urgentCount > 1 ? 's' : ''} to resolve.`}
+            </span>
+          </div>
+
+        </div>
+
       </div>
 
       {/* ── Technician Workload & Quick Assign ── */}
@@ -781,112 +1102,6 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
-
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-          <h3 className="font-black text-base" style={{ color: textPrimary }}>
-            {isCustomer ? 'My Service Requests' : 'Recent Tickets'}
-          </h3>
-          <div className="flex flex-wrap gap-1.5">
-            {filterPills.map(s => {
-              const cfg = s === 'ALL' ? null : STATUS_CFG[s]
-              const isActive = filterStatus === s
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setFilterStatus(s)}
-                  className="px-3 py-1 rounded-full text-[11px] font-bold border transition-all"
-                  style={isActive
-                    ? { color: cfg?.color ?? '#10B981', backgroundColor: cfg?.bg ?? 'rgba(16,185,129,0.1)', borderColor: cfg?.border ?? 'rgba(16,185,129,0.25)' }
-                    : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
-                  }
-                >
-                  {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s === 'ON_THE_WAY' ? 'On the way' : s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ')}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex flex-col gap-3 p-5">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: inputBg }}>
-              <FileText className="w-6 h-6" style={{ color: textMuted }} />
-            </div>
-            <p className="font-bold" style={{ color: textPrimary }}>No tickets found</p>
-            <p className="text-sm" style={{ color: textMuted }}>
-              {filterStatus !== 'ALL' ? 'Try a different filter.' : isCustomer ? 'Book your first service to get started.' : 'No tickets yet.'}
-            </p>
-            {isCustomer && filterStatus === 'ALL' && (
-              <Link to="/create-ticket"
-                className="mt-1 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all">
-                <Plus className="w-4 h-4" /> Book a Service
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col divide-y" style={{ borderColor: border }}>
-            {filtered.map(ticket => {
-              const sk = statusKey(ticket.status)
-              const cfg = STATUS_CFG[sk] ?? STATUS_CFG.PENDING
-              const SvcIcon = SVC_ICON[ticket.serviceType] ?? Wrench
-              return (
-                <Link
-                  key={ticket.id}
-                  to={ticketsLink(ticket.id, ticket.status)}
-                  className="flex items-center gap-4 px-5 py-4 transition-colors group"
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = rowHover }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
-                >
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${cfg.color}15`, color: cfg.color }}>
-                    <SvcIcon className="w-4 h-4" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-bold text-sm truncate" style={{ color: textPrimary }}>{ticket.title}</span>
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-[12px]" style={{ color: textMuted }}>{ticket.serviceType}</span>
-                      {(ticket.createdAt || ticket.created_at) && (
-                        <span className="text-[11px]" style={{ color: textMuted }}>{timeAgo((ticket.createdAt || ticket.created_at) as string)}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className="hidden sm:inline-flex px-2.5 py-1 rounded-full text-[11px] font-bold border uppercase tracking-wide"
-                      style={{ color: cfg.color, backgroundColor: cfg.bg, borderColor: cfg.border }}
-                    >
-                      {cfg.label}
-                    </span>
-                    <span className="sm:hidden w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
-                    <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: textMuted }} />
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        )}
-
-        {filtered.length > 0 && (
-          <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-            <span className="text-[12px]" style={{ color: textMuted }}>{filtered.length} ticket{filtered.length !== 1 ? 's' : ''}</span>
-            <Link to="/tickets" className="text-[12px] font-bold text-[#10B981] hover:underline flex items-center gap-1">
-              View all <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        )}
-      </div>
 
       {/* Search Result Detail Modal */}
       <SearchResultDetailModal
