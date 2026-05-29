@@ -1256,11 +1256,8 @@ export default function ClientMasterlist() {
         </div>
       )}
 
-      {/* ── Main Table Container ──────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-
-        <div className="overflow-x-auto" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+        <div className="overflow-x-auto">
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
               <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
@@ -1580,49 +1577,41 @@ export default function ClientMasterlist() {
           </table>
         </div>
 
-        {/* ── Stats Footer Strip ─────────────────────────────── */}
-        <div className="flex items-center gap-5 px-4 py-2" style={{ borderTop: `1px solid ${border}` }}>
-          {[
-            { label: 'Unassigned', count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-            { label: 'Scheduled',  count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-            { label: 'Installed',  count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
-            { label: 'Cancelled',  count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
-            { label: 'Total',      count: tickets.length },
-          ].map((stat, idx, arr) => (
-            <span key={stat.label} className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
-              {stat.label}
-              <strong className="font-bold" style={{ color: textPrimary }}>{stat.count}</strong>
-              {idx < arr.length - 1 && <span className="ml-3 opacity-30">·</span>}
-            </span>
-          ))}
+        {/* ── Combined Stats Counter & Danger Zone Footer Strip ─────────────────────────────── */}
+        <div className="flex items-center justify-between gap-4 px-4 py-2.5 flex-wrap" style={{ borderTop: `1px solid ${border}` }}>
+          {/* Counters */}
+          <div className="flex flex-wrap items-center gap-5">
+            {[
+              { label: 'Unassigned', count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+              { label: 'Scheduled',  count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+              { label: 'Installed',  count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
+              { label: 'Cancelled',  count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
+              { label: 'Total',      count: tickets.length },
+            ].map((stat, idx, arr) => (
+              <span key={stat.label} className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
+                {stat.label}
+                <strong className="font-bold" style={{ color: textPrimary }}>{stat.count}</strong>
+                {idx < arr.length - 1 && <span className="ml-3 opacity-30">·</span>}
+              </span>
+            ))}
+          </div>
+
+          {/* Danger Zone Action (Admin Only) */}
+          {isAdmin && filtered.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider hidden sm:inline">⚠ Danger Zone:</span>
+              <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 border border-red-500/25 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white"
+                title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL')
+                  ? 'Only matching filtered records will be deleted'
+                  : 'Deletes all records permanently'}>
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                {actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-
-      {/* ── Danger Zone ───────────────────────────────────────── */}
-      {isAdmin && filtered.length > 0 && (
-        <div className="rounded-2xl overflow-hidden shadow-sm mt-4" style={{ border: '1.5px solid rgba(239,68,68,0.25)', backgroundColor: 'rgba(239,68,68,0.04)' }}>
-          <div className="flex items-center justify-between px-5 py-3">
-            <div className="flex flex-col">
-              <span className="text-xs font-black uppercase tracking-wider" style={{ color: '#EF4444' }}>⚠ Danger Zone</span>
-              <span className="text-xs mt-0.5" style={{ color: textMuted }}>
-                Permanently deletes all <strong style={{ color: textPrimary }}>{filtered.length}</strong> currently visible client ticket{filtered.length !== 1 ? 's' : ''}.
-                {(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL')
-                  ? ' (filtered view — only matching records will be deleted)'
-                  : ' This cannot be undone.'}
-              </span>
-            </div>
-            <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4 disabled:opacity-50"
-              style={{ backgroundColor: 'transparent', border: '1.5px solid #EF4444', color: '#EF4444' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#EF4444'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#EF4444' }}>
-              <Trash2 className="w-3.5 h-3.5" />
-              {actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}
-            </button>
-          </div>
-        </div>
-      )}
 
       {isActionDrawerOpen && selectedTicket && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
@@ -2525,21 +2514,16 @@ export default function ClientMasterlist() {
         }
 
         return (
-          <div className="fixed inset-0 z-50 flex items-start justify-center"
-            style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', padding: '2vh 1vw', overflowY: 'auto' }}>
-            <div className="w-full rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex flex-col"
+            style={{ backgroundColor: pageBg, overflow: 'hidden' }}>
+            <div className="w-full h-full flex flex-col overflow-hidden animate-fade-in"
               style={{
-                backgroundColor: cardBg,
-                border: `1px solid ${border}`,
-                minWidth: 320,
-                maxWidth: 1200,
-                margin: '0 auto',
-                maxHeight: '96vh',
+                backgroundColor: pageBg,
               }}>
 
               {/* Header */}
-              <div className="shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-                <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+                <div className="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
                       <FileSpreadsheet className="w-4 h-4" style={{ color: '#3B82F6' }} />
@@ -2603,7 +2587,7 @@ export default function ClientMasterlist() {
               </div>
 
               {/* Body */}
-              <div className="flex-1 overflow-auto" style={{ minHeight: 0, padding: '12px 12px' }}>
+              <div className="flex-1 overflow-auto" style={{ minHeight: 0, padding: '24px' }}>
                 {excelPreview.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <AlertCircle className="w-10 h-10 text-slate-400 mb-3" />
@@ -2612,7 +2596,7 @@ export default function ClientMasterlist() {
                   </div>
                 ) : previewView === 'grid' ? (
                   /* ── GRID / CARD VIEW ─────────────────────────────── */
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16 }}>
                     {excelPreview.map((item) => {
                       const isSelected = selectedPreviewIds.has(item.id)
                       return (
@@ -2785,8 +2769,8 @@ export default function ClientMasterlist() {
               </div>
 
               {/* Footer */}
-              <div className="shrink-0 flex items-center justify-between gap-3 flex-wrap px-4 py-3"
-                style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="shrink-0 flex items-center justify-between gap-3 flex-wrap px-6 py-4"
+                style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
                 <div className="flex items-center gap-2">
                   <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
                   <select value={importTargetBranchId} onChange={e => setImportTargetBranchId(e.target.value)}
