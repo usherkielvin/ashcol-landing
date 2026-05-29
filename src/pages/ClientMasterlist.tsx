@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
-  ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
-  Users, XCircle, Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square
+  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
+  Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -1071,8 +1072,48 @@ export default function ClientMasterlist() {
       const techName = (t.assignedEmployeeName || '').toLowerCase()
       const id = t.id.toLowerCase()
       const loc = (t.location || '').toLowerCase()
+      const ctrlNum = (t.controlNumber || '').toLowerCase()
+      const phone = (t.contactPhone || '').toLowerCase()
+      const vendor = (t.sourceVendor || '').toLowerCase()
+      const svcType = (t.serviceType || '').toLowerCase()
+      const commit = (t.commitType || '').toLowerCase()
+      const installer = (t.installerName || '').toLowerCase()
+      const district = (t.district || '').toLowerCase()
+      const remarks = (t.remarksUpdate || '').toLowerCase()
+      const desc = (t.description || '').toLowerCase()
 
-      return custName.includes(q) || branchName.includes(q) || techName.includes(q) || id.includes(q) || loc.includes(q)
+      // Parse acDetails for brand/sku/serial number
+      let acBrand = ''
+      let acSku = ''
+      let acSerial = ''
+      if (t.acDetails) {
+        try {
+          const parsed = JSON.parse(t.acDetails)
+          acBrand = (parsed.brand || '').toLowerCase()
+          acSku = (parsed.sku || '').toLowerCase()
+          acSerial = (parsed.serialNumber || '').toLowerCase()
+        } catch (e) {}
+      }
+
+      return (
+        custName.includes(q) ||
+        branchName.includes(q) ||
+        techName.includes(q) ||
+        id.includes(q) ||
+        loc.includes(q) ||
+        ctrlNum.includes(q) ||
+        phone.includes(q) ||
+        vendor.includes(q) ||
+        svcType.includes(q) ||
+        commit.includes(q) ||
+        installer.includes(q) ||
+        district.includes(q) ||
+        remarks.includes(q) ||
+        desc.includes(q) ||
+        acBrand.includes(q) ||
+        acSku.includes(q) ||
+        acSerial.includes(q)
+      )
     }
 
     return true
@@ -1095,27 +1136,6 @@ export default function ClientMasterlist() {
 
 
 
-  // Priority Row Highlight Helper
-  const getRowStyleByPriority = (priority?: string) => {
-    if (!priority) return {}
-    const p = priority.toUpperCase()
-    if (p.includes('MORNING')) {
-      return isLight 
-        ? { backgroundColor: '#FFF5F5', borderLeft: '4px solid #EF4444' } 
-        : { backgroundColor: 'rgba(239, 68, 68, 0.08)', borderLeft: '4px solid #EF4444' }
-    }
-    if (p.includes('OLD') || p.includes('ADDRESS')) {
-      return isLight 
-        ? { backgroundColor: '#FFFBEB', borderLeft: '4px solid #F59E0B' } 
-        : { backgroundColor: 'rgba(245, 158, 11, 0.08)', borderLeft: '4px solid #F59E0B' }
-    }
-    if (p.includes('PRIORITY')) {
-      return isLight 
-        ? { backgroundColor: '#F0F9FF', borderLeft: '4px solid #0EA5E9' } 
-        : { backgroundColor: 'rgba(14, 165, 233, 0.08)', borderLeft: '4px solid #0EA5E9' }
-    }
-    return {}
-  }
 
   // Helper to determine if a field was auto-extracted from voucher scan
   const isFieldExtracted = (fieldValue: any) => {
@@ -1129,106 +1149,60 @@ export default function ClientMasterlist() {
 
   return (
     <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
+      {/* ── Portal: Toolbar into header slot ────────────────── */}
+      {ReactDOM.createPortal(
+        <div className="flex flex-wrap items-center gap-2 px-5 md:px-6 py-2"
+          style={{ borderTop: `1px solid ${border}` }}>
 
-      {/* ── HEADER: Overview-style Card ─────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden shadow-lg" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-        {/* Row 1 — Title + Action Buttons */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4"
-          style={{ borderBottom: `1px solid ${border}` }}>
-          <div>
-            <h2 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>Schedule Monitoring</h2>
-            <p className="text-xs mt-0.5" style={{ color: textMuted }}>Track and manage client schedules across all branches and stores.</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
-            {/* Scan PDF/Photo */}
-            <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-              onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
-            <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
-              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-              {scanning ? 'Scanning...' : 'Scan PDF / Photo'}
-            </button>
-            {/* Import Excel */}
-            <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
-            <button type="button" onClick={() => excelFileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-xs border transition-all hover:opacity-80"
-              style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
-            </button>
-            {/* Add Client */}
-            <button type="button" onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm"
-              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-              <Plus className="w-3.5 h-3.5" /> Add Client
-            </button>
-          </div>
-        </div>
-
-        {/* Row 2 — Stat Cards */}
-        <div className="grid grid-cols-5" style={{ borderBottom: `1px solid ${border}` }}>
-          {[
-            { label: 'Unassigned', icon: AlertCircle, color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',
-              count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-            { label: 'Scheduled', icon: Clock, color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',
-              count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-            { label: 'Installed', icon: CheckCircle2, color: '#10B981', bg: 'rgba(16,185,129,0.1)',
-              count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
-            { label: 'Cancelled', icon: XCircle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)',
-              count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
-            { label: 'Total Clients', icon: Users, color: '#6366F1', bg: 'rgba(99,102,241,0.1)',
-              count: tickets.length },
-          ].map((stat, idx, arr) => (
-            <div key={stat.label} className="flex items-center gap-3 px-5 py-4"
-              style={{ borderRight: idx < arr.length - 1 ? `1px solid ${border}` : undefined }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: stat.bg }}>
-                <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>{stat.label}</p>
-                <p className="text-2xl font-black leading-none mt-0.5" style={{ color: stat.color }}>{stat.count}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Row 3 — Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           {/* Branch Filter */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
             <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL">All Branches</option>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
 
           {/* Store Filter */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
             <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL">All Stores</option>
               <option value="Robinsons">Robinsons</option>
               <option value="Abenson">Abenson</option>
               <option value="Direct">Direct Store</option>
             </select>
-            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
+              <option value="ALL">All Status</option>
+              <option value="UNASSIGNED">Unassigned</option>
+              <option value="PENDING">Scheduled</option>
+              <option value="INSTALLED">Installed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
 
           {/* Search */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border flex-1 min-w-[180px] max-w-xs"
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input type="text" placeholder="Search client or location..." value={searchQuery}
+            <input type="text" placeholder="Search client, phone, SI #..." value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="bg-transparent outline-none text-xs flex-1" style={{ color: textPrimary }} />
             {searchQuery && (
@@ -1238,28 +1212,35 @@ export default function ClientMasterlist() {
             )}
           </div>
 
-          {/* Status filter */}
-          <div className="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg border"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
-              <option value="ALL">All Status</option>
-              <option value="UNASSIGNED">Unassigned</option>
-              <option value="PENDING">Scheduled</option>
-              <option value="INSTALLED">Installed</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
-          </div>
+          {/* Hidden file inputs */}
+          <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+            onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
+          <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
 
-          <span className="shrink-0 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider"
-            style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)' }}>
-            {filtered.length} client{filtered.length === 1 ? '' : 's'}
-          </span>
-        </div>
-      </div>
+          {/* Action buttons wrapper with right alignment */}
+          <div className="flex items-center gap-2 ml-auto shrink-0">
+            <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
+              style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+              {scanning ? 'Scanning...' : 'Scan PDF'}
+            </button>
+
+            <button type="button" onClick={() => excelFileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 shrink-0"
+              style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
+            </button>
+
+            <button type="button" onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm shrink-0"
+              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+              <Plus className="w-3.5 h-3.5" /> Add Client
+            </button>
+          </div>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
 
       {/* ── Scan Error Banner ──────────────────────────────────── */}
       {scanError && (
@@ -1275,11 +1256,10 @@ export default function ClientMasterlist() {
         </div>
       )}
 
-
       {/* ── Main Table Container ──────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
-        {/* Table */}
+
         <div className="overflow-x-auto" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
@@ -1347,14 +1327,12 @@ export default function ClientMasterlist() {
               ) : (
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
-                  const rowStyle = getRowStyleByPriority(ticket.priorityTag)
                   const isInstalled = ticket.status.toUpperCase() === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)
                   const isAssigned = !!(ticket.assignedTo || ticket.branchId)
                   const isCancelled = ticket.status.toUpperCase() === 'CANCELLED'
 
                   // Base background for this row — used for sticky cells that need explicit bg
-                  const rowBaseBg = rowStyle.backgroundColor
-                    || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
+                  const rowBaseBg = (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
                   const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
 
                   return (
@@ -1467,7 +1445,7 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 4. Contact */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: '#10B981', fontSize: '11px' }}>
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px' }}>
                         <FormatPhone raw={ticket.contactPhone} />
                       </td>
 
@@ -1497,26 +1475,21 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 6. DLR/Store */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px' }}>
-                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider"
-                          style={{ backgroundColor: storeStyle.bg, color: storeStyle.color }}>{storeStyle.label}</span>
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted }}>
+                        <span className="font-semibold">{storeStyle.label}</span>
                       </td>
 
                       {/* 6b. Relayed Sched */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center' }}>
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted }}>
                         {ticket.serviceType ? (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-                            {ticket.serviceType}
-                          </span>
+                          <span className="font-semibold uppercase text-[10px]">{ticket.serviceType}</span>
                         ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
                       </td>
 
                       {/* 6c. Commit */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center' }}>
+                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted }}>
                         {ticket.commitType ? (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-pink-500/10 text-pink-500 border border-pink-500/20">
-                            {ticket.commitType}
-                          </span>
+                          <span className="font-semibold uppercase text-[10px]">{ticket.commitType}</span>
                         ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
                       </td>
 
@@ -1606,7 +1579,25 @@ export default function ClientMasterlist() {
             </tbody>
           </table>
         </div>
+
+        {/* ── Stats Footer Strip ─────────────────────────────── */}
+        <div className="flex items-center gap-5 px-4 py-2" style={{ borderTop: `1px solid ${border}` }}>
+          {[
+            { label: 'Unassigned', count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+            { label: 'Scheduled',  count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+            { label: 'Installed',  count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
+            { label: 'Cancelled',  count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
+            { label: 'Total',      count: tickets.length },
+          ].map((stat, idx, arr) => (
+            <span key={stat.label} className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
+              {stat.label}
+              <strong className="font-bold" style={{ color: textPrimary }}>{stat.count}</strong>
+              {idx < arr.length - 1 && <span className="ml-3 opacity-30">·</span>}
+            </span>
+          ))}
+        </div>
       </div>
+
 
       {/* ── Danger Zone ───────────────────────────────────────── */}
       {isAdmin && filtered.length > 0 && (

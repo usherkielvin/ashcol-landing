@@ -239,6 +239,102 @@ export default function DashboardLayout() {
           )}
         </nav>
 
+        {/* ── User Profile Bottom Section ────────────────── */}
+        <div 
+          ref={profileRef} 
+          className="mt-auto relative select-none"
+          style={{ borderTop: `1px solid ${border}` }}
+        >
+          {/* Dropdown Popup Menu (renders above/beside the profile strip) */}
+          {profileOpen && (
+            <div
+              className={`absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden`}
+              style={{ 
+                backgroundColor: sidebarBg, 
+                border: `1px solid ${border}`,
+                bottom: 'calc(100% + 8px)',
+                left: sidebarCollapsed ? '12px' : '16px',
+              }}
+            >
+              {/* User info header */}
+              <div className="px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
+                <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
+              </div>
+
+              <div className="py-1.5">
+                <Link
+                  to="/profile"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                  style={{ color: textPrimary }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = hoverBg)}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <UserCircle className="w-4 h-4" style={{ color: '#10B981' }} />
+                  My Account
+                </Link>
+
+                <div className="mx-3 my-1" style={{ borderTop: `1px solid ${border}` }} />
+
+                <button
+                  onClick={() => { setProfileOpen(false); logout() }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
+                  style={{ color: textMuted }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = '#EF4444' }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = textMuted }}
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Strip Button */}
+          <button
+            onClick={() => setProfileOpen(p => !p)}
+            className={`w-full flex items-center gap-3 text-left transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800/40 ${
+              sidebarCollapsed ? 'p-3 justify-center' : 'px-4 py-3.5'
+            }`}
+          >
+            {/* Avatar */}
+            {user?.picture && !navPicBroken ? (
+              <img
+                src={user.picture}
+                alt={user.name}
+                className="w-8 h-8 rounded-lg object-cover ring-2 ring-[#10B981]/30 shrink-0"
+                referrerPolicy="no-referrer"
+                onError={() => setNavPicBroken(true)}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-xs shrink-0">
+                {user?.initials ?? '?'}
+              </div>
+            )}
+
+            {/* Info details (hidden when collapsed) */}
+            {!sidebarCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold truncate leading-snug" style={{ color: textPrimary }}>
+                  {user?.name ?? 'Admin User'}
+                </p>
+                <p className="text-[10px] truncate leading-none capitalize mt-0.5" style={{ color: textMuted }}>
+                  {user?.role ?? 'Administrator'}
+                </p>
+              </div>
+            )}
+
+            {/* Caret arrow */}
+            {!sidebarCollapsed && (
+              <ChevronDown 
+                className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${profileOpen ? 'rotate-180' : ''}`} 
+                style={{ color: textMuted }} 
+              />
+            )}
+          </button>
+        </div>
+
       </aside>
 
       {/* ── Main Content Area ───────────────────────────── */}
@@ -246,7 +342,7 @@ export default function DashboardLayout() {
 
         {/* ── Top Header ─────────────────────────────────── */}
         <header
-          className="shrink-0 h-16 flex items-center justify-between px-5 md:px-8 z-30 sticky top-0"
+          className="shrink-0 flex flex-col z-30 sticky top-0"
           style={{
             backgroundColor: headerBg,
             borderBottom: `1px solid ${border}`,
@@ -254,31 +350,37 @@ export default function DashboardLayout() {
             WebkitBackdropFilter: 'blur(16px)',
           }}
         >
-          {/* Left: Hamburger + Page Title */}
-          <div className="flex items-center gap-3">
-            <button
-              className="md:hidden p-2 rounded-xl transition-all"
-              style={{ color: textMuted, backgroundColor: hoverBg }}
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-            <div>
-              <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
-                {currentPage}
-              </h1>
-              {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
-                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
-                  {(user?.role || '').toLowerCase() === 'manager'
-                    ? `Branch · ${branchLabel}`
-                    : 'Technician View'}
-                </p>
-              ) : null}
+          {/* Top row: title + icons */}
+          <div className="min-h-14 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 px-5 md:px-6 py-2 md:py-0">
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                className="md:hidden p-2 rounded-xl transition-all"
+                style={{ color: textMuted, backgroundColor: hoverBg }}
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+              {currentPage !== 'Schedules' && (
+                <div>
+                  <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
+                    {currentPage}
+                  </h1>
+                  {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
+                    <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
+                      {(user?.role || '').toLowerCase() === 'manager'
+                        ? `Branch · ${branchLabel}`
+                        : 'Technician View'}
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2">
+            {/* ── Page-injected toolbar slot ────────────────── */}
+            <div id="header-toolbar-slot" className="flex-1 flex flex-wrap items-center justify-start gap-2 min-w-0" />
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2 shrink-0">
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -370,78 +472,11 @@ export default function DashboardLayout() {
               )}
             </div>
 
-            {/* User Profile Dropdown */}
-            <div ref={profileRef} className="relative">
-              <button
-                onClick={() => setProfileOpen(p => !p)}
-                className="flex items-center gap-2.5 pl-1 pr-3 py-1.5 rounded-xl transition-all hover:scale-[1.02]"
-                style={{
-                  backgroundColor: hoverBg,
-                  border: `1px solid ${inputBorder}`,
-                }}
-              >
-                {user?.picture && !navPicBroken ? (
-                  <img
-                    src={user.picture}
-                    alt={user.name}
-                    className="w-8 h-8 rounded-lg object-cover ring-2 ring-[#10B981]/30"
-                    referrerPolicy="no-referrer"
-                    onError={() => setNavPicBroken(true)}
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-xs">
-                    {user?.initials ?? '?'}
-                  </div>
-                )}
-                <span className="text-sm font-semibold hidden sm:block max-w-[80px] truncate" style={{ color: textPrimary }}>
-                  {user?.name?.split(' ')[0] ?? 'Guest'}
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-              </button>
 
-              {/* Dropdown */}
-              {profileOpen && (
-                <div
-                  className="absolute right-0 top-[calc(100%+8px)] w-52 rounded-xl shadow-xl z-50 overflow-hidden"
-                  style={{ backgroundColor: sidebarBg, border: `1px solid ${border}` }}
-                >
-                  {/* User info header */}
-                  <div className="px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
-                    <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
-                    <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
-                  </div>
-
-                  <div className="py-1.5">
-                    <Link
-                      to="/profile"
-                      onClick={() => setProfileOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
-                      style={{ color: textPrimary }}
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = hoverBg)}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                    >
-                      <UserCircle className="w-4 h-4" style={{ color: '#10B981' }} />
-                      My Account
-                    </Link>
-
-                    <div className="mx-3 my-1" style={{ borderTop: `1px solid ${border}` }} />
-
-                    <button
-                      onClick={() => { setProfileOpen(false); logout() }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
-                      style={{ color: textMuted }}
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = '#EF4444' }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = textMuted }}
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
 
           </div>
+          </div>
+
         </header>
 
         {/* ── Page Content ───────────────────────────────── */}
