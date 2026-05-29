@@ -151,11 +151,9 @@ export default function DailyServiceReport() {
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
-  const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
 
   const primaryGreen      = '#16A34A' // Green-600
   const primaryGreenBg    = 'rgba(22, 163, 74, 0.08)'
-  const primaryGreenBgAlt = 'rgba(22, 163, 74, 0.12)'
   const primaryGreenBorder = 'rgba(22, 163, 74, 0.25)'
 
   const role = (user?.role || '').toLowerCase()
