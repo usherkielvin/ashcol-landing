@@ -601,7 +601,7 @@ export default function DailyServiceReport() {
               style={{ color: textPrimary }}
             >
               {branches.map(b => (
-                <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>
+                <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
           </div>
@@ -845,8 +845,8 @@ export default function DailyServiceReport() {
                         onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
                         className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  <option value="" style={{ color: '#000' }}>— Choose branch —</option>
-                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                  <option value="">— Choose branch —</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </Field>
             </div>
@@ -921,8 +921,8 @@ export default function DailyServiceReport() {
                               onChange={e => setEditing({ ...editing, branchId: e.target.value })}
                               className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                        <option value="" style={{ color: '#000' }}>— Choose branch —</option>
-                        {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                        <option value="">— Choose branch —</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     )}
                   </Field>
@@ -983,7 +983,7 @@ export default function DailyServiceReport() {
                             }}
                             className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      {SERVICE_TYPES.map(t => <option key={t} value={t} style={{ color: '#000' }}>{t}</option>)}
+                      {SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </Field>
                   <Field label="Quantity">
@@ -1082,7 +1082,7 @@ export default function DailyServiceReport() {
                             onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
                             className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      {PAYMENT_MODES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
+                      {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </Field>
                   <Field label="Job Status">
@@ -1090,7 +1090,7 @@ export default function DailyServiceReport() {
                             onChange={e => setEditing({ ...editing, jobStatus: e.target.value })}
                             className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
                             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      {JOB_STATUSES.map(s => <option key={s} value={s} style={{ color: '#000' }}>{s}</option>)}
+                      {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </Field>
                   <Field label="Control # / SI">

@@ -1250,8 +1250,8 @@ export default function ClientMasterlist() {
                 <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
                 <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
                   className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
-                  <option value="ALL" style={{ color: '#000' }}>All Branches</option>
-                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                  <option value="ALL">All Branches</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
             </div>
@@ -1262,10 +1262,10 @@ export default function ClientMasterlist() {
               <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
               <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
-                <option value="ALL" style={{ color: '#000' }}>All Stores</option>
-                <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
-                <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
-                <option value="Direct" style={{ color: '#000' }}>Direct Store</option>
+                <option value="ALL">All Stores</option>
+                <option value="Robinsons">Robinsons</option>
+                <option value="Abenson">Abenson</option>
+                <option value="Direct">Direct Store</option>
               </select>
             </div>
 
@@ -1648,9 +1648,9 @@ export default function ClientMasterlist() {
                       onChange={e => setEditSourceVendor(e.target.value)}
                       className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
                       style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                      <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
-                      <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
-                      <option value="Direct" style={{ color: '#000' }}>Direct Store</option>
+                      <option value="Robinsons">Robinsons</option>
+                      <option value="Abenson">Abenson</option>
+                      <option value="Direct">Direct Store</option>
                     </select>
                     {(editSourceVendor.toLowerCase().includes('robinsons') || editSourceVendor.toLowerCase().includes('abenson')) && (
                       <div className="mt-3">
@@ -1813,12 +1813,12 @@ export default function ClientMasterlist() {
                     <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
                       className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
                       style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                      <option value="PENDING" style={{ color: '#000' }}>Not Assigned (Pending)</option>
-                      <option value="ASSIGNED" style={{ color: '#000' }}>Scheduled (Assigned)</option>
-                      <option value="ON_THE_WAY" style={{ color: '#000' }}>On the Way</option>
-                      <option value="IN_PROGRESS" style={{ color: '#000' }}>In Progress</option>
-                      <option value="COMPLETED" style={{ color: '#000' }}>Installed (Completed)</option>
-                      <option value="CANCELLED" style={{ color: '#000' }}>Cancelled</option>
+                      <option value="PENDING">Not Assigned (Pending)</option>
+                      <option value="ASSIGNED">Scheduled (Assigned)</option>
+                      <option value="ON_THE_WAY">On the Way</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="COMPLETED">Installed (Completed)</option>
+                      <option value="CANCELLED">Cancelled</option>
                     </select>
                   </div>
                   {updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
@@ -1829,7 +1829,7 @@ export default function ClientMasterlist() {
                         className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                         <option value="">Select Branch...</option>
-                        {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </div>
                   )}
@@ -2373,12 +2373,12 @@ export default function ClientMasterlist() {
                         <select value={addForm.status} onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
                           className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                          <option value="PENDING" style={{ color: '#000' }}>Not Assigned (Pending)</option>
-                          <option value="ASSIGNED" style={{ color: '#000' }}>Scheduled (Assigned)</option>
-                          <option value="ON_THE_WAY" style={{ color: '#000' }}>On the Way</option>
-                          <option value="IN_PROGRESS" style={{ color: '#000' }}>In Progress</option>
-                          <option value="COMPLETED" style={{ color: '#000' }}>Installed (Completed)</option>
-                          <option value="CANCELLED" style={{ color: '#000' }}>Cancelled</option>
+                          <option value="PENDING">Not Assigned (Pending)</option>
+                          <option value="ASSIGNED">Scheduled (Assigned)</option>
+                          <option value="ON_THE_WAY">On the Way</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Installed (Completed)</option>
+                          <option value="CANCELLED">Cancelled</option>
                         </select>
                       </div>
                       {addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
@@ -2388,7 +2388,7 @@ export default function ClientMasterlist() {
                             className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold animate-fade-in"
                             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                             <option value="">Select Branch...</option>
-                            {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                           </select>
                         </div>
                       )}
@@ -2535,8 +2535,8 @@ export default function ClientMasterlist() {
                 <select value={importTargetBranchId} onChange={e => setImportTargetBranchId(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-bold outline-none border w-full sm:w-56"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <option value="" style={{ color: '#000' }}>Assign to Branch...</option>
-                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                  <option value="">Assign to Branch...</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
               <div className="flex gap-3 w-full sm:w-auto justify-end">

@@ -444,9 +444,9 @@ export default function CreateTicket() {
                   onChange={e => setSourceVendor(e.target.value)}
                   className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
                   style={inputSty}>
-                  <option value="Direct" style={{ color: '#000' }}>Direct Client</option>
-                  <option value="Robinsons B2B" style={{ color: '#000' }}>Robinsons B2B</option>
-                  <option value="Abenson B2B" style={{ color: '#000' }}>Abenson B2B</option>
+                  <option value="Direct">Direct Client</option>
+                  <option value="Robinsons B2B">Robinsons B2B</option>
+                  <option value="Abenson B2B">Abenson B2B</option>
                 </select>
                 {((sourceVendor || '').toLowerCase().includes('robinsons') || (sourceVendor || '').toLowerCase().includes('abenson')) && (
                   <div className="mt-3">

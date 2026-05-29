@@ -101,10 +101,10 @@ export default function LineUp() {
       const data = await res.json()
       const list = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
       setBranches(list)
-      if (isManager && user?.branchId) setBranchId(user.branchId)
+      if (user?.branchId) setBranchId(user.branchId)
       else if (list.length > 0) setBranchId(list[0].id)
     } catch (e) { console.error(e) }
-  }, [isManager, user?.branchId])
+  }, [user?.branchId])
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
@@ -418,7 +418,7 @@ export default function LineUp() {
                     disabled={isManager && !!user?.branchId}
                     className="bg-transparent outline-none text-xs font-bold w-full text-white">
                     {branches.length === 0 && <option value="">Loading…</option>}
-                    {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
               </div>
@@ -575,7 +575,7 @@ export default function LineUp() {
                 className="rounded-xl pl-8 pr-7 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                 {branches.length === 0 && <option value="">Loading branches…</option>}
-                {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
               <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
             </div>
@@ -786,7 +786,7 @@ export default function LineUp() {
                   disabled={isManager && !!user?.branchId}
                   className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {branches.map(b => <option key={b.id} value={b.id} style={{ color: '#000' }}>{b.name}</option>)}
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </F>
               <F label="Driver Name">
