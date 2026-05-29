@@ -415,8 +415,7 @@ export default function LineUp() {
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
                   <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6ee7b7' }} />
                   <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                    disabled={isManager && !!user?.branchId}
-                    className="bg-transparent outline-none text-xs font-bold w-full text-white">
+                    className="bg-transparent outline-none text-xs font-bold w-full text-white cursor-pointer">
                     {branches.length === 0 && <option value="">Loading…</option>}
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -571,7 +570,7 @@ export default function LineUp() {
             {/* Branch */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-              <select value={branchId} onChange={e => setBranchId(e.target.value)} disabled={isManager && !!user?.branchId}
+              <select value={branchId} onChange={e => setBranchId(e.target.value)}
                 className="rounded-xl pl-8 pr-7 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                 {branches.length === 0 && <option value="">Loading branches…</option>}
@@ -625,6 +624,8 @@ export default function LineUp() {
             )}
           </div>
         </div>
+
+
 
         {/* Original Line-Up Sheet */}
         <div className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
-  ChevronRight, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp
+  ChevronRight, ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
+  Users, XCircle, Printer, Eye
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -351,6 +352,10 @@ export default function ClientMasterlist() {
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [activeTab, setActiveTab] = useState<'ALL' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL')
+
+  // New States for Row-click Quick Actions and read-only Job Sheet View
+  const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
 
   // Scanner State
   const [scanning, setScanning] = useState(false)
@@ -1089,97 +1094,134 @@ export default function ClientMasterlist() {
   return (
     <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
 
-      {/* ── HEADER: Pipeline Flow Card ──────────────────────────── */}
+      {/* ── HEADER: Overview-style Card ─────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-lg" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="p-5 flex flex-col gap-4">
 
-          {/* Title + Actions row */}
-          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[3px] text-[#10B981] mb-1">Scheduling System</p>
-              <h2 className="text-xl font-black tracking-tight" style={{ color: textPrimary }}>Schedules</h2>
-              <p className="text-xs mt-0.5" style={{ color: textMuted }}>Assign schedules to branch and updates</p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Scan PDF/Photo */}
-              <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-                onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
-              <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm disabled:opacity-60"
-                style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
-                {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-                {scanning ? 'Scanning...' : 'Scan PDF / Photo'}
-              </button>
-
-              {/* Import Excel */}
-              <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
-              <button type="button" onClick={() => excelFileInputRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] shadow-sm"
-                style={{ backgroundColor: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Import Excel
-              </button>
-
-              {/* Add Client */}
-              <button type="button" onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs text-white transition-all hover:scale-[1.02] shadow-md"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                <Plus className="w-3.5 h-3.5" />
-                Add Client
-              </button>
-            </div>
+        {/* Row 1 — Title + Action Buttons */}
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4"
+          style={{ borderBottom: `1px solid ${border}` }}>
+          <div>
+            <h2 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>Schedule Monitoring</h2>
+            <p className="text-xs mt-0.5" style={{ color: textMuted }}>Track and manage client schedules across all branches and stores.</p>
           </div>
+          <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
+            {/* Scan PDF/Photo */}
+            <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+              onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
+            <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+              {scanning ? 'Scanning...' : 'Scan PDF / Photo'}
+            </button>
+            {/* Import Excel */}
+            <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
+            <button type="button" onClick={() => excelFileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold text-xs border transition-all hover:opacity-80"
+              style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
+            </button>
+            {/* Add Client */}
+            <button type="button" onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm"
+              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+              <Plus className="w-3.5 h-3.5" /> Add Client
+            </button>
+          </div>
+        </div>
 
-          {/* ── Scheduling Pipeline Flow Indicator ── */}
-          <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
-            {[
-              {
-                label: 'Unassigned', icon: AlertCircle, color: '#F59E0B',
-                bg: isLight ? 'rgba(245,158,11,0.07)' : 'rgba(245,158,11,0.1)',
-                borderColor: 'rgba(245,158,11,0.25)',
-                count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length
-              },
-              {
-                label: 'Scheduled', icon: Clock, color: '#3B82F6',
-                bg: isLight ? 'rgba(59,130,246,0.07)' : 'rgba(59,130,246,0.1)',
-                borderColor: 'rgba(59,130,246,0.25)',
-                count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length
-              },
-              {
-                label: 'Installed', icon: CheckCircle2, color: '#10B981',
-                bg: isLight ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.1)',
-                borderColor: 'rgba(16,185,129,0.25)',
-                count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length
-              },
-              {
-                label: 'Cancelled', icon: X, color: '#EF4444',
-                bg: isLight ? 'rgba(239,68,68,0.07)' : 'rgba(239,68,68,0.1)',
-                borderColor: 'rgba(239,68,68,0.25)',
-                count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length
-              },
-            ].map((stage, idx, arr) => (
-              <div key={stage.label} className="flex items-center gap-2">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl min-w-[145px] shrink-0 transition-all"
-                  style={{ backgroundColor: stage.bg, border: `1px solid ${stage.borderColor}` }}>
-                  <stage.icon className="w-4 h-4 shrink-0" style={{ color: stage.color }} />
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: stage.color }}>{stage.label}</p>
-                    <p className="text-2xl font-black leading-none mt-0.5" style={{ color: stage.color }}>{stage.count}</p>
-                  </div>
-                </div>
-                {idx < arr.length - 1 && (
-                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted, opacity: 0.5 }} />
-                )}
+        {/* Row 2 — Stat Cards */}
+        <div className="grid grid-cols-5" style={{ borderBottom: `1px solid ${border}` }}>
+          {[
+            { label: 'Unassigned', icon: AlertCircle, color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',
+              count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+            { label: 'Scheduled', icon: Clock, color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',
+              count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
+            { label: 'Installed', icon: CheckCircle2, color: '#10B981', bg: 'rgba(16,185,129,0.1)',
+              count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
+            { label: 'Cancelled', icon: XCircle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)',
+              count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
+            { label: 'Total Clients', icon: Users, color: '#6366F1', bg: 'rgba(99,102,241,0.1)',
+              count: tickets.length },
+          ].map((stat, idx, arr) => (
+            <div key={stat.label} className="flex items-center gap-3 px-5 py-4"
+              style={{ borderRight: idx < arr.length - 1 ? `1px solid ${border}` : undefined }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{ backgroundColor: stat.bg }}>
+                <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
               </div>
-            ))}
-            <div className="ml-auto flex items-center shrink-0">
-              <div className="px-4 py-3 rounded-xl" style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
-                <p className="text-[9px] font-black uppercase tracking-widest text-[#10B981]">Total</p>
-                <p className="text-2xl font-black leading-none mt-0.5 text-[#10B981]">{tickets.length}</p>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>{stat.label}</p>
+                <p className="text-2xl font-black leading-none mt-0.5" style={{ color: stat.color }}>{stat.count}</p>
               </div>
             </div>
+          ))}
+        </div>
+
+        {/* Row 3 — Filter Bar */}
+        <div className="flex flex-wrap items-center gap-3 px-6 py-3">
+          {/* Branch Filter */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+            <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
+              <option value="ALL">All Branches</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
           </div>
+
+          {/* Store Filter */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
+            <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
+              <option value="ALL">All Stores</option>
+              <option value="Robinsons">Robinsons</option>
+              <option value="Abenson">Abenson</option>
+              <option value="Direct">Direct Store</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
+          </div>
+
+          {/* Search */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border flex-1 min-w-[180px] max-w-xs"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <input type="text" placeholder="Search client or location..." value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs flex-1" style={{ color: textPrimary }} />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="shrink-0" style={{ color: textMuted }}>
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Status filter */}
+          <div className="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg border"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
+              className="bg-transparent outline-none text-xs font-semibold cursor-pointer pr-6" 
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}>
+              <option value="ALL">All Status</option>
+              <option value="UNASSIGNED">Unassigned</option>
+              <option value="PENDING">Scheduled</option>
+              <option value="INSTALLED">Installed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: textMuted }} />
+          </div>
+
+          <span className="shrink-0 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider"
+            style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)' }}>
+            {filtered.length} client{filtered.length === 1 ? '' : 's'}
+          </span>
         </div>
       </div>
 
@@ -1197,118 +1239,29 @@ export default function ClientMasterlist() {
         </div>
       )}
 
-      {/* ── Status Tab Bar ────────────────────────────────────── */}
-      <div className="flex items-center gap-1 p-1 rounded-2xl w-full md:w-fit"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        {([
-          { key: 'ALL',        label: 'All Clients',  activeBg: '#475569' },
-          { key: 'UNASSIGNED', label: 'Unassigned',   activeBg: '#F59E0B' },
-          { key: 'PENDING',    label: 'Scheduled',    activeBg: '#3B82F6' },
-          { key: 'INSTALLED',  label: 'Installed',    activeBg: '#10B981' },
-          { key: 'CANCELLED',  label: 'Cancelled',    activeBg: '#EF4444' },
-        ] as const).map(tab => {
-          const active = activeTab === tab.key
-          const count = tickets.filter(t => {
-            const stat = t.status.toUpperCase()
-            const isAssigned = !!(t.assignedTo || t.branchId)
-            if (tab.key === 'ALL') return true
-            if (tab.key === 'UNASSIGNED') return !isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
-            if (tab.key === 'PENDING') return isAssigned && stat !== 'COMPLETED' && stat !== 'CANCELLED'
-            if (tab.key === 'INSTALLED') return stat === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)
-            return stat === 'CANCELLED'
-          }).length
-          return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 whitespace-nowrap"
-              style={active
-                ? { backgroundColor: tab.activeBg, color: '#ffffff' }
-                : { color: textMuted }}>
-              {tab.label}
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black"
-                style={active
-                  ? { backgroundColor: 'rgba(255,255,255,0.22)', color: '#fff' }
-                  : { backgroundColor: isLight ? '#e2e8f0' : '#1E2D48', color: textMuted }}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
 
       {/* ── Main Table Container ──────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 flex flex-col md:flex-row items-start md:items-center gap-3 justify-between"
-          style={{ borderBottom: `1px solid ${border}` }}>
-          <div className="flex flex-wrap items-center gap-2">
-
-            {/* Branch Filter */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-                  className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
-                  <option value="ALL">All Branches</option>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Store/Vendor Filter */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
-              <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
-                className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }}>
-                <option value="ALL">All Stores</option>
-                <option value="Robinsons">Robinsons</option>
-                <option value="Abenson">Abenson</option>
-                <option value="Direct">Direct Store</option>
-              </select>
-            </div>
-
-            {/* Search */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-              <input type="text" placeholder="Search client, location..." value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-xs w-36 md:w-52" style={{ color: textPrimary }} />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="shrink-0 p-0.5 rounded hover:opacity-70" style={{ color: textMuted }}>
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <span className="shrink-0 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider"
-            style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)' }}>
-            {filtered.length} client{filtered.length === 1 ? '' : 's'}
-          </span>
-        </div>
-
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
+        <div className="overflow-x-auto" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
               <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                 {[
-                  { label: 'STATUS', w: 125 },
-                  { label: "CUSTOMER'S NAME", w: 160 },
-                  { label: 'DESTINATION', w: 200 },
-                  { label: 'CONTACT NO.', w: 115 },
-                  { label: 'BRAND / UNIT', w: 120 },
-                  { label: 'DLR / STORE', w: 100 },
-                  { label: 'RELAYED SCHED', w: 110, center: true },
-                  { label: 'COMMIT', w: 110, center: true },
-                  { label: 'RELAYED DATE', w: 110 },
-                  { label: 'PREFERRED DATE', w: 110 },
-                  { label: 'FINAL DATE', w: 110 },
-                  { label: 'REMARKS / UPDATE', w: 180 },
-                  { label: 'ACTIONS', w: 90, right: true },
+                  { label: 'STATUS',           w: 125, sticky: true,  left: 0,   freeze: false },
+                  { label: "CUSTOMER'S NAME",   w: 160, sticky: true,  left: 125, freeze: false },
+                  { label: 'DESTINATION',       w: 200, sticky: true,  left: 285, freeze: true  },
+                  { label: 'CONTACT NO.',       w: 115, sticky: false, left: 0   },
+                  { label: 'BRAND / UNIT',      w: 120, sticky: false, left: 0   },
+                  { label: 'DLR / STORE',       w: 100, sticky: false, left: 0   },
+                  { label: 'RELAYED SCHED',     w: 110, sticky: false, left: 0,   center: true },
+                  { label: 'COMMIT',            w: 110, sticky: false, left: 0,   center: true },
+                  { label: 'RELAYED DATE',      w: 110, sticky: false, left: 0   },
+                  { label: 'PREFERRED DATE',    w: 110, sticky: false, left: 0   },
+                  { label: 'FINAL DATE',        w: 110, sticky: false, left: 0   },
+                  { label: 'REMARKS / UPDATE',  w: 180, sticky: false, left: 0   },
+                  { label: 'ACTIONS',           w: 90,  sticky: false, left: 0,   right: true },
                 ].map(col => (
                   <th key={col.label} style={{
                     padding: '9px 10px',
@@ -1317,9 +1270,24 @@ export default function ClientMasterlist() {
                     fontWeight: 700,
                     whiteSpace: 'nowrap',
                     borderRight: `1px solid ${border}`,
+                    borderBottom: `2px solid ${border}`,
                     fontSize: '10px',
                     letterSpacing: '0.07em',
                     width: col.w,
+                    minWidth: col.w,
+                    maxWidth: col.w,
+                    backgroundColor: inputBg,
+                    ...(col.sticky ? {
+                      position: 'sticky' as const,
+                      left: col.left,
+                      zIndex: 15,
+                    } : {}),
+                    ...(col.freeze ? {
+                      borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                      boxShadow: isLight
+                        ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                        : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                    } : {}),
                   }}>{col.label}</th>
                 ))}
               </tr>
@@ -1348,21 +1316,30 @@ export default function ClientMasterlist() {
                   const isAssigned = !!(ticket.assignedTo || ticket.branchId)
                   const isCancelled = ticket.status.toUpperCase() === 'CANCELLED'
 
+                  // Base background for this row — used for sticky cells that need explicit bg
+                  const rowBaseBg = rowStyle.backgroundColor
+                    || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
+                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+
                   return (
                     <tr key={ticket.id}
                       style={{
                         borderBottom: `1px solid ${border}`,
-                        backgroundColor: idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c'),
-                        ...rowStyle,
+                        backgroundColor: rowBaseBg,
                         cursor: 'pointer',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36' }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowStyle.backgroundColor || (idx % 2 === 0 ? 'transparent' : (isLight ? '#fafafa' : '#080f1c')) }}
-                      onClick={() => openDrawer(ticket)}
+                      onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
+                      onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
+                      onClick={() => setSelectedPreviewTicket(ticket)}
                       className="transition-colors">
 
-                      {/* 1. Status Tag */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px' }}>
+                      {/* 1. Status Tag — sticky col 1 */}
+                      <td style={{
+                        padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px',
+                        position: 'sticky', left: 0, zIndex: 5,
+                        backgroundColor: rowBaseBg,
+                        width: 125, minWidth: 125, maxWidth: 125,
+                      }}>
                         <div className="flex flex-col gap-1.5 items-start">
                           {(() => {
                             const status = (ticket.status || '').toUpperCase()
@@ -1387,7 +1364,7 @@ export default function ClientMasterlist() {
                               }
                               const hasFinalDate = !!parsedDetails?.finalDate
                               if (ticket.branchId && hasFinalDate) {
-                                return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Scheduled</span>
+                                  return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Scheduled</span>
                               }
                               return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
                             }
@@ -1415,8 +1392,13 @@ export default function ClientMasterlist() {
                         </div>
                       </td>
 
-                      {/* 2. Customer Name */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary }} className="font-bold">
+                      {/* 2. Customer Name — sticky col 2 */}
+                      <td style={{
+                        padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary,
+                        position: 'sticky', left: 125, zIndex: 5,
+                        backgroundColor: rowBaseBg,
+                        width: 160, minWidth: 160, maxWidth: 160,
+                      }} className="font-bold">
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-start gap-1.5">
                             <span style={{ color: textMuted, fontSize: '9px', marginTop: '2px' }} className="shrink-0">{idx + 1}</span>
@@ -1434,8 +1416,17 @@ export default function ClientMasterlist() {
                         </div>
                       </td>
 
-                      {/* 3. Destination */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, minWidth: 200 }}>
+                      {/* 3. Destination — sticky col 3 (freeze line) */}
+                      <td style={{
+                        padding: '8px 10px', color: textMuted,
+                        position: 'sticky', left: 285, zIndex: 5,
+                        backgroundColor: rowBaseBg,
+                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                        boxShadow: isLight
+                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                        width: 200, minWidth: 200, maxWidth: 200,
+                      }}>
                         <span className="line-clamp-2 text-[11px] leading-relaxed" title={ticket.location || ''}>{ticket.location || '—'}</span>
                       </td>
 
@@ -2553,6 +2544,423 @@ export default function ClientMasterlist() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick Action Hub / Ticket Preview Modal ──────────────── */}
+      {selectedPreviewTicket && !isViewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            
+            {/* Header */}
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#10B981]">Quick Actions</span>
+                <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Ticket Hub</h3>
+              </div>
+              <button onClick={() => setSelectedPreviewTicket(null)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 flex flex-col gap-4">
+              {/* Customer summary */}
+              <div>
+                <h4 className="text-lg font-bold" style={{ color: textPrimary }}>
+                  {selectedPreviewTicket.customerName || 'Direct Client'}
+                </h4>
+                {selectedPreviewTicket.controlNumber && (
+                  <span className="text-[10px] font-bold font-mono tracking-wider text-slate-400 dark:text-slate-500 block mt-0.5">
+                    CONTROL #: {selectedPreviewTicket.controlNumber}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3 text-xs">
+                {/* Status Row */}
+                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
+                  <span className="font-semibold" style={{ color: textMuted }}>Status</span>
+                  <div className="flex flex-col items-end gap-1">
+                    {(() => {
+                      const isCancelled = selectedPreviewTicket.status.toUpperCase() === 'CANCELLED'
+                      const isInstalled = selectedPreviewTicket.status.toUpperCase() === 'COMPLETED' || !!(selectedPreviewTicket.installationCharges && selectedPreviewTicket.installationCharges > 0)
+                      const isAssigned = !!(selectedPreviewTicket.assignedTo || selectedPreviewTicket.branchId)
+                      const status = (selectedPreviewTicket.status || '').toUpperCase()
+
+                      if (isCancelled) {
+                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
+                      }
+                      if (isInstalled) {
+                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
+                      }
+                      if (status === 'IN_PROGRESS') {
+                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">In Progress</span>
+                      }
+                      if (status === 'ON_THE_WAY') {
+                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">On the Way</span>
+                      }
+                      if (status === 'ASSIGNED' || isAssigned) {
+                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
+                      }
+                      return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
+                    })()}
+                    {selectedPreviewTicket.branchId && (
+                      <span className="text-[9px] font-bold text-slate-400">
+                        {resolveBranch(selectedPreviewTicket.branchId)?.name} Branch
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Destination Row */}
+                <div className="flex flex-col gap-1 py-1 border-b" style={{ borderColor: border }}>
+                  <span className="font-semibold" style={{ color: textMuted }}>Destination</span>
+                  <span className="font-medium" style={{ color: textPrimary }}>{selectedPreviewTicket.location || '—'}</span>
+                </div>
+
+                {/* Contact Row */}
+                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
+                  <span className="font-semibold" style={{ color: textMuted }}>Contact No.</span>
+                  <div className="text-emerald-500 font-semibold">
+                    <FormatPhone raw={selectedPreviewTicket.contactPhone} />
+                  </div>
+                </div>
+
+                {/* Brand / Unit Row */}
+                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
+                  <span className="font-semibold" style={{ color: textMuted }}>Brand / Unit</span>
+                  <span className="font-semibold" style={{ color: textPrimary }}>
+                    {(() => {
+                      let parsedDetails: any = null
+                      if (selectedPreviewTicket.acDetails) {
+                        try {
+                          parsedDetails = JSON.parse(selectedPreviewTicket.acDetails)
+                        } catch (e) {}
+                      }
+                      const brand = parsedDetails?.brand || ''
+                      const capacity = parsedDetails?.capacity || ''
+                      if (brand || capacity) return `${brand} ${capacity}`.trim()
+                      return selectedPreviewTicket.unitType || '—'
+                    })()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="px-6 py-4 flex gap-2.5 justify-end" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <button type="button" onClick={() => setSelectedPreviewTicket(null)}
+                className="px-4 py-2 border rounded-xl text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900"
+                style={{ borderColor: inputBorder, color: textMuted }}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => setIsViewModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-90"
+                style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
+                <Eye className="w-3.5 h-3.5" /> View Details
+              </button>
+              <button type="button" onClick={() => { openDrawer(selectedPreviewTicket); setSelectedPreviewTicket(null); }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                <Wrench className="w-3.5 h-3.5" /> Edit Ticket
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Read-only Service Job Sheet Modal ──────────────────── */}
+      {isViewModalOpen && selectedPreviewTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
+          <div className="w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}>
+            
+            {isViewModalOpen && (
+              <style dangerouslySetInnerHTML={{ __html: `
+                @media print {
+                  body * {
+                    visibility: hidden;
+                  }
+                  #print-job-sheet, #print-job-sheet * {
+                    visibility: visible;
+                  }
+                  #print-job-sheet {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    padding: 0;
+                    margin: 0;
+                    background: white !important;
+                    color: black !important;
+                  }
+                  .dark #print-job-sheet {
+                    background: white !important;
+                    color: black !important;
+                  }
+                }
+              `}} />
+            )}
+
+            {/* Header / Actions Bar */}
+            <div className="px-6 py-4 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Document Viewer</span>
+                <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider bg-slate-100 dark:bg-slate-800" style={{ color: textMuted }}>
+                  JOB #{selectedPreviewTicket.id.split('-').pop()?.toUpperCase() || selectedPreviewTicket.id.slice(-6).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
+                  <Printer className="w-3.5 h-3.5" /> Print
+                </button>
+                <button type="button" onClick={() => { openDrawer(selectedPreviewTicket); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                  <Wrench className="w-3.5 h-3.5" /> Edit
+                </button>
+                <button type="button" onClick={() => setIsViewModalOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Document Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-8 font-sans" id="print-job-sheet">
+              {/* Branding / Header */}
+              <div className="text-center pb-6 border-b-2 border-dashed" style={{ borderColor: border }}>
+                <h2 className="text-xl font-black uppercase tracking-widest" style={{ color: textPrimary }}>Service Job Sheet</h2>
+                <p className="text-xs font-semibold mt-1 text-slate-400 dark:text-slate-500">ASHCOL AIRCONDITIONING SERVICES</p>
+              </div>
+
+              {/* Status / Metadata Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-6 border-b" style={{ borderColor: border }}>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Branch</p>
+                  <p className="text-xs font-black mt-0.5" style={{ color: textPrimary }}>
+                    {resolveBranch(selectedPreviewTicket.branchId)?.name || 'UNASSIGNED'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</p>
+                  <div className="mt-1">
+                    {(() => {
+                      const isCancelled = selectedPreviewTicket.status.toUpperCase() === 'CANCELLED'
+                      const isInstalled = selectedPreviewTicket.status.toUpperCase() === 'COMPLETED' || !!(selectedPreviewTicket.installationCharges && selectedPreviewTicket.installationCharges > 0)
+                      const isAssigned = !!(selectedPreviewTicket.assignedTo || selectedPreviewTicket.branchId)
+                      const status = (selectedPreviewTicket.status || '').toUpperCase()
+
+                      if (isCancelled) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
+                      if (isInstalled) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
+                      if (status === 'IN_PROGRESS') return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">In Progress</span>
+                      if (status === 'ON_THE_WAY') return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-purple-500/10 text-purple-500 border border-purple-500/20">On the Way</span>
+                      if (status === 'ASSIGNED' || isAssigned) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
+                      return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
+                    })()}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Control Number</p>
+                  <p className="text-xs font-mono font-bold mt-0.5" style={{ color: textPrimary }}>
+                    {selectedPreviewTicket.controlNumber || '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schedule Type</p>
+                  <p className="text-xs font-bold mt-0.5" style={{ color: textPrimary }}>
+                    {selectedPreviewTicket.serviceType || '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2 Column Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
+                
+                {/* Column 1: Client details */}
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Client Details</h4>
+                  
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block">Customer Name</label>
+                    <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedPreviewTicket.customerName || 'Direct Client'}</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block">Contact Number</label>
+                    <span className="text-xs font-semibold text-emerald-500">
+                      <FormatPhone raw={selectedPreviewTicket.contactPhone} />
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block">Installation Address</label>
+                    <span className="text-xs font-medium block leading-relaxed" style={{ color: textPrimary }}>{selectedPreviewTicket.location || '—'}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">District</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.district || '—'}</span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Landmark / Subd</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                        {(() => {
+                          try {
+                            return selectedPreviewTicket.acDetails ? JSON.parse(selectedPreviewTicket.acDetails)?.landmarks || '—' : '—'
+                          } catch (e) { return '—' }
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: Equipment & Sched details */}
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Unit & Scheduling Details</h4>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-semibold block">Unit / Brand Details</label>
+                    <span className="text-xs font-bold block" style={{ color: textPrimary }}>
+                      {(() => {
+                        let parsed: any = null
+                        if (selectedPreviewTicket.acDetails) {
+                          try { parsed = JSON.parse(selectedPreviewTicket.acDetails) } catch (e) {}
+                        }
+                        const b = parsed?.brand || ''
+                        const cap = parsed?.capacity || ''
+                        if (b || cap) return `${b} ${cap}`.trim()
+                        return selectedPreviewTicket.unitType || 'Split AC'
+                      })()}
+                    </span>
+                    {(() => {
+                      let parsed: any = null
+                      if (selectedPreviewTicket.acDetails) {
+                        try { parsed = JSON.parse(selectedPreviewTicket.acDetails) } catch (e) {}
+                      }
+                      if (parsed?.sku || parsed?.serialNumber) {
+                        return (
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {parsed.sku && <div>SKU: {parsed.sku}</div>}
+                            {parsed.serialNumber && <div>Serial: {parsed.serialNumber}</div>}
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">DLR / Store</label>
+                      <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedPreviewTicket.sourceVendor || 'Direct Store'}</span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Commit Type</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.commitType || '—'}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed Date</label>
+                      <span className="text-xs font-medium" style={{ color: textPrimary }}>
+                        {(() => {
+                          try {
+                            const d = selectedPreviewTicket.createdAt ? new Date(selectedPreviewTicket.createdAt) : null
+                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '—'
+                          } catch (e) { return '—' }
+                        })()}
+                      </span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Preferred Sched</label>
+                      <span className="text-xs font-medium" style={{ color: textPrimary }}>
+                        {(() => {
+                          try {
+                            const d = selectedPreviewTicket.preferredDate ? new Date(selectedPreviewTicket.preferredDate) : null
+                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '—'
+                          } catch (e) { return '—' }
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Assignment & Pricing Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6 border-t" style={{ borderColor: border }}>
+                {/* Tech / Vehicle details */}
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Tech Assignment</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Installer Name</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.installerName || '—'}</span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Service Vehicle</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.serviceVehicle || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Charges / Payment Details */}
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Charges & Payments</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Installation Charges</label>
+                      <span className="text-xs font-bold text-emerald-500">
+                        {selectedPreviewTicket.installationCharges ? `₱${selectedPreviewTicket.installationCharges.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00'}
+                      </span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Mode of Payment</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.modeOfPayment || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Remarks/Description Section */}
+              <div className="py-6 border-t" style={{ borderColor: border }}>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Remarks / Technical Updates</h4>
+                <div className="mt-3 p-4 rounded-xl text-xs leading-relaxed" style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textMuted }}>
+                  {selectedPreviewTicket.remarksUpdate || selectedPreviewTicket.description || 'No additional remarks logged for this work order.'}
+                </div>
+              </div>
+
+              {/* Printable footer */}
+              <div className="hidden print:block text-center mt-20 pt-6 border-t text-[10px]" style={{ borderColor: border }}>
+                <div className="flex justify-between font-semibold" style={{ color: textMuted }}>
+                  <span>Printed on: {new Date().toLocaleString()}</span>
+                  <span>Signature: __________________________</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Bar Footer */}
+            <div className="px-6 py-4 flex gap-2.5 justify-end shrink-0" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <button type="button" onClick={() => setIsViewModalOpen(false)}
+                className="px-5 py-2.5 border rounded-xl text-xs font-bold"
+                style={{ borderColor: inputBorder, color: textMuted }}>
+                Close
+              </button>
+            </div>
+
           </div>
         </div>
       )}
