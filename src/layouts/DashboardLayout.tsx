@@ -81,9 +81,9 @@ export default function DashboardLayout() {
     { name: 'Audit Report',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff'] },
     { name: 'DTR Scanner',    path: '/dtr-scanner',    icon: Scan,              roles: ['admin', 'manager', 'staff'] },
     { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
+    { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff'] },
     { name: 'Service Report', path: '/service-report', icon: HardHat,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Daily Report',   path: '/daily-report',   icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
-    { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
