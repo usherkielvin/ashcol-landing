@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
-  Search, ArrowUp, ArrowDown, Trophy, Award, Crown, Trash2,
-  Minimize2, Maximize2
+  ArrowUp, ArrowDown, Trophy, Award, Crown, Trash2,
+  Minimize2, Maximize2, Printer
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -106,7 +106,6 @@ export default function DailyAuditReport() {
   const [drillLoading, setDrillLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [compactView, setCompactView] = useState(false)
 
   // Edit state
@@ -288,11 +287,6 @@ export default function DailyAuditReport() {
     [rows]
   )
 
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase()
-    visibleRows = visibleRows.filter(r => r.branchName.toLowerCase().includes(q))
-  }
-
   if (sortConfig !== null) {
     const keyMap: Record<string, keyof AuditRow> = {
       branch: 'branchName', time: 'timeUploaded', status: 'status', grossSales: 'grossSales',
@@ -385,35 +379,14 @@ export default function DailyAuditReport() {
   return (
     <div className="flex flex-col gap-5 pb-8">
 
-      {/* ── Header ───────────────────────────────────────────────────── */}
-      <div
-        className="rounded-2xl p-5 md:p-7 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-      >
-        <div className="absolute -top-10 -right-10 w-52 h-52 rounded-full opacity-[0.05] pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#10B981' }}>Finance Hub</p>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>All-Branch Daily Audit Report</h2>
-          <p className="text-sm" style={{ color: textMuted }}>Real-time branch quota monitoring &amp; financial reconciliation</p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {/* Search */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-            <Search className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-            <input
-              type="text" placeholder="Search branch..." value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs w-28 md:w-36" style={{ color: textPrimary }}
-            />
-          </div>
-
+      {/* ── Thinner, Simpler Header Toolbar ─────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* View mode toggle */}
-          <div id="audit-view-toggle" className="flex items-center rounded-xl text-xs font-bold overflow-hidden"
+          <div id="audit-view-toggle" className="flex items-center rounded-lg text-xs font-bold overflow-hidden"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single','range'] as const).map(m => (
-              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-3 py-2 transition-colors"
+              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-2.5 py-1.5 transition-colors"
                 style={{ backgroundColor: viewMode===m ? '#10B981' : 'transparent', color: viewMode===m ? '#fff' : textMuted }}>
                 {m === 'single' ? 'Daily' : 'Range'}
               </button>
@@ -422,15 +395,15 @@ export default function DailyAuditReport() {
 
           {/* Date picker(s) */}
           {viewMode === 'single' ? (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
               <input id="audit-date-picker" type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="bg-transparent outline-none text-xs" style={{ color: textPrimary }} />
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {[{ val: rangeFrom, set: setRangeFrom }, { val: rangeTo, set: setRangeTo }].map((p, i) => (
-                <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
                   <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
                   <input type="date" value={p.val} onChange={e => p.set(e.target.value)}
                     className="bg-transparent outline-none text-xs" style={{ color: textPrimary }} />
@@ -438,14 +411,25 @@ export default function DailyAuditReport() {
               ))}
             </div>
           )}
+        </div>
 
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {hiddenBranches.length > 0 && (
             <button type="button" onClick={() => setHiddenBranches([])}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
               style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
-              <Eye className="w-4 h-4" />Show {hiddenBranches.length} Hidden
+              <Eye className="w-3.5 h-3.5" />Show {hiddenBranches.length} Hidden
             </button>
           )}
+
+          <button id="audit-print-btn" type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
+            style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+            <Printer className="w-3.5 h-3.5" />
+            Print
+          </button>
 
           {canImportExcel && (
             <>
@@ -453,19 +437,19 @@ export default function DailyAuditReport() {
               <button id="audit-import-btn" type="button"
                 disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
                 style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#fff',
                   opacity: importing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
-                <TrendingUp className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} />
+                <TrendingUp className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} />
                 {importing ? 'Importing…' : `Import Excel`}
               </button>
               <button id="audit-clear-btn" type="button"
                 disabled={clearing || (viewMode === 'range' && rangeFrom !== rangeTo)}
                 onClick={handleClearDate}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
                 style={{ backgroundColor: 'transparent', borderColor: '#EF4444', color: '#EF4444',
                   opacity: clearing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5" />
                 {clearing ? 'Clearing…' : 'Clear'}
               </button>
             </>
@@ -473,53 +457,46 @@ export default function DailyAuditReport() {
         </div>
       </div>
 
-      {/* ── Manager/Staff CTA ─────────────────────────────────────────── */}
-      {isManagerOrStaff && (
-        <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
-          style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}>
-              <FileText className="w-4 h-4" style={{ color: '#10B981' }} />
-            </div>
-            <div>
-              <p className="text-sm font-bold" style={{ color: textPrimary }}>Submit Today's Branch Report</p>
-              <p className="text-xs" style={{ color: textMuted }}>Click to open the Daily Sales &amp; Expenses encoder</p>
-            </div>
-          </div>
-          <a href="/daily-report" id="submit-daily-report-btn"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white transition-all hover:scale-105"
-            style={{ backgroundColor: '#10B981' }}>
-            Open Form <ChevronRight className="w-3.5 h-3.5" />
-          </a>
-        </div>
-      )}
+      {/* ── Print area enclosing KPI Counters and Table ─────────────────────────── */}
+      <div className="print-area flex flex-col gap-5">
 
-      {/* ── KPI Strip ────────────────────────────────────────────────── */}
+      {/* ── Smaller Cleaner KPI Counters Bar ─────────────────────────────────── */}
       {!loading && rows.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="flex flex-wrap items-center gap-y-2 gap-x-6 px-4 py-2.5 rounded-xl border text-xs"
+          style={{ backgroundColor: cardBg, borderColor: border }}>
           {[
-            { label: 'Total Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
-            { label: 'Total Cash Collected',   value: peso(totals.totalCashCollection),    color: '#10B981', icon: TrendingUp },
-            { label: 'Total Online Collected', value: peso(totals.totalOnlineCollection),  color: '#8B5CF6', icon: TrendingUp },
+            { label: 'Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
+            { label: 'Cash Collected',   value: peso(totals.totalCashCollection),    color: '#10B981', icon: TrendingUp },
+            { label: 'Online Collected', value: peso(totals.totalOnlineCollection),  color: '#8B5CF6', icon: TrendingUp },
             { label: 'Total Expenses',         value: peso(totals.totalExpenses),          color: '#EF4444', icon: TrendingDown },
-          ].map((k, i) => {
+          ].map((k, i, arr) => {
             const Icon = k.icon
             return (
-              <div key={i} className="rounded-2xl p-4 relative overflow-hidden"
-                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="absolute top-0 left-0 w-1 h-full rounded-l-2xl" style={{ backgroundColor: k.color }} />
-                <div className="flex items-center justify-between mb-3 pl-2">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${k.color}18`, color: k.color }}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="pl-2">
-                  <div className="text-lg font-black tracking-tight" style={{ color: k.color }}>₱{k.value}</div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: textMuted }}>{k.label}</div>
-                </div>
+              <div key={i} className="flex items-center gap-2">
+                <Icon className="w-3.5 h-3.5" style={{ color: k.color }} />
+                <span style={{ color: textMuted }}>{k.label}:</span>
+                <strong className="font-extrabold" style={{ color: k.color }}>₱{k.value}</strong>
+                {i < arr.length - 1 && <span className="ml-4 opacity-25" style={{ color: textMuted }}>|</span>}
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Manager/Staff CTA ─────────────────────────────────────────── */}
+      {isManagerOrStaff && (
+        <div className="rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs no-print"
+          style={{ backgroundColor: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
+            <span style={{ color: textPrimary }} className="font-bold">Submit Today's Branch Report:</span>
+            <span style={{ color: textMuted }}>Daily Sales &amp; Expenses encoder</span>
+          </div>
+          <a href="/daily-report" id="submit-daily-report-btn"
+            className="flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold text-white transition-all hover:opacity-90 shrink-0"
+            style={{ backgroundColor: '#10B981' }}>
+            Open Form <ChevronRight className="w-3 h-3" />
+          </a>
         </div>
       )}
 
@@ -530,7 +507,7 @@ export default function DailyAuditReport() {
         ).sort((a, b) => b.difference - a.difference)
         if (aboveQuotaBranches.length === 0) return null
         return (
-          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="rounded-2xl overflow-hidden no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)' }}>
                 <Trophy className="w-4 h-4" style={{ color: '#F59E0B' }} />
@@ -598,7 +575,7 @@ export default function DailyAuditReport() {
             id="audit-compact-toggle"
             type="button"
             onClick={() => { setCompactView(v => !v); setEditingRowKey(null) }}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all hover:scale-105"
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all hover:scale-105 no-print"
             style={compactView
               ? { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }
               : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
@@ -622,7 +599,7 @@ export default function DailyAuditReport() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 210px)' }}>
             <table
               style={compactView
                 ? { minWidth: 'unset', fontSize: '10px', tableLayout: 'auto', width: '100%' }
@@ -645,6 +622,11 @@ export default function DailyAuditReport() {
                           whiteSpace: 'nowrap',
                           fontSize: compactView ? 9 : 10,
                           letterSpacing: '0.05em',
+                          position: 'sticky',
+                          top: 0,
+                          left: col.key === 'branch' ? 0 : undefined,
+                          zIndex: col.key === 'branch' ? 25 : 20,
+                          backgroundColor: inputBg,
                         }}
                       >
                         <div className="flex items-center gap-0.5">
@@ -658,7 +640,14 @@ export default function DailyAuditReport() {
                   })}
                   
                 {viewMode === 'single' && (
-                    <th style={{ padding: compactView ? '6px 5px' : '10px 12px', width: compactView ? '30px' : '60px' }} />
+                    <th className="no-print" style={{ 
+                      padding: compactView ? '6px 5px' : '10px 12px', 
+                      width: compactView ? '30px' : '60px',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 20,
+                      backgroundColor: inputBg,
+                    }} />
                   )}
                 </tr>
               </thead>
@@ -681,19 +670,19 @@ export default function DailyAuditReport() {
                         backgroundColor: 'transparent',
                       }}
                       className="transition-colors group"
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHover }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                      onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHover }) }}
+                      onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = td.classList.contains('sticky') ? cardBg : 'transparent' }) }}
                     >
                       {/* ① Branch */}
                       <td className="font-semibold sticky left-0"
                         onClick={() => openDrilldown((row.logicalBranchName ?? row.branchName).trim())}
-                        style={{ color: textPrimary, backgroundColor: cardBg, padding: p, whiteSpace: 'nowrap' }}>
+                        style={{ color: textPrimary, backgroundColor: cardBg, padding: p, whiteSpace: 'nowrap', transition: 'background-color 0.15s ease-in-out' }}>
                         <div className="flex items-center gap-1.5">
                           <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
                           <span style={{ fontSize: compactView ? 9 : undefined }}>{row.branchName}</span>
                           {!compactView && (
                             <button
-                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-red-400 ml-1"
+                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-red-400 ml-1 no-print"
                               onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
                               title="Hide branch"
                             >
@@ -824,7 +813,7 @@ export default function DailyAuditReport() {
                               style={{ color: '#EF4444' }}
                             >
                               ₱{peso(row.totalExpenses)}
-                              {!compactView && <Receipt className="w-3 h-3 shrink-0" />}
+                              {!compactView && <Receipt className="w-3 h-3 shrink-0 no-print" />}
                             </button>
                           )}
                       </td>
@@ -856,7 +845,7 @@ export default function DailyAuditReport() {
 
                       {/* ⑳ Actions */}
                       {viewMode === 'single' && (
-                        <td style={{ padding: p, textAlign: 'right' }}>
+                        <td className="no-print" style={{ padding: p, textAlign: 'right' }}>
                           {editing ? (
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={e => handleSaveRow(row, e)} disabled={saving} className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-[9px] font-bold rounded">
@@ -917,7 +906,7 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: textMuted, fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.rebatesForCollection)}
                   </td>
-                  {viewMode === 'single' && <td />}
+                  {viewMode === 'single' && <td className="no-print" />}
                 </tr>
               </tfoot>
             </table>
@@ -927,12 +916,70 @@ export default function DailyAuditReport() {
 
       {/* ── For Collection Banner ──────────────────────────────────── */}
       {!loading && totals.forCollection > 0 && (
-        <div className="rounded-2xl p-4 flex items-center justify-between"
+        <div className="rounded-2xl p-4 flex items-center justify-between no-print"
           style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
           <span className="text-sm font-bold uppercase tracking-wider" style={{ color: '#F59E0B' }}>Total for Collection</span>
           <span className="text-xl font-black" style={{ color: '#F59E0B' }}>₱{peso(totals.forCollection)}</span>
         </div>
       )}
+
+      {/* Printable footer */}
+      <div className="hidden print:block text-center mt-6 pt-4 border-t text-[10px]" style={{ borderColor: border }}>
+        <span>Printed on: {new Date().toLocaleString('en-PH')}</span>
+      </div>
+
+      </div> {/* Close print-area */}
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .print-area, .print-area * {
+            visibility: visible !important;
+          }
+          .print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: white !important;
+            color: black !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          .print-area table,
+          .print-area tr,
+          .print-area th,
+          .print-area td,
+          .print-area div,
+          .print-area span,
+          .print-area p,
+          .print-area h3,
+          .print-area strong {
+            background: transparent !important;
+            color: black !important;
+            border-color: #cbd5e1 !important;
+          }
+          .print-area th {
+            position: static !important;
+          }
+          .print-area .overflow-x-auto,
+          .print-area .overflow-y-auto {
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          .no-print,
+          .print-hidden,
+          .print\\:hidden {
+            display: none !important;
+          }
+        }
+      `}</style>
 
       {/* ── Drilldown Modal ───────────────────────────────────────── */}
       {drilldown && (
