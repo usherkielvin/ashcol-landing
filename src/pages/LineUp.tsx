@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ScanLine, ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
@@ -110,29 +110,86 @@ export default function LineUp() {
 
   const [customFields, setCustomFields] = useState<Record<string, boolean>>({})
 
+  const [suggestions, setSuggestions] = useState<{
+    services: string[]
+    drivers: string[]
+    installers: string[]
+    routes: string[]
+    remarks: string[]
+  }>({ services: [], drivers: [], installers: [], routes: [], remarks: [] })
+
+  const finalVehicleOptions = useMemo(() =>
+    [...new Set([...suggestions.services.map(s => s.toUpperCase()), ...VEHICLE_OPTIONS])].sort(),
+    [suggestions.services]
+  )
+  const finalDriverOptions = useMemo(() =>
+    [...new Set([...suggestions.drivers.map(d => d.toUpperCase()), ...DRIVER_OPTIONS])].sort(),
+    [suggestions.drivers]
+  )
+  const finalInstallerOptions = useMemo(() =>
+    [...new Set([...suggestions.installers.map(i => i.toUpperCase()), ...INSTALLER_OPTIONS])].sort(),
+    [suggestions.installers]
+  )
+  const finalRouteOptions = useMemo(() =>
+    [...new Set([...suggestions.routes.map(r => r.toUpperCase()), ...ROUTE_OPTIONS])].sort(),
+    [suggestions.routes]
+  )
+  const finalRemarksOptions = useMemo(() =>
+    [...new Set([...suggestions.remarks.map(rem => rem.toUpperCase()), ...REMARKS_OPTIONS])].sort(),
+    [suggestions.remarks]
+  )
+
+  const fetchSuggestions = useCallback(async (bId: string) => {
+    if (!bId) return
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/lineup/suggestions?branchId=${bId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setSuggestions({
+          services: data.services || [],
+          drivers: data.drivers || [],
+          installers: data.installers || [],
+          routes: data.routes || [],
+          remarks: data.remarks || [],
+        })
+      }
+    } catch (e) {
+      console.error("Error fetching lineup suggestions:", e)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (branchId) {
+      void fetchSuggestions(branchId)
+    }
+  }, [branchId, fetchSuggestions])
+
   useEffect(() => {
     if (!editing) {
       setCustomFields({})
       return
     }
     const newCustoms: Record<string, boolean> = {}
-    if (editing.service && !VEHICLE_OPTIONS.includes(editing.service)) {
+    if (editing.service && !finalVehicleOptions.includes(editing.service)) {
       newCustoms.service = true
     }
-    if (editing.driverName && !DRIVER_OPTIONS.includes(editing.driverName)) {
+    if (editing.driverName && !finalDriverOptions.includes(editing.driverName)) {
       newCustoms.driverName = true
     }
-    if (editing.installerName && !INSTALLER_OPTIONS.includes(editing.installerName)) {
+    if (editing.installerName && !finalInstallerOptions.includes(editing.installerName)) {
       newCustoms.installerName = true
     }
-    if (editing.route && !ROUTE_OPTIONS.includes(editing.route)) {
+    if (editing.route && !finalRouteOptions.includes(editing.route)) {
       newCustoms.route = true
     }
-    if (editing.remarks && !REMARKS_OPTIONS.includes(editing.remarks)) {
+    if (editing.remarks && !finalRemarksOptions.includes(editing.remarks)) {
       newCustoms.remarks = true
     }
     setCustomFields(newCustoms)
-  }, [editing])
+  }, [editing, finalVehicleOptions, finalDriverOptions, finalInstallerOptions, finalRouteOptions, finalRemarksOptions])
 
   const renderFlexField = (
     label: string,
@@ -291,6 +348,7 @@ export default function LineUp() {
     setEditing(null)
     setSaving(false)
     void fetchLineup()
+    if (branchId) void fetchSuggestions(branchId)
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -305,6 +363,7 @@ export default function LineUp() {
     } catch { /* fall through */ }
     if (!deleted) { const all = lsLoad().filter(r => r.id !== row.id); lsSave(all) }
     void fetchLineup()
+    if (branchId) void fetchSuggestions(branchId)
   }
 
   // ── Totals ───────────────────────────────────────────────────────────────
@@ -343,8 +402,22 @@ export default function LineUp() {
       }
       if (parsedRows.length > 0) {
         if (window.confirm(`Scanner found ${parsedRows.length} row(s). Replace current lineup for this date?`)) {
-          // Save to backend API so all devices can see it
+          // 1. Delete existing rows on the server first
+          for (const existingRow of rows) {
+            try {
+              await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+              })
+            } catch (err) {
+              console.error("Failed to delete existing row during replacement:", err)
+            }
+          }
+
+          // 2. Save new rows to backend API so all devices can see it
           let savedRows: LineUpRow[] = []
+          let failedCount = 0
+          let lastErrorMessage = ''
           for (const row of parsedRows) {
             try {
               const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
@@ -356,20 +429,41 @@ export default function LineUp() {
                 const saved = await apiRes.json() as LineUpRow
                 savedRows.push(saved)
               } else {
+                failedCount++
+                let errDetail = `Status ${apiRes.status}`
+                try {
+                  const txt = await apiRes.text()
+                  if (txt) errDetail = txt
+                } catch {}
+                lastErrorMessage = errDetail
                 savedRows.push(row)
               }
-            } catch { savedRows.push(row) }
+            } catch (err: any) {
+              failedCount++
+              lastErrorMessage = err.message || 'Network connection failed'
+              savedRows.push(row)
+            }
           }
+
+          if (failedCount > 0) {
+            setScanError(`Warning: Failed to save ${failedCount} of ${parsedRows.length} rows to the server database. Error: ${lastErrorMessage}`)
+          }
+
           // Also update localStorage as local cache
           const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
           lsSave([...all, ...savedRows])
           void fetchLineup()
+          if (branchId) void fetchSuggestions(branchId)
         }
       } else {
         setScanError('Scanner could not extract lineup rows. Check the image or add rows manually.')
       }
-    } catch { setScanError('Scan failed. Make sure the backend is running.') }
-    finally { setScanning(false); if (scanFileRef.current) scanFileRef.current.value = '' }
+    } catch (e: any) {
+      setScanError(e.message || 'Scan failed. Make sure the backend is running.')
+    } finally {
+      setScanning(false)
+      if (scanFileRef.current) scanFileRef.current.value = ''
+    }
   }
 
   const handleScanFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) processLineupImage(f) }
@@ -449,7 +543,23 @@ export default function LineUp() {
         // ── Save to backend API so all devices see the lineup ──
         setSaving(true)
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+        // 1. Delete existing rows on the server first
+        for (const existingRow of rows) {
+          try {
+            await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          } catch (err) {
+            console.error("Failed to delete existing row during replacement:", err)
+          }
+        }
+
+        // 2. Insert new rows
         let savedCount = 0
+        let failedCount = 0
+        let lastErrorMessage = ''
         const savedRows: LineUpRow[] = []
         for (const row of parsedRows) {
           try {
@@ -463,9 +573,18 @@ export default function LineUp() {
               savedRows.push(saved)
               savedCount++
             } else {
+              failedCount++
+              let errDetail = `Status ${apiRes.status}`
+              try {
+                const txt = await apiRes.text()
+                if (txt) errDetail = txt
+              } catch {}
+              lastErrorMessage = errDetail
               savedRows.push(row) // keep local row if API fails
             }
-          } catch {
+          } catch (err: any) {
+            failedCount++
+            lastErrorMessage = err.message || 'Network connection failed'
             savedRows.push(row) // fallback to local
           }
         }
@@ -477,12 +596,11 @@ export default function LineUp() {
 
         // Refresh from backend to reflect the saved state
         void fetchLineup()
+        if (branchId) void fetchSuggestions(branchId)
 
-        const apiNote = savedCount === parsedRows.length
-          ? 'Synced to server ✓'
-          : savedCount > 0
-            ? `${savedCount}/${parsedRows.length} synced to server`
-            : 'Saved locally only (server offline)'
+        const apiNote = failedCount === 0
+          ? 'Synced to server database successfully ✓'
+          : `Warning: ${failedCount}/${parsedRows.length} rows failed to save to server database. Error: ${lastErrorMessage}`
         alert(`Imported ${parsedRows.length} rows for ${branchName}! ${apiNote}`)
       } catch { alert('Error parsing Excel file.') }
     }
@@ -949,7 +1067,7 @@ export default function LineUp() {
             </div>
 
             <div className="overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {renderFlexField("Service (Vehicle Code)", "service", VEHICLE_OPTIONS, "e.g. T3, T2, FB19, STRADA", true)}
+              {renderFlexField("Service (Vehicle Code)", "service", finalVehicleOptions, "e.g. T3, T2, FB19, STRADA", true)}
               <F label="Branch" required>
                 <select value={editing.branchId || branchId} onChange={e => setEditing({ ...editing, branchId: e.target.value })}
                   disabled={isManager && !!user?.branchId}
@@ -958,14 +1076,14 @@ export default function LineUp() {
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </F>
-              {renderFlexField("Driver Name", "driverName", DRIVER_OPTIONS, "Driver's name")}
+              {renderFlexField("Driver Name", "driverName", finalDriverOptions, "Driver's name")}
               <F label="Driver Time In">
                 <input value={editing.driverTime || ''} placeholder="e.g. 8:00AM"
                   onChange={e => setEditing({ ...editing, driverTime: e.target.value })}
                   className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </F>
-              {renderFlexField("Installer Name", "installerName", INSTALLER_OPTIONS, "Installer's name")}
+              {renderFlexField("Installer Name", "installerName", finalInstallerOptions, "Installer's name")}
               <F label="Installer Time In">
                 <input value={editing.installerTime || ''} placeholder="e.g. 7:00AM"
                   onChange={e => setEditing({ ...editing, installerTime: e.target.value })}
@@ -984,8 +1102,8 @@ export default function LineUp() {
                   className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </F>
-              {renderFlexField("Route", "route", ROUTE_OPTIONS, "e.g. VALENZUELA – MALABON – MANILA", false, true)}
-              {renderFlexField("Remarks", "remarks", REMARKS_OPTIONS, "e.g. INSTALL – INSTALL – INSTALL (3UNITS)", false, true)}
+              {renderFlexField("Route", "route", finalRouteOptions, "e.g. VALENZUELA – MALABON – MANILA", false, true)}
+              {renderFlexField("Remarks", "remarks", finalRemarksOptions, "e.g. INSTALL – INSTALL – INSTALL (3UNITS)", false, true)}
             </div>
 
             <div className="px-5 py-4 flex items-center gap-2" style={{ borderTop: `1px solid ${border}` }}>
