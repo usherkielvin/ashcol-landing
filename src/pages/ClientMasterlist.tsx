@@ -3,7 +3,7 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
   ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
-  Users, XCircle, Printer, Eye, Phone
+  Users, XCircle, Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -368,6 +368,8 @@ export default function ClientMasterlist() {
   const excelFileInputRef = useRef<HTMLInputElement>(null)
   const [bulkUploading, setBulkUploading] = useState(false)
   const [importTargetBranchId, setImportTargetBranchId] = useState('')
+  const [previewView, setPreviewView] = useState<'grid' | 'list'>('grid')
+  const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(new Set())
 
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -949,6 +951,40 @@ export default function ClientMasterlist() {
     } finally {
       setActionSaving(false)
     }
+  }
+
+  const handleDeleteAllTickets = async () => {
+    const count = filtered.length
+    if (count === 0) { alert('No client tickets to delete with the current filters.'); return }
+    if (!window.confirm(
+      `⚠️ DANGER ZONE\n\nYou are about to permanently delete ALL ${count} currently visible client ticket${count !== 1 ? 's' : ''}.\n\nThis action CANNOT be undone. Are you absolutely sure?`
+    )) return
+    // Second confirmation for safety
+    const confirmText = window.prompt(`Type "DELETE ALL" to confirm removing all ${count} tickets permanently:`)
+    if (confirmText?.trim() !== 'DELETE ALL') {
+      alert('Cancelled — confirmation text did not match.')
+      return
+    }
+
+    setActionSaving(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    let successCount = 0
+    let failCount = 0
+    for (const ticket of filtered) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) successCount++
+        else failCount++
+      } catch {
+        failCount++
+      }
+    }
+    setActionSaving(false)
+    fetchData()
+    alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
   }
 
   // Open action drawer for a ticket
@@ -1572,7 +1608,31 @@ export default function ClientMasterlist() {
         </div>
       </div>
 
-      {/* Full-Page Edit Ticket (replacing Action Drawer) */}
+      {/* ── Danger Zone ───────────────────────────────────────── */}
+      {isAdmin && filtered.length > 0 && (
+        <div className="rounded-2xl overflow-hidden shadow-sm mt-4" style={{ border: '1.5px solid rgba(239,68,68,0.25)', backgroundColor: 'rgba(239,68,68,0.04)' }}>
+          <div className="flex items-center justify-between px-5 py-3">
+            <div className="flex flex-col">
+              <span className="text-xs font-black uppercase tracking-wider" style={{ color: '#EF4444' }}>⚠ Danger Zone</span>
+              <span className="text-xs mt-0.5" style={{ color: textMuted }}>
+                Permanently deletes all <strong style={{ color: textPrimary }}>{filtered.length}</strong> currently visible client ticket{filtered.length !== 1 ? 's' : ''}.
+                {(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL')
+                  ? ' (filtered view — only matching records will be deleted)'
+                  : ' This cannot be undone.'}
+              </span>
+            </div>
+            <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4 disabled:opacity-50"
+              style={{ backgroundColor: 'transparent', border: '1.5px solid #EF4444', color: '#EF4444' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#EF4444'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#EF4444' }}>
+              <Trash2 className="w-3.5 h-3.5" />
+              {actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {isActionDrawerOpen && selectedTicket && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
           {/* Header */}
@@ -2448,181 +2508,327 @@ export default function ClientMasterlist() {
 
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}
-      {isExcelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}>
-          <div className="w-full max-w-6xl rounded-2xl flex flex-col shadow-2xl overflow-hidden"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}>
+      {isExcelModalOpen && (() => {
+        const allIds = new Set(excelPreview.map(x => x.id))
+        const allSelected = selectedPreviewIds.size === excelPreview.length && excelPreview.length > 0
+        const someSelected = selectedPreviewIds.size > 0
 
-            {/* Header */}
-            <div className="shrink-0">
-              <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
-                    <FileSpreadsheet className="w-5 h-5" style={{ color: '#3B82F6' }} />
+        const toggleSelectAll = () => {
+          if (allSelected) {
+            setSelectedPreviewIds(new Set())
+          } else {
+            setSelectedPreviewIds(new Set(excelPreview.map(x => x.id)))
+          }
+        }
+
+        const toggleSelectOne = (id: string) => {
+          setSelectedPreviewIds(prev => {
+            const next = new Set(prev)
+            next.has(id) ? next.delete(id) : next.add(id)
+            return next
+          })
+        }
+
+        const deleteSelected = () => {
+          setExcelPreview(prev => prev.filter(x => !selectedPreviewIds.has(x.id)))
+          setSelectedPreviewIds(new Set())
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', padding: '2vh 1vw', overflowY: 'auto' }}>
+            <div className="w-full rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+              style={{
+                backgroundColor: cardBg,
+                border: `1px solid ${border}`,
+                minWidth: 320,
+                maxWidth: 1200,
+                margin: '0 auto',
+                maxHeight: '96vh',
+              }}>
+
+              {/* Header */}
+              <div className="shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+                <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
+                      <FileSpreadsheet className="w-4 h-4" style={{ color: '#3B82F6' }} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>Spreadsheet Ingestion Preview</h3>
+                      <p className="text-[10px] mt-0.5 leading-tight" style={{ color: textMuted }}>
+                        <span className="font-bold" style={{ color: textPrimary }}>{excelPreview.length}</span> records
+                        &nbsp;·&nbsp;{excelPreview.filter(x => x.serviceType === 'S/I').length} S/I
+                        &nbsp;·&nbsp;{excelPreview.filter(x => x.serviceType === 'SURVEY').length} Survey
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-black text-sm" style={{ color: textPrimary }}>Spreadsheet Ingestion Preview</h3>
-                    <p className="text-[11px]" style={{ color: textMuted }}>
-                      <span className="font-bold" style={{ color: textPrimary }}>{excelPreview.length}</span> client records parsed ({excelPreview.filter(x => x.serviceType === 'S/I').length} S/I, {excelPreview.filter(x => x.serviceType === 'SURVEY').length} Survey) • Verify and assign to branch below
-                    </p>
+
+                  {/* Controls row */}
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    {/* Select all toggle */}
+                    <button type="button" onClick={toggleSelectAll}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all"
+                      style={{ backgroundColor: allSelected ? 'rgba(59,130,246,0.1)' : inputBg, borderColor: allSelected ? '#3B82F6' : inputBorder, color: allSelected ? '#3B82F6' : textMuted }}>
+                      {allSelected
+                        ? <CheckSquare className="w-3.5 h-3.5" />
+                        : <Square className="w-3.5 h-3.5" />}
+                      <span>{allSelected ? 'Deselect All' : 'Select All'}</span>
+                    </button>
+
+                    {/* Bulk delete — only when selection active */}
+                    {someSelected && (
+                      <button type="button" onClick={deleteSelected}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all"
+                        style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444' }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete {selectedPreviewIds.size} Selected
+                      </button>
+                    )}
+
+                    {/* View toggle — Grid ↔ Row/List */}
+                    <div className="flex items-center rounded-lg overflow-hidden border" style={{ borderColor: inputBorder }}>
+                      <button type="button" onClick={() => setPreviewView('grid')}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold transition-all"
+                        style={{ backgroundColor: previewView === 'grid' ? '#3B82F6' : inputBg, color: previewView === 'grid' ? '#fff' : textMuted }}
+                        title="Card grid view">
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Grid</span>
+                      </button>
+                      <button type="button" onClick={() => setPreviewView('list')}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold transition-all"
+                        style={{ backgroundColor: previewView === 'list' ? '#3B82F6' : inputBg, color: previewView === 'list' ? '#fff' : textMuted }}
+                        title="Compact row view">
+                        <List className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Rows</span>
+                      </button>
+                    </div>
+
+                    <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId(''); setSelectedPreviewIds(new Set()) }}
+                      className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{ color: textMuted }}>
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId('') }}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{ color: textMuted }}>
-                  <X className="w-5 h-5" />
-                </button>
               </div>
-            </div>
 
-            {/* Cards Grid */}
-            <div className="flex-1 overflow-auto p-6 bg-slate-50/55 dark:bg-slate-950/20">
-              {excelPreview.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <AlertCircle className="w-10 h-10 text-slate-400 mb-3" />
-                  <p className="text-sm font-black" style={{ color: textMuted }}>No parsed records remaining</p>
-                  <p className="text-xs mt-1" style={{ color: textMuted }}>Close this modal and upload another sheet if needed.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {excelPreview.map((item) => (
-                    <div key={item.id} className="relative rounded-2xl flex flex-col p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
-                      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                      
-                      {/* Priority Tag, Service Type & Trash Action */}
-                      <div className="flex items-center justify-between mb-3.5 gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {item.priorityTag ? (
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                              item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' :
-                              item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
-                              'bg-blue-500/10 text-blue-500 border border-blue-500/20'
-                            }`}>
-                              {item.priorityTag}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">
-                              Standard Priority
-                            </span>
-                          )}
+              {/* Body */}
+              <div className="flex-1 overflow-auto" style={{ minHeight: 0, padding: '12px 12px' }}>
+                {excelPreview.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <AlertCircle className="w-10 h-10 text-slate-400 mb-3" />
+                    <p className="text-sm font-black" style={{ color: textMuted }}>No parsed records remaining</p>
+                    <p className="text-xs mt-1" style={{ color: textMuted }}>Close this modal and upload another sheet if needed.</p>
+                  </div>
+                ) : previewView === 'grid' ? (
+                  /* ── GRID / CARD VIEW ─────────────────────────────── */
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                    {excelPreview.map((item) => {
+                      const isSelected = selectedPreviewIds.has(item.id)
+                      return (
+                        <div key={item.id}
+                          className="relative rounded-2xl flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                          style={{
+                            backgroundColor: cardBg,
+                            border: `1.5px solid ${isSelected ? '#3B82F6' : border}`,
+                            boxShadow: isSelected ? '0 0 0 3px rgba(59,130,246,0.15)' : undefined,
+                            padding: '14px',
+                          }}>
 
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                            item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
-                            item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' :
-                            'bg-slate-500/10 text-slate-500 border border-slate-500/20'
-                          }`}>
-                            {item.serviceType}
-                          </span>
+                          {/* Card header: select checkbox + tags + delete */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <button type="button" onClick={() => toggleSelectOne(item.id)}
+                              className="shrink-0 transition-colors"
+                              style={{ color: isSelected ? '#3B82F6' : textMuted }}>
+                              {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            </button>
+
+                            <div className="flex items-center gap-1.5 flex-1 flex-wrap">
+                              {item.priorityTag ? (
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                  item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' :
+                                  item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                                  'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                                }`}>{item.priorityTag}</span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">Standard</span>
+                              )}
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                                item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' :
+                                'bg-slate-500/10 text-slate-500 border border-slate-500/20'
+                              }`}>{item.serviceType}</span>
+                            </div>
+
+                            <button type="button" onClick={() => { setExcelPreview(prev => prev.filter(x => x.id !== item.id)); setSelectedPreviewIds(prev => { const n = new Set(prev); n.delete(item.id); return n }) }}
+                              className="shrink-0 p-1 rounded-lg transition-all hover:text-rose-500 hover:bg-rose-500/10" style={{ color: textMuted }}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Client */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500 font-extrabold text-xs">
+                              {item.customerName ? item.customerName.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-extrabold text-xs truncate" style={{ color: textPrimary }} title={item.customerName}>{item.customerName}</div>
+                              {item.contactPhone && (
+                                <div className="flex items-center gap-1 text-emerald-500 text-[10px] font-bold">
+                                  <Phone className="w-2.5 h-2.5" />
+                                  <FormatPhone raw={item.contactPhone} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Meta grid */}
+                          <div className="grid grid-cols-2 gap-1.5 text-[10px] mb-3 p-2 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                            <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>AC / Unit</span>
+                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.unitType || 'Split AC'}</span></div>
+                            <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Vendor</span>
+                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.sourceVendor || 'Direct'}</span></div>
+                            <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Control #</span>
+                              <span className="font-mono font-bold block truncate" style={{ color: textPrimary }}>{item.controlNumber || '—'}</span></div>
+                            <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Charge</span>
+                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.installationCharges ? `₱${item.installationCharges.toLocaleString()}` : 'Free'}</span></div>
+                          </div>
+
+                          {/* Address */}
+                          <div className="flex items-start gap-1.5 mb-3">
+                            <MapPin className="w-3 h-3 text-rose-500 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              {item.district && <span className="inline-block px-1.5 bg-blue-500/10 text-blue-500 rounded text-[8px] font-black uppercase mr-1 mb-0.5">{item.district}</span>}
+                              <span className="text-[10px] leading-relaxed block" style={{ color: textMuted }}>{item.location || '—'}</span>
+                            </div>
+                          </div>
+
+                          {/* Remarks */}
+                          <div className="rounded-lg p-2 text-[9px] italic" style={{ backgroundColor: inputBg, color: textMuted }}>
+                            <span className="font-black uppercase text-[8px] not-italic block mb-0.5">Remarks</span>
+                            <span className="line-clamp-2">{item.remarksUpdate || item.description || '—'}</span>
+                          </div>
                         </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  /* ── LIST / ROW VIEW ─────────────────────────────── */
+                  <div className="flex flex-col gap-1.5">
+                    {excelPreview.map((item) => {
+                      const isSelected = selectedPreviewIds.has(item.id)
+                      return (
+                        <div key={item.id}
+                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+                          style={{
+                            backgroundColor: isSelected ? (isLight ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.1)') : inputBg,
+                            border: `1.5px solid ${isSelected ? '#3B82F6' : border}`,
+                          }}>
 
-                        <button type="button" onClick={() => setExcelPreview(prev => prev.filter(x => x.id !== item.id))}
-                          className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all shrink-0" title="Remove from list">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          {/* Checkbox */}
+                          <button type="button" onClick={() => toggleSelectOne(item.id)}
+                            className="shrink-0" style={{ color: isSelected ? '#3B82F6' : textMuted }}>
+                            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                          </button>
 
-                      {/* Client Info Block */}
-                      <div className="mb-4">
-                        <div className="flex items-start gap-2">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-blue-500/10 text-blue-500 font-extrabold text-xs">
+                          {/* Avatar */}
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500 font-extrabold text-[11px]">
                             {item.customerName ? item.customerName.charAt(0).toUpperCase() : 'U'}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="font-extrabold text-sm truncate" style={{ color: textPrimary }} title={item.customerName}>{item.customerName}</h4>
+
+                          {/* Name & phone */}
+                          <div className="flex-1 min-w-0" style={{ minWidth: 120, maxWidth: 160 }}>
+                            <div className="font-extrabold text-xs truncate" style={{ color: textPrimary }}>{item.customerName}</div>
                             {item.contactPhone && (
-                              <div className="flex items-center gap-1 mt-0.5 text-emerald-500 text-xs font-bold">
-                                <Phone className="w-3 h-3 text-emerald-500" />
-                                <FormatPhone raw={item.contactPhone} />
+                              <div className="text-[10px] text-emerald-500 font-bold flex items-center gap-0.5">
+                                <Phone className="w-2.5 h-2.5" /><FormatPhone raw={item.contactPhone} />
                               </div>
                             )}
                           </div>
-                        </div>
-                      </div>
 
-                      {/* Meta Info Grid */}
-                      <div className="grid grid-cols-2 gap-2 text-[11px] mb-4 p-2.5 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                        <div>
-                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>AC / Unit Type</span>
-                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.unitType || 'Split AC'}>{item.unitType || 'Split AC'}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Store / Vendor</span>
-                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.sourceVendor || 'Direct'}>{item.sourceVendor || 'Direct'}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Control # / SI</span>
-                          <span className="font-mono font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.controlNumber || '—'}>{item.controlNumber || '—'}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Charge (Mode)</span>
-                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }}>
-                            {item.installationCharges ? `₱${item.installationCharges.toLocaleString()}` : 'Free'} 
-                            {item.modeOfPayment ? ` (${item.modeOfPayment})` : ''}
-                          </span>
-                        </div>
-                      </div>
+                          {/* Tags */}
+                          <div className="flex gap-1 shrink-0 flex-wrap" style={{ minWidth: 90 }}>
+                            {item.priorityTag
+                              ? <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                                  item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-rose-500/10 text-rose-500' :
+                                  item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'
+                                }`}>{item.priorityTag}</span>
+                              : null
+                            }
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                              item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500' :
+                              item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500' : 'bg-slate-500/10 text-slate-400'
+                            }`}>{item.serviceType}</span>
+                          </div>
 
-                      {/* Address & Location */}
-                      <div className="mb-4 flex items-start gap-1.5 text-xs">
-                        <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          {item.district && (
-                            <span className="inline-block px-1.5 py-0.2 bg-blue-500/10 text-blue-500 rounded text-[9px] font-black uppercase mb-1 mr-1">
-                              {item.district}
-                            </span>
-                          )}
-                          <span className="text-[11px] leading-relaxed block" style={{ color: textMuted }}>{item.location || 'No address provided'}</span>
+                          {/* Unit type */}
+                          <div className="shrink-0 text-[10px] font-semibold" style={{ color: textMuted, minWidth: 80, maxWidth: 100 }}>
+                            <div className="truncate">{item.unitType || '—'}</div>
+                            <div className="text-[9px] truncate">{item.sourceVendor || '—'}</div>
+                          </div>
+
+                          {/* Address */}
+                          <div className="flex-1 min-w-0 hidden sm:block">
+                            {item.district && <span className="px-1 bg-blue-500/10 text-blue-500 rounded text-[8px] font-black uppercase mr-1">{item.district}</span>}
+                            <span className="text-[10px] truncate block" style={{ color: textMuted }}>{item.location || '—'}</span>
+                          </div>
+
+                          {/* Control # */}
+                          <div className="shrink-0 font-mono text-[10px] font-bold hidden md:block" style={{ color: textMuted, minWidth: 70 }}>{item.controlNumber || '—'}</div>
+
+                          {/* Remarks */}
+                          <div className="flex-1 min-w-0 hidden lg:block">
+                            <span className="text-[10px] line-clamp-1" style={{ color: textMuted }}>{item.remarksUpdate || item.description || '—'}</span>
+                          </div>
+
+                          {/* Delete */}
+                          <button type="button"
+                            onClick={() => { setExcelPreview(prev => prev.filter(x => x.id !== item.id)); setSelectedPreviewIds(prev => { const n = new Set(prev); n.delete(item.id); return n }) }}
+                            className="shrink-0 p-1 rounded-lg transition-all hover:text-rose-500 hover:bg-rose-500/10" style={{ color: textMuted }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      </div>
-
-                      {/* Divider */}
-                      <div className="h-px w-full mb-3" style={{ backgroundColor: border }}></div>
-
-                      {/* Description/Remarks box */}
-                      <div className="mt-auto">
-                        <div className="rounded-lg p-2 text-[10px] italic leading-normal" style={{ backgroundColor: inputBg, color: textMuted }}>
-                          <span className="font-black uppercase text-[8px] block not-italic mb-0.5 tracking-wider">Remarks / Instructions</span>
-                          <span className="line-clamp-2" title={item.remarksUpdate || item.description || 'No remarks provided'}>
-                            {item.remarksUpdate || item.description || 'No remarks provided'}
-                          </span>
-                        </div>
-                      </div>
-
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
-              style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
-                <select value={importTargetBranchId} onChange={e => setImportTargetBranchId(e.target.value)}
-                  className="rounded-xl px-3 py-2 text-xs font-bold outline-none border w-full sm:w-56"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <option value="">Assign to Branch...</option>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="flex gap-3 w-full sm:w-auto justify-end">
-                <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId('') }}
-                  className="px-5 py-2.5 border rounded-xl text-xs font-bold"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  Cancel
-                </button>
-                <button type="button" onClick={handleBulkUploadSubmit}
-                  disabled={bulkUploading || !importTargetBranchId}
-                  className="px-6 py-2.5 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md"
-                  style={{ background: bulkUploading || !importTargetBranchId ? undefined : 'linear-gradient(135deg, #3B82F6, #6366F1)', backgroundColor: bulkUploading || !importTargetBranchId ? '#475569' : undefined }}>
-                  {bulkUploading ? 'Uploading...' : `Import ${excelPreview.length} Records`}
-                </button>
+
+              {/* Footer */}
+              <div className="shrink-0 flex items-center justify-between gap-3 flex-wrap px-4 py-3"
+                style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
+                  <select value={importTargetBranchId} onChange={e => setImportTargetBranchId(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-xs font-bold outline-none border"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, minWidth: 170 }}>
+                    <option value="">Assign to Branch...</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  {someSelected && (
+                    <span className="text-[10px] font-black" style={{ color: textMuted }}>
+                      {selectedPreviewIds.size} of {excelPreview.length} selected
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId(''); setSelectedPreviewIds(new Set()) }}
+                    className="px-4 py-2 border rounded-xl text-xs font-bold transition-all hover:opacity-80"
+                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleBulkUploadSubmit}
+                    disabled={bulkUploading || !importTargetBranchId}
+                    className="px-5 py-2 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md"
+                    style={{ background: bulkUploading || !importTargetBranchId ? undefined : 'linear-gradient(135deg, #3B82F6, #6366F1)', backgroundColor: bulkUploading || !importTargetBranchId ? '#475569' : undefined }}>
+                    {bulkUploading ? 'Uploading...' : `Import ${excelPreview.length} Records`}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Quick Action Hub / Ticket Preview Modal ──────────────── */}
       {selectedPreviewTicket && !isViewModalOpen && (
