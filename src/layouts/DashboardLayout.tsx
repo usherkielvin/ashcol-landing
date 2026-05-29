@@ -87,9 +87,9 @@ export default function DashboardLayout() {
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
+  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff'
 
-  const navLinks = isAdmin
+  const navLinks = isAuthorizedRole
     ? allLinks.filter(link => {
         if (!link.roles) return true // visible to everyone (Overview, Tickets)
         return link.roles.includes(role)

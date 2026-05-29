@@ -181,6 +181,7 @@ export default function DailyAuditReport() {
   const isManager = role === 'manager'
   const isAdmin = role === 'admin'
   const canImportExcel = isAdmin || isManager
+  const canEdit = isAdmin || isManager
 
   const fetchAudit = useCallback(async () => {
     if (viewMode === 'range' && (!rangeFrom || !rangeTo)) return
@@ -639,7 +640,7 @@ export default function DailyAuditReport() {
                     )
                   })}
                   
-                {viewMode === 'single' && (
+                {viewMode === 'single' && canEdit && (
                     <th className="no-print" style={{ 
                       padding: compactView ? '6px 5px' : '10px 12px', 
                       width: compactView ? '30px' : '60px',
@@ -844,7 +845,7 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* ⑳ Actions */}
-                      {viewMode === 'single' && (
+                      {viewMode === 'single' && canEdit && (
                         <td className="no-print" style={{ padding: p, textAlign: 'right' }}>
                           {editing ? (
                             <div className="flex items-center justify-end gap-1">
@@ -906,7 +907,7 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: textMuted, fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.rebatesForCollection)}
                   </td>
-                  {viewMode === 'single' && <td className="no-print" />}
+                  {viewMode === 'single' && canEdit && <td className="no-print" />}
                 </tr>
               </tfoot>
             </table>
