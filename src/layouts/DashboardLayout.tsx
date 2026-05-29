@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftClose, PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
+  PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
   HardHat, Receipt, CalendarCheck, Scan
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -138,8 +138,7 @@ export default function DashboardLayout() {
       >
         {/* Brand */}
         <div
-          className="flex items-center h-16 shrink-0 px-4"
-          style={{ borderBottom: `1px solid ${border}` }}
+          className="flex items-center h-14 shrink-0 px-4"
         >
           {/* Logo - always visible, click to toggle collapse on desktop */}
           <img
@@ -171,18 +170,6 @@ export default function DashboardLayout() {
           >
             <X className="w-4 h-4" />
           </button>
-
-          {/* Desktop collapse toggle - only when expanded */}
-          {!sidebarCollapsed && (
-            <button
-              className="hidden md:flex p-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
-              style={{ color: textMuted }}
-              title="Collapse sidebar"
-              onClick={() => setSidebarCollapsed(true)}
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
@@ -345,13 +332,12 @@ export default function DashboardLayout() {
           className="shrink-0 flex flex-col z-30 sticky top-0"
           style={{
             backgroundColor: headerBg,
-            borderBottom: `1px solid ${border}`,
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
           }}
         >
           {/* Top row: title + icons */}
-          <div className="min-h-14 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 px-5 md:px-6 py-2 md:py-0">
+          <div className="h-14 flex items-center justify-between px-5 md:px-8 relative">
             <div className="flex items-center gap-3 shrink-0">
               <button
                 className="md:hidden p-2 rounded-xl transition-all"
@@ -360,24 +346,21 @@ export default function DashboardLayout() {
               >
                 <Menu className="w-4 h-4" />
               </button>
-              {currentPage !== 'Schedules' && (
-                <div>
-                  <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
-                    {currentPage}
-                  </h1>
-                  {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
-                    <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
-                      {(user?.role || '').toLowerCase() === 'manager'
-                        ? `Branch · ${branchLabel}`
-                        : 'Technician View'}
-                    </p>
-                  ) : null}
-                </div>
-              )}
             </div>
 
-            {/* ── Page-injected toolbar slot ────────────────── */}
-            <div id="header-toolbar-slot" className="flex-1 flex flex-wrap items-center justify-start gap-2 min-w-0" />
+            {/* Centered Page Title */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center text-center pointer-events-none z-10">
+              <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
+                {currentPage}
+              </h1>
+              {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
+                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
+                  {(user?.role || '').toLowerCase() === 'manager'
+                    ? `Branch · ${branchLabel}`
+                    : 'Technician View'}
+                </p>
+              ) : null}
+            </div>
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2 shrink-0">
@@ -477,6 +460,8 @@ export default function DashboardLayout() {
           </div>
           </div>
 
+          {/* ── Page-injected toolbar slot ────────────────── */}
+          <div id="header-toolbar-slot" />
         </header>
 
         {/* ── Page Content ───────────────────────────────── */}

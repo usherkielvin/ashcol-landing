@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
-  Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square
+  Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -356,6 +356,7 @@ export default function ClientMasterlist() {
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
+  const [selectedColIndex, setSelectedColIndex] = useState<number>(-1)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
 
   // Scanner State
@@ -442,6 +443,62 @@ export default function ClientMasterlist() {
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
   const [editFinalDate, setEditFinalDate] = useState('')
+
+  // Column configuration for expand / collapse functionality
+  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+
+  const toggleColumn = useCallback((colLabel: string) => {
+    setExpandedCols(prev => ({
+      ...prev,
+      [colLabel]: !prev[colLabel]
+    }))
+  }, [])
+
+  const columns = useMemo(() => {
+    const rawCols = [
+      { label: 'STATUS',           defaultW: 125, expW: 180, sticky: true,  freeze: false, center: false, right: false },
+      { label: "CUSTOMER'S NAME",   defaultW: 160, expW: 280, sticky: true,  freeze: false, center: false, right: false },
+      { label: 'DESTINATION',       defaultW: 200, expW: 450, sticky: true,  freeze: true,  center: false, right: false },
+      { label: 'CONTACT NO.',       defaultW: 115, expW: 180, sticky: false, freeze: false, center: false, right: false },
+      { label: 'BRAND / UNIT',      defaultW: 120, expW: 240, sticky: false, freeze: false, center: false, right: false },
+      { label: 'DLR / STORE',       defaultW: 100, expW: 180, sticky: false, freeze: false, center: false, right: false },
+      { label: 'RELAYED SCHED',     defaultW: 110, expW: 180, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'COMMIT',            defaultW: 110, expW: 220, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'RELAYED DATE',      defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
+      { label: 'PREFERRED DATE',    defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
+      { label: 'FINAL DATE',        defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
+      { label: 'REMARKS / UPDATE',  defaultW: 180, expW: 350, sticky: false, freeze: false, center: false, right: false },
+      { label: 'ACTIONS',           defaultW: 90,  expW: 90,  sticky: false, freeze: false, center: false, right: true  },
+    ]
+
+    let accumulatedLeft = 0
+    return rawCols.map(col => {
+      const isExpanded = !!expandedCols[col.label]
+      const currentWidth = isExpanded ? col.expW : col.defaultW
+      const leftVal = col.sticky ? accumulatedLeft : 0
+      
+      if (col.sticky) {
+        accumulatedLeft += currentWidth
+      }
+
+      return {
+        ...col,
+        isExpanded,
+        w: currentWidth,
+        left: leftVal
+      }
+    })
+  }, [expandedCols])
+
+  // Right-click context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
+
+  // Close context menu on any mouse down
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null)
+    window.addEventListener('mousedown', handleClose)
+    return () => window.removeEventListener('mousedown', handleClose)
+  }, [])
 
   // Load Initial Data
   const fetchData = async () => {
@@ -1119,6 +1176,93 @@ export default function ClientMasterlist() {
     return true
   })
 
+  // Keyboard navigation for selected row & cell
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (filtered.length === 0) return
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+
+      // Don't intercept if user is typing in input/textarea/select fields
+      const activeEl = document.activeElement
+      if (activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.getAttribute('contenteditable') === 'true'
+      )) {
+        return
+      }
+
+      e.preventDefault()
+
+      // Find current selected index
+      const currentIndex = filtered.findIndex(t => t.id === selectedPreviewTicket?.id)
+      let nextIndex = currentIndex
+      let currentCol = selectedColIndex >= 0 ? selectedColIndex : 0
+      let nextCol = currentCol
+
+      if (e.key === 'ArrowDown') {
+        if (currentIndex === -1) {
+          nextIndex = 0
+        } else if (currentIndex < filtered.length - 1) {
+          nextIndex = currentIndex + 1
+        }
+      } else if (e.key === 'ArrowUp') {
+        if (currentIndex > 0) {
+          nextIndex = currentIndex - 1
+        }
+      } else if (e.key === 'ArrowRight') {
+        if (currentIndex === -1) {
+          nextIndex = 0
+          nextCol = 0
+        } else {
+          if (currentCol < columns.length - 1) {
+            nextCol = currentCol + 1
+          } else if (currentIndex < filtered.length - 1) {
+            nextCol = 0
+            nextIndex = currentIndex + 1
+          }
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (currentIndex === -1) {
+          nextIndex = 0
+          nextCol = 0
+        } else {
+          if (currentCol > 0) {
+            nextCol = currentCol - 1
+          } else if (currentIndex > 0) {
+            nextCol = columns.length - 1
+            nextIndex = currentIndex - 1
+          }
+        }
+      }
+
+      const rowChanged = nextIndex !== currentIndex
+      const colChanged = nextCol !== currentCol
+
+      if (rowChanged || colChanged) {
+        if (filtered[nextIndex]) {
+          setSelectedPreviewTicket(filtered[nextIndex])
+          setSelectedColIndex(nextCol)
+          
+          // Scroll the selected cell or row into view if needed
+          const cellEl = document.getElementById(`cell-${filtered[nextIndex].id}-${nextCol}`)
+          if (cellEl) {
+            cellEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+          } else {
+            const rowEl = document.getElementById(`row-${filtered[nextIndex].id}`)
+            if (rowEl) {
+              rowEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+            }
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [filtered, selectedPreviewTicket, selectedColIndex, columns.length])
+
   // Store style mappings
   const getStoreStyle = (store?: string) => {
     const s = (store || 'Direct').toLowerCase()
@@ -1151,8 +1295,7 @@ export default function ClientMasterlist() {
     <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-wrap items-center gap-2 px-5 md:px-6 py-2"
-          style={{ borderTop: `1px solid ${border}` }}>
+        <div className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2.5">
 
           {/* Branch Filter */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
@@ -1261,47 +1404,48 @@ export default function ClientMasterlist() {
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
               <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                {[
-                  { label: 'STATUS',           w: 125, sticky: true,  left: 0,   freeze: false },
-                  { label: "CUSTOMER'S NAME",   w: 160, sticky: true,  left: 125, freeze: false },
-                  { label: 'DESTINATION',       w: 200, sticky: true,  left: 285, freeze: true  },
-                  { label: 'CONTACT NO.',       w: 115, sticky: false, left: 0   },
-                  { label: 'BRAND / UNIT',      w: 120, sticky: false, left: 0   },
-                  { label: 'DLR / STORE',       w: 100, sticky: false, left: 0   },
-                  { label: 'RELAYED SCHED',     w: 110, sticky: false, left: 0,   center: true },
-                  { label: 'COMMIT',            w: 110, sticky: false, left: 0,   center: true },
-                  { label: 'RELAYED DATE',      w: 110, sticky: false, left: 0   },
-                  { label: 'PREFERRED DATE',    w: 110, sticky: false, left: 0   },
-                  { label: 'FINAL DATE',        w: 110, sticky: false, left: 0   },
-                  { label: 'REMARKS / UPDATE',  w: 180, sticky: false, left: 0   },
-                  { label: 'ACTIONS',           w: 90,  sticky: false, left: 0,   right: true },
-                ].map(col => (
-                  <th key={col.label} style={{
-                    padding: '9px 10px',
-                    textAlign: col.right ? 'right' : col.center ? 'center' : 'left',
-                    color: textMuted,
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    borderRight: `1px solid ${border}`,
-                    borderBottom: `2px solid ${border}`,
-                    fontSize: '10px',
-                    letterSpacing: '0.07em',
-                    width: col.w,
-                    minWidth: col.w,
-                    maxWidth: col.w,
-                    backgroundColor: inputBg,
-                    ...(col.sticky ? {
-                      position: 'sticky' as const,
-                      left: col.left,
-                      zIndex: 15,
-                    } : {}),
-                    ...(col.freeze ? {
-                      borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                      boxShadow: isLight
-                        ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                        : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                    } : {}),
-                  }}>{col.label}</th>
+                {columns.map(col => (
+                  <th key={col.label}
+                    onClick={() => col.label !== 'ACTIONS' && toggleColumn(col.label)}
+                    title={col.label !== 'ACTIONS' ? `Click to ${col.isExpanded ? 'collapse' : 'expand'} column` : undefined}
+                    style={{
+                      padding: '9px 10px',
+                      textAlign: col.right ? 'right' : col.center ? 'center' : 'left',
+                      color: col.isExpanded ? (isLight ? '#10B981' : '#34D399') : textMuted,
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                      borderRight: `1px solid ${border}`,
+                      borderBottom: `2px solid ${border}`,
+                      fontSize: '10px',
+                      letterSpacing: '0.07em',
+                      width: col.w,
+                      minWidth: col.w,
+                      maxWidth: col.w,
+                      backgroundColor: inputBg,
+                      cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
+                      userSelect: 'none',
+                      transition: 'all 0.15s ease-in-out',
+                      ...(col.sticky ? {
+                        position: 'sticky' as const,
+                        left: col.left,
+                        zIndex: 15,
+                      } : {}),
+                      ...(col.freeze ? {
+                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                        boxShadow: isLight
+                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                      } : {}),
+                    }}>
+                    <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : col.center ? 'justify-center' : 'justify-between'}`}>
+                      <span>{col.label}</span>
+                      {col.label !== 'ACTIONS' && (
+                        <span className="text-[9px] opacity-60 transition-transform duration-200" style={{ transform: col.isExpanded ? 'rotate(180deg)' : 'none' }}>
+                          {col.isExpanded ? '◀' : '▶'}
+                        </span>
+                      )}
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -1329,11 +1473,19 @@ export default function ClientMasterlist() {
                   const isCancelled = ticket.status.toUpperCase() === 'CANCELLED'
 
                   // Base background for this row — used for sticky cells that need explicit bg
-                  const rowBaseBg = (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
+                  const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const rowBaseBg = isSelected
+                    ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
+                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
                   const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
 
                   return (
                     <tr key={ticket.id}
+                      id={`row-${ticket.id}`}
+                      onContextMenu={e => {
+                        e.preventDefault()
+                        setContextMenu({ x: e.clientX, y: e.clientY, ticket })
+                      }}
                       style={{
                         borderBottom: `1px solid ${border}`,
                         backgroundColor: rowBaseBg,
@@ -1345,12 +1497,20 @@ export default function ClientMasterlist() {
                       className="transition-colors">
 
                       {/* 1. Status Tag — sticky col 1 */}
-                      <td style={{
-                        padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px',
-                        position: 'sticky', left: 0, zIndex: 5,
-                        backgroundColor: rowBaseBg,
-                        width: 125, minWidth: 125, maxWidth: 125,
-                      }}>
+                      <td 
+                        id={`cell-${ticket.id}-0`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(0)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px',
+                          position: 'sticky', left: columns[0].left, zIndex: 5,
+                          backgroundColor: rowBaseBg,
+                          width: columns[0].w, minWidth: columns[0].w, maxWidth: columns[0].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 0 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         <div className="flex flex-col gap-1.5 items-start">
                           {(() => {
                             const status = (ticket.status || '').toUpperCase()
@@ -1388,7 +1548,7 @@ export default function ClientMasterlist() {
                                 color: isLight ? '#059669' : '#10B981',
                                 border: isLight ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(16,185,129,0.25)'
                               }}>
-                              {resolveBranch(ticket.branchId)?.name || 'Assigned'}
+                               {resolveBranch(ticket.branchId)?.name || 'Assigned'}
                             </span>
                           ) : (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider block w-fit"
@@ -1404,50 +1564,85 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 2. Customer Name — sticky col 2 */}
-                      <td style={{
-                        padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary,
-                        position: 'sticky', left: 125, zIndex: 5,
-                        backgroundColor: rowBaseBg,
-                        width: 160, minWidth: 160, maxWidth: 160,
-                      }} className="font-bold">
+                      <td 
+                        id={`cell-${ticket.id}-1`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(1)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary,
+                          position: 'sticky', left: columns[1].left, zIndex: 5,
+                          backgroundColor: rowBaseBg,
+                          width: columns[1].w, minWidth: columns[1].w, maxWidth: columns[1].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 1 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }} className="font-bold">
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-start gap-1.5">
                             <span style={{ color: textMuted, fontSize: '9px', marginTop: '2px' }} className="shrink-0">{idx + 1}</span>
-                            <div className="flex flex-col">
-                              <span className="text-xs truncate max-w-[130px] block" title={ticket.customerName || 'Direct Client'}>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className={`text-xs block ${columns[1].isExpanded ? 'break-words' : 'truncate max-w-[130px]'}`} title={ticket.customerName || 'Direct Client'}>
                                 {ticket.customerName || 'Direct Client'}
                               </span>
-                              {ticket.controlNumber && (
-                                <span className="text-[9px] font-black font-mono tracking-wider mt-0.5 text-slate-400 dark:text-slate-500 block">
-                                  {ticket.controlNumber}
-                                </span>
-                              )}
+                              <span className="text-[9px] font-black font-mono tracking-wider mt-0.5 text-slate-400 dark:text-slate-500 block truncate" title={`Full ID: ${ticket.id}`}>
+                                {ticket.controlNumber ? `${ticket.controlNumber} • ` : ''}ID: {ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()}
+                              </span>
                             </div>
                           </div>
                         </div>
                       </td>
 
                       {/* 3. Destination — sticky col 3 (freeze line) */}
-                      <td style={{
-                        padding: '8px 10px', color: textMuted,
-                        position: 'sticky', left: 285, zIndex: 5,
-                        backgroundColor: rowBaseBg,
-                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                        boxShadow: isLight
-                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                        width: 200, minWidth: 200, maxWidth: 200,
-                      }}>
-                        <span className="line-clamp-2 text-[11px] leading-relaxed" title={ticket.location || ''}>{ticket.location || '—'}</span>
+                      <td 
+                        id={`cell-${ticket.id}-2`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(2)
+                        }}
+                        style={{
+                          padding: '8px 10px', color: textMuted,
+                          position: 'sticky', left: columns[2].left, zIndex: 5,
+                          backgroundColor: rowBaseBg,
+                          borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+                          boxShadow: (isSelected && selectedColIndex === 2 ? 'inset 0 0 0 2px #10B981, ' : '') + (isLight
+                            ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                            : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)'),
+                          width: columns[2].w, minWidth: columns[2].w, maxWidth: columns[2].w,
+                          transition: 'all 0.15s ease-in-out'
+                        }}>
+                        <span className={`text-[11px] leading-relaxed block ${columns[2].isExpanded ? 'break-words' : 'line-clamp-2'}`} title={ticket.location || ''}>{ticket.location || '—'}</span>
                       </td>
 
                       {/* 4. Contact */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px' }}>
+                      <td 
+                        id={`cell-${ticket.id}-3`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(3)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px',
+                          width: columns[3].w, minWidth: columns[3].w, maxWidth: columns[3].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 3 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         <FormatPhone raw={ticket.contactPhone} />
                       </td>
 
                       {/* 5. Unit/Brand */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px' }}>
+                      <td 
+                        id={`cell-${ticket.id}-4`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(4)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px',
+                          width: columns[4].w, minWidth: columns[4].w, maxWidth: columns[4].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 4 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {(() => {
                           let parsedDetails: any = null
                           if (ticket.acDetails) {
@@ -1462,8 +1657,8 @@ export default function ClientMasterlist() {
                           if (brand || capacity || sku) {
                             return (
                               <div className="flex flex-col gap-0.5 font-semibold">
-                                {(brand || capacity) && <span style={{ color: textPrimary }}>{brand} {capacity}</span>}
-                                {sku && <span className="text-[10px] text-slate-400">{sku}</span>}
+                                {(brand || capacity) && <span style={{ color: textPrimary }} className={columns[4].isExpanded ? "break-words" : "truncate block"}>{brand} {capacity}</span>}
+                                {sku && <span className="text-[10px] text-slate-400 truncate block">{sku}</span>}
                               </div>
                             )
                           }
@@ -1472,26 +1667,70 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 6. DLR/Store */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted }}>
-                        <span className="font-semibold">{storeStyle.label}</span>
+                      <td 
+                        id={`cell-${ticket.id}-5`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(5)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted,
+                          width: columns[5].w, minWidth: columns[5].w, maxWidth: columns[5].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 5 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
+                        <span className="font-semibold truncate block">{storeStyle.label}</span>
                       </td>
 
                       {/* 6b. Relayed Sched */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted }}>
+                      <td 
+                        id={`cell-${ticket.id}-6`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(6)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted,
+                          width: columns[6].w, minWidth: columns[6].w, maxWidth: columns[6].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 6 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {ticket.serviceType ? (
-                          <span className="font-semibold uppercase text-[10px]">{ticket.serviceType}</span>
+                          <span className="font-semibold uppercase text-[10px] truncate block">{ticket.serviceType}</span>
                         ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
                       </td>
 
                       {/* 6c. Commit */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted }}>
+                      <td 
+                        id={`cell-${ticket.id}-7`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(7)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted,
+                          width: columns[7].w, minWidth: columns[7].w, maxWidth: columns[7].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 7 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {ticket.commitType ? (
-                          <span className="font-semibold uppercase text-[10px]">{ticket.commitType}</span>
+                          <span className={`font-semibold uppercase text-[10px] block ${columns[7].isExpanded ? 'break-words' : 'truncate'}`}>{ticket.commitType}</span>
                         ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
                       </td>
 
                       {/* 8. Relayed Date */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                      <td 
+                        id={`cell-${ticket.id}-8`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(8)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
+                          width: columns[8].w, minWidth: columns[8].w, maxWidth: columns[8].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 8 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {(() => {
                           let parsedDetails: any = null
                           if (ticket.acDetails) {
@@ -1512,7 +1751,18 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 9. Preferred Date */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                      <td 
+                        id={`cell-${ticket.id}-9`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(9)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
+                          width: columns[9].w, minWidth: columns[9].w, maxWidth: columns[9].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 9 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {(() => {
                           if (!ticket.preferredDate) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
                           try {
@@ -1526,7 +1776,18 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 10. Final Date */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px' }}>
+                      <td 
+                        id={`cell-${ticket.id}-10`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(10)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
+                          width: columns[10].w, minWidth: columns[10].w, maxWidth: columns[10].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 10 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         {(() => {
                           let parsedDetails: any = null
                           if (ticket.acDetails) {
@@ -1547,14 +1808,36 @@ export default function ClientMasterlist() {
                       </td>
 
                       {/* 11. Remarks */}
-                      <td style={{ padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, minWidth: 180 }}>
-                        <span className="line-clamp-2 text-[11px] leading-relaxed" title={ticket.remarksUpdate || ticket.description || ''}>
+                      <td 
+                        id={`cell-${ticket.id}-11`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(11)
+                        }}
+                        style={{
+                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted,
+                          width: columns[11].w, minWidth: columns[11].w, maxWidth: columns[11].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 11 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
+                        <span className={`text-[11px] leading-relaxed block ${columns[11].isExpanded ? 'break-words' : 'line-clamp-2'}`} title={ticket.remarksUpdate || ticket.description || ''}>
                           {ticket.remarksUpdate || ticket.description || '—'}
                         </span>
                       </td>
 
                       {/* 16. Actions */}
-                      <td style={{ padding: '8px 10px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                      <td 
+                        id={`cell-${ticket.id}-12`}
+                        onClick={() => {
+                          setSelectedPreviewTicket(ticket)
+                          setSelectedColIndex(12)
+                        }}
+                        style={{
+                          padding: '8px 10px', textAlign: 'right',
+                          width: columns[12].w, minWidth: columns[12].w, maxWidth: columns[12].w,
+                          transition: 'all 0.15s ease-in-out',
+                          boxShadow: isSelected && selectedColIndex === 12 ? 'inset 0 0 0 2px #10B981' : undefined
+                        }}>
                         <div className="flex justify-end gap-1.5">
                           <button type="button" onClick={() => openDrawer(ticket)}
                             className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
@@ -2713,11 +2996,18 @@ export default function ClientMasterlist() {
                           {/* Name & phone */}
                           <div className="flex-1 min-w-0" style={{ minWidth: 120, maxWidth: 160 }}>
                             <div className="font-extrabold text-xs truncate" style={{ color: textPrimary }}>{item.customerName}</div>
-                            {item.contactPhone && (
-                              <div className="text-[10px] text-emerald-500 font-bold flex items-center gap-0.5">
-                                <Phone className="w-2.5 h-2.5" /><FormatPhone raw={item.contactPhone} />
-                              </div>
-                            )}
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              {item.contactPhone && (
+                                <div className="text-[10px] text-emerald-500 font-bold flex items-center gap-0.5">
+                                  <Phone className="w-2.5 h-2.5" /><FormatPhone raw={item.contactPhone} />
+                                </div>
+                              )}
+                              {item.controlNumber && (
+                                <span className="text-[9px] font-black font-mono text-slate-400 dark:text-slate-500 block truncate">
+                                  {item.controlNumber}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Tags */}
@@ -2804,131 +3094,7 @@ export default function ClientMasterlist() {
         )
       })()}
 
-      {/* ── Quick Action Hub / Ticket Preview Modal ──────────────── */}
-      {selectedPreviewTicket && !isViewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            
-            {/* Header */}
-            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <div>
-                <span className="text-[9px] font-black uppercase tracking-widest text-[#10B981]">Quick Actions</span>
-                <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Ticket Hub</h3>
-              </div>
-              <button onClick={() => setSelectedPreviewTicket(null)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Content Body */}
-            <div className="p-6 flex flex-col gap-4">
-              {/* Customer summary */}
-              <div>
-                <h4 className="text-lg font-bold" style={{ color: textPrimary }}>
-                  {selectedPreviewTicket.customerName || 'Direct Client'}
-                </h4>
-                {selectedPreviewTicket.controlNumber && (
-                  <span className="text-[10px] font-bold font-mono tracking-wider text-slate-400 dark:text-slate-500 block mt-0.5">
-                    CONTROL #: {selectedPreviewTicket.controlNumber}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-3 text-xs">
-                {/* Status Row */}
-                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
-                  <span className="font-semibold" style={{ color: textMuted }}>Status</span>
-                  <div className="flex flex-col items-end gap-1">
-                    {(() => {
-                      const isCancelled = selectedPreviewTicket.status.toUpperCase() === 'CANCELLED'
-                      const isInstalled = selectedPreviewTicket.status.toUpperCase() === 'COMPLETED' || !!(selectedPreviewTicket.installationCharges && selectedPreviewTicket.installationCharges > 0)
-                      const isAssigned = !!(selectedPreviewTicket.assignedTo || selectedPreviewTicket.branchId)
-                      const status = (selectedPreviewTicket.status || '').toUpperCase()
-
-                      if (isCancelled) {
-                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
-                      }
-                      if (isInstalled) {
-                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
-                      }
-                      if (status === 'IN_PROGRESS') {
-                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">In Progress</span>
-                      }
-                      if (status === 'ON_THE_WAY') {
-                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">On the Way</span>
-                      }
-                      if (status === 'ASSIGNED' || isAssigned) {
-                        return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
-                      }
-                      return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
-                    })()}
-                    {selectedPreviewTicket.branchId && (
-                      <span className="text-[9px] font-bold text-slate-400">
-                        {resolveBranch(selectedPreviewTicket.branchId)?.name} Branch
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Destination Row */}
-                <div className="flex flex-col gap-1 py-1 border-b" style={{ borderColor: border }}>
-                  <span className="font-semibold" style={{ color: textMuted }}>Destination</span>
-                  <span className="font-medium" style={{ color: textPrimary }}>{selectedPreviewTicket.location || '—'}</span>
-                </div>
-
-                {/* Contact Row */}
-                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
-                  <span className="font-semibold" style={{ color: textMuted }}>Contact No.</span>
-                  <div className="text-emerald-500 font-semibold">
-                    <FormatPhone raw={selectedPreviewTicket.contactPhone} />
-                  </div>
-                </div>
-
-                {/* Brand / Unit Row */}
-                <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: border }}>
-                  <span className="font-semibold" style={{ color: textMuted }}>Brand / Unit</span>
-                  <span className="font-semibold" style={{ color: textPrimary }}>
-                    {(() => {
-                      let parsedDetails: any = null
-                      if (selectedPreviewTicket.acDetails) {
-                        try {
-                          parsedDetails = JSON.parse(selectedPreviewTicket.acDetails)
-                        } catch (e) {}
-                      }
-                      const brand = parsedDetails?.brand || ''
-                      const capacity = parsedDetails?.capacity || ''
-                      if (brand || capacity) return `${brand} ${capacity}`.trim()
-                      return selectedPreviewTicket.unitType || '—'
-                    })()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="px-6 py-4 flex gap-2.5 justify-end" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <button type="button" onClick={() => setSelectedPreviewTicket(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900"
-                style={{ borderColor: inputBorder, color: textMuted }}>
-                Cancel
-              </button>
-              <button type="button" onClick={() => setIsViewModalOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-90"
-                style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
-                <Eye className="w-3.5 h-3.5" /> View Details
-              </button>
-              <button type="button" onClick={() => { openDrawer(selectedPreviewTicket); setSelectedPreviewTicket(null); }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                <Wrench className="w-3.5 h-3.5" /> Edit Ticket
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* ── Read-only Service Job Sheet Modal ──────────────────── */}
       {isViewModalOpen && selectedPreviewTicket && (
@@ -3217,6 +3383,26 @@ export default function ClientMasterlist() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ── Right-click context menu ─────────────────────────────────── */}
+      {contextMenu && (
+        <div className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
+             onClick={e => e.stopPropagation()}>
+          <div className="rounded-xl shadow-2xl overflow-hidden min-w-[160px]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-blue-500/10"
+                    style={{ color: textPrimary }}
+                    onClick={() => { setSelectedPreviewTicket(contextMenu.ticket); setIsViewModalOpen(true); setContextMenu(null) }}>
+              <Eye className="w-3.5 h-3.5 text-blue-500" /> View details
+            </button>
+            <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-[#10B981]/10"
+                    style={{ color: textPrimary }}
+                    onClick={() => { openDrawer(contextMenu.ticket); setContextMenu(null) }}>
+              <Edit3 className="w-3.5 h-3.5 text-[#10B981]" /> Edit ticket
+            </button>
           </div>
         </div>
       )}
