@@ -3,7 +3,7 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin, Wrench, Calendar,
   ChevronDown, Plus, CheckCircle2, Clock, AlertCircle, Package, FileUp, Filter,
-  Users, XCircle, Printer, Eye
+  Users, XCircle, Printer, Eye, Phone
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -2451,7 +2451,7 @@ export default function ClientMasterlist() {
       {isExcelModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}>
-          <div className="w-full max-w-5xl rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+          <div className="w-full max-w-6xl rounded-2xl flex flex-col shadow-2xl overflow-hidden"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}>
 
             {/* Header */}
@@ -2463,7 +2463,9 @@ export default function ClientMasterlist() {
                   </div>
                   <div>
                     <h3 className="font-black text-sm" style={{ color: textPrimary }}>Spreadsheet Ingestion Preview</h3>
-                    <p className="text-[10px]" style={{ color: textMuted }}>{excelPreview.length} client records parsed — verify before importing</p>
+                    <p className="text-[11px]" style={{ color: textMuted }}>
+                      <span className="font-bold" style={{ color: textPrimary }}>{excelPreview.length}</span> client records parsed ({excelPreview.filter(x => x.serviceType === 'S/I').length} S/I, {excelPreview.filter(x => x.serviceType === 'SURVEY').length} Survey) • Verify and assign to branch below
+                    </p>
                   </div>
                 </div>
                 <button type="button" onClick={() => { setExcelPreview([]); setIsExcelModalOpen(false); setImportTargetBranchId('') }}
@@ -2473,49 +2475,123 @@ export default function ClientMasterlist() {
               </div>
             </div>
 
-            {/* Table */}
-            <div className="flex-1 overflow-auto">
-              <table className="w-full text-left text-xs min-w-[1400px]">
-                <thead>
-                  <tr style={{ backgroundColor: inputBg, color: textMuted, borderBottom: `1px solid ${border}` }}
-                    className="font-black uppercase tracking-wider text-[9px]">
-                    <th className="px-4 py-3 w-[150px]">Priority Tag</th>
-                    <th className="px-4 py-3 w-[200px]">Client Name</th>
-                    <th className="px-4 py-3 w-[250px]">Address</th>
-                    <th className="px-4 py-3 w-[120px]">District</th>
-                    <th className="px-4 py-3 w-[120px]">Phone</th>
-                    <th className="px-4 py-3 w-[120px]">AC Type</th>
-                    <th className="px-4 py-3 w-[140px]">Store Source</th>
-                    <th className="px-4 py-3 w-[120px]">Service Type</th>
-                    <th className="px-4 py-3 w-[120px]">Control # / SI</th>
-                    <th className="px-4 py-3 w-[250px]">Update / Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {excelPreview.map((item, index) => (
-                    <tr key={item.id} style={{ borderBottom: index < excelPreview.length - 1 ? `1px solid ${border}` : 'none' }}>
-                      <td className="px-4 py-2.5 font-semibold">
-                        {item.priorityTag ? (
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                            item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-red-500/10 text-red-500' :
-                            item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500' :
-                            'bg-blue-500/10 text-blue-500'
-                          }`}>{item.priorityTag}</span>
-                        ) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.customerName}</td>
-                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.location}</td>
-                      <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.district || '—'}</td>
-                      <td className="px-4 py-2.5 text-emerald-500"><FormatPhone raw={item.contactPhone} /></td>
-                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.unitType}</td>
-                      <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.sourceVendor}</td>
-                      <td className="px-4 py-2.5 font-bold" style={{ color: textPrimary }}>{item.serviceType}</td>
-                      <td className="px-4 py-2.5 font-mono font-bold" style={{ color: textPrimary }}>{item.controlNumber || '—'}</td>
-                      <td className="px-4 py-2.5" style={{ color: textMuted }}>{item.remarksUpdate || item.description || '—'}</td>
-                    </tr>
+            {/* Cards Grid */}
+            <div className="flex-1 overflow-auto p-6 bg-slate-50/55 dark:bg-slate-950/20">
+              {excelPreview.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <AlertCircle className="w-10 h-10 text-slate-400 mb-3" />
+                  <p className="text-sm font-black" style={{ color: textMuted }}>No parsed records remaining</p>
+                  <p className="text-xs mt-1" style={{ color: textMuted }}>Close this modal and upload another sheet if needed.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {excelPreview.map((item) => (
+                    <div key={item.id} className="relative rounded-2xl flex flex-col p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
+                      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                      
+                      {/* Priority Tag, Service Type & Trash Action */}
+                      <div className="flex items-center justify-between mb-3.5 gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.priorityTag ? (
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                              item.priorityTag.toUpperCase().includes('MORNING') ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' :
+                              item.priorityTag.toUpperCase().includes('OLD') ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                              'bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                            }`}>
+                              {item.priorityTag}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                              Standard Priority
+                            </span>
+                          )}
+
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                            item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                            item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' :
+                            'bg-slate-500/10 text-slate-500 border border-slate-500/20'
+                          }`}>
+                            {item.serviceType}
+                          </span>
+                        </div>
+
+                        <button type="button" onClick={() => setExcelPreview(prev => prev.filter(x => x.id !== item.id))}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all shrink-0" title="Remove from list">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Client Info Block */}
+                      <div className="mb-4">
+                        <div className="flex items-start gap-2">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-blue-500/10 text-blue-500 font-extrabold text-xs">
+                            {item.customerName ? item.customerName.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-extrabold text-sm truncate" style={{ color: textPrimary }} title={item.customerName}>{item.customerName}</h4>
+                            {item.contactPhone && (
+                              <div className="flex items-center gap-1 mt-0.5 text-emerald-500 text-xs font-bold">
+                                <Phone className="w-3 h-3 text-emerald-500" />
+                                <FormatPhone raw={item.contactPhone} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Meta Info Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-[11px] mb-4 p-2.5 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+                        <div>
+                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>AC / Unit Type</span>
+                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.unitType || 'Split AC'}>{item.unitType || 'Split AC'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Store / Vendor</span>
+                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.sourceVendor || 'Direct'}>{item.sourceVendor || 'Direct'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Control # / SI</span>
+                          <span className="font-mono font-bold block truncate mt-0.5" style={{ color: textPrimary }} title={item.controlNumber || '—'}>{item.controlNumber || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[9px] uppercase font-black" style={{ color: textMuted }}>Charge (Mode)</span>
+                          <span className="font-bold block truncate mt-0.5" style={{ color: textPrimary }}>
+                            {item.installationCharges ? `₱${item.installationCharges.toLocaleString()}` : 'Free'} 
+                            {item.modeOfPayment ? ` (${item.modeOfPayment})` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Address & Location */}
+                      <div className="mb-4 flex items-start gap-1.5 text-xs">
+                        <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          {item.district && (
+                            <span className="inline-block px-1.5 py-0.2 bg-blue-500/10 text-blue-500 rounded text-[9px] font-black uppercase mb-1 mr-1">
+                              {item.district}
+                            </span>
+                          )}
+                          <span className="text-[11px] leading-relaxed block" style={{ color: textMuted }}>{item.location || 'No address provided'}</span>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="h-px w-full mb-3" style={{ backgroundColor: border }}></div>
+
+                      {/* Description/Remarks box */}
+                      <div className="mt-auto">
+                        <div className="rounded-lg p-2 text-[10px] italic leading-normal" style={{ backgroundColor: inputBg, color: textMuted }}>
+                          <span className="font-black uppercase text-[8px] block not-italic mb-0.5 tracking-wider">Remarks / Instructions</span>
+                          <span className="line-clamp-2" title={item.remarksUpdate || item.description || 'No remarks provided'}>
+                            {item.remarksUpdate || item.description || 'No remarks provided'}
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
