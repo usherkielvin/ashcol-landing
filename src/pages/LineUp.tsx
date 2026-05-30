@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
-  ScanLine, ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
+  ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
   ChevronDown, MoreVertical, Camera, Copy, Save, Check,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
