@@ -192,14 +192,29 @@ export default function LineUp() {
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
+  const [lineupNotes, setLineupNotes] = useState('')
+  const [notesRecord, setNotesRecord] = useState<LineUpRow | null>(null)
+
   // ── Data ─────────────────────────────────────────────────────────────────
 
   const fetchLineup = useCallback(async () => {
     // Fallback/placeholder using local storage first
     const all = lsLoad()
     let filtered = branchId
-      ? all.filter(r => r.lineupDate === date && r.branchId === branchId).sort((a, b) => a.sortOrder - b.sortOrder)
+      ? all.filter(r => r.lineupDate === date && r.branchId === branchId)
       : []
+
+    // Extract notes from cache
+    const cachedNotes = filtered.find(r => r.service === '__NOTES__')
+    if (cachedNotes) {
+      setLineupNotes(cachedNotes.remarks || '')
+      setNotesRecord(cachedNotes)
+    } else {
+      setLineupNotes('')
+      setNotesRecord(null)
+    }
+
+    filtered = filtered.filter(r => r.service !== '__NOTES__').sort((a, b) => a.sortOrder - b.sortOrder)
     if (filtered.length === 0 && branchId) {
       filtered = DEFAULT_PREENCODED_ROWS(date, branchId)
     }
@@ -215,8 +230,19 @@ export default function LineUp() {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
-          if (data.length > 0) {
-            setRows(data)
+          // Extract notes from backend data
+          const serverNotes = data.find(r => r.service === '__NOTES__')
+          if (serverNotes) {
+            setLineupNotes(serverNotes.remarks || '')
+            setNotesRecord(serverNotes)
+          } else {
+            setLineupNotes('')
+            setNotesRecord(null)
+          }
+
+          const serverRows = data.filter(r => r.service !== '__NOTES__')
+          if (serverRows.length > 0) {
+            setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
           } else {
             setRows(DEFAULT_PREENCODED_ROWS(date, branchId))
           }
@@ -233,6 +259,67 @@ export default function LineUp() {
     void fetchLineup()
   }, [fetchLineup])
 
+  const handleUpdateNotes = (val: string) => {
+    setLineupNotes(val)
+  }
+
+  const handleSaveNotes = async () => {
+    if (!branchId) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    
+    if (!notesRecord) {
+      const newId = `notes-${Date.now()}`
+      const newRecord: LineUpRow = {
+        id: newId,
+        lineupDate: date,
+        branchId: branchId,
+        service: '__NOTES__',
+        driverName: '',
+        driverTime: '',
+        installerName: '',
+        installerTime: '',
+        route: '',
+        remarks: lineupNotes,
+        sortOrder: -99
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/v1/lineup`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord),
+        })
+        if (res.ok) {
+          const saved = await res.json() as LineUpRow
+          setNotesRecord(saved)
+          
+          const all = lsLoad()
+          lsSave([...all, saved])
+        }
+      } catch (e) {
+        console.error("Failed to save notes:", e)
+      }
+    } else {
+      const updatedRecord = { ...notesRecord, remarks: lineupNotes }
+      try {
+        const res = await fetch(`${API_BASE_URL}/v1/lineup/${notesRecord.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedRecord),
+        })
+        if (res.ok) {
+          const saved = await res.json() as LineUpRow
+          setNotesRecord(saved)
+          
+          const all = lsLoad()
+          const idx = all.findIndex(r => r.id === notesRecord.id)
+          if (idx >= 0) all[idx] = saved; else all.push(saved)
+          lsSave(all)
+        }
+      } catch (e) {
+        console.error("Failed to save notes:", e)
+      }
+    }
+  }
 
   const saveCell = async (row: LineUpRow, field: keyof LineUpRow, val: string, shouldClose = true) => {
     if (shouldClose) {
@@ -330,7 +417,7 @@ export default function LineUp() {
     field: keyof LineUpRow,
     options: string[],
     style: React.CSSProperties,
-    placeholder = 'Double click to edit...'
+    placeholder = 'Click to edit...'
   ) => {
     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
     const value = row[field] as string || ''
@@ -356,17 +443,11 @@ export default function LineUp() {
         e.preventDefault()
         void navigateCell(row, field, 'DOWN')
       } else if (e.key === 'ArrowLeft') {
-        const input = e.currentTarget
-        if (input.selectionStart === 0 && input.selectionEnd === 0) {
-          e.preventDefault()
-          void navigateCell(row, field, 'LEFT')
-        }
+        e.preventDefault()
+        void navigateCell(row, field, 'LEFT')
       } else if (e.key === 'ArrowRight') {
-        const input = e.currentTarget
-        if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
-          e.preventDefault()
-          void navigateCell(row, field, 'RIGHT')
-        }
+        e.preventDefault()
+        void navigateCell(row, field, 'RIGHT')
       }
     }
 
@@ -381,7 +462,15 @@ export default function LineUp() {
     if (isEditing) {
       const datalistId = `list-${field}-${row.id}`
       return (
-        <td style={{ border: `1px solid ${border}`, padding: '4px 8px', ...style }}>
+        <td
+          style={{
+            border: `1px solid ${border}`,
+            padding: '2px 4px',
+            ...style,
+            boxShadow: 'inset 0 0 0 2px #10B981',
+            backgroundColor: isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.05)'
+          }}
+        >
           <input
             list={datalistId}
             value={tempValue}
@@ -391,8 +480,8 @@ export default function LineUp() {
             onFocus={e => e.currentTarget.select()}
             autoFocus
             placeholder={placeholder}
-            className="w-full px-2 py-1.5 text-xs font-semibold rounded border outline-none"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            className="w-full px-2 py-1.5 text-xs font-semibold rounded border-none bg-transparent outline-none"
+            style={{ color: textPrimary }}
           />
           {options.length > 0 && (
             <datalist id={datalistId}>
@@ -407,11 +496,11 @@ export default function LineUp() {
 
     return (
       <td
-        onDoubleClick={() => {
+        onClick={() => {
           setEditingCell({ rowId: row.id, field })
           setTempValue(value)
         }}
-        title="Double-click to edit inline"
+        title="Click to edit inline"
         className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
         style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}
       >
@@ -517,6 +606,17 @@ export default function LineUp() {
       } catch (err: any) {
         failedCount++
         lastError = err.message || 'Connection error'
+      }
+    }
+
+    if (notesRecord && !notesRecord.id.startsWith('local-pre-')) {
+      try {
+        await fetch(`${API_BASE_URL}/v1/lineup/${notesRecord.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      } catch (err: any) {
+        console.error("Failed to delete notes during clear all:", err)
       }
     }
 
@@ -1060,6 +1160,27 @@ export default function LineUp() {
             })}
           </div>
         )}
+
+        {/* Mobile Notes Card */}
+        {rows.length > 0 && (
+          <div className="rounded-2xl p-4 flex flex-col gap-2 mt-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <span className="text-[10px] font-black uppercase tracking-wider block" style={{ color: textMuted }}>Encoder Notes</span>
+            {canEdit ? (
+              <textarea
+                value={lineupNotes}
+                onChange={e => handleUpdateNotes(e.target.value)}
+                onBlur={handleSaveNotes}
+                placeholder="Type custom comments/notes (e.g. SIR ROMMEL - DAY OFF)..."
+                className="w-full p-2.5 text-xs font-bold rounded-xl border outline-none resize-none min-h-[80px]"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#EF4444' }}
+              />
+            ) : (
+              <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444' }}>
+                {lineupNotes || '—'}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════
@@ -1199,35 +1320,41 @@ export default function LineUp() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row, idx) => (
-                    <tr key={row.id}
-                      style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent', borderBottom: `1px solid ${border}` }}
-                      className="transition-colors"
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#101B30')}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent')}>
-                      {renderEditableTd(row, 'service', finalVehicleOptions, { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
-                      {renderEditableTd(row, 'driverName', finalDriverOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                      {renderEditableTd(row, 'driverTime', ['8:00AM', '7:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                      {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                      {renderEditableTd(row, 'installerTime', ['7:00AM', '8:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                      {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600 }, "e.g. QC - MANILA")}
-                      {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, "e.g. INSTALL - INSTALL (3 UNITS)")}
-                      {canEdit && (
-                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }} title="Edit inline"
-                              className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(row)} title="Delete"
-                              className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 text-red-400">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
+                  rows.map((row, idx) => {
+                    const isRowSelected = editingCell?.rowId === row.id
+                    const defaultBg = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent'
+                    const selectedBg = isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.1)'
+                    const hoverBgColor = isLight ? '#f8fafc' : '#101B30'
+                    return (
+                      <tr key={row.id}
+                        style={{ backgroundColor: isRowSelected ? selectedBg : defaultBg, borderBottom: `1px solid ${border}` }}
+                        className="transition-colors"
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isRowSelected ? selectedBg : hoverBgColor)}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = isRowSelected ? selectedBg : defaultBg)}>
+                        {renderEditableTd(row, 'service', finalVehicleOptions, { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'driverName', finalDriverOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'driverTime', ['8:00AM', '7:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'installerTime', ['7:00AM', '8:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600 }, "e.g. QC - MANILA")}
+                        {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, "e.g. INSTALL - INSTALL (3 UNITS)")}
+                        {canEdit && (
+                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }} title="Edit inline"
+                                className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400">
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(row)} title="Delete"
+                                className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 text-red-400">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -1241,7 +1368,35 @@ export default function LineUp() {
           </div>
 
           {/* Summary boxes */}
-          <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'flex-end', borderTop: `1px solid ${border}` }}>
+          <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: `1px solid ${border}` }}>
+            {/* Custom Notes / Comments Section */}
+            <div className="w-[45%] flex flex-col gap-1.5 align-left text-left print:block">
+              {canEdit ? (
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider mb-1 block print:hidden" style={{ color: textMuted }}>Encoder Notes (will print)</label>
+                  <textarea
+                    value={lineupNotes}
+                    onChange={e => handleUpdateNotes(e.target.value)}
+                    onBlur={handleSaveNotes}
+                    placeholder="Type custom comments/notes here (e.g. SIR ROMMEL - DAY OFF) - click outside to save..."
+                    className="w-full p-2.5 text-xs font-bold rounded-xl border outline-none resize-none min-h-[80px] print:hidden"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#EF4444' }}
+                  />
+                  {/* For printing purposes when in edit mode */}
+                  <div className="hidden print:block text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
+                    {lineupNotes}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider block print:hidden" style={{ color: textMuted }}>Notes</span>
+                  <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
+                    {lineupNotes || '—'}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <table style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
               <tbody>
                 <tr style={{ backgroundColor: isLight ? '#e8f5e9' : 'rgba(16,185,129,0.1)' }}>

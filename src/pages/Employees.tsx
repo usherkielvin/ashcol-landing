@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Search, MoreVertical, Wrench, Mail, Phone, RefreshCw, UserCheck, Building2, CheckCircle, XCircle, Pencil, Trash2, Power, X, Plus, Copy, Check } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatRole } from '../utils/api'
 
 interface Employee {
   id: string
@@ -464,7 +464,7 @@ export default function Employees() {
                   <td className="px-6 py-4">
                     <div className="inline-flex items-center gap-1.5 font-black uppercase tracking-[0.05em] text-[10px] px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
                       <UserCheck className="w-3 h-3" />
-                      {e.jobTitle || e.role}
+                      {e.jobTitle || formatRole(e.role)}
                     </div>
                   </td>
                   {!isManager && (
@@ -614,8 +614,8 @@ export default function Employees() {
                 <option value="Coordinator">Coordinator</option>
                 <option value="Payroll">Payroll</option>
                 <option value="Inventory">Inventory</option>
-                <option value="MANAGER">Manager</option>
-                {isAdmin && <option value="ADMIN">Admin</option>}
+                <option value="MANAGER">OIC / Officer in Charge</option>
+                {isAdmin && <option value="ADMIN">Manager</option>}
               </select>
             </div>
             <div className="flex gap-3 pt-2">
