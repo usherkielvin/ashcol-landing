@@ -492,7 +492,6 @@ export default function LineUp() {
     }
 
     if (isEditing) {
-      const datalistId = `list-${field}-${row.id}`
       return (
         <td
           style={{
@@ -504,7 +503,6 @@ export default function LineUp() {
           }}
         >
           <input
-            list={datalistId}
             value={tempValue}
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
@@ -514,13 +512,6 @@ export default function LineUp() {
             className="w-full px-2 py-1.5 text-xs font-semibold rounded border-none bg-transparent outline-none"
             style={{ color: textPrimary }}
           />
-          {options.length > 0 && (
-            <datalist id={datalistId}>
-              {options.map(opt => (
-                <option key={opt} value={opt} />
-              ))}
-            </datalist>
-          )}
         </td>
       )
     }
@@ -566,14 +557,12 @@ export default function LineUp() {
     const cellBg = isLight ? '#ffffff' : '#0F172A'
 
     if (isEditing) {
-      const datalistId = `m-list-${field}-${row.id}`
       return (
         <div className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: cellBg }}>
           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
             {icon} {label}
           </div>
           <input
-            list={datalistId}
             value={tempValue}
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
@@ -582,13 +571,6 @@ export default function LineUp() {
             className="w-full px-2 py-1 text-xs font-semibold rounded border outline-none mt-1"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           />
-          {options.length > 0 && (
-            <datalist id={datalistId}>
-              {options.map(opt => (
-                <option key={opt} value={opt} />
-              ))}
-            </datalist>
-          )}
         </div>
       )
     }
@@ -1269,15 +1251,14 @@ export default function LineUp() {
         {/* Mobile Notes Card */}
         {rows.length > 0 && (
           <div className="rounded-2xl p-4 flex flex-col gap-2 mt-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <span className="text-[10px] font-black uppercase tracking-wider block" style={{ color: textMuted }}>Encoder Notes</span>
             {canEdit ? (
               <textarea
                 value={lineupNotes}
                 onChange={e => handleUpdateNotes(e.target.value)}
                 onBlur={handleSaveNotes}
                 placeholder="Type custom comments/notes (e.g. SIR ROMMEL - DAY OFF)..."
-                className="w-full p-2.5 text-xs font-bold rounded-xl border outline-none resize-none min-h-[80px]"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#EF4444' }}
+                className="w-full text-xs font-bold outline-none resize-none min-h-[80px]"
+                style={{ backgroundColor: 'transparent', border: 'none', padding: 0, color: '#EF4444' }}
               />
             ) : (
               <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444' }}>
@@ -1616,17 +1597,17 @@ export default function LineUp() {
             <div className="w-[45%] flex flex-col gap-1 print:block">
               {canEdit ? (
                 <>
-                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] print:hidden" style={{ color: textMuted }}>Notes</span>
                   <textarea
                     value={lineupNotes}
                     onChange={e => handleUpdateNotes(e.target.value)}
                     onBlur={handleSaveNotes}
                     placeholder="e.g. SIR ROMMEL - DAY OFF"
                     rows={3}
-                    className="w-full px-3 py-2 text-xs font-bold rounded-lg border outline-none resize-none print:hidden"
+                    className="w-full text-xs font-bold outline-none resize-none print:hidden"
                     style={{
                       backgroundColor: 'transparent',
-                      borderColor: inputBorder,
+                      border: 'none',
+                      padding: 0,
                       color: '#EF4444',
                       lineHeight: '1.6',
                     }}
