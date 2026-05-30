@@ -7,3 +7,12 @@ export function resolveImageUrl(path: string | null | undefined): string {
   if (path.startsWith('http')) return path
   return `${SERVER_BASE_URL}${path}`
 }
+
+/** Maps backend roles to user-friendly titles */
+export function formatRole(role?: string): string {
+  if (!role) return ''
+  const r = role.toUpperCase()
+  if (r === 'MANAGER') return 'OIC / Officer in Charge'
+  if (r === 'ADMIN') return 'Manager'
+  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()
+}

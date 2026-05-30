@@ -110,6 +110,9 @@ export default function LineUp() {
   const [scanError, setScanError]     = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
+  const isNavigatingRef = useRef(false)
+  const mobileDateInputRef = useRef<HTMLInputElement>(null)
+  const desktopDateInputRef = useRef<HTMLInputElement>(null)
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
 
@@ -231,8 +234,10 @@ export default function LineUp() {
   }, [fetchLineup])
 
 
-  const saveCell = async (row: LineUpRow, field: keyof LineUpRow, val: string) => {
-    setEditingCell(null)
+  const saveCell = async (row: LineUpRow, field: keyof LineUpRow, val: string, shouldClose = true) => {
+    if (shouldClose) {
+      setEditingCell(null)
+    }
     const oldVal = row[field];
     if (oldVal === val) return
     const updatedRow = { ...row, [field]: val }
@@ -270,6 +275,56 @@ export default function LineUp() {
     }
   }
 
+  const navigateCell = async (
+    currentRow: LineUpRow,
+    currentField: keyof LineUpRow,
+    direction: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT'
+  ) => {
+    isNavigatingRef.current = true
+    void saveCell(currentRow, currentField, tempValue, false)
+
+    const rowIndex = rows.findIndex(r => r.id === currentRow.id)
+    if (rowIndex === -1) {
+      isNavigatingRef.current = false
+      return
+    }
+
+    const FIELDS: (keyof LineUpRow)[] = [
+      'service', 'driverName', 'driverTime', 'installerName', 'installerTime', 'route', 'remarks'
+    ]
+    const fieldIndex = FIELDS.indexOf(currentField)
+    if (fieldIndex === -1) {
+      isNavigatingRef.current = false
+      return
+    }
+
+    let nextRowIndex = rowIndex
+    let nextFieldIndex = fieldIndex
+
+    if (direction === 'UP') {
+      nextRowIndex = rowIndex - 1
+    } else if (direction === 'DOWN') {
+      nextRowIndex = rowIndex + 1
+    } else if (direction === 'LEFT') {
+      nextFieldIndex = fieldIndex - 1
+    } else if (direction === 'RIGHT') {
+      nextFieldIndex = fieldIndex + 1
+    }
+
+    if (nextRowIndex >= 0 && nextRowIndex < rows.length && nextFieldIndex >= 0 && nextFieldIndex < FIELDS.length) {
+      const nextRow = rows[nextRowIndex]
+      const nextField = FIELDS[nextFieldIndex]
+      setEditingCell({ rowId: nextRow.id, field: nextField })
+      setTempValue(nextRow[nextField] as string || '')
+    } else {
+      setEditingCell(null)
+    }
+
+    setTimeout(() => {
+      isNavigatingRef.current = false
+    }, 50)
+  }
+
   const renderEditableTd = (
     row: LineUpRow,
     field: keyof LineUpRow,
@@ -281,14 +336,37 @@ export default function LineUp() {
     const value = row[field] as string || ''
 
     const handleBlur = () => {
+      if (isNavigatingRef.current) return
       void saveCell(row, field, tempValue)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
-        void saveCell(row, field, tempValue)
+        e.preventDefault()
+        void navigateCell(row, field, 'DOWN')
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        void navigateCell(row, field, e.shiftKey ? 'LEFT' : 'RIGHT')
       } else if (e.key === 'Escape') {
         setEditingCell(null)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        void navigateCell(row, field, 'UP')
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        void navigateCell(row, field, 'DOWN')
+      } else if (e.key === 'ArrowLeft') {
+        const input = e.currentTarget
+        if (input.selectionStart === 0 && input.selectionEnd === 0) {
+          e.preventDefault()
+          void navigateCell(row, field, 'LEFT')
+        }
+      } else if (e.key === 'ArrowRight') {
+        const input = e.currentTarget
+        if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+          e.preventDefault()
+          void navigateCell(row, field, 'RIGHT')
+        }
       }
     }
 
@@ -310,6 +388,7 @@ export default function LineUp() {
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
+            onFocus={e => e.currentTarget.select()}
             autoFocus
             placeholder={placeholder}
             className="w-full px-2 py-1.5 text-xs font-semibold rounded border outline-none"
@@ -793,10 +872,11 @@ export default function LineUp() {
             <div className="lineup-toolbar">
               {/* Date picker */}
               <div className="lineup-date-control">
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
+                <div onClick={() => mobileDateInputRef.current?.showPicker?.()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full cursor-pointer">
                   <ClipboardList className="w-3.5 h-3.5 shrink-0" />
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                    className="bg-transparent outline-none text-xs font-bold text-white w-full" />
+                  <input ref={mobileDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                    className="bg-transparent outline-none text-xs font-bold text-white w-full cursor-pointer" />
                 </div>
               </div>
 
@@ -1008,11 +1088,12 @@ export default function LineUp() {
               <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
             </div>
             {/* Date */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+            <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
               <ClipboardList className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="bg-transparent outline-none text-xs font-bold" style={{ color: textPrimary }} />
+              <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
             {canEdit && (
               <button type="button" onClick={() => fileInputRef.current?.click()}

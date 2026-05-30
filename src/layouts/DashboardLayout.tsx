@@ -9,7 +9,7 @@ import {
   HardHat, Receipt, CalendarCheck, Scan
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatRole } from '../utils/api'
 import { useNotifications } from '../contexts/NotificationContext'
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -327,8 +327,8 @@ export default function DashboardLayout() {
                 <p className="text-xs font-bold truncate leading-snug" style={{ color: textPrimary }}>
                   {user?.name ?? 'Admin User'}
                 </p>
-                <p className="text-[10px] truncate leading-none capitalize mt-0.5" style={{ color: textMuted }}>
-                  {user?.role ?? 'Administrator'}
+                <p className="text-[10px] truncate leading-none mt-0.5" style={{ color: textMuted }}>
+                  {formatRole(user?.role) || 'Administrator'}
                 </p>
               </div>
             )}
