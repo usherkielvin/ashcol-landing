@@ -78,7 +78,7 @@ export default function DashboardLayout() {
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
     { name: 'Inventory',     path: '/inventory',    icon: Package,           roles: ['admin', 'manager'] },
     { name: 'Analytics',     path: '/analytics',    icon: BarChart2,         roles: ['admin', 'manager'] },
-    { name: 'Audit Report',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff'] },
+    { name: 'Audit Report',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'DTR Scanner',    path: '/dtr-scanner',    icon: Scan,              roles: ['admin', 'manager', 'staff'] },
     { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
     { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -102,7 +102,7 @@ export default function DashboardLayout() {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Line-Up' || link.name === 'Service Report')
+      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Audit Report' || link.name === 'Line-Up' || link.name === 'Service Report')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {

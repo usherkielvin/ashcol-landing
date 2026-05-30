@@ -702,15 +702,14 @@ export default function LineUp() {
     const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-    // 1. Delete existing DB rows for this date+branch (non-local rows)
-    const existingDbRows = rows.filter(r => r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-') && !r.id.startsWith('notes-'))
-    for (const row of existingDbRows) {
-      try {
-        await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      } catch { /* best-effort */ }
+    // 1. Delete existing DB rows for this date+branch (non-local rows) in a single transactional request
+    try {
+      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    } catch (err) {
+      console.error('Failed to clear old lineup rows:', err)
     }
 
     // 2. Optimistically show template rows
@@ -872,6 +871,39 @@ export default function LineUp() {
     })
   }
 
+  const performClearAll = async () => {
+    if (!branchId) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    try {
+      const res = await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        showToast('All lineup entries cleared from database ✓', 'success')
+      } else {
+        showToast('Failed to clear database — removing locally', 'error')
+      }
+    } catch (err: any) {
+      showToast('DB error: ' + (err.message || 'connection failed') + ' — removing locally', 'error')
+    }
+    setRows([])
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__NOTES__'))
+    lsSave(all)
+  }
+
+  const handleClearAllRows = () => {
+    if (!branchId) return
+    setConfirmModal({
+      title: 'Clear Schedule',
+      message: `Are you sure you want to permanently delete all ${rows.length} lineup entries for this date? This cannot be undone.`,
+      confirmText: 'Delete All',
+      cancelText: 'Cancel',
+      type: 'danger',
+      onConfirm: () => { void performClearAll() },
+    })
+  }
+
   // ── Totals ───────────────────────────────────────────────────────────────
 
   const totalUnits    = rows.reduce((acc, r) => { const m = r.remarks?.match(/\((\d+)\s*UNIT/i); return acc + (m ? parseInt(m[1]) : 0) }, 0)
@@ -908,7 +940,6 @@ export default function LineUp() {
       }
       if (parsedRows.length > 0) {
         const capturedToken = token
-        const capturedRows = [...rows]
         setConfirmModal({
           title: 'AI Scanner',
           message: `Scanner found ${parsedRows.length} row${parsedRows.length === 1 ? '' : 's'}. Replace the current lineup for this date?`,
@@ -916,10 +947,13 @@ export default function LineUp() {
           cancelText: 'Cancel',
           type: 'warning',
           onConfirm: async () => {
-            for (const existingRow of capturedRows) {
-              try {
-                await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${capturedToken}` } })
-              } catch (err) { console.error('Failed to delete existing row during scan replacement:', err) }
+            try {
+              await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${capturedToken}` }
+              })
+            } catch (err) {
+              console.error('Failed to clear old lineup rows during scan replacement:', err)
             }
             let savedRows: LineUpRow[] = []
             let failedCount = 0
@@ -1138,10 +1172,13 @@ export default function LineUp() {
 
   const performExcelImport = async (parsedRows: LineUpRow[]) => {
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    for (const existingRow of rows) {
-      try {
-        await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-      } catch (err) { console.error('Failed to delete existing row during import:', err) }
+    try {
+      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    } catch (err) {
+      console.error('Failed to clear old lineup rows during import:', err)
     }
     let failedCount = 0
     let lastErrorMessage = ''
@@ -1355,6 +1392,10 @@ export default function LineUp() {
                             <>
                               <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load Template" color={textMuted}
                                 onClick={() => { handleLoadDefaultTemplate(); setMoreMenuOpen(false) }} />
+                              {rows.length > 0 && (
+                                <DropdownItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Clear Schedule" color="#EF4444"
+                                  onClick={() => { handleClearAllRows(); setMoreMenuOpen(false) }} />
+                              )}
                               <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste Image" color={textMuted} disabled={scanning}
                                 onClick={() => { handlePasteScan(); setMoreMenuOpen(false) }} />
                               <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import Excel" color={textMuted}
@@ -1710,6 +1751,14 @@ export default function LineUp() {
               <button type="button" onClick={handleLoadDefaultTemplate}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-emerald-600 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all hover:scale-105">
                 <ClipboardList className="w-4 h-4" /> Load Template
+              </button>
+            )}
+
+            {/* ── Clear Schedule (standalone) ── */}
+            {canEdit && rows.length > 0 && (
+              <button type="button" onClick={handleClearAllRows}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
+                <Trash2 className="w-4 h-4" /> Clear Schedule
               </button>
             )}
 
