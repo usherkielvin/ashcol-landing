@@ -295,11 +295,13 @@ export default function LineUp() {
   const handleSaveNotes = async () => {
     if (!branchId) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    
-    if (!notesRecord) {
-      const newId = `notes-${Date.now()}`
+
+    // Treat any locally-generated notes id (notes-*) as a new record so we always POST
+    const isNewNotes = !notesRecord || !notesRecord.id || notesRecord.id.startsWith('notes-')
+
+    if (isNewNotes) {
       const newRecord: LineUpRow = {
-        id: newId,
+        id: `notes-${Date.now()}`,
         lineupDate: date,
         branchId: branchId,
         service: '__NOTES__',
@@ -320,7 +322,6 @@ export default function LineUp() {
         if (res.ok) {
           const saved = await res.json() as LineUpRow
           setNotesRecord(saved)
-          
           const all = lsLoad()
           lsSave([...all, saved])
         }
@@ -338,7 +339,6 @@ export default function LineUp() {
         if (res.ok) {
           const saved = await res.json() as LineUpRow
           setNotesRecord(saved)
-          
           const all = lsLoad()
           const idx = all.findIndex(r => r.id === notesRecord.id)
           if (idx >= 0) all[idx] = saved; else all.push(saved)
@@ -659,23 +659,75 @@ export default function LineUp() {
   }
 
   const handleSaveAll = async () => {
+    // 1. Commit the actively-editing cell
     if (editingCell) {
       const activeRow = rows.find(r => r.id === editingCell.rowId)
       if (activeRow) {
         await saveCell(activeRow, editingCell.field, tempValue, true)
       }
     }
+
+    // 2. Persist any rows that haven't been saved to the DB yet (local-* / imported-*)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const unsaved = rows.filter(r => r.id && (r.id.startsWith('local-') || r.id.startsWith('imported-')))
+    if (unsaved.length > 0) {
+      const savedRows: LineUpRow[] = []
+      for (const row of unsaved) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/v1/lineup`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(row),
+          })
+          if (res.ok) {
+            const saved = await res.json() as LineUpRow
+            savedRows.push(saved)
+            setRows(prev => prev.map(r => r.id === row.id ? saved : r))
+          }
+        } catch (err) {
+          console.error('Failed to persist row:', err)
+        }
+      }
+    }
+
+    // 3. Save notes
     await handleSaveNotes()
     showToast("Line-up schedule saved successfully!", "success")
   }
 
-  const performLoadDefaultTemplate = () => {
+  const performLoadDefaultTemplate = async () => {
     if (!branchId) return
     const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
+    // Optimistically show rows immediately
     setRows(defaults)
+    showToast('Template loaded — saving to database…', 'info')
+
+    // Persist every default row to the backend
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const saved: LineUpRow[] = []
+    for (const row of defaults) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/v1/lineup`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(row),
+        })
+        if (res.ok) {
+          const dbRow = await res.json() as LineUpRow
+          saved.push(dbRow)
+          // Swap local id → real DB id as each row comes back
+          setRows(prev => prev.map(r => r.id === row.id ? dbRow : r))
+        } else {
+          saved.push(row)
+        }
+      } catch {
+        saved.push(row)
+      }
+    }
+    // Persist final state to localStorage
     const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-    lsSave([...all, ...defaults])
-    showToast('Default template loaded!', 'success')
+    lsSave([...all, ...saved])
+    showToast('Default template saved to database ✓', 'success')
   }
 
   const handleLoadDefaultTemplate = () => {
@@ -687,10 +739,10 @@ export default function LineUp() {
         confirmText: 'Load Template',
         cancelText: 'Keep Current',
         type: 'warning',
-        onConfirm: performLoadDefaultTemplate,
+        onConfirm: () => { void performLoadDefaultTemplate() },
       })
     } else {
-      performLoadDefaultTemplate()
+      void performLoadDefaultTemplate()
     }
   }
 
@@ -1509,7 +1561,7 @@ export default function LineUp() {
               <button type="button"
                 onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                 <Download className="w-3.5 h-3.5" />
                 Export
                 <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`} />
@@ -1517,25 +1569,29 @@ export default function LineUp() {
               {exportMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
-                  <div className="absolute right-0 top-11 z-50 w-52 rounded-2xl overflow-hidden shadow-2xl"
+                  <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
                     style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="py-1.5">
+                    <div className="py-1">
                       <button type="button"
                         onClick={() => { handleExportExcel(); setExportMenuOpen(false) }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                        style={{ color: '#3B82F6' }}>
-                        <Download className="w-3.5 h-3.5" />
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                        <Download className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                         <div>
                           <div>Export Excel</div>
-                          <div className="text-[10px] font-medium opacity-60">.xlsx spreadsheet</div>
+                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx spreadsheet</div>
                         </div>
                       </button>
                       <button type="button"
                         onClick={() => { handleCopyImage(); setExportMenuOpen(false) }}
                         disabled={copyingImage}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
-                        style={{ color: '#A855F7' }}>
-                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Copy className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
                         <div>
                           <div>Copy Image</div>
                           <div className="text-[10px] font-medium opacity-60">Paste to group chat</div>
@@ -1544,23 +1600,27 @@ export default function LineUp() {
                       <button type="button"
                         onClick={() => { handleSaveImage(); setExportMenuOpen(false) }}
                         disabled={copyingImage}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
-                        style={{ color: '#EC4899' }}>
-                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
                         <div>
                           <div>Save Image</div>
-                          <div className="text-[10px] font-medium opacity-60">Download .png file</div>
+                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Download .png file</div>
                         </div>
                       </button>
                       <div style={{ height: '1px', backgroundColor: border, margin: '4px 16px' }} />
                       <button type="button"
                         onClick={() => { window.print(); setExportMenuOpen(false) }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                        style={{ color: textMuted }}>
-                        <Printer className="w-3.5 h-3.5" />
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                        <Printer className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                         <div>
                           <div>Print</div>
-                          <div className="text-[10px] font-medium opacity-60">Send to printer</div>
+                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Send to printer</div>
                         </div>
                       </button>
                     </div>
