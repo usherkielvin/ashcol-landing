@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ScanLine, ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, MoreVertical,
+  ChevronDown, MoreVertical, Camera, Copy,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
 
 const VEHICLE_OPTIONS = ['STRADA', 'T3', 'FB19', 'T2']
 const DRIVER_OPTIONS = ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC']
@@ -105,9 +106,11 @@ export default function LineUp() {
   const moreMenuRef  = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileRef  = useRef<HTMLInputElement>(null)
+  const printAreaRef = useRef<HTMLDivElement>(null)
   const [scanning, setScanning]       = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scanError, setScanError]     = useState('')
+  const [copyingImage, setCopyingImage] = useState(false)
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
   const isNavigatingRef = useRef(false)
@@ -821,6 +824,68 @@ export default function LineUp() {
     } catch { setScanError('Clipboard access denied. Use the file button instead.') }
   }
 
+  // ── Image Export ─────────────────────────────────────────────────────────
+
+  const captureLineupImage = async (): Promise<HTMLCanvasElement | null> => {
+    if (!printAreaRef.current) return null
+    // Temporarily hide no-print elements
+    const noPrintEls = printAreaRef.current.querySelectorAll<HTMLElement>('.no-print')
+    noPrintEls.forEach(el => { el.style.display = 'none' })
+    try {
+      const canvas = await html2canvas(printAreaRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: isLight ? '#ffffff' : '#0A1120',
+        logging: false,
+      })
+      return canvas
+    } finally {
+      noPrintEls.forEach(el => { el.style.display = '' })
+    }
+  }
+
+  const handleCopyImage = async () => {
+    if (rows.length === 0) { alert('No data to copy!'); return }
+    setCopyingImage(true)
+    try {
+      const canvas = await captureLineupImage()
+      if (!canvas) return
+      canvas.toBlob(async (blob) => {
+        if (!blob) return
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ])
+          alert('✅ Line-up copied as image! Paste it directly into your group chat.')
+        } catch {
+          // Fallback: open in new tab so user can right-click save/copy
+          window.open(canvas.toDataURL('image/png'), '_blank')
+        }
+        setCopyingImage(false)
+      }, 'image/png')
+    } catch (e: any) {
+      alert('Failed to capture image: ' + (e.message || 'Unknown error'))
+      setCopyingImage(false)
+    }
+  }
+
+  const handleSaveImage = async () => {
+    if (rows.length === 0) { alert('No data to export!'); return }
+    setCopyingImage(true)
+    try {
+      const canvas = await captureLineupImage()
+      if (!canvas) return
+      const link = document.createElement('a')
+      link.download = `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch (e: any) {
+      alert('Failed to save image: ' + (e.message || 'Unknown error'))
+    } finally {
+      setCopyingImage(false)
+    }
+  }
+
   // ── Excel ────────────────────────────────────────────────────────────────
 
   const handleExportExcel = () => {
@@ -1226,7 +1291,19 @@ export default function LineUp() {
             <button type="button" onClick={handleExportExcel}
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
               style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
-              <Download className="w-3.5 h-3.5" /> Export
+              <Download className="w-3.5 h-3.5" /> Excel
+            </button>
+            <button type="button" onClick={handleCopyImage} disabled={copyingImage}
+              title="Copy lineup as image — paste directly into Viber/Messenger group chats"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 disabled:opacity-60"
+              style={{ backgroundColor: 'rgba(168,85,247,0.1)', borderColor: 'rgba(168,85,247,0.25)', color: '#A855F7' }}>
+              {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />} Copy Image
+            </button>
+            <button type="button" onClick={handleSaveImage} disabled={copyingImage}
+              title="Save lineup as PNG image file"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 disabled:opacity-60"
+              style={{ backgroundColor: 'rgba(236,72,153,0.1)', borderColor: 'rgba(236,72,153,0.25)', color: '#EC4899' }}>
+              {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />} Save Image
             </button>
             {canEdit && (
               <>
@@ -1259,7 +1336,7 @@ export default function LineUp() {
 
 
         {/* Original Line-Up Sheet */}
-        <div className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
+        <div ref={printAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
           {/* Scan error / preview banners */}
@@ -1300,7 +1377,11 @@ export default function LineUp() {
                   {thOrig('SCHEDULED TIME – IN OF INSTALLER')}
                   {thOrig('ROUTE', true)}
                   {thOrig('REMARKS', true)}
-                  {canEdit && thOrig('ACTIONS')}
+                  {canEdit && <th className="no-print" style={{
+                    border: `1px solid ${border}`, padding: '12px 16px', fontSize: '11px', fontWeight: 800,
+                    textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center',
+                    backgroundColor: isLight ? '#f8fafc' : '#0F172A', color: textMuted, whiteSpace: 'nowrap',
+                  }}>ACTIONS</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1339,7 +1420,7 @@ export default function LineUp() {
                         {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600 }, "e.g. QC - MANILA")}
                         {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, "e.g. INSTALL - INSTALL (3 UNITS)")}
                         {canEdit && (
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                          <td className="no-print" style={{ padding: '8px 12px', textAlign: 'center' }}>
                             <div className="flex items-center justify-center gap-1.5">
                               <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }} title="Edit inline"
                                 className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400">
@@ -1457,6 +1538,7 @@ export default function LineUp() {
           body * { visibility: hidden !important; }
           .print-area, .print-area * { visibility: visible !important; }
           .print-area { position: fixed; inset: 0; margin: 0; padding: 0; border: none !important; }
+          .no-print { display: none !important; }
         }
       `}</style>
     </div>
