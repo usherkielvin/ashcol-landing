@@ -653,6 +653,17 @@ export default function LineUp() {
 
   const handleDelete = async (row: LineUpRow) => {
     if (!window.confirm(`Remove ${row.service} — ${row.installerName} from the line-up?`)) return
+    
+    // Check if it's a local unsaved row (starts with 'local-' or 'imported-')
+    const isLocal = !row.id || row.id.startsWith('local-') || row.id.startsWith('imported-')
+    
+    if (isLocal) {
+      setRows(prev => prev.filter(r => r.id !== row.id))
+      const all = lsLoad().filter(r => r.id !== row.id)
+      lsSave(all)
+      return
+    }
+
     let deleted = false
     let errMsg = ''
     try {
