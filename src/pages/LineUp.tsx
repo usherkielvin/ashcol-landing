@@ -698,12 +698,24 @@ export default function LineUp() {
   const performLoadDefaultTemplate = async () => {
     if (!branchId) return
     const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
-    // Optimistically show rows immediately
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+    // 1. Delete existing DB rows for this date+branch (non-local rows)
+    const existingDbRows = rows.filter(r => r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-') && !r.id.startsWith('notes-'))
+    for (const row of existingDbRows) {
+      try {
+        await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch { /* best-effort */ }
+    }
+
+    // 2. Optimistically show template rows
     setRows(defaults)
     showToast('Template loaded — saving to database…', 'info')
 
-    // Persist every default row to the backend
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    // 3. POST all default rows to the backend
     const saved: LineUpRow[] = []
     for (const row of defaults) {
       try {
@@ -715,7 +727,6 @@ export default function LineUp() {
         if (res.ok) {
           const dbRow = await res.json() as LineUpRow
           saved.push(dbRow)
-          // Swap local id → real DB id as each row comes back
           setRows(prev => prev.map(r => r.id === row.id ? dbRow : r))
         } else {
           saved.push(row)
@@ -724,7 +735,8 @@ export default function LineUp() {
         saved.push(row)
       }
     }
-    // Persist final state to localStorage
+
+    // 4. Sync localStorage
     const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
     lsSave([...all, ...saved])
     showToast('Default template saved to database ✓', 'success')
