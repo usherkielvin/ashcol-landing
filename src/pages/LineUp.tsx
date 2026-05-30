@@ -897,20 +897,62 @@ export default function LineUp() {
   const captureLineupImage = async (): Promise<HTMLCanvasElement | null> => {
     const target = captureAreaRef.current
     if (!target) return null
-    // Temporarily hide no-print elements within the capture area
+
+    // 1. Hide UI-only elements that must not appear in the exported image
     const noPrintEls = target.querySelectorAll<HTMLElement>('.no-print')
     noPrintEls.forEach(el => { el.style.display = 'none' })
+
+    // 2. Strip rounded corners / borders so no sub-pixel clipping artifact appears
+    const savedRadius = target.style.borderRadius
+    const savedBorder = target.style.border
+    const savedShadow = target.style.boxShadow
+    const savedOverflowRoot = target.style.overflow
+    target.style.borderRadius = '0'
+    target.style.border = 'none'
+    target.style.boxShadow = 'none'
+    target.style.overflow = 'visible'
+
+    // 3. Expand overflow-x:auto containers so the full table width is captured
+    const overflowEls = target.querySelectorAll<HTMLElement>('.overflow-x-auto')
+    const savedOverflows: string[] = []
+    overflowEls.forEach(el => {
+      savedOverflows.push(el.style.overflow)
+      el.style.overflow = 'visible'
+      el.style.width = el.scrollWidth + 'px'
+    })
+
+    // 4. Scroll page to top so html2canvas viewport math is clean
+    const prevScrollY = window.scrollY
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    await new Promise(r => requestAnimationFrame(r))
+
+    const bgColor = isLight ? '#ffffff' : '#0A1120'
     try {
       const canvas = await html2canvas(target, {
-        scale: 3,
+        scale: 4,
         useCORS: true,
-        backgroundColor: isLight ? '#ffffff' : '#0A1120',
+        allowTaint: true,
+        backgroundColor: bgColor,
         logging: false,
         scrollX: 0,
-        scrollY: -window.scrollY,
+        scrollY: 0,
+        width: target.scrollWidth,
+        height: target.scrollHeight,
+        windowWidth: target.scrollWidth,
+        windowHeight: target.scrollHeight,
       })
       return canvas
     } finally {
+      // Restore everything
+      target.style.borderRadius = savedRadius
+      target.style.border = savedBorder
+      target.style.boxShadow = savedShadow
+      target.style.overflow = savedOverflowRoot
+      window.scrollTo({ top: prevScrollY, behavior: 'instant' as ScrollBehavior })
+      overflowEls.forEach((el, i) => {
+        el.style.overflow = savedOverflows[i]
+        el.style.width = ''
+      })
       noPrintEls.forEach(el => { el.style.display = '' })
     }
   }
@@ -1180,19 +1222,17 @@ export default function LineUp() {
                   {moreMenuOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-                      <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl overflow-hidden shadow-2xl"
+                      <div className="absolute right-0 top-11 z-50 w-44 rounded-xl overflow-hidden shadow-xl"
                         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                        <div className="py-1.5">
+                        <div className="py-1">
                           {canEdit && (
                             <>
-                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load Template" color="#10B981"
+                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load Template" color={textMuted}
                                 onClick={() => { handleLoadDefaultTemplate(); setMoreMenuOpen(false) }} />
-                              <DropdownItem
-                                icon={scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
-                                label="Scan Image" color="#F59E0B" disabled={scanning}
-                                onClick={() => { scanFileRef.current?.click(); setMoreMenuOpen(false) }} />
-                              <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste Image" color="#F59E0B" disabled={scanning}
+                              <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste Image" color={textMuted} disabled={scanning}
                                 onClick={() => { handlePasteScan(); setMoreMenuOpen(false) }} />
+                              <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import Excel" color={textMuted}
+                                onClick={() => { fileInputRef.current?.click(); setMoreMenuOpen(false) }} />
                             </>
                           )}
                           <DropdownItem icon={<Printer className="w-3.5 h-3.5" />} label="Print" color={textMuted}
@@ -1421,7 +1461,7 @@ export default function LineUp() {
                 <button type="button"
                   onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
                   className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                  style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                   <Upload className="w-3.5 h-3.5" />
                   Import
                   <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${importMenuOpen ? 'rotate-180' : ''}`} />
@@ -1429,39 +1469,32 @@ export default function LineUp() {
                 {importMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setImportMenuOpen(false)} />
-                    <div className="absolute right-0 top-11 z-50 w-52 rounded-2xl overflow-hidden shadow-2xl"
+                    <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
                       style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                      <div className="py-1.5">
+                      <div className="py-1">
                         <button type="button"
                           onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false) }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                          style={{ color: '#10B981' }}>
-                          <Upload className="w-3.5 h-3.5" />
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                          <Upload className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                           <div>
                             <div>Import Excel</div>
-                            <div className="text-[10px] font-medium opacity-60">.xlsx / .xls file</div>
-                          </div>
-                        </button>
-                        <button type="button"
-                          onClick={() => { scanFileRef.current?.click(); setImportMenuOpen(false) }}
-                          disabled={scanning}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
-                          style={{ color: '#F59E0B' }}>
-                          {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
-                          <div>
-                            <div>Scan Image</div>
-                            <div className="text-[10px] font-medium opacity-60">AI reads lineup photo</div>
+                            <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx / .xls file</div>
                           </div>
                         </button>
                         <button type="button"
                           onClick={() => { handlePasteScan(); setImportMenuOpen(false) }}
                           disabled={scanning}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
-                          style={{ color: '#F59E0B' }}>
-                          <ClipboardPaste className="w-3.5 h-3.5" />
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                          <ClipboardPaste className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                           <div>
                             <div>Paste Image</div>
-                            <div className="text-[10px] font-medium opacity-60">Ctrl+V screenshot</div>
+                            <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Ctrl+V screenshot</div>
                           </div>
                         </button>
                       </div>
@@ -1559,9 +1592,8 @@ export default function LineUp() {
 
 
         {/* Original Line-Up Sheet */}
-        <div ref={printAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
+        <div ref={captureAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div ref={captureAreaRef} style={{ backgroundColor: cardBg }}>
 
           {/* Scan error / preview banners */}
           {scanError && (
@@ -1776,7 +1808,6 @@ export default function LineUp() {
               </tbody>
             </table>
           </div>
-          </div>{/* /captureAreaRef */}
         </div>
       </div>
 
