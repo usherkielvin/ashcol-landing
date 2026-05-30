@@ -59,10 +59,6 @@ interface LineUpRow {
   sortOrder: number
 }
 
-const BLANK_ROW = (date: string, branchId: string): Partial<LineUpRow> => ({
-  lineupDate: date, branchId, service: '', driverName: '', driverTime: '8:00AM',
-  installerName: '', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0,
-})
 
 const DEFAULT_PREENCODED_ROWS = (date: string, branchId: string): LineUpRow[] => [
   { id: `local-pre-1-${date}`, lineupDate: date, branchId, service: 'STRADA', driverName: 'ANGELO', driverTime: '8:00AM', installerName: 'RANIL', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0 },
@@ -97,7 +93,6 @@ export default function LineUp() {
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const role      = (user?.role || '').toLowerCase()
-  const isManager = role === 'manager'
   const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee'
 
   const [date, setDate]         = useState(tomorrowStr)
@@ -105,7 +100,6 @@ export default function LineUp() {
   const [branchId, setBranchId] = useState('')
   const [rows, setRows]         = useState<LineUpRow[]>([])
   const [loading, setLoading]   = useState(false)
-  const [saving, setSaving]     = useState(false)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const moreMenuRef  = useRef<HTMLDivElement>(null)
@@ -686,7 +680,6 @@ export default function LineUp() {
         if (!window.confirm(`Import ${parsedRows.length} lineup entries? This will replace current entries for ${branchName} on ${date}.`)) return
 
         // ── Save to backend API so all devices see the lineup ──
-        setSaving(true)
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
         // 1. Delete existing rows on the server first
@@ -733,7 +726,6 @@ export default function LineUp() {
             savedRows.push(row) // fallback to local
           }
         }
-        setSaving(false)
 
         // Also keep localStorage as local cache
         const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
@@ -1259,34 +1251,4 @@ function StatPill({ label, value, color }: { label: string; value: number; color
   )
 }
 
-function InfoCell({ icon, label, value, full }: {
-  icon: React.ReactNode; label: string; value: string; full?: boolean
-}) {
-  const { theme } = useTheme()
-  const isLight = theme === 'light'
-  const inputBg    = isLight ? '#f8fafc' : '#0F1A2E'
-  const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
-  const textMuted   = isLight ? '#64748b' : '#7A95B8'
-  return (
-    <div className={`p-3 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: inputBg }}>
-      <div className="flex items-center gap-1.5 mb-1" style={{ color: textMuted }}>
-        <span className="w-3 h-3">{icon}</span>
-        <span className="text-[9px] font-black uppercase tracking-wider">{label}</span>
-      </div>
-      <p className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{value || '—'}</p>
-    </div>
-  )
-}
 
-function F({ label, children, required, full }: {
-  label: string; children: React.ReactNode; required?: boolean; full?: boolean
-}) {
-  return (
-    <div className={full ? 'sm:col-span-2' : ''}>
-      <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5" style={{ color: '#7A95B8' }}>
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  )
-}
