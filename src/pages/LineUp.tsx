@@ -64,6 +64,16 @@ const BLANK_ROW = (date: string, branchId: string): Partial<LineUpRow> => ({
   installerName: '', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0,
 })
 
+const DEFAULT_PREENCODED_ROWS = (date: string, branchId: string): LineUpRow[] => [
+  { id: `local-pre-1-${date}`, lineupDate: date, branchId, service: 'STRADA', driverName: 'ANGELO', driverTime: '8:00AM', installerName: 'RANIL', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0 },
+  { id: `local-pre-2-${date}`, lineupDate: date, branchId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'JHUMAR', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 1 },
+  { id: `local-pre-3-${date}`, lineupDate: date, branchId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'KENNAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 2 },
+  { id: `local-pre-4-${date}`, lineupDate: date, branchId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'CRIS', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 3 },
+  { id: `local-pre-5-${date}`, lineupDate: date, branchId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'SONNY', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 4 },
+  { id: `local-pre-6-${date}`, lineupDate: date, branchId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'RYAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 5 },
+  { id: `local-pre-7-${date}`, lineupDate: date, branchId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'ALLAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 6 },
+]
+
 const LS_KEY = 'ashcol_lineup_v2'
 function lsLoad(): LineUpRow[] {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') } catch { return [] }
@@ -95,7 +105,6 @@ export default function LineUp() {
   const [branchId, setBranchId] = useState('')
   const [rows, setRows]         = useState<LineUpRow[]>([])
   const [loading, setLoading]   = useState(false)
-  const [editing, setEditing]   = useState<Partial<LineUpRow> | null>(null)
   const [saving, setSaving]     = useState(false)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -105,10 +114,10 @@ export default function LineUp() {
   const [scanning, setScanning]       = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scanError, setScanError]     = useState('')
+  const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
+  const [tempValue, setTempValue] = useState<string>('')
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
-
-  const [customFields, setCustomFields] = useState<Record<string, boolean>>({})
 
   const [suggestions, setSuggestions] = useState<{
     services: string[]
@@ -167,96 +176,7 @@ export default function LineUp() {
     }
   }, [branchId, fetchSuggestions])
 
-  useEffect(() => {
-    if (!editing) {
-      setCustomFields({})
-      return
-    }
-    const newCustoms: Record<string, boolean> = {}
-    if (editing.service && !finalVehicleOptions.includes(editing.service)) {
-      newCustoms.service = true
-    }
-    if (editing.driverName && !finalDriverOptions.includes(editing.driverName)) {
-      newCustoms.driverName = true
-    }
-    if (editing.installerName && !finalInstallerOptions.includes(editing.installerName)) {
-      newCustoms.installerName = true
-    }
-    if (editing.route && !finalRouteOptions.includes(editing.route)) {
-      newCustoms.route = true
-    }
-    if (editing.remarks && !finalRemarksOptions.includes(editing.remarks)) {
-      newCustoms.remarks = true
-    }
-    setCustomFields(newCustoms)
-  }, [editing, finalVehicleOptions, finalDriverOptions, finalInstallerOptions, finalRouteOptions, finalRemarksOptions])
 
-  const renderFlexField = (
-    label: string,
-    field: keyof LineUpRow,
-    options: string[],
-    placeholder: string,
-    required = false,
-    full = false
-  ) => {
-    if (!editing) return null
-    const isCustom = !!customFields[field as string]
-    const value = (editing[field] as string) || ''
-
-    const handleToggle = () => {
-      setCustomFields(prev => ({ ...prev, [field]: !prev[field] }))
-    }
-
-    return (
-      <F label={label} required={required} full={full}>
-        <div className="flex gap-1.5 items-center">
-          {isCustom ? (
-            field === 'remarks' ? (
-              <textarea
-                value={value}
-                placeholder={placeholder}
-                onChange={e => setEditing({ ...editing, [field]: e.target.value })}
-                rows={3}
-                className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold resize-none"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              />
-            ) : (
-              <input
-                value={value}
-                placeholder={placeholder}
-                onChange={e => setEditing({ ...editing, [field]: e.target.value })}
-                className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              />
-            )
-          ) : (
-            <select
-              value={value}
-              onChange={e => setEditing({ ...editing, [field]: e.target.value })}
-              className="flex-1 rounded-xl px-3 py-3 text-sm font-semibold cursor-pointer"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-            >
-              <option value="">Select option...</option>
-              {options.map(opt => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            onClick={handleToggle}
-            title={isCustom ? "Select from list" : "Type custom name"}
-            className="p-3 rounded-xl border shrink-0 transition-all hover:scale-105"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-          >
-            {isCustom ? <ClipboardList className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
-          </button>
-        </div>
-      </F>
-    )
-  }
 
   // ── Load Branches ────────────────────────────────────────────────────────
 
@@ -280,9 +200,12 @@ export default function LineUp() {
   const fetchLineup = useCallback(async () => {
     // Fallback/placeholder using local storage first
     const all = lsLoad()
-    const filtered = branchId
+    let filtered = branchId
       ? all.filter(r => r.lineupDate === date && r.branchId === branchId).sort((a, b) => a.sortOrder - b.sortOrder)
       : []
+    if (filtered.length === 0 && branchId) {
+      filtered = DEFAULT_PREENCODED_ROWS(date, branchId)
+    }
     setRows(filtered)
 
     if (!branchId) return
@@ -295,7 +218,11 @@ export default function LineUp() {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
-          setRows(data)
+          if (data.length > 0) {
+            setRows(data)
+          } else {
+            setRows(DEFAULT_PREENCODED_ROWS(date, branchId))
+          }
         }
       }
     } catch (e) {
@@ -309,59 +236,248 @@ export default function LineUp() {
     void fetchLineup()
   }, [fetchLineup])
 
-  // ── Save ─────────────────────────────────────────────────────────────────
 
-  const handleSave = async () => {
-    if (!editing || !branchId) return
-    setSaving(true)
-    const payload: LineUpRow = {
-      id: editing.id || lsNextId(),
-      lineupDate: editing.lineupDate || date,
-      branchId: editing.branchId || branchId,
-      service: editing.service || '',
-      driverName: editing.driverName || '',
-      driverTime: editing.driverTime || '8:00AM',
-      installerName: editing.installerName || '',
-      installerTime: editing.installerTime || '7:00AM',
-      route: editing.route || '',
-      remarks: editing.remarks || '',
-      sortOrder: editing.sortOrder ?? rows.length,
-    }
-    let saved = false
-    let errMsg = ''
+  const saveCell = async (row: LineUpRow, field: keyof LineUpRow, val: string) => {
+    setEditingCell(null)
+    const oldVal = row[field];
+    if (oldVal === val) return
+    const updatedRow = { ...row, [field]: val }
+
+    setRows(prev => prev.map(r => r.id === row.id ? updatedRow : r))
+
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const isNew = !editing.id || editing.id.startsWith("local-")
-      const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${editing.id}`
+      const isNew = !row.id || row.id.startsWith("local-")
+      const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${row.id}`
       const res = await fetch(url, {
         method: isNew ? 'POST' : 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(updatedRow),
       })
       if (res.ok) {
-        saved = true
+        const saved = await res.json() as LineUpRow
+        setRows(prev => prev.map(r => r.id === row.id ? saved : r))
+        if (branchId) void fetchSuggestions(branchId)
       } else {
+        let errMsg = `Status ${res.status}`
         try {
           const data = await res.json()
-          errMsg = data.message || `Server returned status ${res.status}`
-        } catch {
-          errMsg = `Server returned status ${res.status}`
-        }
+          errMsg = data.message || errMsg
+        } catch {}
+        throw new Error(errMsg)
       }
-    } catch (e: any) {
-      errMsg = e.message || 'Network connection failed'
-    }
-    if (!saved) {
+    } catch (err: any) {
+      console.error("Failed to save inline cell:", err)
+      alert(`Warning: Failed to save to database (${err.message || 'connection failed'}). Saving locally.`)
       const all = lsLoad()
-      const idx = all.findIndex(r => r.id === payload.id)
-      if (idx >= 0) all[idx] = payload; else all.push(payload)
+      const idx = all.findIndex(r => r.id === row.id)
+      if (idx >= 0) all[idx] = updatedRow; else all.push(updatedRow)
       lsSave(all)
-      alert(`Warning: Failed to save to the database (${errMsg}). This line-up was saved locally on your device only and will not be visible on other devices. Please check your network or contact admin.`)
     }
-    setEditing(null)
-    setSaving(false)
+  }
+
+  const renderEditableTd = (
+    row: LineUpRow,
+    field: keyof LineUpRow,
+    options: string[],
+    style: React.CSSProperties,
+    placeholder = 'Double click to edit...'
+  ) => {
+    const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
+    const value = row[field] as string || ''
+
+    const handleBlur = () => {
+      void saveCell(row, field, tempValue)
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        void saveCell(row, field, tempValue)
+      } else if (e.key === 'Escape') {
+        setEditingCell(null)
+      }
+    }
+
+    if (!canEdit) {
+      return (
+        <td style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}>
+          {value || '—'}
+        </td>
+      )
+    }
+
+    if (isEditing) {
+      const datalistId = `list-${field}-${row.id}`
+      return (
+        <td style={{ border: `1px solid ${border}`, padding: '4px 8px', ...style }}>
+          <input
+            list={datalistId}
+            value={tempValue}
+            onChange={e => setTempValue(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            placeholder={placeholder}
+            className="w-full px-2 py-1.5 text-xs font-semibold rounded border outline-none"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          />
+          {options.length > 0 && (
+            <datalist id={datalistId}>
+              {options.map(opt => (
+                <option key={opt} value={opt} />
+              ))}
+            </datalist>
+          )}
+        </td>
+      )
+    }
+
+    return (
+      <td
+        onDoubleClick={() => {
+          setEditingCell({ rowId: row.id, field })
+          setTempValue(value)
+        }}
+        title="Double-click to edit inline"
+        className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}
+      >
+        {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>}
+      </td>
+    )
+  }
+
+  const renderMobileCell = (
+    row: LineUpRow,
+    field: keyof LineUpRow,
+    label: string,
+    icon: React.ReactNode,
+    options: string[],
+    full = false
+  ) => {
+    const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
+    const value = row[field] as string || ''
+
+    const handleBlur = () => {
+      void saveCell(row, field, tempValue)
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        void saveCell(row, field, tempValue)
+      } else if (e.key === 'Escape') {
+        setEditingCell(null)
+      }
+    }
+
+    const cellBg = isLight ? '#ffffff' : '#0F172A'
+
+    if (isEditing) {
+      const datalistId = `m-list-${field}-${row.id}`
+      return (
+        <div className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: cellBg }}>
+          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+            {icon} {label}
+          </div>
+          <input
+            list={datalistId}
+            value={tempValue}
+            onChange={e => setTempValue(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            className="w-full px-2 py-1 text-xs font-semibold rounded border outline-none mt-1"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          />
+          {options.length > 0 && (
+            <datalist id={datalistId}>
+              {options.map(opt => (
+                <option key={opt} value={opt} />
+              ))}
+            </datalist>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div
+        onClick={() => {
+          if (canEdit) {
+            setEditingCell({ rowId: row.id, field })
+            setTempValue(value)
+          }
+        }}
+        className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''} ${canEdit ? 'cursor-pointer hover:bg-black/5 dark:hover:bg-white/5' : ''} transition-colors`}
+        style={{ backgroundColor: cellBg }}
+      >
+        <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+          {icon} {label}
+        </div>
+        <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
+          {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>}
+        </div>
+      </div>
+    )
+  }
+
+  const handleClearAll = async () => {
+    if (!window.confirm(`WARNING: Are you sure you want to delete ALL entries in the line-up for ${branchName || 'this branch'} on ${englishLabel(date)}?`)) return
+    if (!window.confirm(`FINAL CONFIRMATION: This will permanently erase the data for all users. Do you wish to proceed?`)) return
+
+    setLoading(true)
+    let failedCount = 0
+    let lastError = ''
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    
+    for (const r of rows) {
+      if (r.id.startsWith('local-pre-')) continue
+      try {
+        const res = await fetch(`${API_BASE_URL}/v1/lineup/${r.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) {
+          failedCount++
+          lastError = `Status ${res.status}`
+        }
+      } catch (err: any) {
+        failedCount++
+        lastError = err.message || 'Connection error'
+      }
+    }
+
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    lsSave(all)
+
+    setLoading(false)
+    if (failedCount > 0) {
+      alert(`Warning: Failed to delete ${failedCount} server entries. Error: ${lastError}`)
+    } else {
+      alert("Successfully cleared all deployment schedules for this date!")
+    }
     void fetchLineup()
-    if (branchId) void fetchSuggestions(branchId)
+  }
+
+  const handleAddRow = () => {
+    if (!branchId) return
+    const newId = lsNextId()
+    const newRow: LineUpRow = {
+      id: newId,
+      lineupDate: date,
+      branchId: branchId,
+      service: '',
+      driverName: '',
+      driverTime: '8:00AM',
+      installerName: '',
+      installerTime: '7:00AM',
+      route: '',
+      remarks: '',
+      sortOrder: rows.length
+    }
+    setRows(prev => [...prev, newRow])
+    setEditingCell({ rowId: newId, field: 'service' })
+    setTempValue('')
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -695,7 +811,7 @@ export default function LineUp() {
               {/* + and ⋯ buttons */}
               <div className="lineup-actions">
                 {canEdit && (
-                  <button onClick={() => setEditing({ ...BLANK_ROW(date, branchId), sortOrder: rows.length })}
+                  <button onClick={handleAddRow}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/20 border border-white/25 text-white active:scale-95">
                     <Plus className="w-4 h-4" />
                   </button>
@@ -807,7 +923,7 @@ export default function LineUp() {
               <p className="text-xs" style={{ color: textMuted }}>{branchName ? `${branchName} — ` : ''}{englishLabel(date)}</p>
             </div>
             {canEdit && (
-              <button onClick={() => setEditing({ ...BLANK_ROW(date, branchId), sortOrder: 0 })}
+              <button onClick={handleAddRow}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white"
                 style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
                 <Plus className="w-4 h-4" /> Add First Entry
@@ -843,16 +959,17 @@ export default function LineUp() {
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${border}` }}>
                       <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: border }}>
-                        <InfoCell icon={<Truck   className="w-3 h-3" />} label="Driver"       value={row.driverName} />
-                        <InfoCell icon={<Clock   className="w-3 h-3" />} label="Driver In"    value={row.driverTime} />
-                        <InfoCell icon={<User    className="w-3 h-3" />} label="Installer"    value={row.installerName} />
-                        <InfoCell icon={<Clock   className="w-3 h-3" />} label="Installer In" value={row.installerTime} />
-                        <InfoCell icon={<MapPin  className="w-3 h-3" />} label="Route"        value={row.route}   full />
-                        <InfoCell icon={<MessageSquare className="w-3 h-3" />} label="Remarks" value={row.remarks} full />
+                        {renderMobileCell(row, 'service', 'Service', <Truck className="w-3 h-3" />, finalVehicleOptions, true)}
+                        {renderMobileCell(row, 'driverName', 'Driver', <User className="w-3 h-3" />, finalDriverOptions)}
+                        {renderMobileCell(row, 'driverTime', 'Driver In', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
+                        {renderMobileCell(row, 'installerName', 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
+                        {renderMobileCell(row, 'installerTime', 'Installer In', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
+                        {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
+                        {renderMobileCell(row, 'remarks', 'Remarks', <MessageSquare className="w-3 h-3" />, finalRemarksOptions, true)}
                       </div>
                       {canEdit && (
                         <div className="flex items-center justify-end gap-2 px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
-                          <button onClick={() => setEditing(row)}
+                          <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
                             style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6', border: '1px solid rgba(59,130,246,0.2)' }}>
                             <Edit3 className="w-3.5 h-3.5" /> Edit
@@ -937,7 +1054,7 @@ export default function LineUp() {
               <Printer className="w-3.5 h-3.5" style={{ color: '#10B981' }} /> Print
             </button>
             {canEdit && (
-              <button type="button" onClick={() => setEditing({ ...BLANK_ROW(date, branchId), sortOrder: rows.length })}
+              <button type="button" onClick={handleAddRow}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105">
                 <Plus className="w-4 h-4" /> Add Row
               </button>
@@ -1000,7 +1117,7 @@ export default function LineUp() {
                     <td colSpan={canEdit ? 8 : 7} style={{ textAlign: 'center', padding: '64px', color: textMuted, fontSize: '13px' }}>
                       No entries scheduled for {branchName || 'this branch'} on {englishLabel(date)}.<br />
                       {canEdit && (
-                        <button onClick={() => setEditing({ ...BLANK_ROW(date, branchId), sortOrder: 0 })}
+                        <button onClick={handleAddRow}
                           style={{ color: '#10B981', fontWeight: 700, marginTop: '12px', fontSize: '12px' }}
                           className="hover:underline">
                           + Add the first entry
@@ -1015,17 +1132,17 @@ export default function LineUp() {
                       className="transition-colors"
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#101B30')}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent')}>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary }}>{row.service || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary }}>{row.driverName || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: textPrimary }}>{row.driverTime || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary }}>{row.installerName || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: textPrimary }}>{row.installerTime || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', fontSize: '12px', color: textPrimary, fontWeight: 600 }}>{row.route || '—'}</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '12px 16px', fontSize: '12px', color: textPrimary }}>{row.remarks || '—'}</td>
+                      {renderEditableTd(row, 'service', finalVehicleOptions, { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
+                      {renderEditableTd(row, 'driverName', finalDriverOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                      {renderEditableTd(row, 'driverTime', ['8:00AM', '7:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                      {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                      {renderEditableTd(row, 'installerTime', ['7:00AM', '8:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                      {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600 }, "e.g. QC - MANILA")}
+                      {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, "e.g. INSTALL - INSTALL (3 UNITS)")}
                       {canEdit && (
                         <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                           <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => setEditing(row)} title="Edit"
+                            <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }} title="Edit inline"
                               className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400">
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -1076,75 +1193,30 @@ export default function LineUp() {
         </div>
       </div>
 
-      {/* ── Edit / Create Modal (shared) ── */}
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setEditing(null)}>
-          <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
-            onClick={e => e.stopPropagation()}>
-
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+      {/* Danger Zone */}
+      {canEdit && rows.length > 0 && (
+        <div className="w-full mt-8 mb-4 max-w-7xl mx-auto px-4 md:px-0">
+          <div className="rounded-2xl p-6 border transition-all shadow-md"
+            style={{
+              backgroundColor: isLight ? '#FFF5F5' : '#1A1013',
+              borderColor: isLight ? '#FEB2B2' : '#822727',
+            }}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="font-black text-sm" style={{ color: textPrimary }}>{editing.id ? 'Edit Entry' : 'New Line-Up Entry'}</h3>
-                <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>{branchName} · {date}</p>
+                <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2"
+                  style={{ color: '#E53E3E' }}>
+                  <Trash2 className="w-4 h-4" /> Danger Zone
+                </h4>
+                <p className="text-xs mt-1.5" style={{ color: textMuted }}>
+                  Permanently delete all deployment entries for <strong style={{ color: textPrimary }}>{branchName || 'this branch'}</strong> on <strong style={{ color: textPrimary }}>{englishLabel(date)}</strong>. This action is irreversible.
+                </p>
               </div>
-              <button onClick={() => setEditing(null)} className="p-2 rounded-xl" style={{ color: textMuted, backgroundColor: inputBg }}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {renderFlexField("Service (Vehicle Code)", "service", finalVehicleOptions, "e.g. T3, T2, FB19, STRADA", true)}
-              <F label="Branch" required>
-                <select value={editing.branchId || branchId} onChange={e => setEditing({ ...editing, branchId: e.target.value })}
-                  disabled={isManager && !!user?.branchId}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </F>
-              {renderFlexField("Driver Name", "driverName", finalDriverOptions, "Driver's name")}
-              <F label="Driver Time In">
-                <input value={editing.driverTime || ''} placeholder="e.g. 8:00AM"
-                  onChange={e => setEditing({ ...editing, driverTime: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
-              {renderFlexField("Installer Name", "installerName", finalInstallerOptions, "Installer's name")}
-              <F label="Installer Time In">
-                <input value={editing.installerTime || ''} placeholder="e.g. 7:00AM"
-                  onChange={e => setEditing({ ...editing, installerTime: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
-              <F label="Date">
-                <input type="date" value={editing.lineupDate || date}
-                  onChange={e => setEditing({ ...editing, lineupDate: e.target.value })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
-              <F label="Sort Order">
-                <input type="number" value={editing.sortOrder ?? 0}
-                  onChange={e => setEditing({ ...editing, sortOrder: Number(e.target.value) })}
-                  className="w-full rounded-xl px-3 py-3 text-sm font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </F>
-              {renderFlexField("Route", "route", finalRouteOptions, "e.g. VALENZUELA – MALABON – MANILA", false, true)}
-              {renderFlexField("Remarks", "remarks", finalRemarksOptions, "e.g. INSTALL – INSTALL – INSTALL (3UNITS)", false, true)}
-            </div>
-
-            <div className="px-5 py-4 flex items-center gap-2" style={{ borderTop: `1px solid ${border}` }}>
-              <button onClick={() => setEditing(null)}
-                className="flex-1 py-3 rounded-xl text-sm font-bold border"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
-                Cancel
-              </button>
-              <button onClick={handleSave} disabled={saving}
-                className="flex-1 py-3 rounded-xl text-sm font-bold text-white hover:scale-[1.02]"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Saving…' : 'Save Entry'}
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-red-500 to-rose-600 shadow-lg shadow-red-500/10 hover:scale-105 active:scale-95 transition-all shrink-0 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" /> Clear All Entries
               </button>
             </div>
           </div>
