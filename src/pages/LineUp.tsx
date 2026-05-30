@@ -120,9 +120,11 @@ export default function LineUp() {
   const [activeMenu, setActiveMenu] = useState<{ row: LineUpRow; x: number; y: number } | null>(null)
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const captureAreaRef = useRef<HTMLDivElement>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const dragSourceIndexRef = useRef<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   interface ConfirmModalState {
     title: string
@@ -756,6 +758,66 @@ export default function LineUp() {
     } else {
       void performLoadDefaultTemplate()
     }
+  }
+
+  // ── Drag and Drop Row Reordering ──────────────────────────────────────────
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    dragSourceIndexRef.current = index
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', index.toString())
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (dragSourceIndexRef.current === null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index)
+    }
+  }
+
+  const handleDragEnd = () => {
+    dragSourceIndexRef.current = null
+    setDragOverIndex(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault()
+    const sourceIndex = dragSourceIndexRef.current
+    if (sourceIndex === null || sourceIndex === targetIndex) {
+      setDragOverIndex(null)
+      return
+    }
+
+    const updated = [...rows]
+    const [removed] = updated.splice(sourceIndex, 1)
+    updated.splice(targetIndex, 0, removed)
+
+    const reordered = updated.map((r, i) => ({ ...r, sortOrder: i }))
+    setRows(reordered)
+    setDragOverIndex(null)
+
+    // Save order changes locally immediately
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    lsSave([...all, ...reordered])
+
+    // Save order changes to DB in background
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    for (const row of reordered) {
+      if (!row.id.startsWith('local-') && !row.id.startsWith('imported-') && !row.id.startsWith('notes-')) {
+        try {
+          await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(row),
+          })
+        } catch (err) {
+          console.error("Failed to update sortOrder for row:", row.id, err)
+        }
+      }
+    }
+    showToast("Row order updated!", "success")
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -1730,12 +1792,33 @@ export default function LineUp() {
                     const defaultBg       = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent'
                     const selectedBg      = isLight ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.12)'
                     const hoverBgColor    = isLight ? '#f8fafc' : '#101B30'
+
+                    const isDraggedOver = dragOverIndex === idx
+                    const isSource = dragSourceIndexRef.current === idx
+
+                    let borderTopStyle = undefined
+                    let borderBottomStyle = `1px solid ${border}`
+
+                    if (isDraggedOver && !isSource && dragSourceIndexRef.current !== null) {
+                      if (dragSourceIndexRef.current > idx) {
+                        borderTopStyle = '3px solid #10B981'
+                      } else {
+                        borderBottomStyle = '3px solid #10B981'
+                      }
+                    }
+
                     return (
                       <tr key={row.id}
+                        draggable={canEdit && isRowSelected && !isEditingThis}
+                        onDragStart={(e) => handleDragStart(e, idx)}
+                        onDragOver={(e) => handleDragOver(e, idx)}
+                        onDragEnd={handleDragEnd}
+                        onDrop={(e) => handleDrop(e, idx)}
                         style={{
                           backgroundColor: (isRowSelected || isEditingThis) ? selectedBg : defaultBg,
-                          borderBottom: `1px solid ${border}`,
-                          cursor: canEdit ? 'pointer' : 'default',
+                          borderTop: borderTopStyle,
+                          borderBottom: borderBottomStyle,
+                          cursor: canEdit ? (isRowSelected ? (dragSourceIndexRef.current === idx ? 'grabbing' : 'grab') : 'pointer') : 'default',
                           outline: isRowSelected ? `2px solid #10B98140` : 'none',
                           outlineOffset: '-1px',
                           position: 'relative',
@@ -1786,10 +1869,15 @@ export default function LineUp() {
           </div>
 
           {/* Footer note */}
-          <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
+          <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
             <p style={{ fontSize: '11px', fontStyle: 'italic', color: textMuted, fontWeight: 500 }}>
               NOTE: Installers must report earlier than drivers to handle returns and log out.
             </p>
+            {canEdit && (
+              <p className="no-print" style={{ fontSize: '11px', fontStyle: 'italic', color: '#10B981', fontWeight: 600 }}>
+                Tip: Click or right-click a row to select it, then drag to rearrange the schedule order.
+              </p>
+            )}
           </div>
 
           {/* Summary boxes */}
