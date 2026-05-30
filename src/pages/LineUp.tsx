@@ -1525,7 +1525,10 @@ export default function LineUp() {
                           setSelectedRowId(prev => prev === row.id ? null : row.id)
                           // If already editing a different cell, deselect editing
                           if (editingCell && editingCell.rowId !== row.id) {
-                            void saveCell(rows.find(r => r.id === editingCell.rowId)!, editingCell.field, tempValue)
+                            const activeRow = rows.find(r => r.id === editingCell.rowId)
+                            if (activeRow) {
+                              void saveCell(activeRow, editingCell.field, tempValue)
+                            }
                           }
                         }}
                         onContextMenu={e => {
@@ -1655,35 +1658,7 @@ export default function LineUp() {
       </div>
 
 
-      {/* Danger Zone */}
-      {canEdit && rows.length > 0 && (
-        <div className="w-full mt-8 mb-4 max-w-7xl mx-auto px-4 md:px-0">
-          <div className="rounded-2xl p-6 border transition-all shadow-md"
-            style={{
-              backgroundColor: isLight ? '#FFF5F5' : '#1A1013',
-              borderColor: isLight ? '#FEB2B2' : '#822727',
-            }}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2"
-                  style={{ color: '#E53E3E' }}>
-                  <Trash2 className="w-4 h-4" /> Danger Zone
-                </h4>
-                <p className="text-xs mt-1.5" style={{ color: textMuted }}>
-                  Permanently delete all deployment entries for <strong style={{ color: textPrimary }}>{branchName || 'this branch'}</strong> on <strong style={{ color: textPrimary }}>{englishLabel(date)}</strong>. This action is irreversible.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-red-500 to-rose-600 shadow-lg shadow-red-500/10 hover:scale-105 active:scale-95 transition-all shrink-0 cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" /> Clear All Entries
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
 
       {activeMenu && (
