@@ -493,6 +493,7 @@ export default function LineUp() {
     }
 
     if (isEditing) {
+      const datalistId = `list-${field}-${row.id}`
       return (
         <td
           style={{
@@ -504,6 +505,7 @@ export default function LineUp() {
           }}
         >
           <input
+            list={datalistId}
             value={tempValue}
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
@@ -513,6 +515,13 @@ export default function LineUp() {
             className="w-full px-2 py-1.5 text-xs font-semibold rounded border-none bg-transparent outline-none"
             style={{ color: textPrimary }}
           />
+          {options.length > 0 && (
+            <datalist id={datalistId}>
+              {options.map(opt => (
+                <option key={opt} value={opt} />
+              ))}
+            </datalist>
+          )}
         </td>
       )
     }
@@ -558,12 +567,14 @@ export default function LineUp() {
     const cellBg = isLight ? '#ffffff' : '#0F172A'
 
     if (isEditing) {
+      const datalistId = `m-list-${field}-${row.id}`
       return (
         <div className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: cellBg }}>
           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
             {icon} {label}
           </div>
           <input
+            list={datalistId}
             value={tempValue}
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
@@ -572,6 +583,13 @@ export default function LineUp() {
             className="w-full px-2 py-1 text-xs font-semibold rounded border outline-none mt-1"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           />
+          {options.length > 0 && (
+            <datalist id={datalistId}>
+              {options.map(opt => (
+                <option key={opt} value={opt} />
+              ))}
+            </datalist>
+          )}
         </div>
       )
     }
@@ -597,54 +615,7 @@ export default function LineUp() {
     )
   }
 
-  const handleClearAll = async () => {
-    if (!window.confirm(`WARNING: Are you sure you want to delete ALL entries in the line-up for ${branchName || 'this branch'} on ${englishLabel(date)}?`)) return
-    if (!window.confirm(`FINAL CONFIRMATION: This will permanently erase the data for all users. Do you wish to proceed?`)) return
 
-    setLoading(true)
-    let failedCount = 0
-    let lastError = ''
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    
-    for (const r of rows) {
-      if (r.id.startsWith('local-pre-')) continue
-      try {
-        const res = await fetch(`${API_BASE_URL}/v1/lineup/${r.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (!res.ok) {
-          failedCount++
-          lastError = `Status ${res.status}`
-        }
-      } catch (err: any) {
-        failedCount++
-        lastError = err.message || 'Connection error'
-      }
-    }
-
-    if (notesRecord && !notesRecord.id.startsWith('local-pre-')) {
-      try {
-        await fetch(`${API_BASE_URL}/v1/lineup/${notesRecord.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      } catch (err: any) {
-        console.error("Failed to delete notes during clear all:", err)
-      }
-    }
-
-    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-    lsSave(all)
-
-    setLoading(false)
-    if (failedCount > 0) {
-      alert(`Warning: Failed to delete ${failedCount} server entries. Error: ${lastError}`)
-    } else {
-      alert("Successfully cleared all deployment schedules for this date!")
-    }
-    void fetchLineup()
-  }
 
   const handleAddRow = () => {
     if (!branchId) return
@@ -1288,9 +1259,9 @@ export default function LineUp() {
           <div className="mt-4 px-1">
             <button
               onClick={handleSaveAll}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/10 active:scale-95 transition-all"
+              className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-colors shadow-sm"
             >
-              <Save className="w-4 h-4" /> Save Schedule
+              <Save className="w-3.5 h-3.5" /> Save
             </button>
           </div>
         )}
@@ -1652,9 +1623,9 @@ export default function LineUp() {
                 <button
                   type="button"
                   onClick={handleSaveAll}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/10 transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm"
                 >
-                  <Save className="w-4 h-4" /> Save Schedule
+                  <Save className="w-3.5 h-3.5" /> Save
                 </button>
               )}
             </div>
@@ -1683,6 +1654,36 @@ export default function LineUp() {
         </div>
       </div>
 
+
+      {/* Danger Zone */}
+      {canEdit && rows.length > 0 && (
+        <div className="w-full mt-8 mb-4 max-w-7xl mx-auto px-4 md:px-0">
+          <div className="rounded-2xl p-6 border transition-all shadow-md"
+            style={{
+              backgroundColor: isLight ? '#FFF5F5' : '#1A1013',
+              borderColor: isLight ? '#FEB2B2' : '#822727',
+            }}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2"
+                  style={{ color: '#E53E3E' }}>
+                  <Trash2 className="w-4 h-4" /> Danger Zone
+                </h4>
+                <p className="text-xs mt-1.5" style={{ color: textMuted }}>
+                  Permanently delete all deployment entries for <strong style={{ color: textPrimary }}>{branchName || 'this branch'}</strong> on <strong style={{ color: textPrimary }}>{englishLabel(date)}</strong>. This action is irreversible.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-red-500 to-rose-600 shadow-lg shadow-red-500/10 hover:scale-105 active:scale-95 transition-all shrink-0 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" /> Clear All Entries
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {activeMenu && (
@@ -1770,4 +1771,3 @@ function StatPill({ label, value, color }: { label: string; value: number; color
     </div>
   )
 }
-
