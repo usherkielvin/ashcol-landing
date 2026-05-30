@@ -115,6 +115,7 @@ export default function LineUp() {
   const [copyingImage, setCopyingImage]     = useState(false)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [selectedRowId, setSelectedRowId]   = useState<string | null>(null)
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
   const isNavigatingRef = useRef(false)
@@ -419,6 +420,27 @@ export default function LineUp() {
     }, 50)
   }
 
+  // ── Time auto-formatter ───────────────────────────────────────────────────
+  // Accepts: '8am', '8AM', '8:00am', '830', '830am', '9:30AM', '7', etc.
+  // Returns: '8:00AM', '8:30AM', etc. or the original value if not parseable.
+  const parseTimeInput = (raw: string): string => {
+    const s = raw.trim().toUpperCase()
+    if (!s) return raw
+    const m = s.match(/^(\d{1,2}):?(\d{2})\s*(AM|PM)?$/) ||
+              s.match(/^(\d{1,2})\s*(AM|PM)$/)
+    if (!m) return raw
+    let hour   = parseInt(m[1], 10)
+    const min  = m[2] && m[2].length === 2 ? m[2] : '00'
+    const ampm = (m[2] === 'AM' || m[2] === 'PM') ? m[2] :
+                 (m[3] === 'AM' || m[3] === 'PM') ? m[3] :
+                 (hour < 12 ? 'AM' : 'PM')
+    if (hour > 12) hour = hour - 12
+    if (hour === 0) hour = 12
+    return `${hour}:${min}${ampm}`
+  }
+
+  const TIME_FIELDS: (keyof LineUpRow)[] = ['driverTime', 'installerTime']
+
   const renderEditableTd = (
     row: LineUpRow,
     field: keyof LineUpRow,
@@ -428,10 +450,13 @@ export default function LineUp() {
   ) => {
     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
     const value = row[field] as string || ''
+    const isTimeField = TIME_FIELDS.includes(field)
 
     const handleBlur = () => {
       if (isNavigatingRef.current) return
-      void saveCell(row, field, tempValue)
+      const finalVal = isTimeField ? parseTimeInput(tempValue) : tempValue
+      if (isTimeField && finalVal !== tempValue) setTempValue(finalVal)
+      void saveCell(row, field, finalVal)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -484,7 +509,6 @@ export default function LineUp() {
             onChange={e => setTempValue(e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            onFocus={e => e.currentTarget.select()}
             autoFocus
             placeholder={placeholder}
             className="w-full px-2 py-1.5 text-xs font-semibold rounded border-none bg-transparent outline-none"
@@ -794,6 +818,18 @@ export default function LineUp() {
   const handleScanFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) processLineupImage(f) }
   const processLineupImageRef = useRef(processLineupImage)
   useEffect(() => { processLineupImageRef.current = processLineupImage })
+
+  // Dismiss selected row when clicking outside the table
+  useEffect(() => {
+    const dismiss = (e: MouseEvent) => {
+      if (!printAreaRef.current) return
+      if (!printAreaRef.current.contains(e.target as Node)) {
+        setSelectedRowId(null)
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    return () => document.removeEventListener('mousedown', dismiss)
+  }, [])
 
   useEffect(() => {
     const handleGlobalPaste = (e: ClipboardEvent) => {
@@ -1462,19 +1498,14 @@ export default function LineUp() {
                   {thOrig('SCHEDULED TIME – IN OF INSTALLER')}
                   {thOrig('ROUTE', true)}
                   {thOrig('REMARKS', true)}
-                  {canEdit && <th className="no-print" style={{
-                    border: `1px solid ${border}`, padding: '12px 16px', fontSize: '11px', fontWeight: 800,
-                    textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center',
-                    backgroundColor: isLight ? '#f8fafc' : '#0F172A', color: textMuted, whiteSpace: 'nowrap',
-                  }}>ACTIONS</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={canEdit ? 8 : 7} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 8 : 7} style={{ textAlign: 'center', padding: '64px', color: textMuted, fontSize: '13px' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '64px', color: textMuted, fontSize: '13px' }}>
                       No entries scheduled for {branchName || 'this branch'} on {englishLabel(date)}.<br />
                       {canEdit && (
                         <button onClick={handleAddRow}
@@ -1487,37 +1518,83 @@ export default function LineUp() {
                   </tr>
                 ) : (
                   rows.map((row, idx) => {
-                    const isRowSelected = editingCell?.rowId === row.id
-                    const defaultBg = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent'
-                    const selectedBg = isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.1)'
-                    const hoverBgColor = isLight ? '#f8fafc' : '#101B30'
+                    const isRowSelected   = selectedRowId === row.id
+                    const isEditingThis   = editingCell?.rowId === row.id
+                    const defaultBg       = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent'
+                    const selectedBg      = isLight ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.12)'
+                    const hoverBgColor    = isLight ? '#f8fafc' : '#101B30'
                     return (
                       <tr key={row.id}
-                        style={{ backgroundColor: isRowSelected ? selectedBg : defaultBg, borderBottom: `1px solid ${border}` }}
+                        style={{
+                          backgroundColor: (isRowSelected || isEditingThis) ? selectedBg : defaultBg,
+                          borderBottom: `1px solid ${border}`,
+                          cursor: canEdit ? 'pointer' : 'default',
+                          outline: isRowSelected ? `2px solid #10B98140` : 'none',
+                          outlineOffset: '-1px',
+                          position: 'relative',
+                        }}
                         className="transition-colors"
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isRowSelected ? selectedBg : hoverBgColor)}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = isRowSelected ? selectedBg : defaultBg)}>
-                        {renderEditableTd(row, 'service', finalVehicleOptions, { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'driverName', finalDriverOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'driverTime', ['8:00AM', '7:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                        onMouseEnter={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = hoverBgColor }}
+                        onMouseLeave={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = defaultBg }}
+                        onClick={e => {
+                          // Don't toggle selection if clicking inside an active input
+                          if ((e.target as HTMLElement).closest('input,datalist')) return
+                          if (!canEdit) return
+                          setSelectedRowId(prev => prev === row.id ? null : row.id)
+                          // If already editing a different cell, deselect editing
+                          if (editingCell && editingCell.rowId !== row.id) {
+                            void saveCell(rows.find(r => r.id === editingCell.rowId)!, editingCell.field, tempValue)
+                          }
+                        }}>
+                        {renderEditableTd(row, 'service',       finalVehicleOptions,   { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'driverTime',    ['8:00AM','7:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
                         {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'installerTime', ['7:00AM', '8:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600 }, "e.g. QC - MANILA")}
-                        {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, "e.g. INSTALL - INSTALL (3 UNITS)")}
-                        {canEdit && (
-                          <td className="no-print" style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }} title="Edit inline"
-                                className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10 text-blue-400">
-                                <Edit3 className="w-3.5 h-3.5" />
+                        {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                        {renderEditableTd(row, 'route',   finalRouteOptions,   { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
+                        <td style={{ border: `1px solid ${border}`, padding: 0, position: 'relative' }}>
+                          {/* Remarks — inline editable */}
+                          <div style={{ position: 'relative' }}>
+                            {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary }, 'e.g. INSTALL - INSTALL (3 UNITS)')}
+                          </div>
+                          {/* Row action pill — only on selected row, hidden from print */}
+                          {canEdit && isRowSelected && (
+                            <div
+                              className="no-print"
+                              style={{
+                                position: 'absolute',
+                                top: '50%',
+                                right: '8px',
+                                transform: 'translateY(-50%)',
+                                display: 'flex',
+                                gap: '4px',
+                                zIndex: 10,
+                              }}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => {
+                                  setEditingCell({ rowId: row.id, field: 'service' })
+                                  setTempValue(row.service || '')
+                                  setSelectedRowId(null)
+                                }}
+                                title="Edit this row"
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105 active:scale-95 shadow-md"
+                                style={{ backgroundColor: '#3B82F6', color: '#fff', whiteSpace: 'nowrap' }}
+                              >
+                                <Edit3 className="w-3 h-3" /> Edit
                               </button>
-                              <button onClick={() => handleDelete(row)} title="Delete"
-                                className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 text-red-400">
-                                <Trash2 className="w-3.5 h-3.5" />
+                              <button
+                                onClick={() => { handleDelete(row); setSelectedRowId(null) }}
+                                title="Delete this row"
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105 active:scale-95 shadow-md"
+                                style={{ backgroundColor: '#EF4444', color: '#fff', whiteSpace: 'nowrap' }}
+                              >
+                                <Trash2 className="w-3 h-3" /> Delete
                               </button>
                             </div>
-                          </td>
-                        )}
+                          )}
+                        </td>
                       </tr>
                     )
                   })
@@ -1535,31 +1612,36 @@ export default function LineUp() {
 
           {/* Summary boxes */}
           <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: `1px solid ${border}` }}>
-            {/* Custom Notes / Comments Section */}
-            <div className="w-[45%] flex flex-col gap-1.5 align-left text-left print:block">
+            {/* Notes / Comments Section */}
+            <div className="w-[45%] flex flex-col gap-1 print:block">
               {canEdit ? (
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider mb-1 block print:hidden" style={{ color: textMuted }}>Encoder Notes (will print)</label>
+                <>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] print:hidden" style={{ color: textMuted }}>Notes</span>
                   <textarea
                     value={lineupNotes}
                     onChange={e => handleUpdateNotes(e.target.value)}
                     onBlur={handleSaveNotes}
-                    placeholder="Type custom comments/notes here (e.g. SIR ROMMEL - DAY OFF) - click outside to save..."
-                    className="w-full p-2.5 text-xs font-bold rounded-xl border outline-none resize-none min-h-[80px] print:hidden"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#EF4444' }}
+                    placeholder="e.g. SIR ROMMEL - DAY OFF"
+                    rows={3}
+                    className="w-full px-3 py-2 text-xs font-bold rounded-lg border outline-none resize-none print:hidden"
+                    style={{
+                      backgroundColor: 'transparent',
+                      borderColor: inputBorder,
+                      color: '#EF4444',
+                      lineHeight: '1.6',
+                    }}
                   />
-                  {/* For printing purposes when in edit mode */}
+                  {/* Print version */}
                   <div className="hidden print:block text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
                     {lineupNotes}
                   </div>
-                </div>
+                </>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider block print:hidden" style={{ color: textMuted }}>Notes</span>
+                lineupNotes ? (
                   <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
-                    {lineupNotes || '—'}
+                    {lineupNotes}
                   </div>
-                </div>
+                ) : null
               )}
             </div>
 
@@ -1653,5 +1735,4 @@ function StatPill({ label, value, color }: { label: string; value: number; color
     </div>
   )
 }
-
 
