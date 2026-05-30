@@ -103,19 +103,23 @@ export default function LineUp() {
   const [loading, setLoading]   = useState(false)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const moreMenuRef  = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const scanFileRef  = useRef<HTMLInputElement>(null)
-  const printAreaRef = useRef<HTMLDivElement>(null)
-  const [scanning, setScanning]       = useState(false)
-  const [scanPreview, setScanPreview] = useState<string | null>(null)
-  const [scanError, setScanError]     = useState('')
-  const [copyingImage, setCopyingImage] = useState(false)
+  const moreMenuRef    = useRef<HTMLDivElement>(null)
+  const fileInputRef   = useRef<HTMLInputElement>(null)
+  const scanFileRef    = useRef<HTMLInputElement>(null)
+  const printAreaRef   = useRef<HTMLDivElement>(null)
+  const importMenuRef  = useRef<HTMLDivElement>(null)
+  const exportMenuRef  = useRef<HTMLDivElement>(null)
+  const [scanning, setScanning]             = useState(false)
+  const [scanPreview, setScanPreview]       = useState<string | null>(null)
+  const [scanError, setScanError]           = useState('')
+  const [copyingImage, setCopyingImage]     = useState(false)
+  const [importMenuOpen, setImportMenuOpen] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
   const isNavigatingRef = useRef(false)
-  const mobileDateInputRef = useRef<HTMLInputElement>(null)
-  const desktopDateInputRef = useRef<HTMLInputElement>(null)
+  const mobileDateInputRef   = useRef<HTMLInputElement>(null)
+  const desktopDateInputRef  = useRef<HTMLInputElement>(null)
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
 
@@ -1261,7 +1265,7 @@ export default function LineUp() {
             <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>Team Line-Up</h2>
             <p className="text-sm" style={{ color: textMuted }}>Manage and view tomorrow's field deployment schedule by branch.</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap shrink-0 w-full lg:w-auto justify-start lg:justify-end">
+          <div className="flex items-center gap-2 shrink-0 w-full lg:w-auto justify-start lg:justify-end">
             {/* Branch */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
@@ -1273,6 +1277,7 @@ export default function LineUp() {
               </select>
               <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
             </div>
+
             {/* Date */}
             <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer"
@@ -1281,49 +1286,129 @@ export default function LineUp() {
               <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
+
+            {/* ── Import Dropdown ── */}
             {canEdit && (
-              <button type="button" onClick={() => fileInputRef.current?.click()}
+              <div className="relative" ref={importMenuRef}>
+                <button type="button"
+                  onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                  style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
+                  <Upload className="w-3.5 h-3.5" />
+                  Import
+                  <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${importMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {importMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setImportMenuOpen(false)} />
+                    <div className="absolute right-0 top-11 z-50 w-52 rounded-2xl overflow-hidden shadow-2xl"
+                      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                      <div className="py-1.5">
+                        <button type="button"
+                          onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false) }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                          style={{ color: '#10B981' }}>
+                          <Upload className="w-3.5 h-3.5" />
+                          <div>
+                            <div>Import Excel</div>
+                            <div className="text-[10px] font-medium opacity-60">.xlsx / .xls file</div>
+                          </div>
+                        </button>
+                        <button type="button"
+                          onClick={() => { scanFileRef.current?.click(); setImportMenuOpen(false) }}
+                          disabled={scanning}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
+                          style={{ color: '#F59E0B' }}>
+                          {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
+                          <div>
+                            <div>Scan Image</div>
+                            <div className="text-[10px] font-medium opacity-60">AI reads lineup photo</div>
+                          </div>
+                        </button>
+                        <button type="button"
+                          onClick={() => { handlePasteScan(); setImportMenuOpen(false) }}
+                          disabled={scanning}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
+                          style={{ color: '#F59E0B' }}>
+                          <ClipboardPaste className="w-3.5 h-3.5" />
+                          <div>
+                            <div>Paste Image</div>
+                            <div className="text-[10px] font-medium opacity-60">Ctrl+V screenshot</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Export Dropdown ── */}
+            <div className="relative" ref={exportMenuRef}>
+              <button type="button"
+                onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
-                <Upload className="w-3.5 h-3.5" /> Import
+                style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
+                <Download className="w-3.5 h-3.5" />
+                Export
+                <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`} />
               </button>
-            )}
-            <button type="button" onClick={handleExportExcel}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-              style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
-              <Download className="w-3.5 h-3.5" /> Excel
-            </button>
-            <button type="button" onClick={handleCopyImage} disabled={copyingImage}
-              title="Copy lineup as image — paste directly into Viber/Messenger group chats"
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 disabled:opacity-60"
-              style={{ backgroundColor: 'rgba(168,85,247,0.1)', borderColor: 'rgba(168,85,247,0.25)', color: '#A855F7' }}>
-              {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />} Copy Image
-            </button>
-            <button type="button" onClick={handleSaveImage} disabled={copyingImage}
-              title="Save lineup as PNG image file"
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 disabled:opacity-60"
-              style={{ backgroundColor: 'rgba(236,72,153,0.1)', borderColor: 'rgba(236,72,153,0.25)', color: '#EC4899' }}>
-              {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />} Save Image
-            </button>
-            {canEdit && (
-              <>
-                <button type="button" onClick={() => scanFileRef.current?.click()} disabled={scanning}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                  style={{ backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.25)', color: '#F59E0B' }}>
-                  {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />} Scan
-                </button>
-                <button type="button" onClick={handlePasteScan} disabled={scanning}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                  style={{ backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.25)', color: '#F59E0B' }}>
-                  <ClipboardPaste className="w-3.5 h-3.5" /> Paste Image
-                </button>
-              </>
-            )}
-            <button type="button" onClick={() => window.print()}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Printer className="w-3.5 h-3.5" style={{ color: '#10B981' }} /> Print
-            </button>
+              {exportMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+                  <div className="absolute right-0 top-11 z-50 w-52 rounded-2xl overflow-hidden shadow-2xl"
+                    style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="py-1.5">
+                      <button type="button"
+                        onClick={() => { handleExportExcel(); setExportMenuOpen(false) }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        style={{ color: '#3B82F6' }}>
+                        <Download className="w-3.5 h-3.5" />
+                        <div>
+                          <div>Export Excel</div>
+                          <div className="text-[10px] font-medium opacity-60">.xlsx spreadsheet</div>
+                        </div>
+                      </button>
+                      <button type="button"
+                        onClick={() => { handleCopyImage(); setExportMenuOpen(false) }}
+                        disabled={copyingImage}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
+                        style={{ color: '#A855F7' }}>
+                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                        <div>
+                          <div>Copy Image</div>
+                          <div className="text-[10px] font-medium opacity-60">Paste to group chat</div>
+                        </div>
+                      </button>
+                      <button type="button"
+                        onClick={() => { handleSaveImage(); setExportMenuOpen(false) }}
+                        disabled={copyingImage}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
+                        style={{ color: '#EC4899' }}>
+                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                        <div>
+                          <div>Save Image</div>
+                          <div className="text-[10px] font-medium opacity-60">Download .png file</div>
+                        </div>
+                      </button>
+                      <div style={{ height: '1px', backgroundColor: border, margin: '4px 16px' }} />
+                      <button type="button"
+                        onClick={() => { window.print(); setExportMenuOpen(false) }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        style={{ color: textMuted }}>
+                        <Printer className="w-3.5 h-3.5" />
+                        <div>
+                          <div>Print</div>
+                          <div className="text-[10px] font-medium opacity-60">Send to printer</div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ── Add Row (standalone) ── */}
             {canEdit && (
               <button type="button" onClick={handleAddRow}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105">
