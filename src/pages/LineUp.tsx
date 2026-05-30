@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ScanLine, ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, MoreVertical, Camera, Copy, Save,
+  ChevronDown, MoreVertical, Camera, Copy, Save, Check,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -119,6 +120,25 @@ export default function LineUp() {
   const [activeMenu, setActiveMenu] = useState<{ row: LineUpRow; x: number; y: number } | null>(null)
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
   const [tempValue, setTempValue] = useState<string>('')
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const captureAreaRef = useRef<HTMLDivElement>(null)
+
+  interface ConfirmModalState {
+    title: string
+    message: string
+    confirmText?: string
+    cancelText?: string
+    type?: 'danger' | 'warning' | 'info'
+    onConfirm: () => void
+  }
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ message, type })
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500)
+  }
   const isNavigatingRef = useRef(false)
   const mobileDateInputRef   = useRef<HTMLInputElement>(null)
   const desktopDateInputRef  = useRef<HTMLInputElement>(null)
@@ -363,7 +383,7 @@ export default function LineUp() {
       }
     } catch (err: any) {
       console.error("Failed to save inline cell:", err)
-      alert(`Warning: Failed to save to database (${err.message || 'connection failed'}). Saving locally.`)
+      showToast(`Saved locally — DB unreachable (${err.message || 'connection failed'})`, 'error')
       const all = lsLoad()
       const idx = all.findIndex(r => r.id === row.id)
       if (idx >= 0) all[idx] = updatedRow; else all.push(updatedRow)
@@ -646,33 +666,43 @@ export default function LineUp() {
       }
     }
     await handleSaveNotes()
-    alert("✅ Line-up schedule saved successfully!")
+    showToast("Line-up schedule saved successfully!", "success")
+  }
+
+  const performLoadDefaultTemplate = () => {
+    if (!branchId) return
+    const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
+    setRows(defaults)
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    lsSave([...all, ...defaults])
+    showToast('Default template loaded!', 'success')
   }
 
   const handleLoadDefaultTemplate = () => {
     if (!branchId) return
     if (rows.length > 0) {
-      if (!window.confirm("Are you sure you want to load the default template? This will replace your current lineup list.")) return
+      setConfirmModal({
+        title: 'Load Default Template',
+        message: 'This will replace your current lineup entries with the pre-encoded defaults. Continue?',
+        confirmText: 'Load Template',
+        cancelText: 'Keep Current',
+        type: 'warning',
+        onConfirm: performLoadDefaultTemplate,
+      })
+    } else {
+      performLoadDefaultTemplate()
     }
-    const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
-    setRows(defaults)
-    
-    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-    lsSave([...all, ...defaults])
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────
 
-  const handleDelete = async (row: LineUpRow) => {
-    if (!window.confirm(`Remove ${row.service} — ${row.installerName} from the line-up?`)) return
-    
-    // Check if it's a local unsaved row (starts with 'local-' or 'imported-')
+  const performDelete = async (row: LineUpRow) => {
     const isLocal = !row.id || row.id.startsWith('local-') || row.id.startsWith('imported-')
-    
     if (isLocal) {
       setRows(prev => prev.filter(r => r.id !== row.id))
       const all = lsLoad().filter(r => r.id !== row.id)
       lsSave(all)
+      showToast('Row removed.', 'success')
       return
     }
 
@@ -697,10 +727,23 @@ export default function LineUp() {
     if (!deleted) {
       const all = lsLoad().filter(r => r.id !== row.id)
       lsSave(all)
-      alert(`Warning: Failed to delete from the database (${errMsg}). The row was removed from local storage on your device only.`)
+      showToast(`Removed locally — DB error: ${errMsg}`, 'error')
+    } else {
+      showToast('Row deleted successfully.', 'success')
     }
     void fetchLineup()
     if (branchId) void fetchSuggestions(branchId)
+  }
+
+  const handleDelete = (row: LineUpRow) => {
+    setConfirmModal({
+      title: 'Delete Row',
+      message: `Remove ${row.service || 'this entry'}${row.installerName ? ` — ${row.installerName}` : ''} from the line-up?`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      type: 'danger',
+      onConfirm: () => { void performDelete(row) },
+    })
   }
 
   // ── Totals ───────────────────────────────────────────────────────────────
@@ -738,60 +781,54 @@ export default function LineUp() {
         }))
       }
       if (parsedRows.length > 0) {
-        if (window.confirm(`Scanner found ${parsedRows.length} row(s). Replace current lineup for this date?`)) {
-          // 1. Delete existing rows on the server first
-          for (const existingRow of rows) {
-            try {
-              await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` }
-              })
-            } catch (err) {
-              console.error("Failed to delete existing row during replacement:", err)
+        const capturedToken = token
+        const capturedRows = [...rows]
+        setConfirmModal({
+          title: 'AI Scanner',
+          message: `Scanner found ${parsedRows.length} row${parsedRows.length === 1 ? '' : 's'}. Replace the current lineup for this date?`,
+          confirmText: 'Replace Lineup',
+          cancelText: 'Cancel',
+          type: 'warning',
+          onConfirm: async () => {
+            for (const existingRow of capturedRows) {
+              try {
+                await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${capturedToken}` } })
+              } catch (err) { console.error('Failed to delete existing row during scan replacement:', err) }
             }
-          }
-
-          // 2. Save new rows to backend API so all devices can see it
-          let savedRows: LineUpRow[] = []
-          let failedCount = 0
-          let lastErrorMessage = ''
-          for (const row of parsedRows) {
-            try {
-              const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(row),
-              })
-              if (apiRes.ok) {
-                const saved = await apiRes.json() as LineUpRow
-                savedRows.push(saved)
-              } else {
+            let savedRows: LineUpRow[] = []
+            let failedCount = 0
+            let lastErrorMessage = ''
+            for (const row of parsedRows) {
+              try {
+                const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${capturedToken}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(row),
+                })
+                if (apiRes.ok) {
+                  savedRows.push(await apiRes.json() as LineUpRow)
+                } else {
+                  failedCount++
+                  try { const t = await apiRes.text(); if (t) lastErrorMessage = t } catch {}
+                  savedRows.push(row)
+                }
+              } catch (err: any) {
                 failedCount++
-                let errDetail = `Status ${apiRes.status}`
-                try {
-                  const txt = await apiRes.text()
-                  if (txt) errDetail = txt
-                } catch {}
-                lastErrorMessage = errDetail
+                lastErrorMessage = err.message || 'Network error'
                 savedRows.push(row)
               }
-            } catch (err: any) {
-              failedCount++
-              lastErrorMessage = err.message || 'Network connection failed'
-              savedRows.push(row)
             }
-          }
-
-          if (failedCount > 0) {
-            setScanError(`Warning: Failed to save ${failedCount} of ${parsedRows.length} rows to the server database. Error: ${lastErrorMessage}`)
-          }
-
-          // Also update localStorage as local cache
-          const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-          lsSave([...all, ...savedRows])
-          void fetchLineup()
-          if (branchId) void fetchSuggestions(branchId)
-        }
+            const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+            lsSave([...all, ...savedRows])
+            void fetchLineup()
+            if (branchId) void fetchSuggestions(branchId)
+            if (failedCount > 0) {
+              setScanError(`Warning: ${failedCount}/${parsedRows.length} rows failed to save. Error: ${lastErrorMessage}`)
+            } else {
+              showToast(`Scan complete — ${parsedRows.length} rows imported ✓`, 'success')
+            }
+          },
+        })
       } else {
         setScanError('Scanner could not extract lineup rows. Check the image or add rows manually.')
       }
@@ -858,16 +895,19 @@ export default function LineUp() {
   // ── Image Export ─────────────────────────────────────────────────────────
 
   const captureLineupImage = async (): Promise<HTMLCanvasElement | null> => {
-    if (!printAreaRef.current) return null
-    // Temporarily hide no-print elements
-    const noPrintEls = printAreaRef.current.querySelectorAll<HTMLElement>('.no-print')
+    const target = captureAreaRef.current
+    if (!target) return null
+    // Temporarily hide no-print elements within the capture area
+    const noPrintEls = target.querySelectorAll<HTMLElement>('.no-print')
     noPrintEls.forEach(el => { el.style.display = 'none' })
     try {
-      const canvas = await html2canvas(printAreaRef.current, {
-        scale: 2,
+      const canvas = await html2canvas(target, {
+        scale: 3,
         useCORS: true,
         backgroundColor: isLight ? '#ffffff' : '#0A1120',
         logging: false,
+        scrollX: 0,
+        scrollY: -window.scrollY,
       })
       return canvas
     } finally {
@@ -876,7 +916,7 @@ export default function LineUp() {
   }
 
   const handleCopyImage = async () => {
-    if (rows.length === 0) { alert('No data to copy!'); return }
+    if (rows.length === 0) { showToast('No data to copy!', 'error'); return }
     setCopyingImage(true)
     try {
       const canvas = await captureLineupImage()
@@ -887,21 +927,20 @@ export default function LineUp() {
           await navigator.clipboard.write([
             new ClipboardItem({ 'image/png': blob })
           ])
-          alert('✅ Line-up copied as image! Paste it directly into your group chat.')
+          showToast('Line-up copied as image! Paste it directly into your group chat.', 'success')
         } catch {
-          // Fallback: open in new tab so user can right-click save/copy
           window.open(canvas.toDataURL('image/png'), '_blank')
         }
         setCopyingImage(false)
       }, 'image/png')
     } catch (e: any) {
-      alert('Failed to capture image: ' + (e.message || 'Unknown error'))
+      showToast('Failed to capture image: ' + (e.message || 'Unknown error'), 'error')
       setCopyingImage(false)
     }
   }
 
   const handleSaveImage = async () => {
-    if (rows.length === 0) { alert('No data to export!'); return }
+    if (rows.length === 0) { showToast('No data to export!', 'error'); return }
     setCopyingImage(true)
     try {
       const canvas = await captureLineupImage()
@@ -910,8 +949,9 @@ export default function LineUp() {
       link.download = `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.png`
       link.href = canvas.toDataURL('image/png')
       link.click()
+      showToast('Line-up image downloaded successfully!', 'success')
     } catch (e: any) {
-      alert('Failed to save image: ' + (e.message || 'Unknown error'))
+      showToast('Failed to save image: ' + (e.message || 'Unknown error'), 'error')
     } finally {
       setCopyingImage(false)
     }
@@ -920,12 +960,53 @@ export default function LineUp() {
   // ── Excel ────────────────────────────────────────────────────────────────
 
   const handleExportExcel = () => {
-    if (rows.length === 0) { alert('No data to export!'); return }
+    if (rows.length === 0) { showToast('No data to export!', 'error'); return }
     const data = rows.map((r, i) => ({ '#': i + 1, SERVICE: r.service, DRIVER: r.driverName, 'SCHEDULED TIME – IN OF DRIVER': r.driverTime, INSTALLER: r.installerName, 'SCHEDULED TIME – IN OF INSTALLER': r.installerTime, ROUTE: r.route, REMARKS: r.remarks }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'LineUp')
     XLSX.writeFile(wb, `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.xlsx`)
+  }
+
+  const performExcelImport = async (parsedRows: LineUpRow[]) => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    for (const existingRow of rows) {
+      try {
+        await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      } catch (err) { console.error('Failed to delete existing row during import:', err) }
+    }
+    let failedCount = 0
+    let lastErrorMessage = ''
+    const savedRows: LineUpRow[] = []
+    for (const row of parsedRows) {
+      try {
+        const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(row),
+        })
+        if (apiRes.ok) {
+          savedRows.push(await apiRes.json() as LineUpRow)
+        } else {
+          failedCount++
+          try { const t = await apiRes.text(); if (t) lastErrorMessage = t } catch {}
+          savedRows.push(row)
+        }
+      } catch (err: any) {
+        failedCount++
+        lastErrorMessage = err.message || 'Network error'
+        savedRows.push(row)
+      }
+    }
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    lsSave([...all, ...savedRows])
+    void fetchLineup()
+    if (branchId) void fetchSuggestions(branchId)
+    if (failedCount === 0) {
+      showToast(`Imported ${parsedRows.length} rows — synced to server ✓`, 'success')
+    } else {
+      showToast(`Imported ${parsedRows.length - failedCount}/${parsedRows.length} rows. ${failedCount} failed: ${lastErrorMessage}`, 'error')
+    }
   }
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -936,7 +1017,7 @@ export default function LineUp() {
       try {
         const wb = XLSX.read(evt.target?.result, { type: 'binary' })
         const rawData = XLSX.utils.sheet_to_json<any>(wb.Sheets[wb.SheetNames[0]])
-        if (!rawData || rawData.length === 0) { alert('The selected sheet appears to be empty.'); return }
+        if (!rawData || rawData.length === 0) { showToast('The selected sheet appears to be empty.', 'error'); return }
         const parsedRows: LineUpRow[] = []
         rawData.forEach((row: any, index: number) => {
           const k = (re: RegExp, ex?: RegExp) => Object.keys(row).find(k => re.test(k) && (!ex || !ex.test(k)))
@@ -951,70 +1032,16 @@ export default function LineUp() {
             parsedRows.push({ id: `imported-${Date.now()}-${index}`, lineupDate: date, branchId, service, driverName, driverTime, installerName, installerTime, route, remarks, sortOrder: index })
           }
         })
-        if (parsedRows.length === 0) { alert('No valid lineup rows found.'); return }
-        if (!window.confirm(`Import ${parsedRows.length} lineup entries? This will replace current entries for ${branchName} on ${date}.`)) return
-
-        // ── Save to backend API so all devices see the lineup ──
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-
-        // 1. Delete existing rows on the server first
-        for (const existingRow of rows) {
-          try {
-            await fetch(`${API_BASE_URL}/v1/lineup/${existingRow.id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          } catch (err) {
-            console.error("Failed to delete existing row during replacement:", err)
-          }
-        }
-
-        // 2. Insert new rows
-        let savedCount = 0
-        let failedCount = 0
-        let lastErrorMessage = ''
-        const savedRows: LineUpRow[] = []
-        for (const row of parsedRows) {
-          try {
-            const apiRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(row),
-            })
-            if (apiRes.ok) {
-              const saved = await apiRes.json() as LineUpRow
-              savedRows.push(saved)
-              savedCount++
-            } else {
-              failedCount++
-              let errDetail = `Status ${apiRes.status}`
-              try {
-                const txt = await apiRes.text()
-                if (txt) errDetail = txt
-              } catch {}
-              lastErrorMessage = errDetail
-              savedRows.push(row) // keep local row if API fails
-            }
-          } catch (err: any) {
-            failedCount++
-            lastErrorMessage = err.message || 'Network connection failed'
-            savedRows.push(row) // fallback to local
-          }
-        }
-
-        // Also keep localStorage as local cache
-        const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
-        lsSave([...all, ...savedRows])
-
-        // Refresh from backend to reflect the saved state
-        void fetchLineup()
-        if (branchId) void fetchSuggestions(branchId)
-
-        const apiNote = failedCount === 0
-          ? 'Synced to server database successfully ✓'
-          : `Warning: ${failedCount}/${parsedRows.length} rows failed to save to server database. Error: ${lastErrorMessage}`
-        alert(`Imported ${parsedRows.length} rows for ${branchName}! ${apiNote}`)
-      } catch { alert('Error parsing Excel file.') }
+        if (parsedRows.length === 0) { showToast('No valid lineup rows found in file.', 'error'); return }
+        setConfirmModal({
+          title: 'Import Excel',
+          message: `Import ${parsedRows.length} lineup entr${parsedRows.length === 1 ? 'y' : 'ies'} for ${branchName}? This will replace current entries for ${date}.`,
+          confirmText: 'Import',
+          cancelText: 'Cancel',
+          type: 'info',
+          onConfirm: () => { void performExcelImport(parsedRows) },
+        })
+      } catch { showToast('Error parsing Excel file.', 'error') }
     }
     reader.readAsBinaryString(file)
     e.target.value = ''
@@ -1047,6 +1074,67 @@ export default function LineUp() {
 
   return (
     <div style={{ backgroundColor: pageBg, minHeight: '100%' }}>
+
+      {/* ── Toast — portalled to body so it always clears the sticky header ── */}
+      {createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: toast ? '20px' : '-80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            opacity: toast ? 1 : 0,
+            pointerEvents: toast ? 'auto' : 'none',
+            transition: 'top 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.22s ease',
+          }}
+        >
+          {toast && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 14px',
+                borderRadius: '14px',
+                backgroundColor: isLight ? '#ffffff' : '#1E293B',
+                border: `1px solid ${
+                  toast.type === 'success' ? 'rgba(16,185,129,0.4)'
+                  : toast.type === 'error'  ? 'rgba(239,68,68,0.4)'
+                  : 'rgba(59,130,246,0.4)'
+                }`,
+                boxShadow: '0 12px 40px -8px rgba(0,0,0,0.22)',
+                minWidth: '220px',
+                maxWidth: '400px',
+              }}
+            >
+              <div
+                style={{
+                  width: '24px', height: '24px', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  backgroundColor: toast.type === 'success' ? 'rgba(16,185,129,0.12)'
+                    : toast.type === 'error' ? 'rgba(239,68,68,0.12)'
+                    : 'rgba(59,130,246,0.12)',
+                }}
+              >
+                {toast.type === 'success' && <Check style={{ width: '13px', height: '13px', color: '#10B981' }} />}
+                {toast.type === 'error'   && <X     style={{ width: '13px', height: '13px', color: '#EF4444' }} />}
+                {toast.type === 'info'    && <Check style={{ width: '13px', height: '13px', color: '#3B82F6' }} />}
+              </div>
+              <span style={{ fontSize: '12px', fontWeight: 600, flex: 1, color: isLight ? '#0f172a' : '#F0F6FF' }}>{toast.message}</span>
+              <button
+                onClick={() => setToast(null)}
+                style={{ flexShrink: 0, marginLeft: '4px', opacity: 0.4, cursor: 'pointer', background: 'none', border: 'none', padding: 0, display: 'flex' }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
+              >
+                <X style={{ width: '12px', height: '12px', color: isLight ? '#0f172a' : '#F0F6FF' }} />
+              </button>
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
 
       {/* Always-in-DOM hidden inputs */}
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
@@ -1281,7 +1369,7 @@ export default function LineUp() {
 
         {/* Mobile Save Schedule Button */}
         {canEdit && rows.length > 0 && (
-          <div className="mt-4 px-1">
+          <div className="mt-4 px-1 no-print">
             <button
               onClick={handleSaveAll}
               className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-colors shadow-sm"
@@ -1473,6 +1561,7 @@ export default function LineUp() {
         {/* Original Line-Up Sheet */}
         <div ref={printAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div ref={captureAreaRef} style={{ backgroundColor: cardBg }}>
 
           {/* Scan error / preview banners */}
           {scanError && (
@@ -1659,7 +1748,7 @@ export default function LineUp() {
                 <button
                   type="button"
                   onClick={handleSaveAll}
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm no-print"
                 >
                   <Save className="w-3.5 h-3.5" /> Save
                 </button>
@@ -1687,6 +1776,7 @@ export default function LineUp() {
               </tbody>
             </table>
           </div>
+          </div>{/* /captureAreaRef */}
         </div>
       </div>
 
@@ -1740,6 +1830,85 @@ export default function LineUp() {
             <Trash2 className="w-3.5 h-3.5 text-red-500" />
             Delete row
           </button>
+        </div>
+      )}
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <div
+          className="fixed inset-0 z-[11000] flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setConfirmModal(null)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl flex flex-col gap-0 overflow-hidden"
+            style={{
+              backgroundColor: isLight ? '#ffffff' : '#1E293B',
+              border: `1px solid ${
+                confirmModal.type === 'danger'  ? 'rgba(239,68,68,0.25)'
+                : confirmModal.type === 'warning' ? 'rgba(245,158,11,0.25)'
+                : 'rgba(59,130,246,0.25)'
+              }`,
+              width: '100%',
+              maxWidth: '380px',
+              margin: '0 20px',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Accent bar */}
+            <div style={{
+              height: '3px',
+              background: confirmModal.type === 'danger'  ? 'linear-gradient(90deg, #EF4444, #F87171)'
+                        : confirmModal.type === 'warning' ? 'linear-gradient(90deg, #F59E0B, #FCD34D)'
+                        : 'linear-gradient(90deg, #3B82F6, #60A5FA)',
+            }} />
+            {/* Body */}
+            <div className="px-6 py-5 flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                  style={{
+                    backgroundColor: confirmModal.type === 'danger'  ? 'rgba(239,68,68,0.1)'
+                                   : confirmModal.type === 'warning' ? 'rgba(245,158,11,0.1)'
+                                   : 'rgba(59,130,246,0.1)',
+                  }}
+                >
+                  {confirmModal.type === 'danger'  && <Trash2 className="w-4 h-4" style={{ color: '#EF4444' }} />}
+                  {confirmModal.type === 'warning' && <ClipboardList className="w-4 h-4" style={{ color: '#F59E0B' }} />}
+                  {confirmModal.type === 'info'    && <Upload className="w-4 h-4" style={{ color: '#3B82F6' }} />}
+                  {!confirmModal.type             && <Check className="w-4 h-4" style={{ color: '#10B981' }} />}
+                </div>
+                <div className="flex flex-col gap-1 flex-1">
+                  <p className="text-sm font-black" style={{ color: textPrimary }}>{confirmModal.title}</p>
+                  <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{confirmModal.message}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1 justify-end">
+                <button
+                  onClick={() => setConfirmModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-colors hover:opacity-80"
+                  style={{
+                    backgroundColor: isLight ? '#F1F5F9' : '#0F172A',
+                    color: textMuted,
+                    border: `1px solid ${border}`,
+                  }}
+                >
+                  {confirmModal.cancelText ?? 'Cancel'}
+                </button>
+                <button
+                  onClick={() => { confirmModal.onConfirm(); setConfirmModal(null) }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95"
+                  style={{
+                    background: confirmModal.type === 'danger'  ? 'linear-gradient(135deg, #EF4444, #DC2626)'
+                              : confirmModal.type === 'warning' ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                              : 'linear-gradient(135deg, #3B82F6, #2563EB)',
+                  }}
+                >
+                  {confirmModal.confirmText ?? 'Confirm'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
