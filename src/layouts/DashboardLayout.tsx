@@ -89,12 +89,33 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff'
 
-  const navLinks = isAuthorizedRole
-    ? allLinks.filter(link => {
-        if (!link.roles) return true // visible to everyone (Overview, Tickets)
-        return link.roles.includes(role)
-      })
-    : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Line-Up' || link.name === 'Service Report')
+  const isSalesUser = (role === 'manager' || role === 'staff') && (
+    (user?.name || '').toUpperCase().includes('SALES') ||
+    (user?.branchId || '').endsWith('-sales') ||
+    (user?.email || '').toLowerCase().includes('sales')
+  )
+
+  const navLinks = isSalesUser
+    ? allLinks.filter(link => ['Schedules', 'Audit Report', 'Line-Up', 'Service Report', 'Daily Report'].includes(link.name))
+    : isAuthorizedRole
+      ? allLinks.filter(link => {
+          if (!link.roles) return true // visible to everyone (Overview, Tickets)
+          return link.roles.includes(role)
+        })
+      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Line-Up' || link.name === 'Service Report')
+
+  // Redirect if current path is not allowed for the user
+  useEffect(() => {
+    if (!user) return
+    const currentPath = location.pathname
+    const alwaysAllowed = ['/profile']
+    if (alwaysAllowed.includes(currentPath)) return
+
+    const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
+    if (!isAllowed && navLinks.length > 0) {
+      navigate(navLinks[0].path, { replace: true })
+    }
+  }, [location.pathname, navLinks, user, navigate])
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'

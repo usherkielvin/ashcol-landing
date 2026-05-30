@@ -328,6 +328,7 @@ export default function LineUp() {
       sortOrder: editing.sortOrder ?? rows.length,
     }
     let saved = false
+    let errMsg = ''
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const isNew = !editing.id || editing.id.startsWith("local-")
@@ -337,13 +338,25 @@ export default function LineUp() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (res.ok) saved = true
-    } catch { /* fall through */ }
+      if (res.ok) {
+        saved = true
+      } else {
+        try {
+          const data = await res.json()
+          errMsg = data.message || `Server returned status ${res.status}`
+        } catch {
+          errMsg = `Server returned status ${res.status}`
+        }
+      }
+    } catch (e: any) {
+      errMsg = e.message || 'Network connection failed'
+    }
     if (!saved) {
       const all = lsLoad()
       const idx = all.findIndex(r => r.id === payload.id)
       if (idx >= 0) all[idx] = payload; else all.push(payload)
       lsSave(all)
+      alert(`Warning: Failed to save to the database (${errMsg}). This line-up was saved locally on your device only and will not be visible on other devices. Please check your network or contact admin.`)
     }
     setEditing(null)
     setSaving(false)
@@ -356,12 +369,28 @@ export default function LineUp() {
   const handleDelete = async (row: LineUpRow) => {
     if (!window.confirm(`Remove ${row.service} — ${row.installerName} from the line-up?`)) return
     let deleted = false
+    let errMsg = ''
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-      if (res.ok) deleted = true
-    } catch { /* fall through */ }
-    if (!deleted) { const all = lsLoad().filter(r => r.id !== row.id); lsSave(all) }
+      if (res.ok) {
+        deleted = true
+      } else {
+        try {
+          const data = await res.json()
+          errMsg = data.message || `Server returned status ${res.status}`
+        } catch {
+          errMsg = `Server returned status ${res.status}`
+        }
+      }
+    } catch (e: any) {
+      errMsg = e.message || 'Network connection failed'
+    }
+    if (!deleted) {
+      const all = lsLoad().filter(r => r.id !== row.id)
+      lsSave(all)
+      alert(`Warning: Failed to delete from the database (${errMsg}). The row was removed from local storage on your device only.`)
+    }
     void fetchLineup()
     if (branchId) void fetchSuggestions(branchId)
   }
