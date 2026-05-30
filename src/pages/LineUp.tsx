@@ -649,6 +649,18 @@ export default function LineUp() {
     alert("✅ Line-up schedule saved successfully!")
   }
 
+  const handleLoadDefaultTemplate = () => {
+    if (!branchId) return
+    if (rows.length > 0) {
+      if (!window.confirm("Are you sure you want to load the default template? This will replace your current lineup list.")) return
+    }
+    const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
+    setRows(defaults)
+    
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    lsSave([...all, ...defaults])
+  }
+
   // ── Delete ───────────────────────────────────────────────────────────────
 
   const handleDelete = async (row: LineUpRow) => {
@@ -1085,6 +1097,8 @@ export default function LineUp() {
                         <div className="py-1.5">
                           {canEdit && (
                             <>
+                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load Template" color="#10B981"
+                                onClick={() => { handleLoadDefaultTemplate(); setMoreMenuOpen(false) }} />
                               <DropdownItem
                                 icon={scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
                                 label="Scan Image" color="#F59E0B" disabled={scanning}
@@ -1254,7 +1268,7 @@ export default function LineUp() {
                 onChange={e => handleUpdateNotes(e.target.value)}
                 onBlur={handleSaveNotes}
                 placeholder="Type custom comments/notes (e.g. SIR ROMMEL - DAY OFF)..."
-                className="w-full text-xs font-bold outline-none resize-none min-h-[80px]"
+                className="w-full text-xs font-bold outline-none resize-none min-h-[80px] no-scrollbar"
                 style={{ backgroundColor: 'transparent', border: 'none', padding: 0, color: '#EF4444' }}
               />
             ) : (
@@ -1436,6 +1450,14 @@ export default function LineUp() {
 
 
 
+             {/* ── Load Template (standalone) ── */}
+            {canEdit && (
+              <button type="button" onClick={handleLoadDefaultTemplate}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-emerald-600 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all hover:scale-105">
+                <ClipboardList className="w-4 h-4" /> Load Template
+              </button>
+            )}
+
             {/* ── Add Row (standalone) ── */}
             {canEdit && (
               <button type="button" onClick={handleAddRow}
@@ -1589,7 +1611,7 @@ export default function LineUp() {
                     onBlur={handleSaveNotes}
                     placeholder="e.g. SIR ROMMEL - DAY OFF"
                     rows={3}
-                    className="w-full text-xs font-bold outline-none resize-none print:hidden"
+                    className="w-full text-xs font-bold outline-none resize-none print:hidden no-scrollbar"
                     style={{
                       backgroundColor: 'transparent',
                       border: 'none',
@@ -1729,6 +1751,8 @@ export default function LineUp() {
           .print-area { position: fixed; inset: 0; margin: 0; padding: 0; border: none !important; }
           .no-print { display: none !important; }
         }
+        .no-scrollbar::-webkit-scrollbar { display: none !important; }
+        .no-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
       `}</style>
     </div>
   )
