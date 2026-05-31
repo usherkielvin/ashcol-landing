@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
+  LayoutDashboard, Ticket as TicketIcon, Users,
   Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, ClipboardList, FileSpreadsheet,
-  HardHat, Receipt, CalendarCheck, Scan
+  ChevronRight, UserCircle, ChevronDown, CheckCheck,
+  PanelLeftOpen, Receipt, Scan,
+  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole } from '../utils/api'
@@ -70,18 +70,18 @@ export default function DashboardLayout() {
   }, [])
 
   const allLinks = [
-    { name: 'Overview',   path: '/dashboard-home', icon: LayoutDashboard },
-    { name: 'Tickets',    path: '/tickets',   icon: TicketIcon },
-    { name: 'Relay Monitoring', path: '/schedules', icon: ClipboardList, roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Branch Line-Up', path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Branch Service Report', path: '/service-report', icon: HardHat,           roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
-    { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
-    { name: 'DTR Scanner',    path: '/dtr-scanner',    icon: Scan,              roles: ['admin', 'manager', 'staff'] },
-    { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
-    { name: 'Branch Transaction', path: '/daily-report', icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
-    { name: 'Branch Performance',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Branch Directory', path: '/branches', icon: Building2, roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
+    { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
+    { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
+    { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
+    { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },
+    { name: 'Audit Expenses',  path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager'] },
+    { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff'] },
+    { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'manager', 'staff', 'employee'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
@@ -94,13 +94,13 @@ export default function DashboardLayout() {
   )
 
   const navLinks = isSalesUser
-    ? allLinks.filter(link => ['Relay Monitoring', 'Branch Performance', 'Branch Line-Up', 'Branch Service Report', 'Branch Transaction', 'Branch Directory'].includes(link.name))
+    ? allLinks.filter(link => ['Relay Monitoring', 'Performance', 'Field Schedule', 'Service Report', 'Transactions', 'Directory'].includes(link.name))
     : isAuthorizedRole
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Branch Performance' || link.name === 'Branch Line-Up' || link.name === 'Branch Service Report' || link.name === 'Branch Directory')
+      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Directory')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
