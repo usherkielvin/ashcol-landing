@@ -78,7 +78,7 @@ export default function DashboardLayout() {
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
     { name: 'Inventory',     path: '/inventory',    icon: Package,           roles: ['admin', 'manager'] },
     { name: 'Analytics',     path: '/analytics',    icon: BarChart2,         roles: ['admin', 'manager'] },
-    { name: 'Audit Report',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Branch Performance',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'DTR Scanner',    path: '/dtr-scanner',    icon: Scan,              roles: ['admin', 'manager', 'staff'] },
     { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
     { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -96,13 +96,13 @@ export default function DashboardLayout() {
   )
 
   const navLinks = isSalesUser
-    ? allLinks.filter(link => ['Schedules', 'Audit Report', 'Line-Up', 'Service Report', 'Daily Report'].includes(link.name))
+    ? allLinks.filter(link => ['Schedules', 'Branch Performance', 'Line-Up', 'Service Report', 'Daily Report'].includes(link.name))
     : isAuthorizedRole
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Audit Report' || link.name === 'Line-Up' || link.name === 'Service Report')
+      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Branch Performance' || link.name === 'Line-Up' || link.name === 'Service Report')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {

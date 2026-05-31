@@ -307,7 +307,7 @@ export default function DailySalesForm() {
             className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
             style={{ backgroundColor: '#10B981' }}
           >
-            View Audit Report
+            View Branch Performance
           </a>
         </div>
       </div>

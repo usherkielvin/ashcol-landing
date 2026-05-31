@@ -535,7 +535,7 @@ export default function DailyAuditReport() {
         <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Branch Audit —{' '}
+            Daily Branch Performance —{' '}
             {viewMode === 'single'
               ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
               : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
