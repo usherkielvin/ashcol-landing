@@ -215,11 +215,41 @@ export default function LineUp() {
       if (!res.ok) return
       const data = await res.json()
       const list = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
-      setBranches(list)
-      if (user?.branchId) setBranchId(user.branchId)
-      else if (list.length > 0) setBranchId(list[0].id)
+      
+      const newList: { id: string; name: string }[] = []
+      for (const b of list) {
+        const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+        if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
+          newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
+          newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
+        } else {
+          newList.push({ id: b.id, name: cleanName })
+        }
+      }
+      newList.sort((a, b) => a.name.localeCompare(b.name))
+      
+      let finalList = newList
+      if (user?.role && user.role.toLowerCase() === 'manager' && user.branchId) {
+        finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(user.branchId + '-'))
+      }
+      setBranches(finalList)
+      
+      if (user?.branchId) {
+        if (user.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+          const emailLower = (user.email || '').toLowerCase()
+          if (emailLower.includes('service')) {
+            setBranchId(`${user.branchId}-services`)
+          } else {
+            setBranchId(`${user.branchId}-sales`)
+          }
+        } else {
+          setBranchId(user.branchId)
+        }
+      } else if (finalList.length > 0) {
+        setBranchId(finalList[0].id)
+      }
     } catch (e) { console.error(e) }
-  }, [user?.branchId])
+  }, [user?.branchId, user?.role, user?.email])
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
@@ -1355,7 +1385,7 @@ export default function LineUp() {
           <div style={{ background: 'linear-gradient(135deg, #059669, #047857)', padding: '16px 20px' }}>
             <div className="mb-3">
               <p className="text-[10px] font-black uppercase tracking-[3px] text-emerald-200 mb-0.5">Scheduling</p>
-              <h2 className="text-xl font-black text-white tracking-tight">Team Line-Up</h2>
+              <h2 className="text-xl font-black text-white tracking-tight">Daily Branch Line-Up</h2>
             </div>
 
             <div className="lineup-toolbar">
@@ -1597,8 +1627,8 @@ export default function LineUp() {
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div>
             <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#10B981' }}>Scheduling</p>
-            <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>Team Line-Up</h2>
-            <p className="text-sm" style={{ color: textMuted }}>Manage and view tomorrow's field deployment schedule by branch.</p>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
+            <p className="text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0 w-full lg:w-auto justify-start lg:justify-end">
             {/* Branch */}

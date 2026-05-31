@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Wrench, CalendarDays, Upload, Plus, Edit3, Trash2,
+  CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -153,8 +153,6 @@ export default function DailyServiceReport() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
 
   const primaryGreen      = '#16A34A' // Green-600
-  const primaryGreenBg    = 'rgba(22, 163, 74, 0.08)'
-  const primaryGreenBorder = 'rgba(22, 163, 74, 0.25)'
 
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
@@ -250,7 +248,7 @@ export default function DailyServiceReport() {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
           newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
-          newList.push({ id: `${b.id}-services`, name: 'Taguig - Services' })
+          newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
         } else {
           newList.push({ id: b.id, name: cleanName })
         }
@@ -574,72 +572,22 @@ export default function DailyServiceReport() {
   return (
     <div className="flex flex-col gap-5 pb-8" onClick={() => setContextMenu(null)}>
 
-      {/* Header */}
+      {/* Thinner, simple design header controls */}
       <div
-        className="rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_30px_rgba(0,0,0,0.2)]"
+        className="rounded-2xl p-3 px-4 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
       >
-        <div className="flex items-center gap-4">
-          <div className="rounded-2xl p-3 flex items-center justify-center shrink-0 shadow-inner" 
-               style={{ backgroundColor: primaryGreenBg, border: `1.5px solid ${primaryGreenBorder}` }}>
-            <Wrench className="w-6 h-6" style={{ color: primaryGreen }} />
-          </div>
-          <div>
-            <h1 className="text-xl md:text-2xl font-black tracking-tight" style={{ color: textPrimary }}>
-              Daily Service Report
-            </h1>
-            <p className="text-xs mt-1 font-medium" style={{ color: textMuted }}>
-              Centrally log, update, and manage daily field service and equipment installations
-            </p>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Add Service Button */}
-          {canEdit && (
-            <button type="button"
-                    onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white shadow-md shadow-[#16A34A]/10 hover:shadow-[#16A34A]/20 transition-all hover:scale-[1.02] active:scale-95"
-                    style={{ backgroundColor: primaryGreen }}>
-              <Plus className="w-4 h-4" /> Add Service Row
-            </button>
-          )}
-
-          {/* Excel Import Button */}
-          {canImport && (
-            <>
-              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
-              <button id="svc-import-btn" type="button" disabled={importing || viewMode === 'weekly'}
-                      onClick={() => document.getElementById('svc-import-input')?.click()}
-                      title={viewMode === 'weekly'
-                        ? 'Excel import is per-day. Switch to Daily view to import.'
-                        : isManager
-                          ? `Import only YOUR branch's rows into ${date}`
-                          : `Import every branch into ${date}`}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                <Upload className={`w-4 h-4 ${importing ? 'animate-bounce' : ''}`} style={{ color: primaryGreen }} />
-                {importing ? 'Importing…' : 'Import Spreadsheet'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Control Deck */}
-      <div className="rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm"
-           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        {/* Left Side: Date picker & Branch filter */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Branch filter */}
+          {/* Branch Filter */}
           {isAdmin && (
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all focus-within:border-emerald-500"
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-sm"
                  style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Building2 className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
+              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
               <select
                 value={branchFilter}
                 onChange={e => setBranchFilter(e.target.value)}
-                className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-2"
+                className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-1"
                 style={{ color: textPrimary }}
               >
                 {branches.map(b => (
@@ -649,13 +597,13 @@ export default function DailyServiceReport() {
             </div>
           )}
 
-          {/* Date picker */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all"
+          {/* Date Picker inline */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
-            <div className="flex items-center gap-2">
+            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
+            <div className="flex items-center gap-1.5">
               {viewMode !== 'weekly' && (
-                <span className="uppercase tracking-wider text-[10px] font-black opacity-60 border-r pr-2" style={{ borderColor: border }}>
+                <span className="uppercase tracking-wider text-[9px] font-black opacity-60 border-r pr-1.5" style={{ borderColor: border }}>
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
                 </span>
               )}
@@ -667,53 +615,86 @@ export default function DailyServiceReport() {
               )}
             </div>
           </div>
+        </div>
 
+        {/* Right Side: Search bar & Actions */}
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Search bar */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs border focus-within:border-emerald-500 transition-all min-w-0"
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs md:max-w-sm shadow-sm"
                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-4 h-4 shrink-0" style={{ color: primaryGreen }} />
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
             <input
               type="text"
-              placeholder="Search customers, address, model, tech..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs min-w-0 w-44 md:w-64 font-medium"
+              className="bg-transparent outline-none text-xs flex-1 font-medium"
               style={{ color: textPrimary }}
             />
             {searchQuery && (
               <button type="button" onClick={() => setSearchQuery('')} title="Clear"
                       className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-        </div>
 
-        {/* Counter Badge */}
-        <div className="flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-xl"
-             style={{ color: primaryGreen, backgroundColor: primaryGreenBg }}>
-          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryGreen }} />
-          {visible.length} {visible.length === 1 ? 'Record' : 'Records'} Found
+          {/* Action buttons wrapper */}
+          <div className="flex items-center gap-2 shrink-0">
+            {canEdit && (
+              <button type="button"
+                      onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm transition-all"
+                      style={{ backgroundColor: primaryGreen }}>
+                <Plus className="w-3.5 h-3.5" /> Add Row
+              </button>
+            )}
+
+            {canImport && (
+              <>
+                <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
+                <button id="svc-import-btn" type="button" disabled={importing || viewMode === 'weekly'}
+                        onClick={() => document.getElementById('svc-import-input')?.click()}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                  <Upload className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} style={{ color: primaryGreen }} />
+                  {importing ? 'Importing…' : 'Import'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* KPI statistics strip */}
+      {/* Simplified compact stats bar */}
       {!loading && rows.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          {[
-            { label: 'Service Records', value: totals.count.toString(), color: primaryGreen, bgTint: 'rgba(22,163,74,0.08)', borderTint: 'rgba(22,163,74,0.2)' },
-            { label: 'Total Units',     value: totals.qty.toString(),   color: '#0284C7', bgTint: 'rgba(2,132,199,0.08)', borderTint: 'rgba(2,132,199,0.2)' },
-            { label: 'Total Charged',   value: `₱${peso(totals.amount)}`, color: '#D97706', bgTint: 'rgba(217,119,6,0.08)', borderTint: 'rgba(217,119,6,0.2)' },
-            { label: 'Free Installs',   value: totals.freeInstalls.toString(), color: '#0D9488', bgTint: 'rgba(13,148,136,0.08)', borderTint: 'rgba(13,148,136,0.2)' },
-            { label: 'Completed Jobs',  value: totals.completed.toString(), color: '#16A34A', bgTint: 'rgba(22,163,74,0.08)', borderTint: 'rgba(22,163,74,0.2)' },
-            { label: 'Cancelled Jobs',  value: totals.cancelled.toString(), color: '#DC2626', bgTint: 'rgba(220,38,38,0.08)', borderTint: 'rgba(220,38,38,0.2)' },
-          ].map((k, i) => (
-            <div key={i} className="rounded-2xl p-4 flex flex-col justify-between gap-1 shadow-sm transition-all hover:scale-[1.02]"
-                 style={{ backgroundColor: cardBg, border: `1.5px solid ${border}`, borderLeft: `4px solid ${k.color}` }}>
-              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
-              <span className="text-xl font-black tracking-tight mt-1.5" style={{ color: k.color }}>{k.value}</span>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-bold px-5 py-3 rounded-2xl border shadow-sm"
+             style={{ backgroundColor: cardBg, borderColor: border }}>
+          <span style={{ color: textMuted }}>REPORT SUMMARY:</span>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Records:</span>
+            <span style={{ color: textPrimary }}>{totals.count}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Units:</span>
+            <span style={{ color: '#0284C7' }}>{totals.qty}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Charged:</span>
+            <span style={{ color: '#D97706' }}>₱{peso(totals.amount)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Free Installs:</span>
+            <span style={{ color: '#0D9488' }}>{totals.freeInstalls}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Completed:</span>
+            <span style={{ color: '#16A34A' }}>{totals.completed}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ color: textMuted }}>Cancelled:</span>
+            <span style={{ color: '#DC2626' }}>{totals.cancelled}</span>
+          </div>
         </div>
       )}
 

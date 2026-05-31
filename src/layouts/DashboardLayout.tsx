@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon, Users, Wrench,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, Building2, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, Package, BarChart2, ClipboardList, FileSpreadsheet,
+  PanelLeftOpen, ClipboardList, FileSpreadsheet,
   HardHat, Receipt, CalendarCheck, Scan
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -72,18 +72,16 @@ export default function DashboardLayout() {
   const allLinks = [
     { name: 'Overview',   path: '/dashboard-home', icon: LayoutDashboard },
     { name: 'Tickets',    path: '/tickets',   icon: TicketIcon },
-    { name: 'Schedules',   path: '/schedules', icon: ClipboardList, roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Branches',   path: '/branches',  icon: Building2,  roles: ['admin'] },
+    { name: 'Relay Monitoring', path: '/schedules', icon: ClipboardList, roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Branch Line-Up', path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Branch Service Report', path: '/service-report', icon: HardHat,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',  path: '/employees', icon: Wrench,     roles: ['admin', 'manager'] },
     { name: 'Customers',  path: '/customers', icon: Users,      roles: ['admin', 'manager', 'staff'] },
-    { name: 'Inventory',     path: '/inventory',    icon: Package,           roles: ['admin', 'manager'] },
-    { name: 'Analytics',     path: '/analytics',    icon: BarChart2,         roles: ['admin', 'manager'] },
-    { name: 'Branch Performance',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'DTR Scanner',    path: '/dtr-scanner',    icon: Scan,              roles: ['admin', 'manager', 'staff'] },
     { name: 'Audit Expenses', path: '/audit-expenses', icon: Receipt,           roles: ['admin', 'manager'] },
-    { name: 'Line-Up',        path: '/lineup',          icon: CalendarCheck,     roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Service Report', path: '/service-report', icon: HardHat,           roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Daily Report',   path: '/daily-report',   icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
+    { name: 'Branch Transaction', path: '/daily-report', icon: FileSpreadsheet,   roles: ['admin', 'manager', 'staff'] },
+    { name: 'Branch Performance',   path: '/audit-report',   icon: ClipboardList,     roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Branch Directory', path: '/branches', icon: Building2, roles: ['admin', 'manager', 'staff', 'employee'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
@@ -96,13 +94,13 @@ export default function DashboardLayout() {
   )
 
   const navLinks = isSalesUser
-    ? allLinks.filter(link => ['Schedules', 'Branch Performance', 'Line-Up', 'Service Report', 'Daily Report'].includes(link.name))
+    ? allLinks.filter(link => ['Relay Monitoring', 'Branch Performance', 'Branch Line-Up', 'Branch Service Report', 'Branch Transaction', 'Branch Directory'].includes(link.name))
     : isAuthorizedRole
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Schedules' || link.name === 'Branch Performance' || link.name === 'Line-Up' || link.name === 'Service Report')
+      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Branch Performance' || link.name === 'Branch Line-Up' || link.name === 'Branch Service Report' || link.name === 'Branch Directory')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {

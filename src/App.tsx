@@ -12,8 +12,7 @@ import Customers from './pages/Customers'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
-import Inventory from './pages/Inventory'
-import Analytics from './pages/Analytics'
+
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import DailySalesForm from './pages/DailySalesForm'
@@ -81,8 +80,7 @@ export default function App() {
               <Route path="/branches" element={<Branches />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="/analytics" element={<Analytics />} />
+
               <Route path="/audit-report" element={<DailyAuditReport />} />
               <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
               <Route path="/daily-report" element={<DailySalesForm />} />
