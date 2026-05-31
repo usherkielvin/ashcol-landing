@@ -110,6 +110,9 @@ export default function LineUp() {
   const printAreaRef   = useRef<HTMLDivElement>(null)
   const importMenuRef  = useRef<HTMLDivElement>(null)
   const exportMenuRef  = useRef<HTMLDivElement>(null)
+  // Save-race prevention: map local-* IDs → real DB IDs, and track in-flight POSTs
+  const localToRealIdRef    = useRef<Map<string, string>>(new Map())
+  const pendingLocalSaveRef = useRef<Set<string>>(new Set())
   const [scanning, setScanning]             = useState(false)
   const [scanPreview, setScanPreview]       = useState<string | null>(null)
   const [scanError, setScanError]           = useState('')
@@ -229,13 +232,15 @@ export default function LineUp() {
       newList.sort((a, b) => a.name.localeCompare(b.name))
       
       let finalList = newList
-      if (user?.role && user.role.toLowerCase() === 'manager' && user.branchId) {
+      if (user?.role && user.role.toLowerCase() !== 'admin' && user.branchId) {
         finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(user.branchId + '-'))
       }
       setBranches(finalList)
       
       if (user?.branchId) {
-        if (user.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+        const hasSplit = finalList.some(b => b.id.startsWith(user.branchId + '-'))
+        if (hasSplit) {
+          // Branch was split into sales/services sub-branches — pick by email
           const emailLower = (user.email || '').toLowerCase()
           if (emailLower.includes('service')) {
             setBranchId(`${user.branchId}-services`)
@@ -243,7 +248,9 @@ export default function LineUp() {
             setBranchId(`${user.branchId}-sales`)
           }
         } else {
-          setBranchId(user.branchId)
+          // Use exact match or fall back to first in list
+          const exactMatch = finalList.find(b => b.id === user.branchId)
+          setBranchId(exactMatch ? user.branchId : (finalList[0]?.id ?? ''))
         }
       } else if (finalList.length > 0) {
         setBranchId(finalList[0].id)
@@ -386,16 +393,26 @@ export default function LineUp() {
     if (shouldClose) {
       setEditingCell(null)
     }
-    const oldVal = row[field];
-    if (oldVal === val) return
-    const updatedRow = { ...row, [field]: val }
 
-    setRows(prev => prev.map(r => r.id === row.id ? updatedRow : r))
+    // Resolve: if a previous POST for this local row already returned a real DB ID, use it
+    const resolvedId  = localToRealIdRef.current.get(row.id) ?? row.id
+    const resolvedRow = resolvedId !== row.id ? { ...row, id: resolvedId } : row
+
+    const oldVal = resolvedRow[field]
+    if (oldVal === val) return
+
+    const isNew = !resolvedId || resolvedId.startsWith('local-')
+
+    // Prevent duplicate POSTs: if a POST is already in-flight for this local ID, skip
+    if (isNew && pendingLocalSaveRef.current.has(resolvedId)) return
+    if (isNew) pendingLocalSaveRef.current.add(resolvedId)
+
+    const updatedRow = { ...resolvedRow, [field]: val }
+    setRows(prev => prev.map(r => (r.id === row.id || r.id === resolvedId) ? updatedRow : r))
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const isNew = !row.id || row.id.startsWith("local-")
-      const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${row.id}`
+      const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${resolvedId}`
       const res = await fetch(url, {
         method: isNew ? 'POST' : 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -403,7 +420,11 @@ export default function LineUp() {
       })
       if (res.ok) {
         const saved = await res.json() as LineUpRow
-        setRows(prev => prev.map(r => r.id === row.id ? saved : r))
+        // Remember the mapping so future edits on the same row use the real ID
+        if (isNew && saved.id !== resolvedId) {
+          localToRealIdRef.current.set(row.id, saved.id)
+        }
+        setRows(prev => prev.map(r => (r.id === row.id || r.id === resolvedId) ? saved : r))
         if (branchId) void fetchSuggestions(branchId)
       } else {
         let errMsg = `Status ${res.status}`
@@ -414,12 +435,14 @@ export default function LineUp() {
         throw new Error(errMsg)
       }
     } catch (err: any) {
-      console.error("Failed to save inline cell:", err)
+      console.error('Failed to save inline cell:', err)
       showToast(`Saved locally — DB unreachable (${err.message || 'connection failed'})`, 'error')
       const all = lsLoad()
-      const idx = all.findIndex(r => r.id === row.id)
+      const idx = all.findIndex(r => r.id === row.id || r.id === resolvedId)
       if (idx >= 0) all[idx] = updatedRow; else all.push(updatedRow)
       lsSave(all)
+    } finally {
+      if (isNew) pendingLocalSaveRef.current.delete(resolvedId)
     }
   }
 
@@ -1445,11 +1468,15 @@ export default function LineUp() {
               <div className="lineup-branch-control">
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
                   <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6ee7b7' }} />
-                  <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                    className="bg-transparent outline-none text-xs font-bold w-full text-white cursor-pointer">
-                    {branches.length === 0 && <option value="">Loading…</option>}
-                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  {role === 'admin' ? (
+                    <select value={branchId} onChange={e => setBranchId(e.target.value)}
+                      className="bg-transparent outline-none text-xs font-bold w-full text-white cursor-pointer">
+                      {branches.length === 0 && <option value="">Loading…</option>}
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  ) : (
+                    <span className="text-xs font-bold truncate">{branchName || 'Loading…'}</span>
+                  )}
                 </div>
               </div>
 
@@ -1634,13 +1661,22 @@ export default function LineUp() {
             {/* Branch */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-              <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                className="rounded-xl pl-8 pr-7 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                {branches.length === 0 && <option value="">Loading branches…</option>}
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
+              {role === 'admin' ? (
+                <>
+                  <select value={branchId} onChange={e => setBranchId(e.target.value)}
+                    className="rounded-xl pl-8 pr-7 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                    {branches.length === 0 && <option value="">Loading branches…</option>}
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
+                </>
+              ) : (
+                <span className="rounded-xl pl-8 pr-4 py-2 text-xs font-bold"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                  {branchName || 'Loading…'}
+                </span>
+              )}
             </div>
 
             {/* Date */}
