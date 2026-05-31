@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
+  AlertTriangle, X, Receipt, ChevronRight, ChevronDown, FileText, Eye, EyeOff,
   ArrowUp, ArrowDown, Trophy, Trash2,
-  Minimize2, Maximize2, Printer
+  Minimize2, Maximize2, Printer, MoreVertical,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -131,8 +131,10 @@ export default function DailyAuditReport() {
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [compactView, setCompactView] = useState(false)
+  const [expandedMobileRow, setExpandedMobileRow] = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const mobileDateRef = useRef<HTMLInputElement>(null)
 
-  // Edit state
   // Edit state
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<Record<string, string>>({})
@@ -382,6 +384,12 @@ export default function DailyAuditReport() {
     { key: 'freeInstall', label: 'Free Install',           short: 'Free' },
   ]
 
+  const mobileSortOptions = [
+    { key: 'remarks', label: 'Remarks' },
+    { key: 'difference', label: 'Difference' },
+    { key: 'grossSales', label: 'Sales' },
+  ]
+
   // A small styled input for edit mode
   const renderEditInput = (field: string, isInt = false, color?: string) => (
     <input
@@ -438,11 +446,123 @@ export default function DailyAuditReport() {
 
   const isEditing = (row: AuditRow) => editingRowKey === rowKey(row)
 
-  return (
-    <div className="flex flex-col gap-5 pb-8">
+  const mobileDateLabel = viewMode === 'single'
+    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })
+    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
 
-      {/* ── Thinner, Simpler Header Toolbar ─────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
+  const renderMobileMetric = (label: string, value: string, color = textPrimary) => (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[10px] font-medium truncate" style={{ color: textMuted }}>{label}</span>
+      <span className="text-xs font-semibold tabular-nums truncate" style={{ color }}>{value}</span>
+    </div>
+  )
+
+  const mobileKpiChip = (label: string, value: string, color: string) => (
+    <div className="mobile-kpi-chip" style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}>
+      <span className="text-[10px] font-medium" style={{ color: textMuted }}>{label}</span>
+      <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4 pb-8 md:pb-8">
+
+      <input type="file" accept=".xlsx,.xls" className="hidden" id="excel-import-input" onChange={handleImportExcel} />
+
+      {/* ── Mobile header ──────────────────────────────────────────────────── */}
+      <div className="md:hidden rounded-xl no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
+              <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
+              Performance
+            </h2>
+            <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
+          </div>
+          <div className="relative shrink-0">
+            <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg"
+              style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {mobileMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
+                <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                  <div className="py-1">
+                    <button type="button" onClick={() => { window.print(); setMobileMenuOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
+                      <Printer className="w-3.5 h-3.5" style={{ color: textMuted }} /> Print
+                    </button>
+                    {canImportExcel && (
+                      <>
+                        <button type="button" onClick={() => { document.getElementById('excel-import-input')?.click(); setMobileMenuOpen(false) }}
+                          disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40" style={{ color: textPrimary }}>
+                          <TrendingUp className="w-3.5 h-3.5" style={{ color: textMuted }} /> Import
+                        </button>
+                        <button type="button" onClick={() => { handleClearDate(); setMobileMenuOpen(false) }}
+                          disabled={clearing || (viewMode === 'range' && rangeFrom !== rangeTo)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40" style={{ color: textPrimary }}>
+                          <Trash2 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Clear
+                        </button>
+                      </>
+                    )}
+                    {hiddenBranches.length > 0 && (
+                      <button type="button" onClick={() => { setHiddenBranches([]); setMobileMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
+                        <Eye className="w-3.5 h-3.5" style={{ color: textMuted }} /> Show hidden ({hiddenBranches.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
+          <div className="flex items-center rounded-lg text-xs font-medium overflow-hidden"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+            {(['single', 'range'] as const).map(m => (
+              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-3 py-1.5"
+                style={{ backgroundColor: viewMode === m ? '#10B981' : 'transparent', color: viewMode === m ? '#fff' : textMuted }}>
+                {m === 'single' ? 'Daily' : 'Range'}
+              </button>
+            ))}
+          </div>
+          {viewMode === 'single' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1 min-w-[130px]"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+              <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+              <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="bg-transparent outline-none text-xs w-full" style={{ color: textPrimary }} />
+            </div>
+          ) : (
+            <>
+              <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
+                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+            </>
+          )}
+        </div>
+
+        {!loading && rows.length > 0 && (
+          <div className="mobile-scroll-snap px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
+            {mobileKpiChip('Gross', `₱${peso(totals.grossSales)}`, '#3B82F6')}
+            {mobileKpiChip('Cash', `₱${peso(totals.totalCashCollection)}`, '#10B981')}
+            {mobileKpiChip('Online', `₱${peso(totals.totalOnlineCollection)}`, '#6366F1')}
+            {mobileKpiChip('Expenses', `₱${peso(totals.totalExpenses)}`, '#EF4444')}
+            {mobileKpiChip('For coll.', `₱${peso(totals.forCollection)}`, '#F59E0B')}
+          </div>
+        )}
+
+      </div>
+
+      {/* ── Desktop toolbar ─────────────────────────────────────────────────── */}
+      <div className="hidden md:flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
         <div className="flex items-center gap-2 flex-wrap">
           {/* View mode toggle */}
           <div id="audit-view-toggle" className="flex items-center rounded-lg text-xs font-bold overflow-hidden"
@@ -495,7 +615,6 @@ export default function DailyAuditReport() {
 
           {canImportExcel && (
             <>
-              <input type="file" accept=".xlsx,.xls" className="hidden" id="excel-import-input" onChange={handleImportExcel} />
               <button id="audit-import-btn" type="button"
                 disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
                 onClick={() => document.getElementById('excel-import-input')?.click()}
@@ -522,9 +641,9 @@ export default function DailyAuditReport() {
       {/* ── Print area enclosing KPI Counters and Table ─────────────────────────── */}
       <div className="print-area flex flex-col gap-5">
 
-      {/* ── Smaller Cleaner KPI Counters Bar ─────────────────────────────────── */}
+      {/* ── Smaller Cleaner KPI Counters Bar (desktop) ─────────────────────── */}
       {!loading && rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-y-2 gap-x-6 px-4 py-2.5 rounded-xl border text-xs"
+        <div className="hidden md:flex flex-wrap items-center gap-y-2 gap-x-6 px-4 py-2.5 rounded-xl border text-xs"
           style={{ backgroundColor: cardBg, borderColor: border }}>
           {[
             { label: 'Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
@@ -547,7 +666,7 @@ export default function DailyAuditReport() {
 
       {/* ── Manager/Staff CTA ─────────────────────────────────────────── */}
       {isManagerOrStaff && (
-        <div className="rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs no-print"
+        <div className="hidden md:flex rounded-xl px-4 py-2.5 items-center justify-between gap-3 text-xs no-print"
           style={{ backgroundColor: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
@@ -569,7 +688,7 @@ export default function DailyAuditReport() {
         ).sort((a, b) => b.difference - a.difference)
         if (aboveQuotaBranches.length === 0) return null
         return (
-          <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-xl border no-print"
+          <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-xl border no-print hidden md:flex"
             style={{ backgroundColor: cardBg, borderColor: border }}>
             <span className="font-black uppercase tracking-wider text-[10px]" style={{ color: '#10B981' }}>Above Quota:</span>
             <div className="flex flex-wrap gap-2">
@@ -585,8 +704,8 @@ export default function DailyAuditReport() {
         )
       })()}
 
-      {/* ── Audit Table ──────────────────────────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      {/* ── Audit Table (desktop) ──────────────────────────────────────────── */}
+      <div className="hidden md:block rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Table toolbar */}
         <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
@@ -992,9 +1111,194 @@ export default function DailyAuditReport() {
         )}
       </div>
 
+      {!loading && rows.length > 0 && (
+        <div className="md:hidden no-print rounded-xl p-2 flex items-center gap-2"
+          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <select
+            value={sortConfig?.key || ''}
+            onChange={e => {
+              const key = e.target.value
+              setSortConfig(key ? { key, direction: 'desc' } : null)
+            }}
+            className="flex-1 min-w-0 rounded-lg px-3 py-2 text-xs font-medium outline-none"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            aria-label="Filter performance list"
+          >
+            <option value="">All</option>
+            {mobileSortOptions.map(option => (
+              <option key={option.key} value={option.key}>{option.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!sortConfig}
+            onClick={() => setSortConfig(prev => prev ? { ...prev, direction: prev.direction === 'desc' ? 'asc' : 'desc' } : prev)}
+            className="h-9 w-9 rounded-lg flex items-center justify-center disabled:opacity-40"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}
+            title={sortConfig?.direction === 'asc' ? 'Ascending' : 'Descending'}
+          >
+            {sortConfig?.direction === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </button>
+        </div>
+      )}
+
+      {/* ── Mobile branch cards ────────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col gap-3 no-print">
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }} />
+            ))}
+          </div>
+        ) : visibleRows.length === 0 ? (
+          <div className="rounded-2xl flex flex-col items-center justify-center py-16 gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+            <p className="text-sm font-semibold text-center px-6" style={{ color: textMuted }}>No reports for this date</p>
+          </div>
+        ) : (
+          visibleRows.map((row, idx) => {
+            const key = rowKey(row)
+            const editing = isEditing(row)
+            const isAbove = row.remarks === 'ABOVE QUOTA'
+            const isPending = row.remarks === 'PENDING'
+            const noRecord = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
+            const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
+            const isExpanded = expandedMobileRow === key || editing
+            const statusColor = isPending ? '#F59E0B' : noTransaction ? '#EF4444' : '#10B981'
+            const diffColor = noRecord ? textMuted : isAbove ? '#10B981' : '#EF4444'
+
+            return (
+              <div key={key} className="relative rounded-xl overflow-hidden"
+                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <button type="button" className="w-full text-left px-4 py-3"
+                  onClick={() => {
+                    if (editing) return
+                    setExpandedMobileRow(isExpanded && expandedMobileRow === key ? null : key)
+                  }}>
+                  <div className="flex items-start gap-3">
+                    <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{row.branchName}</span>
+                        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="mobile-status-dot" style={{ backgroundColor: statusColor }} />
+                        <span className="text-xs font-medium" style={{ color: statusColor }}>
+                          {isPending ? 'Pending' : noTransaction ? 'No transaction' : 'Checked'}
+                        </span>
+                        {!noRecord && row.timeUploaded && (
+                          <span className="text-xs" style={{ color: textMuted }}>{row.timeUploaded}</span>
+                        )}
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
+                          style={remarksBadgeStyle(row.remarks, noRecord, isAbove)}>
+                          {formatRemarksLabel(row.remarks, false)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${border}` }}>
+                        {renderMobileMetric('Sales', `₱${peso(row.grossSales)}`, '#3B82F6')}
+                        {renderMobileMetric('Quota', `₱${peso(row.targetDailyQuota)}`, '#8B5CF6')}
+                        {renderMobileMetric('Diff', noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, diffColor)}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="px-4 pb-4" style={{ borderTop: `1px solid ${border}` }}>
+                    <div className="grid grid-cols-2 gap-2 pt-3">
+                      {[
+                        { label: 'Cash', field: 'totalCashCollection', val: row.totalCashCollection, color: '#10B981', money: true },
+                        { label: 'Online', field: 'totalOnlineCollection', val: row.totalOnlineCollection, color: '#6366F1', money: true },
+                        { label: 'Expenses', field: 'totalExpenses', val: row.totalExpenses, color: '#EF4444', money: true },
+                        { label: 'For coll.', field: 'forCollection', val: row.forCollection, color: '#F59E0B', money: true },
+                        { label: 'COH prev', field: 'cohPreviousDay', val: row.cohPreviousDay, color: textPrimary, money: true },
+                        { label: 'Total CFD', val: row.totalCohCfd, color: textPrimary, money: true, readOnly: true },
+                        { label: 'Units', field: 'totalUnitsInstalledServiced', val: row.totalUnitsInstalledServiced, color: textPrimary, int: true },
+                        { label: 'Cancelled', field: 'totalCancelled', val: row.totalCancelled, color: row.totalCancelled > 0 ? '#EF4444' : textMuted, int: true },
+                      ].map(item => (
+                        <div key={item.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
+                          <span className="text-[10px] font-medium block mb-0.5" style={{ color: textMuted }}>{item.label}</span>
+                          {editing && item.field && !item.readOnly ? (
+                            <input
+                              type="text"
+                              inputMode={item.int ? 'numeric' : 'decimal'}
+                              value={editValues[item.field] || ''}
+                              onChange={e => setEditValues(prev => ({ ...prev, [item.field!]: e.target.value.replace(/,/g, '') }))}
+                              onClick={e => e.stopPropagation()}
+                              className="w-full bg-transparent outline-none text-xs font-medium border-b"
+                              style={{ color: item.color, borderColor: inputBorder }}
+                            />
+                          ) : (
+                            <span className="text-xs font-medium tabular-nums" style={{ color: item.color }}>
+                              {item.money ? `₱${peso(item.val as number)}` : String(item.val ?? 0)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {editing && (
+                      <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
+                        <span className="text-[10px] font-medium block mb-1" style={{ color: textMuted }}>Remarks</span>
+                        {renderEditRemarksInput()}
+                        {viewMode === 'single' && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[10px] font-medium" style={{ color: textMuted }}>Time</span>
+                            <input type="time" value={editValues.timeUploaded || ''}
+                              onChange={e => setEditValues(prev => ({ ...prev, timeUploaded: e.target.value }))}
+                              onClick={e => e.stopPropagation()}
+                              className="bg-transparent outline-none text-xs font-medium border-b flex-1"
+                              style={{ color: textPrimary, borderColor: inputBorder }} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 mt-3">
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); setSelectedRow(row); setRowExpenses(null); fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim()) }}
+                        className="flex-1 py-2 rounded-lg text-xs font-medium"
+                        style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
+                        Details
+                      </button>
+                      {viewMode === 'single' && canEdit && (
+                        editing ? (
+                          <>
+                            <button type="button" onClick={e => handleSaveRow(row, e)} disabled={saving}
+                              className="flex-1 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                              style={{ backgroundColor: '#10B981' }}>
+                              {saving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button type="button" onClick={e => { e.stopPropagation(); setEditingRowKey(null) }} disabled={saving}
+                              className="px-3 py-2 rounded-lg text-xs font-medium" style={{ color: textMuted, border: `1px solid ${inputBorder}` }}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={e => { startEditing(row, e); setExpandedMobileRow(key) }}
+                            className="flex-1 py-2 rounded-lg text-xs font-medium"
+                            style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
+                            Edit
+                          </button>
+                        )
+                      )}
+                      <button type="button" onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
+                        className="p-2 rounded-lg" style={{ border: `1px solid ${inputBorder}` }} title="Hide">
+                        <EyeOff className="w-3.5 h-3.5" style={{ color: textMuted }} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+
       {/* ── For Collection Banner ──────────────────────────────────── */}
       {!loading && totals.forCollection > 0 && (
-        <div className="rounded-2xl p-4 flex items-center justify-between no-print"
+        <div className="hidden md:flex rounded-2xl p-4 items-center justify-between no-print"
           style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
           <span className="text-sm font-bold uppercase tracking-wider" style={{ color: '#F59E0B' }}>Total for Collection</span>
           <span className="text-xl font-black" style={{ color: '#F59E0B' }}>₱{peso(totals.forCollection)}</span>

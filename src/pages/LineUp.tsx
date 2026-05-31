@@ -1405,57 +1405,58 @@ export default function LineUp() {
       {/* ═══════════════════════════════════════════════════════
           MOBILE VIEW  — cards + 3-dot menu  (hidden on md+)
           ═══════════════════════════════════════════════════════ */}
-      <div className="md:hidden flex flex-col gap-4 pb-8">
+      <div className="md:hidden flex flex-col gap-4 pb-28">
 
         {/* Mobile Header */}
-        <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div style={{ background: 'linear-gradient(135deg, #059669, #047857)', padding: '16px 20px' }}>
-            <div className="mb-3">
-              <p className="text-[10px] font-black uppercase tracking-[3px] text-emerald-200 mb-0.5">Scheduling</p>
-              <h2 className="text-xl font-black text-white tracking-tight">Daily Branch Line-Up</h2>
-            </div>
+        <div className="rounded-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="px-4 pt-4 pb-3">
+            <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
+              <Truck className="w-4 h-4" style={{ color: '#10B981' }} />
+              Field Schedule
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: textMuted }}>{englishLabel(date)}</p>
 
-            <div className="lineup-toolbar">
-              {/* Date picker */}
+            <div className="lineup-toolbar mt-3">
               <div className="lineup-date-control">
-                <div onClick={() => mobileDateInputRef.current?.showPicker?.()}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full cursor-pointer">
-                  <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs w-full"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                  <ClipboardList className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
                   <input ref={mobileDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                    className="bg-transparent outline-none text-xs font-bold text-white w-full cursor-pointer" />
+                    className="bg-transparent outline-none text-xs w-full" style={{ color: textPrimary }} />
                 </div>
               </div>
 
-              {/* + and ⋯ buttons */}
               <div className="lineup-actions">
                 {canEdit && (
-                  <button onClick={handleAddRow} title="Add Row"
-                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/20 border border-white/25 text-white active:scale-95">
+                  <button type="button" onClick={handleAddRow} title="Add row"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg"
+                    style={{ border: `1px solid ${inputBorder}`, color: textPrimary }}>
                     <Plus className="w-4 h-4" />
                   </button>
                 )}
                 <div className="relative" ref={moreMenuRef}>
-                  <button onClick={() => setMoreMenuOpen(o => !o)}
-                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 active:scale-95">
+                  <button type="button" onClick={() => setMoreMenuOpen(o => !o)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg"
+                    style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
                     <MoreVertical className="w-4 h-4" />
                   </button>
                   {moreMenuOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-                      <div className="absolute right-0 top-11 z-50 w-44 rounded-xl overflow-hidden shadow-xl"
+                      <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
                         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                         <div className="py-1">
                           {canEdit && (
                             <>
-                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load Template" color={textMuted}
+                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load template" color={textMuted}
                                 onClick={() => { handleLoadDefaultTemplate(); setMoreMenuOpen(false) }} />
                               {rows.length > 0 && (
-                                <DropdownItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Clear Schedule" color="#EF4444"
+                                <DropdownItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Clear" color={textMuted}
                                   onClick={() => { handleClearAllRows(); setMoreMenuOpen(false) }} />
                               )}
-                              <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste Image" color={textMuted} disabled={scanning}
+                              <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste image" color={textMuted} disabled={scanning}
                                 onClick={() => { handlePasteScan(); setMoreMenuOpen(false) }} />
-                              <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import Excel" color={textMuted}
+                              <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import" color={textMuted}
                                 onClick={() => { fileInputRef.current?.click(); setMoreMenuOpen(false) }} />
                             </>
                           )}
@@ -1468,47 +1469,46 @@ export default function LineUp() {
                 </div>
               </div>
 
-              {/* Branch — full width row */}
               <div className="lineup-branch-control">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-white/10 border border-white/20 text-white w-full">
-                  <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6ee7b7' }} />
+                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs w-full"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                  <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                   {role === 'admin' ? (
                     <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                      className="bg-transparent outline-none text-xs font-bold w-full text-white cursor-pointer">
+                      className="bg-transparent outline-none text-xs w-full cursor-pointer" style={{ color: textPrimary }}>
                       {branches.length === 0 && <option value="">Loading…</option>}
                       {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   ) : (
-                    <span className="text-xs font-bold truncate">{branchName || 'Loading…'}</span>
+                    <span className="text-xs truncate" style={{ color: textPrimary }}>{branchName || 'Loading…'}</span>
                   )}
                 </div>
               </div>
 
-              {/* Import + Export — 2-column grid row */}
               <div className="lineup-import-export-actions">
                 {canEdit && (
-                  <button onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-white/10 border border-white/20 text-emerald-300">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+                    style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
                     <Upload className="w-3.5 h-3.5" /> Import
                   </button>
                 )}
-                <button onClick={handleExportExcel}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs bg-white/10 border border-white/20 text-blue-300">
+                <button type="button" onClick={handleExportExcel}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+                  style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
                   <Download className="w-3.5 h-3.5" /> Export
                 </button>
               </div>
             </div>
-            <p className="text-[10px] font-semibold text-emerald-200 mt-3 tracking-wider">{englishLabel(date)}</p>
           </div>
 
-          {/* Stat pills */}
           {rows.length > 0 && (
-            <div className="px-4 py-2.5 flex flex-wrap gap-2" style={{ borderBottom: `1px solid ${border}` }}>
-              <StatPill label="Trucks" value={rows.length} color="#10B981" />
-              <StatPill label="Units"  value={totalUnits}  color="#3B82F6" />
-              {totalSurvey   > 0 && <StatPill label="Survey"    value={totalSurvey}    color="#F59E0B" />}
-              {totalBackJob  > 0 && <StatPill label="Back Job"  value={totalBackJob}   color="#EF4444" />}
-              {totalDismantle > 0 && <StatPill label="Dismantle" value={totalDismantle} color="#F43F5E" />}
+            <div className="mobile-scroll-snap px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
+              <StatPill label="Trucks" value={rows.length} color="#10B981" chip />
+              <StatPill label="Units" value={totalUnits} color="#3B82F6" chip />
+              {totalSurvey > 0 && <StatPill label="Survey" value={totalSurvey} color="#F59E0B" chip />}
+              {totalBackJob > 0 && <StatPill label="Back job" value={totalBackJob} color="#EF4444" chip />}
+              {totalDismantle > 0 && <StatPill label="Dismantle" value={totalDismantle} color="#F43F5E" chip />}
             </div>
           )}
 
@@ -1534,76 +1534,86 @@ export default function LineUp() {
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#10B981' }} />
-              <p className="text-sm font-semibold" style={{ color: textMuted }}>Loading schedule…</p>
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: textMuted }} />
+              <p className="text-sm" style={{ color: textMuted }}>Loading…</p>
             </div>
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-2xl flex flex-col items-center justify-center py-20 gap-4"
+          <div className="rounded-xl flex flex-col items-center justify-center py-16 gap-3"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.08)' }}>
-              <Truck className="w-7 h-7" style={{ color: '#10B981' }} />
-            </div>
+            <Truck className="w-8 h-8" style={{ color: textMuted, opacity: 0.4 }} />
             <div className="text-center">
-              <p className="text-sm font-black mb-1" style={{ color: textPrimary }}>No Schedule Yet</p>
-              <p className="text-xs" style={{ color: textMuted }}>{branchName ? `${branchName} — ` : ''}{englishLabel(date)}</p>
+              <p className="text-sm font-medium" style={{ color: textPrimary }}>No schedule yet</p>
+              <p className="text-xs mt-1" style={{ color: textMuted }}>{branchName ? `${branchName} · ` : ''}{englishLabel(date)}</p>
             </div>
             {canEdit && (
-              <button onClick={handleAddRow}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                <Plus className="w-4 h-4" /> Add First Entry
+              <button type="button" onClick={handleAddRow}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+                style={{ backgroundColor: '#10B981' }}>
+                <Plus className="w-4 h-4" /> Add entry
               </button>
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {rows.map((row, idx) => {
               const badge = getRemarkBadge(row)
               const isExpanded = expandedCard === row.id
+              const accentColor = badge?.color ?? '#10B981'
               return (
-                <div key={row.id} className="rounded-2xl overflow-hidden"
+                <div key={row.id} className="lineup-mobile-card relative rounded-xl"
                   style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                  <button className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+                  <div className="mobile-card-accent" style={{ backgroundColor: accentColor }} />
+
+                  <button type="button" className="w-full flex items-start gap-3 px-4 py-3 pl-5 text-left"
                     onClick={() => setExpandedCard(isExpanded ? null : row.id)}>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-black text-xs text-white"
-                      style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>{idx + 1}</div>
+                    <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-black" style={{ color: textPrimary }}>{row.service || '—'}</span>
-                        {badge && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider"
-                            style={{ color: badge.color, backgroundColor: badge.bg }}>{badge.label}</span>
-                        )}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>{row.service || '—'}</span>
+                        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
                       </div>
-                      <p className="text-xs truncate mt-0.5" style={{ color: textMuted }}>
-                        {row.installerName || row.driverName || 'No name set'} · {row.route ? row.route.slice(0, 40) + (row.route.length > 40 ? '…' : '') : 'No route'}
+                      <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>
+                        {row.route || 'No route'}
                       </p>
+                      {badge && (
+                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                          style={{ color: badge.color, backgroundColor: badge.bg }}>
+                          {badge.label}
+                        </span>
+                      )}
+                      {(row.driverName || row.installerName) && (
+                        <p className="text-xs mt-1 truncate" style={{ color: textMuted }}>
+                          {row.driverName && <span style={{ color: '#3B82F6' }}>{row.driverName} {row.driverTime}</span>}
+                          {row.driverName && row.installerName && ' · '}
+                          {row.installerName && <span style={{ color: '#10B981' }}>{row.installerName} {row.installerTime}</span>}
+                        </p>
+                      )}
                     </div>
-                    <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
                   </button>
+
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${border}` }}>
                       <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: border }}>
                         {renderMobileCell(row, 'service', 'Service', <Truck className="w-3 h-3" />, finalVehicleOptions, true)}
                         {renderMobileCell(row, 'driverName', 'Driver', <User className="w-3 h-3" />, finalDriverOptions)}
-                        {renderMobileCell(row, 'driverTime', 'Driver In', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
+                        {renderMobileCell(row, 'driverTime', 'Driver in', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
                         {renderMobileCell(row, 'installerName', 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
-                        {renderMobileCell(row, 'installerTime', 'Installer In', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
+                        {renderMobileCell(row, 'installerTime', 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
                         {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
                         {renderMobileCell(row, 'remarks', 'Remarks', <MessageSquare className="w-3 h-3" />, finalRemarksOptions, true)}
                       </div>
                       {canEdit && (
-                        <div className="flex items-center justify-end gap-2 px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
-                          <button onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
-                            style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6', border: '1px solid rgba(59,130,246,0.2)' }}>
-                            <Edit3 className="w-3.5 h-3.5" /> Edit
+                        <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
+                          <button type="button" onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold text-white"
+                            style={{ backgroundColor: '#3B82F6' }}>
+                            Edit
                           </button>
-                          <button onClick={() => handleDelete(row)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
-                            style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
-                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          <button type="button" onClick={() => handleDelete(row)}
+                            className="px-3 py-2 rounded-lg text-xs font-medium"
+                            style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.35)' }}>
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       )}
@@ -1617,32 +1627,38 @@ export default function LineUp() {
 
         {/* Mobile Notes Card */}
         {rows.length > 0 && (
-          <div className="rounded-2xl p-4 flex flex-col gap-2 mt-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="rounded-xl p-4 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <span className="text-[11px] font-medium" style={{ color: textMuted }}>Notes</span>
             {canEdit ? (
               <textarea
                 value={lineupNotes}
                 onChange={e => handleUpdateNotes(e.target.value)}
                 onBlur={handleSaveNotes}
-                placeholder="Type custom comments/notes (e.g. SIR ROMMEL - DAY OFF)..."
-                className="w-full text-xs font-bold outline-none resize-none min-h-[80px] no-scrollbar"
-                style={{ backgroundColor: 'transparent', border: 'none', padding: 0, color: '#EF4444' }}
+                placeholder="Team notes (e.g. day off, reminders)…"
+                className="w-full text-xs outline-none resize-none min-h-[72px] no-scrollbar rounded-lg px-3 py-2"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               />
             ) : (
-              <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444' }}>
+              <div className="text-xs whitespace-pre-line" style={{ color: textPrimary }}>
                 {lineupNotes || '—'}
               </div>
             )}
           </div>
         )}
 
-        {/* Mobile Save Schedule Button */}
-        {canEdit && rows.length > 0 && (
-          <div className="mt-4 px-1 no-print">
-            <button
-              onClick={handleSaveAll}
-              className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-colors shadow-sm"
-            >
-              <Save className="w-3.5 h-3.5" /> Save
+        {canEdit && (
+          <div className="lineup-sticky-save no-print flex items-center gap-2">
+            {rows.length > 0 && (
+              <button type="button" onClick={handleSaveAll}
+                className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white"
+                style={{ backgroundColor: '#10B981' }}>
+                Save
+              </button>
+            )}
+            <button type="button" onClick={handleAddRow} title="Add row"
+              className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg text-white"
+              style={{ backgroundColor: '#3B82F6' }}>
+              <Plus className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -2251,12 +2267,20 @@ function DropdownItem({ icon, label, color, onClick, disabled }: {
   )
 }
 
-function StatPill({ label, value, color }: { label: string; value: number; color: string }) {
+function StatPill({ label, value, color = '#64748b', chip }: { label: string; value: number; color?: string; chip?: boolean }) {
+  if (chip) {
+    return (
+      <div className="mobile-kpi-chip" style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}>
+        <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
+        <span className="text-[10px] font-medium" style={{ color: `${color}99` }}>{label}</span>
+      </div>
+    )
+  }
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-      style={{ backgroundColor: color + '18', border: `1px solid ${color}30`, color }}>
-      <span className="font-black text-sm leading-none">{value}</span>
-      <span className="uppercase tracking-wide text-[9px]">{label}</span>
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+      style={{ backgroundColor: (color ?? '#64748b') + '18', border: `1px solid ${(color ?? '#64748b')}30`, color: color ?? '#64748b' }}>
+      <span className="font-semibold text-sm leading-none">{value}</span>
+      <span className="text-[10px]">{label}</span>
     </div>
   )
 }

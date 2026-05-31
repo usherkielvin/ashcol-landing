@@ -168,5 +168,65 @@
   .lineup-import-export-actions button:only-child {
     grid-column: 1 / -1;
   }
+
+  /* Shared mobile scroll chips (Performance + Lineup) */
+  .mobile-scroll-snap {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    scrollbar-width: none;
+  }
+
+  .mobile-scroll-snap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-scroll-snap > * {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+
+  .mobile-kpi-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 96px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--chip-border, #e2e8f0);
+    background: var(--chip-bg, transparent);
+  }
+
+  .mobile-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .lineup-mobile-card {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .lineup-sticky-save {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--mobile-sticky-border, #e2e8f0);
+    background: var(--mobile-sticky-bg, #ffffff);
+  }
+
+  html.dark .lineup-sticky-save,
+  :root:not(.light) .lineup-sticky-save {
+    --mobile-sticky-border: #1e2d48;
+    --mobile-sticky-bg: #0a1120;
+  }
 }
 
