@@ -39,8 +39,7 @@ function RootRouter() {
   
   if (isPortalSubdomain) {
     if (user) {
-      const role = (user.role || '').toLowerCase()
-      return <Navigate to={role === 'admin' ? '/dashboard-home' : '/schedules'} replace />
+      return <Navigate to="/audit-report" replace />
     }
     return <Navigate to="/login" replace />
   }
@@ -52,8 +51,7 @@ function RootRouter() {
 function DashboardRedirect() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  const role = (user.role || '').toLowerCase()
-  return <Navigate to={role === 'admin' ? '/dashboard-home' : '/schedules'} replace />
+  return <Navigate to="/audit-report" replace />
 }
 
 export default function App() {

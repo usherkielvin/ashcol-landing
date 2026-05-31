@@ -34,9 +34,7 @@ export default function Login() {
   }, [prefillEmail, prefillPassword])
   useEffect(() => {
     if (user) {
-      const role = (user.role || '').toLowerCase()
-      const target = role === 'admin' ? '/dashboard-home' : '/schedules'
-      navigate(target, { replace: true })
+      navigate('/audit-report', { replace: true })
     }
   }, [user, navigate])
 
@@ -105,9 +103,7 @@ export default function Login() {
         jobTitle: appUser.jobTitle ?? null,
       })
 
-      const role = (appUser.role || '').toLowerCase()
-      const target = role === 'admin' ? '/dashboard-home' : '/schedules'
-      navigate(target)
+      navigate('/audit-report')
     } catch (err: any) {
       console.error('Login Error:', err)
       setError(err.message || 'Failed to login. Please check your credentials.')
@@ -174,9 +170,7 @@ export default function Login() {
           branchId: appUser.branchId ?? null,
           jobTitle: appUser.jobTitle ?? null,
         })
-        const role = (appUser.role || '').toLowerCase()
-        const target = role === 'admin' ? '/dashboard-home' : '/schedules'
-        navigate(target)
+        navigate('/audit-report')
       } catch (err: any) {
         console.error('Google Auth Error:', err)
         setError(err.message || 'Google login failed. Please try again.')

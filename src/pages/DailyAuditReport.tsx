@@ -129,7 +129,7 @@ export default function DailyAuditReport() {
   const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
   const [compactView, setCompactView] = useState(false)
   const [expandedMobileRow, setExpandedMobileRow] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -338,6 +338,20 @@ export default function DailyAuditReport() {
     }
     visibleRows.sort((a, b) => {
       const k = keyMap[sortConfig.key] || sortConfig.key as keyof AuditRow
+      if (sortConfig.key === 'remarks') {
+        const rank = (row: AuditRow) => {
+          if (row.remarks === 'ABOVE QUOTA' || row.difference > 0) return 3
+          if (row.remarks === 'PENDING') return 2
+          if (isNoTransactionRemarks(row.remarks) || row.status === 'NO RECORD' || row.status === 'NO REPORT') return 0
+          return 1
+        }
+        const ar = rank(a), br = rank(b)
+        if (ar !== br) return sortConfig.direction === 'desc' ? br - ar : ar - br
+        if (a.difference !== b.difference) {
+          return sortConfig.direction === 'desc' ? b.difference - a.difference : a.difference - b.difference
+        }
+        return a.branchName.localeCompare(b.branchName)
+      }
       const av = a[k], bv = b[k]
       if (av === bv) return 0
       if (av == null) return 1; if (bv == null) return -1
