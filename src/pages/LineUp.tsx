@@ -1988,15 +1988,10 @@ export default function LineUp() {
           </div>
 
           {/* Footer note */}
-          <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
             <p style={{ fontSize: '11px', fontStyle: 'italic', color: textMuted, fontWeight: 500 }}>
               NOTE: Installers must report earlier than drivers to handle returns and log out.
             </p>
-            {canEdit && (
-              <p className="no-print" style={{ fontSize: '11px', fontStyle: 'italic', color: '#10B981', fontWeight: 600 }}>
-                Click to select a row · Double-click a cell to edit · Right-click for more options · Drag to reorder
-              </p>
-            )}
           </div>
 
           {/* Summary boxes */}
@@ -2055,15 +2050,6 @@ export default function LineUp() {
                   </tr>
                 </tbody>
               </table>
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={handleSaveAll}
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm no-print"
-                >
-                  <Save className="w-3.5 h-3.5" /> Save
-                </button>
-              )}
             </div>
             {/* Print fallback for totals table */}
             <table className="hidden print:table" style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
@@ -2088,6 +2074,20 @@ export default function LineUp() {
             </table>
           </div>
         </div>
+
+        {/* Save button — below the card */}
+        {canEdit && (
+          <div className="no-print flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 shadow-md"
+              style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.25)' }}
+            >
+              <Save className="w-4 h-4" /> Save Schedule
+            </button>
+          </div>
+        )}
       </div>
 
 
