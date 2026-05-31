@@ -304,9 +304,9 @@ export default function DailyAuditReport() {
     }
   }
 
-  const toggleHideBranch = (branchName: string) => {
-    setHiddenBranches(prev => prev.includes(branchName) ? prev.filter(b => b !== branchName) : [...prev, branchName])
-  }
+  // const toggleHideBranch = (branchName: string) => {
+  //   setHiddenBranches(prev => prev.includes(branchName) ? prev.filter(b => b !== branchName) : [...prev, branchName])
+  // }
 
   let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
 
@@ -520,24 +520,32 @@ export default function DailyAuditReport() {
             </h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
-          <div className="relative shrink-0">
-            <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg"
-              style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
-              <MoreVertical className="w-4 h-4" />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button type="button" onClick={handleExportExcel}
+              disabled={visibleRows.length === 0}
+              title="Export Excel"
+              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-white bg-blue-500 hover:bg-blue-600 transition-colors"
+              style={{ border: 'none' }}>
+              <Download className="w-4 h-4" />
             </button>
-            {mobileMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
-                <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
-                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                  <div className="py-1">
-                    {visibleRows.length > 0 && (
+            <div className="relative shrink-0">
+              <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg"
+                style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {mobileMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
+                  <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
+                    style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                    <div className="py-1">
                       <button type="button" onClick={() => { handleExportExcel(); setMobileMenuOpen(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
+                        disabled={visibleRows.length === 0}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: textPrimary }}>
                         <Download className="w-3.5 h-3.5" style={{ color: textMuted }} /> Export Excel
                       </button>
-                    )}
+
                     {canImportExcel && (
                       <>
                         <button type="button" onClick={() => { document.getElementById('excel-import-input')?.click(); setMobileMenuOpen(false) }}
@@ -559,6 +567,7 @@ export default function DailyAuditReport() {
             )}
           </div>
         </div>
+      </div>
 
         <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-lg text-xs font-medium overflow-hidden"
@@ -652,13 +661,12 @@ export default function DailyAuditReport() {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {visibleRows.length > 0 && (
-            <button type="button" onClick={handleExportExcel}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print"
-              style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
-              <Download className="w-3.5 h-3.5" /> Export Excel
-            </button>
-          )}
+          <button type="button" onClick={handleExportExcel}
+            disabled={visibleRows.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#3B82F6', borderColor: '#3B82F6', color: '#fff' }}>
+            <Download className="w-3.5 h-3.5" /> Export Excel
+          </button>
 
           {hiddenBranches.length > 0 && (
             <button type="button" onClick={() => setHiddenBranches([])}
