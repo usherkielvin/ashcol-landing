@@ -69,7 +69,7 @@ export default function AIChatBot() {
 
   const bg = isLight ? '#ffffff' : '#0A1120'
   const border = isLight ? '#e2e8f0' : '#1e3254'
-  const textPrimary = isLight ? '#0f172a' : '#EEF4FF'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#6B90BE'
   const botBubble = isLight ? '#f1f5f9' : '#1e3254'
 

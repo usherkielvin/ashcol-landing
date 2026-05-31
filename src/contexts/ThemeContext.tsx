@@ -35,7 +35,7 @@ const applyTheme = (theme: Theme) => {
     root.style.setProperty('--sidebar-bg',   'rgba(10,17,32,0.98)')
     root.style.setProperty('--header-bg',    'rgba(10,17,32,0.90)')
     root.style.setProperty('--border',       '#1E2D48')
-    root.style.setProperty('--text-primary', '#F0F6FF')
+    root.style.setProperty('--text-primary', '#E2E8F0')
     root.style.setProperty('--text-muted',   '#7A95B8')
     root.style.setProperty('--input-bg',     '#0F1A2E')
     root.style.setProperty('--input-border', '#243452')

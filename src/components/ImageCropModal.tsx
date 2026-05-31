@@ -87,7 +87,7 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
 
   const bg     = isDark ? '#0A1120' : '#ffffff'
   const border = isDark ? '#1E2D48' : '#e2e8f0'
-  const text   = isDark ? '#F0F6FF' : '#0f172a'
+  const text   = isDark ? '#E2E8F0' : '#0f172a'
   const muted  = isDark ? '#7A95B8' : '#64748b'
   const trackBg = isDark ? '#1E2D48' : '#e2e8f0'
 

@@ -170,7 +170,7 @@ export default function CreateTicket() {
   const border      = isLight ? '#e2e8f0' : '#141C2E'
   const inputBg     = isLight ? '#ffffff' : '#121720'
   const inputBorder = isLight ? '#DDD'    : '#2C3440'
-  const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const surfaceBg   = isLight ? '#f8fafc' : '#0F1A2E'
 

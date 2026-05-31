@@ -220,7 +220,7 @@ export default function Tickets() {
   // ── Color tokens ─────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const border      = isLight ? '#e2e8f0' : '#141C2E'
-  const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const rowHover    = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
   const theadBg     = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'

@@ -429,7 +429,7 @@ export default function Landing() {
     bgCardAlt:  isDark ? '#0C1426'              : '#EEF7EE',
     border:     isDark ? '#1E2D48'              : '#C8E6C8',
     borderNav:  isDark ? '#1a2844'              : '#D4EDD4',
-    text:       isDark ? '#F0F6FF'              : '#0D2010',
+    text:       isDark ? '#E2E8F0'              : '#0D2010',
     textMuted:  isDark ? '#7A95B8'              : '#3A6040',
     textFaint:  isDark ? '#3A5070'              : '#7AAA7A',
     accent:     '#10B981',
@@ -801,7 +801,7 @@ export default function Landing() {
               <button type="button" aria-label="Get it on Google Play"
                 onClick={() => setShowComingSoon(true)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
-                style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
+                style={{ backgroundColor: isDark ? '#E2E8F0' : '#0D2010', color: isDark ? '#060B18' : '#E2E8F0' }}
               >
                 <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="none">
                   <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
@@ -818,7 +818,7 @@ export default function Landing() {
               <button type="button" aria-label="Download on the App Store"
                 onClick={() => setShowComingSoon(true)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
-                style={{ backgroundColor: isDark ? '#F0F6FF' : '#0D2010', color: isDark ? '#060B18' : '#F0F6FF' }}
+                style={{ backgroundColor: isDark ? '#E2E8F0' : '#0D2010', color: isDark ? '#060B18' : '#E2E8F0' }}
               >
                 <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="currentColor">
                   <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>

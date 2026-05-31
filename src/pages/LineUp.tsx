@@ -89,7 +89,7 @@ export default function LineUp() {
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const pageBg      = isLight ? '#f1f5f9'  : '#060B18'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
-  const textPrimary = isLight ? '#0f172a'  : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a'  : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc'  : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
@@ -1383,14 +1383,14 @@ export default function LineUp() {
                 {toast.type === 'error'   && <X     style={{ width: '13px', height: '13px', color: '#EF4444' }} />}
                 {toast.type === 'info'    && <Check style={{ width: '13px', height: '13px', color: '#3B82F6' }} />}
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 600, flex: 1, color: isLight ? '#0f172a' : '#F0F6FF' }}>{toast.message}</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, flex: 1, color: isLight ? '#0f172a' : '#E2E8F0' }}>{toast.message}</span>
               <button
                 onClick={() => setToast(null)}
                 style={{ flexShrink: 0, marginLeft: '4px', opacity: 0.4, cursor: 'pointer', background: 'none', border: 'none', padding: 0, display: 'flex' }}
                 onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
                 onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
               >
-                <X style={{ width: '12px', height: '12px', color: isLight ? '#0f172a' : '#F0F6FF' }} />
+                <X style={{ width: '12px', height: '12px', color: isLight ? '#0f172a' : '#E2E8F0' }} />
               </button>
             </div>
           )}

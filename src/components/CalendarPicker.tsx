@@ -132,7 +132,7 @@ export default function CalendarPicker({ value, onChange, min, isLight }: Calend
   const popupBg       = isLight ? '#ffffff'  : '#0A1120'
   const popupBorder   = isLight ? '#e2e8f0'  : '#1E2D48'
   const headBg        = isLight ? '#f8fafc'  : '#0F1A2E'
-  const textMain      = isLight ? '#0f172a'  : '#F0F6FF'
+  const textMain      = isLight ? '#0f172a'  : '#E2E8F0'
   const textMuted     = isLight ? '#64748b'  : '#7A95B8'
   const hoverBg       = isLight ? '#f1f5f9'  : '#1a2c4a'
   const disabledColor = isLight ? '#CBD5E1'  : '#2D3F56'

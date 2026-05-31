@@ -100,7 +100,7 @@ export default function ForgotPassword() {
   const rightBg = isLight ? '#f1f5f9' : '#060B18'
   const cardBg = isLight ? 'rgba(255,255,255,0.9)' : 'rgba(10,17,32,0.4)'
   const cardBorder = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)'
-  const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : 'rgba(15,26,46,0.8)'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
@@ -189,7 +189,7 @@ export default function ForgotPassword() {
 
         <div className="relative z-10 flex items-center gap-3">
           <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
-          <span className="font-black tracking-widest text-[#F0F6FF] text-xl drop-shadow-md">ASHCOL</span>
+          <span className="font-black tracking-widest text-[#E2E8F0] text-xl drop-shadow-md">ASHCOL</span>
         </div>
 
         <div className="relative z-10 max-w-md mt-auto mb-10">

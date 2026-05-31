@@ -25,7 +25,7 @@ export default function AuditFinanceExpenses() {
   const bg = isLight ? '#f0f4f8' : '#060D1A'
   const cardBg = isLight ? '#ffffff' : '#0A1120'
   const border = isLight ? '#e2e8f0' : '#1E2D48'
-  const textPrimary = isLight ? '#0f172a' : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'

@@ -28,7 +28,7 @@ export default function CreateAccount() {
 
   // ── Color tokens ──────────────────────────────────────────────
   const rightBg     = isLight ? '#f1f5f9'               : '#060B18'
-  const textPrimary = isLight ? '#0f172a'                : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a'                : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'                : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc'                : 'rgba(15,26,46,0.8)'
   const inputBorder = isLight ? '#cbd5e1'                : '#243452'
@@ -192,7 +192,7 @@ export default function CreateAccount() {
 
         <div className="relative z-10 flex items-center gap-3">
           <img src={logoImg} alt="ASHCOL Logo" className="w-14 h-14 object-contain drop-shadow-xl rounded-xl" />
-          <span className="font-black tracking-widest text-[#F0F6FF] text-lg drop-shadow-md">ASHCOL</span>
+          <span className="font-black tracking-widest text-[#E2E8F0] text-lg drop-shadow-md">ASHCOL</span>
         </div>
 
         {/* Middle / lower left glass panel */}

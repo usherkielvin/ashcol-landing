@@ -31,11 +31,11 @@ export default function Profile() {
   // ── Theme tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
-  const textPrimary = isLight ? '#0f172a'  : '#F0F6FF'
+  const textPrimary = isLight ? '#0f172a'  : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc'  : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
-  const inputText   = isLight ? '#0f172a'  : '#F0F6FF'
+  const inputText   = isLight ? '#0f172a'  : '#E2E8F0'
   const pageBg      = isLight ? '#f1f5f9'  : '#060B18'
 
   // ── Profile info state ────────────────────────────────────────────────────

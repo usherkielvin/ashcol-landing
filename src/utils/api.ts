@@ -1,4 +1,7 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const PROD_API_BASE_URL = 'https://ashcol-service-api-production.up.railway.app/api'
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PROD_API_BASE_URL : 'http://localhost:8080/api')
 export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '')
 
 /** Resolves a potentially relative image path to a full URL using the configured server base */

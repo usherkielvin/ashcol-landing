@@ -140,7 +140,7 @@ export default function DashboardLayout() {
   const sidebarBg   = isLight ? '#ffffff'              : '#0A1120'
   const headerBg    = isLight ? 'rgba(255,255,255,0.9)': 'rgba(6,11,24,0.9)'
   const border      = isLight ? '#e2e8f0'              : '#1a2844'
-  const textPrimary = isLight ? '#0f172a'              : '#EEF4FF'
+  const textPrimary = isLight ? '#0f172a'              : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'              : '#6B90BE'
   const hoverBg     = isLight ? '#f1f5f9'              : '#0f1e36'
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
