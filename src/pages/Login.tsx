@@ -9,8 +9,10 @@ import { resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
+  const prefillPassword = import.meta.env.VITE_LOGIN_PREFILL_PASSWORD || ''
+  const [email, setEmail] = useState(prefillEmail)
+  const [password, setPassword] = useState(prefillPassword)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -23,11 +25,13 @@ export default function Login() {
   // Pre-fill remembered email on mount
   useEffect(() => {
     const saved = localStorage.getItem('ashcol-remembered-email')
-    if (saved) {
+    if (saved && !prefillEmail) {
       setEmail(saved)
       setRememberMe(true)
+    } else if (prefillEmail || prefillPassword) {
+      setRememberMe(true)
     }
-  }, [])
+  }, [prefillEmail, prefillPassword])
   useEffect(() => {
     if (user) {
       const role = (user.role || '').toLowerCase()
@@ -73,9 +77,20 @@ export default function Login() {
 
       if (rememberMe) {
         localStorage.setItem('ashcol-token', appToken)
+        localStorage.setItem('ashcol-user', JSON.stringify({
+          name: appUser.name || email,
+          email: appUser.email || email,
+          personalEmail: appUser.personalEmail ?? null,
+          picture: resolveImageUrl(appUser.profileImage),
+          role: appUser.role || 'customer',
+          initials: getInitials(appUser.name || email),
+          branchId: appUser.branchId ?? null,
+          jobTitle: appUser.jobTitle ?? null,
+        }))
         localStorage.setItem('ashcol-remembered-email', email.trim())
       } else {
         sessionStorage.setItem('ashcol-token', appToken)
+        localStorage.removeItem('ashcol-user')
         localStorage.removeItem('ashcol-remembered-email')
       }
 
@@ -132,9 +147,20 @@ export default function Login() {
 
         if (rememberMe) {
           localStorage.setItem('ashcol-token', appToken)
+          localStorage.setItem('ashcol-user', JSON.stringify({
+            name: appUser.name || profile.name || profile.email,
+            email: appUser.email || profile.email,
+            personalEmail: appUser.personalEmail ?? null,
+            picture: resolveImageUrl(appUser.profileImage) || profile.picture || '',
+            role: appUser.role || 'customer',
+            initials: getInitials(appUser.name || profile.name || profile.email),
+            branchId: appUser.branchId ?? null,
+            jobTitle: appUser.jobTitle ?? null,
+          }))
           localStorage.setItem('ashcol-remembered-email', appUser.email || profile.email)
         } else {
           sessionStorage.setItem('ashcol-token', appToken)
+          localStorage.removeItem('ashcol-user')
           localStorage.removeItem('ashcol-remembered-email')
         }
 

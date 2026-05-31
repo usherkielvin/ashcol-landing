@@ -34,7 +34,7 @@ const SESSION_KEY = 'ashcol-user'
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
-      const stored = sessionStorage.getItem(SESSION_KEY)
+      const stored = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)
       return stored ? JSON.parse(stored) : null
     } catch {
       return null
@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(u))
     } else {
       sessionStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(SESSION_KEY)
     }
   }
 

@@ -157,7 +157,8 @@ export default function DailyServiceReport() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
-  const canImport = isAdmin || isManager
+  const isBranchScoped = isManager || role === 'staff' || role === 'employee'
+  const canImport = isAdmin || isBranchScoped
   const canDelete = isAdmin || isManager
   const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee'
 
@@ -174,7 +175,7 @@ export default function DailyServiceReport() {
   const [editing, setEditing] = useState<Partial<ServiceRow> | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
-  // Pending Excel import waiting for the admin to choose a target branch
+  // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
 
   // Column configuration for expand / collapse functionality
@@ -256,18 +257,22 @@ export default function DailyServiceReport() {
       newList.sort((a, b) => a.name.localeCompare(b.name))
 
       let finalList = newList
-      if (isManager && user?.branchId) {
+      if (isBranchScoped && user?.branchId) {
         finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
       }
       setBranches(finalList)
     } catch (e) { console.error(e) }
-  }, [isManager, user?.branchId])
+  }, [isBranchScoped, user?.branchId])
 
   useEffect(() => {
+    if (isBranchScoped && user?.branchId && !branchFilter) {
+      setBranchFilter(user.branchId)
+      return
+    }
     if (isAdmin && !branchFilter && branches.length > 0) {
       setBranchFilter(branches[0].id)
     }
-  }, [isAdmin, branchFilter, branches])
+  }, [isAdmin, isBranchScoped, user?.branchId, branchFilter, branches])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -369,7 +374,7 @@ export default function DailyServiceReport() {
       setDate(detectedDate)
     }
 
-    if (isManager) {
+    if (isBranchScoped) {
       runImport(file, user?.branchId || '')
     } else {
       const detectedId = guessBranchFromFilename(file.name)
@@ -385,13 +390,13 @@ export default function DailyServiceReport() {
 
 
   const runImport = async (file: File, branchId: string) => {
-    if (!isManager && !branchId) {
+    if (!isBranchScoped && !branchId) {
       alert('Please pick a target branch')
       return
     }
     const targetDate = date
     const branchName = branches.find(b => b.id === branchId)?.name
-      || (isManager ? 'your branch' : 'the chosen branch')
+      || (isBranchScoped ? 'your branch' : 'the chosen branch')
     const pretty = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     })
@@ -407,7 +412,7 @@ export default function DailyServiceReport() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ date: targetDate })
-      if (!isManager && branchId) {
+      if (!isBranchScoped && branchId) {
         params.set('branchId', branchId.replace(/-sales$|-services$/, ''))
       }
       const url = `${API_BASE_URL}/v1/service-reports/import?${params.toString()}`
@@ -435,7 +440,7 @@ export default function DailyServiceReport() {
     if (!editing.customerName || !editing.customerName.trim()) {
       alert('Customer name is required'); return
     }
-    if (!editing.branchId && !isManager) {
+    if (!editing.branchId && !isBranchScoped) {
       alert('Please choose a branch'); return
     }
     try {
@@ -643,7 +648,7 @@ export default function DailyServiceReport() {
           <div className="flex items-center gap-2 shrink-0">
             {canEdit && (
               <button type="button"
-                      onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
+                      onClick={() => setEditing(blankRow(date, isBranchScoped ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
                       className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm transition-all"
                       style={{ backgroundColor: primaryGreen }}>
                 <Plus className="w-3.5 h-3.5" /> Add Row
@@ -718,7 +723,7 @@ export default function DailyServiceReport() {
               <button type="button" onClick={() => setSearchQuery('')}
                       className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>Clear search</button>
             ) : canEdit && (
-              <button onClick={() => setEditing(blankRow(date, isManager ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
+              <button onClick={() => setEditing(blankRow(date, isBranchScoped ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
                       className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>+ Add the first one</button>
             )}
           </div>
@@ -1032,7 +1037,7 @@ export default function DailyServiceReport() {
         </div>
       )}
 
-      {/* ── Branch Picker (admin Excel import) ─────────────────────── */}
+      {/* ── Branch Picker (all-branch Excel import) ─────────────────────── */}
       {pendingImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
              style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
@@ -1149,8 +1154,8 @@ export default function DailyServiceReport() {
               <div className="rounded-2xl p-6 shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                 <p className="text-[10px] font-black uppercase tracking-widest mb-5" style={{ color: primaryGreen }}>① Customer &amp; Location</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Field label="Branch" required={!isManager}>
-                    {isManager ? (
+                  <Field label="Branch" required={!isBranchScoped}>
+                    {isBranchScoped ? (
                       <input value={branches.find(b => b.id === user?.branchId)?.name || 'Your Branch'} disabled
                              className="w-full rounded-lg px-3 py-2 text-xs font-semibold opacity-70"
                              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />

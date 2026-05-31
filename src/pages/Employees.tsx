@@ -612,6 +612,7 @@ export default function Employees() {
                 <option value="Helper">Helper</option>
                 <option value="Driver">Driver</option>
                 <option value="Coordinator">Coordinator</option>
+                <option value="Sales Coordinator">Sales Coordinator</option>
                 <option value="Payroll">Payroll</option>
                 <option value="Inventory">Inventory</option>
                 <option value="MANAGER">OIC / Officer in Charge</option>

@@ -14,6 +14,19 @@ import { useNotifications } from '../contexts/NotificationContext'
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 
+const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
+  if (!branchId && !branchName) return null
+  const id = (branchId || '').toUpperCase()
+  const name = (branchName || '').trim()
+
+  if (id === 'BR-TAGUIG-SALES') return 'ASHCOL TAGUIG SALES'
+  if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE') return 'ASHCOL TAGUIG SERVICES'
+  if (id.endsWith('-SALES')) return `${name || 'ASHCOL TAGUIG'} SALES`.replace(/\s+SALES\s+SALES$/i, ' SALES')
+  if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return `${name || 'ASHCOL TAGUIG'} SERVICES`.replace(/\s+SERVICES\s+SERVICES$/i, ' SERVICES')
+  if (name) return name
+  return branchId || null
+}
+
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -37,8 +50,7 @@ export default function DashboardLayout() {
   }, [user?.picture])
 
   useEffect(() => {
-    const r = (user?.role || '').toLowerCase()
-    if (r !== 'manager' || !user?.branchId) {
+    if (!user?.branchId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setBranchLabel(null)
       return
@@ -50,14 +62,21 @@ export default function DashboardLayout() {
         if (!res.ok) return
         const data = await res.json()
         const list = data?.data || []
-        const b = list.find((x: { id: string }) => x.id === user.branchId)
-        setBranchLabel(b?.name || null)
+        const branchId = user.branchId || ''
+        const baseBranchId = branchId.replace(/-sales$|-services$/i, '')
+        const b = list.find((x: { id: string }) => x.id === branchId)
+          || list.find((x: { id: string }) => x.id === baseBranchId)
+          || list.find((x: { name?: string }) => {
+            const name = (x.name || '').toUpperCase()
+            return branchId.toUpperCase().startsWith('BR-TAGUIG') && name.includes('TAGUIG')
+          })
+        setBranchLabel(normalizeBranchDisplayName(branchId, b?.name))
       } catch {
-        setBranchLabel(null)
+        setBranchLabel(normalizeBranchDisplayName(user?.branchId, null))
       }
     }
     load()
-  }, [user?.role, user?.branchId])
+  }, [user?.branchId])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -373,11 +392,9 @@ export default function DashboardLayout() {
               <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
                 {currentPage}
               </h1>
-              {((user?.role || '').toLowerCase() === 'manager' && branchLabel) || (user?.role || '').toLowerCase() === 'employee' ? (
-                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel || undefined}>
-                  {(user?.role || '').toLowerCase() === 'manager'
-                    ? `Branch · ${branchLabel}`
-                    : 'Technician View'}
+              {branchLabel ? (
+                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel}>
+                  {`Branch · ${branchLabel}`}
                 </p>
               ) : null}
             </div>

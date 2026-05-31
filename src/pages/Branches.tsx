@@ -21,6 +21,7 @@ interface Branch {
   region?: string
   isHQ?: boolean
   oic: string
+  salesCoordinator?: string
   drivers: string[]
   installers: string[]
 }
@@ -133,6 +134,24 @@ const MOCK_ROSTER: Record<string, { oic: string; drivers: string[]; installers: 
   }
 }
 
+const isTaguigBranchId = (id?: string | null) =>
+  !!id && (
+    id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' ||
+    id.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-') ||
+    id.toUpperCase().startsWith('BR-TAGUIG')
+  )
+
+const isSalesCoordinator = (employee: any) => {
+  const title = (employee?.jobTitle || '').toLowerCase()
+  const role = (employee?.role || '').toLowerCase()
+  return title.includes('sales coordinator') || role.includes('sales coordinator')
+}
+
+const initialsFor = (name?: string) => {
+  if (!name) return 'NA'
+  return name.split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 3).toUpperCase()
+}
+
 export default function Branches() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -238,7 +257,12 @@ export default function Branches() {
         }
 
         // 2. Employees (Drivers vs Installers)
-        let branchStaff = employeesList.filter((e: any) => e.branchId === api.id || e.branchId === `${api.id}-${suffix}`)
+        let branchStaff = employeesList.filter((e: any) =>
+          e.branchId === api.id ||
+          e.branchId === `${api.id}-${suffix}` ||
+          (suffix === 'sales' && e.branchId === 'BR-TAGUIG-SALES') ||
+          (suffix === 'services' && e.branchId === 'BR-TAGUIG-SERVICES')
+        )
         if (suffix) {
           branchStaff = branchStaff.filter((e: any) => {
             const emailLower = (e.email || '').toLowerCase()
@@ -247,12 +271,14 @@ export default function Branches() {
             return suffix === 'services' ? isServiceStaff : !isServiceStaff
           })
         }
+        const salesCoordinator = branchStaff.find(isSalesCoordinator)
 
         let drivers: string[] = []
         let installers: string[] = []
 
         if (branchStaff.length > 0) {
           branchStaff.forEach((e: any) => {
+            if (isSalesCoordinator(e)) return
             const title = (e.jobTitle || '').toLowerCase()
             const nameUpper = e.name.toUpperCase()
             const isDriver = title.includes('driver') || ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC'].includes(nameUpper)
@@ -268,7 +294,7 @@ export default function Branches() {
         const key = apiName.replace('ashcol ', '').trim()
         const fallbackName = suffix ? `taguig - ${suffix}` : key
         const fallback = MOCK_ROSTER[fallbackName] || MOCK_ROSTER[key] || {
-          oic: suffix === 'services' ? 'Taguig Services OIC' : 'Rommel Neil Laurente',
+          oic: suffix === 'services' ? 'Taguig Services OIC' : 'Unassigned',
           drivers: ['ANGELO', 'JOJO'],
           installers: ['RANIL', 'JHUMAR', 'KENNAN']
         }
@@ -294,6 +320,7 @@ export default function Branches() {
           region: pub?.region || api.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
           oic: oicName,
+          salesCoordinator: salesCoordinator?.name,
           drivers,
           installers
         }
@@ -301,7 +328,15 @@ export default function Branches() {
 
       for (const api of apiBranches) {
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
-        if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
+        const apiIdUpper = (api.id || '').toUpperCase()
+        const isTaguig = cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG' || cleanName.includes('TAGUIG')
+        const isTaguigSales = isTaguig && (apiIdUpper === 'BR-TAGUIG-SALES' || cleanName.includes('SALES'))
+        const isTaguigServices = isTaguig && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
+        if (isTaguigSales) {
+          merged.push(processBranch(api, undefined, 'TAGUIG SALES'))
+        } else if (isTaguigServices) {
+          merged.push(processBranch(api, undefined, 'TAGUIG SERVICES'))
+        } else if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
           merged.push(processBranch(api, 'sales', 'TAGUIG SALES'))
           merged.push(processBranch(api, 'services', 'TAGUIG SERVICES'))
         } else {
@@ -379,13 +414,23 @@ export default function Branches() {
 
   const myBranch = useMemo(() => {
     if (!user?.branchId) return null
-    const isTaguig = user.branchId.replace(/-sales$|-services$/, '') === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    const exactBranch = branches.find(b => b.id === user.branchId)
+    if (exactBranch) return exactBranch
+    const isTaguig = isTaguigBranchId(user.branchId)
     if (isTaguig) {
       const emailLower = (user.email || '').toLowerCase()
       const titleLower = (user.jobTitle || '').toLowerCase()
-      const isService = emailLower.includes('service') || titleLower.includes('service')
+      const branchIdLower = user.branchId.toLowerCase()
+      const isService = branchIdLower.includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const wanted = isService ? 'services' : 'sales'
       const targetId = `2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-${isService ? 'services' : 'sales'}`
-      return branches.find(b => b.id === targetId) || null
+      return branches.find(b => b.id === targetId)
+        || branches.find(b => {
+          const id = (b.id || '').toLowerCase()
+          const name = b.name.toLowerCase()
+          return id.includes(`taguig-${wanted}`) || id.endsWith(`-${wanted}`) || name.includes(`taguig ${wanted}`)
+        })
+        || null
     }
     const baseBranchId = user.branchId.replace(/-sales$|-services$/, '')
     return branches.find(b => b.id === baseBranchId) || null
@@ -405,6 +450,7 @@ export default function Branches() {
                     || b.location.toLowerCase().includes(q)
                     || b.address.toLowerCase().includes(q)
       const inPersonnel = b.oic.toLowerCase().includes(q)
+                       || (b.salesCoordinator || '').toLowerCase().includes(q)
                        || b.drivers.some(d => d.toLowerCase().includes(q))
                        || b.installers.some(i => i.toLowerCase().includes(q))
       if (!inBranch && !inPersonnel) return false
@@ -479,13 +525,13 @@ export default function Branches() {
           </div>
 
           {/* Roster list shown in a bigger and better layout */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className={`grid grid-cols-1 ${myBranch.salesCoordinator ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6`}>
             {/* OIC / Manager */}
             <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Officer In Charge (OIC)</span>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 font-bold text-sm shrink-0">
-                  {myBranch.oic.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+                  {initialsFor(myBranch.oic)}
                 </div>
                 <div>
                   <div className="font-extrabold text-sm" style={{ color: textPrimary }}>{myBranch.oic}</div>
@@ -493,6 +539,21 @@ export default function Branches() {
                 </div>
               </div>
             </div>
+
+            {myBranch.salesCoordinator && (
+              <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Coordinator</span>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 font-bold text-sm shrink-0">
+                    {initialsFor(myBranch.salesCoordinator)}
+                  </div>
+                  <div>
+                    <div className="font-extrabold text-sm" style={{ color: textPrimary }}>{myBranch.salesCoordinator}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">SALES COORDINATOR</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Drivers */}
             <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
@@ -651,6 +712,15 @@ export default function Branches() {
                         </span>
                       </div>
 
+                      {branch.salesCoordinator && (
+                        <div className="flex items-center justify-between text-xs py-0.5">
+                          <span className="font-semibold text-slate-400">Sales Coord.:</span>
+                          <span className="font-medium text-right truncate max-w-[150px]" style={{ color: textPrimary }}>
+                            {branch.salesCoordinator}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between text-xs py-0.5">
                         <span className="font-semibold text-slate-400">Drivers:</span>
                         <span className="font-medium text-right truncate max-w-[150px]" style={{ color: textPrimary }}>
@@ -762,6 +832,17 @@ export default function Branches() {
                     </span>
                   </div>
                 </div>
+
+                {selectedBranch.salesCoordinator && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400">Sales Coordinator</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded text-xs font-semibold bg-amber-100/80 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/20">
+                        {selectedBranch.salesCoordinator}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Drivers */}
                 <div className="flex flex-col gap-1.5">

@@ -223,6 +223,10 @@ export default function DailyAuditReport() {
       })
       if (res.ok) {
         const result = await res.json()
+        if (!result?.count) {
+          alert(`Import finished but no report rows were saved. Please check that the Excel sheet matches ${prettyDate} and contains branch rows.`)
+          return
+        }
         const importedDate = (result?.date as string) || targetDate
         alert(`${result.message || 'Import successful!'}${result?.sheet ? ` (from sheet "${result.sheet}")` : ''}`)
         if (viewMode === 'single') { if (importedDate !== date) setDate(importedDate); else fetchAudit() }
