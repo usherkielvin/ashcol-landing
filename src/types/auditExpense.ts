@@ -13,6 +13,7 @@ export interface AuditExpense {
   expenseCategory: AuditExpenseCategory
   sourceOfFunds: string
   receiptImageUri?: string
+  inputBy?: string
   createdAt: string
   updatedAt: string
 }

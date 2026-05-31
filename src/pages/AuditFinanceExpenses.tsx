@@ -35,7 +35,8 @@ export default function AuditFinanceExpenses() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
-  const canAccess = isAdmin || isManager
+  const isBranchScopedUser = !isAdmin && !!user?.branchId
+  const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee'
 
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')
@@ -48,6 +49,7 @@ export default function AuditFinanceExpenses() {
     existingExpense: AuditExpense;
     newExpense: AuditExpense;
   } | null>(null)
+  const [detailRow, setDetailRow] = useState<AuditExpense | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
@@ -254,14 +256,14 @@ export default function AuditFinanceExpenses() {
       newList.sort((a, b) => a.name.localeCompare(b.name))
 
       let finalList = newList
-      if (isManager && user?.branchId) {
+      if (isBranchScopedUser && user?.branchId) {
         finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
       }
 
       setBranches(finalList)
 
       if (finalList.length > 0) {
-        if (isManager && user?.branchId) {
+        if (isBranchScopedUser && user?.branchId) {
           const matched = finalList.find(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
           if (matched) {
             setBranchId(matched.id)
@@ -273,7 +275,7 @@ export default function AuditFinanceExpenses() {
         }
       }
     } catch (e) { console.error(e) }
-  }, [isManager, user?.branchId, branchId])
+  }, [isBranchScopedUser, user?.branchId, branchId])
 
   const reload = useCallback(async () => {
     try {
@@ -401,8 +403,8 @@ export default function AuditFinanceExpenses() {
     }))
     const ws = XLSX.utils.json_to_sheet(wsData)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Receipts')
-    XLSX.writeFile(wb, `ASHCOL_Receipts_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
+    XLSX.utils.book_append_sheet(wb, ws, 'Expense Records')
+    XLSX.writeFile(wb, `ASHCOL_Expense_Records_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -418,7 +420,7 @@ export default function AuditFinanceExpenses() {
       }
       await bulkImportAuditExpenses(result.imported)
       await reload()
-      let msg = `Imported ${result.imported.length} receipt(s).`
+      let msg = `Imported ${result.imported.length} expense record(s).`
       if (result.skipped > 0) {
         msg += ` Skipped ${result.skipped} row(s).`
         if (result.errors.length > 0) {
@@ -487,7 +489,7 @@ export default function AuditFinanceExpenses() {
 
     const expense: AuditExpense = editing
       ? { ...editing, branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
-      : { id: createExpenseId(), branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), createdAt: now, updatedAt: now }
+      : { id: createExpenseId(), branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), inputBy: user?.jobTitle ? `${user?.name || user?.email} - ${user.jobTitle}` : `${user?.name || user?.email || 'STAFF'} - ${(user?.role || 'USER').toUpperCase()}`, createdAt: now, updatedAt: now }
 
     const normalizedReceiptNo = form.receiptNo.trim().toUpperCase()
     if (normalizedReceiptNo) {
@@ -510,15 +512,15 @@ export default function AuditFinanceExpenses() {
   const handleClearBranchReceipts = async () => {
     if (!branchId) return
     const count = branchExpenses.length
-    if (count === 0) { alert('No receipts to clear for this branch.'); return }
-    if (!window.confirm(`Are you sure you want to delete ALL ${count} receipt(s) for ${branchName}?\n\nThis action cannot be undone and is usually done before re-adding or re-importing.`)) { return }
+    if (count === 0) { alert('No expense records to clear for this branch.'); return }
+    if (!window.confirm(`Are you sure you want to delete ALL ${count} expense record(s) for ${branchName}?\n\nThis action cannot be undone and is usually done before re-adding or re-importing.`)) { return }
     try {
       await clearAuditExpensesByBranch(branchId)
       await reload()
-      alert(`Cleared all receipts for ${branchName}.`)
+      alert(`Cleared all expense records for ${branchName}.`)
     } catch (err) {
       console.error(err)
-      alert('Failed to clear receipts for this branch.')
+      alert('Failed to clear expense records for this branch.')
     }
   }
 
@@ -557,10 +559,23 @@ export default function AuditFinanceExpenses() {
   }
 
   const startEdit = (row: AuditExpense) => {
+    setDetailRow(null)
     setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(null)
     const resolvedBranchId = resolveFormBranchId(row.branchId)
     setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
     setShowForm(true)
+  }
+
+  const openDetails = (row: AuditExpense, e?: React.MouseEvent) => {
+    e?.preventDefault()
+    setDetailRow(row)
+  }
+
+  const handleDeleteRecord = async (row: AuditExpense) => {
+    if (!window.confirm('Delete this expense record?')) return
+    await deleteAuditExpense(row.id)
+    setDetailRow(null)
+    await reload()
   }
 
   const processImage = async (file: File) => {
@@ -752,7 +767,7 @@ export default function AuditFinanceExpenses() {
 
 
 
-  if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Audit finance expenses are available for managers and admins only.</div>
+  if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-4 p-4 md:p-6 pb-12">
@@ -763,9 +778,9 @@ export default function AuditFinanceExpenses() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="rounded-xl p-2" style={{ backgroundColor: `${accent}22` }}><Receipt size={20} style={{ color: accent }} /></div>
-            <h1 className="text-xl md:text-2xl font-bold" style={{ color: textPrimary }}>Receipt Monitor</h1>
+            <h1 className="text-xl md:text-2xl font-bold" style={{ color: textPrimary }}>Expense Records</h1>
           </div>
-          <p className="text-sm" style={{ color: textMuted }}>Encode and track daily branch receipts. Import from Excel or add manually.</p>
+          <p className="text-sm" style={{ color: textMuted }}>Encode and track daily branch expense records. Import from Excel or add manually.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -782,7 +797,7 @@ export default function AuditFinanceExpenses() {
           >
             {showForm
               ? <><X size={16} /> Close Form</>
-              : <><Plus size={16} /> Add Receipt</>
+              : <><Plus size={16} /> Add Record</>
             }
           </button>
           <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
@@ -803,7 +818,7 @@ export default function AuditFinanceExpenses() {
           <select
             value={branchId}
             onChange={(e) => setBranchId(e.target.value)}
-            disabled={isManager && !!user?.branchId && branches.length <= 1}
+            disabled={isBranchScopedUser && !!user?.branchId}
             className="w-full rounded-lg pl-8 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
           >
@@ -858,7 +873,7 @@ export default function AuditFinanceExpenses() {
             <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
             <div className="flex items-center gap-3 shrink-0 md:ml-auto">
               <div className="text-right">
-                <div className="text-xs font-medium" style={{ color: textMuted }}>{filtered.length} receipts</div>
+                <div className="text-xs font-medium" style={{ color: textMuted }}>{filtered.length} records</div>
                 <div className="text-sm font-bold" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</div>
               </div>
             </div>
@@ -872,7 +887,7 @@ export default function AuditFinanceExpenses() {
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
               <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
-              {editing ? 'Edit Receipt' : 'New Receipt'}
+              {editing ? 'Edit Expense Record' : 'New Expense Record'}
             </h2>
             <div className="flex items-center gap-2">
               <button
@@ -1176,7 +1191,7 @@ export default function AuditFinanceExpenses() {
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-sm rounded-lg" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>Cancel</button>
             <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow" style={{ backgroundColor: accent }}>
-              {editing ? 'Update Receipt' : 'Save Receipt'}
+              {editing ? 'Update Record' : 'Save Record'}
             </button>
           </div>
         </div>
@@ -1187,13 +1202,13 @@ export default function AuditFinanceExpenses() {
         <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
             <h2 className="font-bold" style={{ color: textPrimary }}>
-              {branchName} — Receipts {search ? `(filtered)` : ''}
+              {branchName} — Expense Records {search ? `(filtered)` : ''}
             </h2>
             <div className="flex items-center gap-2">
               <button type="button" onClick={handleExportExcel}
                 className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                 style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
-                title="Export filtered receipts to Excel">
+                title="Export filtered expense records to Excel">
                 <Download size={14} /> Export
               </button>
               <button type="button" onClick={() => setViewAll((v) => !v)}
@@ -1206,7 +1221,7 @@ export default function AuditFinanceExpenses() {
 
           {filtered.length === 0 ? (
             <div className="p-10 text-center" style={{ color: textMuted }}>
-              No receipts found. {!search && 'Add receipts manually or import from Excel.'}
+              No expense records found. {!search && 'Add records manually or import from Excel.'}
             </div>
           ) : viewAll ? (
             // ── Table view ──
@@ -1250,7 +1265,11 @@ export default function AuditFinanceExpenses() {
                 </thead>
                 <tbody>
                   {filtered.map((row, i) => (
-                    <tr key={row.id} style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined }}>
+                    <tr key={row.id}
+                      onContextMenu={(e) => openDetails(row, e)}
+                      onDoubleClick={() => openDetails(row)}
+                      title="Right-click to view details"
+                      style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'context-menu' }}>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.date}</td>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.incurredBy}</td>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.description}</td>
@@ -1261,8 +1280,9 @@ export default function AuditFinanceExpenses() {
                       <td className="px-3 py-2" style={{ color: textMuted }}>{row.sourceOfFunds || '—'}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
+                          <button type="button" onClick={() => openDetails(row)}><Receipt size={13} style={{ color: textMuted }} /></button>
                           <button type="button" onClick={() => startEdit(row)}><Pencil size={13} style={{ color: accent }} /></button>
-                          <button type="button" onClick={async () => { if (window.confirm('Delete this receipt?')) { await deleteAuditExpense(row.id); await reload() } }}><Trash2 size={13} style={{ color: danger }} /></button>
+                          <button type="button" onClick={() => void handleDeleteRecord(row)}><Trash2 size={13} style={{ color: danger }} /></button>
                         </div>
                       </td>
                     </tr>
@@ -1288,13 +1308,16 @@ export default function AuditFinanceExpenses() {
                       style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
                       <span className="font-bold text-sm" style={{ color: textPrimary }}>{date}</span>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs" style={{ color: textMuted }}>{rows.length} receipt{rows.length !== 1 ? 's' : ''}</span>
+                        <span className="text-xs" style={{ color: textMuted }}>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
                         <span className="font-bold text-sm" style={{ color: accent }}>₱{peso(dayTotal)}</span>
                       </div>
                     </div>
                     {rows.map((row) => (
                       <div key={row.id} className="flex items-center justify-between px-5 py-3 text-sm"
-                        style={{ borderTop: `1px solid ${border}` }}>
+                        onContextMenu={(e) => openDetails(row, e)}
+                        onDoubleClick={() => openDetails(row)}
+                        title="Right-click to view details"
+                        style={{ borderTop: `1px solid ${border}`, cursor: 'context-menu' }}>
                         <div className="flex flex-col min-w-0">
                           <span className="font-semibold truncate" style={{ color: textPrimary }}>{row.description || row.company}</span>
                           <span className="text-xs truncate" style={{ color: textMuted }}>
@@ -1303,8 +1326,9 @@ export default function AuditFinanceExpenses() {
                         </div>
                         <div className="flex items-center gap-3 ml-3 shrink-0">
                           <span className="font-bold" style={{ color: textPrimary }}>₱{peso(row.amount)}</span>
+                          <button type="button" onClick={() => openDetails(row)}><Receipt size={14} style={{ color: textMuted }} /></button>
                           <button type="button" onClick={() => startEdit(row)}><Pencil size={14} style={{ color: accent }} /></button>
-                          <button type="button" onClick={async () => { if (window.confirm('Delete?')) { await deleteAuditExpense(row.id); await reload() } }}><Trash2 size={14} style={{ color: danger }} /></button>
+                          <button type="button" onClick={() => void handleDeleteRecord(row)}><Trash2 size={14} style={{ color: danger }} /></button>
                         </div>
                       </div>
                     ))}
@@ -1320,14 +1344,14 @@ export default function AuditFinanceExpenses() {
               style={{ borderTop: `1px solid ${danger}33`, backgroundColor: `${danger}08` }}>
               <div className="flex flex-col">
                 <span className="text-xs font-bold uppercase tracking-wider" style={{ color: danger }}>Danger Zone</span>
-                <span className="text-xs" style={{ color: textMuted }}>Permanently deletes all {branchExpenses.length} receipt{branchExpenses.length !== 1 ? 's' : ''} for <strong style={{ color: textPrimary }}>{branchName}</strong>. This cannot be undone.</span>
+                <span className="text-xs" style={{ color: textMuted }}>Permanently deletes all {branchExpenses.length} expense record{branchExpenses.length !== 1 ? 's' : ''} for <strong style={{ color: textPrimary }}>{branchName}</strong>. This cannot be undone.</span>
               </div>
               <button type="button" onClick={handleClearBranchReceipts}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
                 style={{ backgroundColor: 'transparent', border: `1.5px solid ${danger}`, color: danger }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = danger; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = danger }}>
-                <Trash2 size={14} /> Clear All Receipts
+                <Trash2 size={14} /> Clear All Records
               </button>
             </div>
           )}
@@ -1342,6 +1366,68 @@ export default function AuditFinanceExpenses() {
           <strong style={{ color: textPrimary }}>Excel import</strong> — The importer automatically scans all sheet tabs and finds the one with <strong>DATE</strong> and <strong>AMOUNT</strong> columns. Headers can be on any row. All data from that sheet is imported.
         </div>
       </div>
+
+      {detailRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setDetailRow(null)}>
+          <div className="w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-center gap-2">
+                <Receipt size={18} style={{ color: accent }} />
+                <div>
+                  <h3 className="font-bold" style={{ color: textPrimary }}>Expense Record Details</h3>
+                  <p className="text-xs" style={{ color: textMuted }}>{detailRow.branchName} - {detailRow.date}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setDetailRow(null)} className="p-2 rounded-lg" style={{ color: textMuted }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              {[
+                ['Input by', detailRow.inputBy || 'Unknown'],
+                ['Incurred by', detailRow.incurredBy || '-'],
+                ['Company', detailRow.company || '-'],
+                ['Receipt No.', detailRow.receiptNo || '-'],
+                ['Category', detailRow.expenseCategory || '-'],
+                ['Source', detailRow.sourceOfFunds || '-'],
+                ['Created', detailRow.createdAt ? new Date(detailRow.createdAt).toLocaleString('en-PH') : '-'],
+                ['Updated', detailRow.updatedAt ? new Date(detailRow.updatedAt).toLocaleString('en-PH') : '-'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl p-3" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{label}</div>
+                  <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>{value}</div>
+                </div>
+              ))}
+              <div className="sm:col-span-2 rounded-xl p-3" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Description</div>
+                <div className="mt-1 font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '-'}</div>
+              </div>
+              <div className="sm:col-span-2 rounded-xl p-3 flex items-center justify-between" style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}33` }}>
+                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount</span>
+                <span className="text-xl font-black" style={{ color: accent }}>₱{peso(detailRow.amount)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${border}` }}>
+              <button type="button" onClick={() => startEdit(detailRow)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: accent }}>
+                <Pencil size={14} /> Edit
+              </button>
+              <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ color: danger, border: `1px solid ${danger}` }}>
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {duplicateModal && (
         <div style={{
@@ -1384,7 +1470,7 @@ export default function AuditFinanceExpenses() {
               </div>
               <div>
                 <h3 style={{ color: textPrimary, fontWeight: 'bold', fontSize: '1.125rem', margin: 0 }}>
-                  Duplicate Receipt Number Detected
+                  Duplicate Expense Record Detected
                 </h3>
                 <p style={{ color: textMuted, fontSize: '0.875rem', margin: '0.25rem 0 0 0' }}>
                   Receipt number <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: textPrimary }}>{duplicateModal.newExpense.receiptNo}</span> already exists.
@@ -1412,7 +1498,7 @@ export default function AuditFinanceExpenses() {
                     borderBottom: `1px solid ${border}`,
                     paddingBottom: '0.25rem'
                   }}>
-                    Existing Receipt
+                    Existing Record
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
                     <div>
@@ -1452,7 +1538,7 @@ export default function AuditFinanceExpenses() {
                     borderBottom: `1px solid ${accent}22`,
                     paddingBottom: '0.25rem'
                   }}>
-                    New Receipt Details
+                    New Record Details
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
                     <div>
@@ -1536,7 +1622,7 @@ export default function AuditFinanceExpenses() {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                 }}
               >
-                Update Existing Receipt
+                Update Existing Record
               </button>
             </div>
 

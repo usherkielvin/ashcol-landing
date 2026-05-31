@@ -132,6 +132,15 @@ export default function DailyAuditReport() {
   const [compactView, setCompactView] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
+  const desktopDateRef = useRef<HTMLInputElement>(null)
+  const desktopRangeFromRef = useRef<HTMLInputElement>(null)
+  const desktopRangeToRef = useRef<HTMLInputElement>(null)
+
+  const openDatePicker = (input: HTMLInputElement | null) => {
+    if (!input) return
+    input.showPicker?.()
+    input.focus()
+  }
 
   // Edit state
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null)
@@ -516,18 +525,21 @@ export default function DailyAuditReport() {
             ))}
           </div>
           {viewMode === 'single' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1 min-w-[130px]"
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1 min-w-[130px] cursor-pointer"
+              onClick={() => openDatePicker(mobileDateRef.current)}
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
               <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="bg-transparent outline-none text-xs w-full" style={{ color: textPrimary }} />
+                onClick={e => e.stopPropagation()}
+                className="bg-transparent outline-none text-xs w-full cursor-pointer" style={{ color: textPrimary }} />
             </div>
           ) : (
             <>
               <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
-                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
-                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
             </>
           )}
         </div>
@@ -560,18 +572,32 @@ export default function DailyAuditReport() {
 
           {/* Date picker(s) */}
           {viewMode === 'single' ? (
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+            <div
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer"
+              onClick={() => openDatePicker(desktopDateRef.current)}
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-              <input id="audit-date-picker" type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="bg-transparent outline-none text-xs" style={{ color: textPrimary }} />
+              <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                className="bg-transparent outline-none text-xs cursor-pointer" style={{ color: textPrimary }} />
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
               {[{ val: rangeFrom, set: setRangeFrom }, { val: rangeTo, set: setRangeTo }].map((p, i) => (
-                <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer"
+                  onClick={() => openDatePicker(i === 0 ? desktopRangeFromRef.current : desktopRangeToRef.current)}
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
                   <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                  <input type="date" value={p.val} onChange={e => p.set(e.target.value)}
-                    className="bg-transparent outline-none text-xs" style={{ color: textPrimary }} />
+                  <input
+                    ref={i === 0 ? desktopRangeFromRef : desktopRangeToRef}
+                    type="date"
+                    value={p.val}
+                    onChange={e => p.set(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                    className="bg-transparent outline-none text-xs cursor-pointer"
+                    style={{ color: textPrimary }} />
                 </div>
               ))}
             </div>

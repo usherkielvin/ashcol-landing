@@ -97,7 +97,7 @@ export default function DashboardLayout() {
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
     { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },
-    { name: 'Audit Expenses',  path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager'] },
+    { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'manager', 'staff', 'employee'] },
