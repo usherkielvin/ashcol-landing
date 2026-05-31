@@ -12,12 +12,22 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
+
+  // Pre-fill remembered email on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('ashcol-remembered-email')
+    if (saved) {
+      setEmail(saved)
+      setRememberMe(true)
+    }
+  }, [])
   useEffect(() => {
     if (user) {
       const role = (user.role || '').toLowerCase()
@@ -60,7 +70,14 @@ export default function Login() {
 
       const appToken = data.data.token
       const appUser = data.data.user
-      sessionStorage.setItem('ashcol-token', appToken)
+
+      if (rememberMe) {
+        localStorage.setItem('ashcol-token', appToken)
+        localStorage.setItem('ashcol-remembered-email', email.trim())
+      } else {
+        sessionStorage.setItem('ashcol-token', appToken)
+        localStorage.removeItem('ashcol-remembered-email')
+      }
 
       setUser({
         name: appUser.name || email,
@@ -111,7 +128,14 @@ export default function Login() {
 
         const appToken = data.data.token
         const appUser = data.data.user
-        sessionStorage.setItem('ashcol-token', appToken)
+
+        if (rememberMe) {
+          localStorage.setItem('ashcol-token', appToken)
+          localStorage.setItem('ashcol-remembered-email', appUser.email || profile.email)
+        } else {
+          sessionStorage.setItem('ashcol-token', appToken)
+          localStorage.removeItem('ashcol-remembered-email')
+        }
 
         setUser({
           name: appUser.name || profile.name || profile.email,
@@ -303,7 +327,35 @@ export default function Login() {
                 </div>
               </div>
 
-
+              {/* Remember Me */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  id="remember-me"
+                  role="checkbox"
+                  aria-checked={rememberMe}
+                  onClick={() => setRememberMe(r => !r)}
+                  className="relative flex-shrink-0 w-5 h-5 rounded-md border-2 transition-all duration-150 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-[#10B981]/50"
+                  style={{
+                    backgroundColor: rememberMe ? '#10B981' : 'transparent',
+                    borderColor: rememberMe ? '#10B981' : inputBorder,
+                  }}
+                >
+                  {rememberMe && (
+                    <svg viewBox="0 0 12 10" className="w-3 h-3" fill="none">
+                      <path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
+                <label
+                  htmlFor="remember-me"
+                  onClick={() => setRememberMe(r => !r)}
+                  className="text-xs font-semibold cursor-pointer select-none"
+                  style={{ color: textMuted }}
+                >
+                  Keep me signed in
+                </label>
+              </div>
 
               {error && (
                 <p className="text-sm text-red-400 text-center bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2 animate-in slide-in-from-top-2">

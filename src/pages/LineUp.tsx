@@ -604,14 +604,18 @@ export default function LineUp() {
     return (
       <td
         onClick={() => {
+          // Single click: just select the row (handled by <tr>), do nothing extra here
+          setSelectedRowId(row.id)
+        }}
+        onDoubleClick={() => {
           setEditingCell({ rowId: row.id, field })
           setTempValue(value)
         }}
-        title="Click to edit inline"
-        className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        title="Double-click to edit"
+        className="cursor-pointer transition-colors"
         style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}
       >
-        {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>}
+        {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>}
       </td>
     )
   }
@@ -1990,7 +1994,7 @@ export default function LineUp() {
             </p>
             {canEdit && (
               <p className="no-print" style={{ fontSize: '11px', fontStyle: 'italic', color: '#10B981', fontWeight: 600 }}>
-                Tip: Click or right-click a row to select it, then drag to rearrange the schedule order.
+                Click to select a row · Double-click a cell to edit · Right-click for more options · Drag to reorder
               </p>
             )}
           </div>
