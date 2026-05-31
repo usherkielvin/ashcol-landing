@@ -178,8 +178,9 @@ export default function DailyAuditReport() {
   }
 
   const role = (user?.role || '').toLowerCase()
-  const isManagerOrStaff = role === 'manager' || role === 'staff'
-  const isManager = role === 'manager'
+  const isSalesCoordinator = role === 'employee' && user?.jobTitle === 'Sales Coordinator'
+  const isManagerOrStaff = role === 'manager' || role === 'staff' || isSalesCoordinator
+  const isManager = role === 'manager' || isSalesCoordinator
   const isAdmin = role === 'admin'
   const canImportExcel = isAdmin || isManager
   const canEdit = isAdmin || isManager

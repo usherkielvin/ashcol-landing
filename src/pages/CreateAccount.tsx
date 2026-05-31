@@ -102,6 +102,7 @@ export default function CreateAccount() {
         role: appUser.role || 'customer',
         initials: getInitials(appUser.name || email),
         branchId: appUser.branchId ?? null,
+        jobTitle: appUser.jobTitle ?? null,
       })
 
       navigate('/dashboard')
@@ -162,6 +163,7 @@ export default function CreateAccount() {
           role: appUser.role || 'customer',
           initials: getInitials(appUser.name || profile.name || profile.email),
           branchId: appUser.branchId ?? null,
+          jobTitle: appUser.jobTitle ?? null,
         })
 
         navigate('/dashboard')

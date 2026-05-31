@@ -65,7 +65,7 @@ export default function DailySalesForm() {
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
 
   const role = (user?.role || '').toLowerCase()
-  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin'
+  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')
   const isAdmin = role === 'admin'
 
   const today = new Date().toISOString().split('T')[0]

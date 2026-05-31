@@ -348,7 +348,7 @@ export default function Profile() {
             <div className="md:text-center min-w-0">
               <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#10B981]">
-                <Shield className="w-3 h-3" />{formatRole(user?.role)}
+                <Shield className="w-3 h-3" />{user?.jobTitle || formatRole(user?.role)}
               </span>
             </div>
           </div>
@@ -458,9 +458,9 @@ export default function Profile() {
                     {/* Role row (read-only) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
                       <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Role</label>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                         <Shield className="w-3 h-3" />{formatRole(user?.role)}
-                      </span>
+                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                          <Shield className="w-3 h-3" />{user?.jobTitle || formatRole(user?.role)}
+                       </span>
                     </div>
 
                     {/* Feedback */}
@@ -757,8 +757,8 @@ export default function Profile() {
                             <td className="py-3 px-2" style={{ color: textPrimary }}>{u.email || '-'}</td>
                             <td className="py-3 px-2" style={{ color: textPrimary }}>{u.phone || '-'}</td>
                             <td className="py-3 px-2">
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                                <Shield className="w-3 h-3" />{formatRole(u.role)}
+                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                                <Shield className="w-3 h-3" />{u.jobTitle || formatRole(u.role)}
                               </span>
                             </td>
                           </tr>

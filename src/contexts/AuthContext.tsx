@@ -17,6 +17,8 @@ export interface AuthUser {
   initials: string
   /** Set for branch managers — scopes portal to this branch */
   branchId?: string | null
+  /** User's official job title (e.g. "Sales Coordinator") */
+  jobTitle?: string | null
 }
 
 interface AuthContextType {

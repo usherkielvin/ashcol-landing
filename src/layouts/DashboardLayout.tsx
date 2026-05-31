@@ -87,10 +87,11 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff'
 
-  const isSalesUser = (role === 'manager' || role === 'staff') && (
+  const isSalesUser = (role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
     (user?.name || '').toUpperCase().includes('SALES') ||
     (user?.branchId || '').endsWith('-sales') ||
-    (user?.email || '').toLowerCase().includes('sales')
+    (user?.email || '').toLowerCase().includes('sales') ||
+    (user?.jobTitle || '').toUpperCase().includes('SALES')
   )
 
   const navLinks = isSalesUser
@@ -326,7 +327,7 @@ export default function DashboardLayout() {
                   {user?.name ?? 'Admin User'}
                 </p>
                 <p className="text-[10px] truncate leading-none mt-0.5" style={{ color: textMuted }}>
-                  {formatRole(user?.role) || 'Administrator'}
+                  {user?.jobTitle || formatRole(user?.role) || 'Administrator'}
                 </p>
               </div>
             )}

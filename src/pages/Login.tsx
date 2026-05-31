@@ -87,6 +87,7 @@ export default function Login() {
         role: appUser.role || 'customer',
         initials: getInitials(appUser.name || email),
         branchId: appUser.branchId ?? null,
+        jobTitle: appUser.jobTitle ?? null,
       })
 
       const role = (appUser.role || '').toLowerCase()
@@ -145,6 +146,7 @@ export default function Login() {
           role: appUser.role || 'customer',
           initials: getInitials(appUser.name || profile.name || profile.email),
           branchId: appUser.branchId ?? null,
+          jobTitle: appUser.jobTitle ?? null,
         })
         const role = (appUser.role || '').toLowerCase()
         const target = role === 'admin' ? '/dashboard-home' : '/schedules'
