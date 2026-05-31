@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, Receipt, ChevronRight, ChevronDown, FileText, Eye, EyeOff,
-  ArrowUp, ArrowDown, Trophy, Trash2,
-  Minimize2, Maximize2, Printer, MoreVertical,
+  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
+  ArrowUp, ArrowDown, Trophy,
+  Minimize2, Maximize2, MoreVertical,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -109,7 +109,6 @@ export default function DailyAuditReport() {
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [importing, setImporting] = useState(false)
-  const [clearing, setClearing]   = useState(false)
   const [viewMode, setViewMode]   = useState<'single' | 'range'>('single')
 
   const [date, setDate] = useState(() => {
@@ -131,7 +130,6 @@ export default function DailyAuditReport() {
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
   const [compactView, setCompactView] = useState(false)
-  const [expandedMobileRow, setExpandedMobileRow] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
 
@@ -142,8 +140,8 @@ export default function DailyAuditReport() {
 
   const rowKey = (row: AuditRow) => `${row.branchId}:${row.auditLine || ''}`
 
-  const startEditing = (row: AuditRow, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const startEditing = (row: AuditRow, e?: React.MouseEvent) => {
+    e?.stopPropagation()
     setEditingRowKey(rowKey(row))
     setEditValues({
       timeUploaded: parseTimeForInput(row.timeUploaded),
@@ -163,8 +161,8 @@ export default function DailyAuditReport() {
     })
   }
 
-  const handleSaveRow = async (row: AuditRow, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleSaveRow = async (row: AuditRow, e?: React.MouseEvent) => {
+    e?.stopPropagation()
     setSaving(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -195,6 +193,7 @@ export default function DailyAuditReport() {
       })
       if (res.ok) {
         setEditingRowKey(null)
+        setSelectedRow(null)
         fetchAudit()
       } else {
         const err = await res.json().catch(() => ({}))
@@ -264,27 +263,6 @@ export default function DailyAuditReport() {
       }
     } catch { alert('Network error during import') }
     finally { setImporting(false); e.target.value = '' }
-  }
-
-  const handleClearDate = async () => {
-    const targetDate = viewMode === 'single' ? date : rangeFrom
-    const prettyDate = viewMode === 'single'
-      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const confirmationMsg = isManager
-      ? `Are you sure you want to clear your branch's daily report for ${prettyDate}? This cannot be undone.`
-      : `Are you sure you want to clear ALL branch reports for ${prettyDate}? This will permanently delete all records for this date.`
-    if (!window.confirm(confirmationMsg)) return
-    setClearing(true)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${encodeURIComponent(targetDate)}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) { alert('Data cleared successfully.'); fetchAudit() }
-      else { const error = await res.json().catch(() => ({})); alert(error.error || `Clear failed (HTTP ${res.status})`) }
-    } catch { alert('Network error during delete operation') }
-    finally { setClearing(false) }
   }
 
   const fetchRowExpenses = async (branchName: string) => {
@@ -505,21 +483,12 @@ export default function DailyAuditReport() {
                 <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
                   style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                   <div className="py-1">
-                    <button type="button" onClick={() => { window.print(); setMobileMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
-                      <Printer className="w-3.5 h-3.5" style={{ color: textMuted }} /> Print
-                    </button>
                     {canImportExcel && (
                       <>
                         <button type="button" onClick={() => { document.getElementById('excel-import-input')?.click(); setMobileMenuOpen(false) }}
                           disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
                           className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40" style={{ color: textPrimary }}>
                           <TrendingUp className="w-3.5 h-3.5" style={{ color: textMuted }} /> Import
-                        </button>
-                        <button type="button" onClick={() => { handleClearDate(); setMobileMenuOpen(false) }}
-                          disabled={clearing || (viewMode === 'range' && rangeFrom !== rangeTo)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40" style={{ color: textPrimary }}>
-                          <Trash2 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Clear
                         </button>
                       </>
                     )}
@@ -619,35 +588,16 @@ export default function DailyAuditReport() {
             </button>
           )}
 
-          <button id="audit-print-btn" type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-            style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
-            <Printer className="w-3.5 h-3.5" />
-            Print
-          </button>
-
           {canImportExcel && (
-            <>
-              <button id="audit-import-btn" type="button"
-                disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
-                onClick={() => document.getElementById('excel-import-input')?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-                style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#fff',
-                  opacity: importing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
-                <TrendingUp className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} />
-                {importing ? 'Importing…' : `Import Excel`}
-              </button>
-              <button id="audit-clear-btn" type="button"
-                disabled={clearing || (viewMode === 'range' && rangeFrom !== rangeTo)}
-                onClick={handleClearDate}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-                style={{ backgroundColor: 'transparent', borderColor: '#EF4444', color: '#EF4444',
-                  opacity: clearing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
-                <Trash2 className="w-3.5 h-3.5" />
-                {clearing ? 'Clearing…' : 'Clear'}
-              </button>
-            </>
+            <button id="audit-import-btn" type="button"
+              disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
+              onClick={() => document.getElementById('excel-import-input')?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
+              style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#fff',
+                opacity: importing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
+              <TrendingUp className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} />
+              {importing ? 'Importing…' : `Import Excel`}
+            </button>
           )}
         </div>
       </div>
@@ -765,7 +715,7 @@ export default function DailyAuditReport() {
           <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 210px)' }}>
             <table
               style={compactView
-                ? { minWidth: 'unset', fontSize: '10px', tableLayout: 'auto', width: '100%' }
+                ? { minWidth: '1180px', fontSize: '10px', tableLayout: 'auto', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }
                 : { minWidth: '1700px', fontSize: '12px' }
               }
             >
@@ -781,10 +731,10 @@ export default function DailyAuditReport() {
                         className="text-left font-bold uppercase tracking-wider cursor-pointer select-none transition-colors"
                         style={{
                           color: sorted ? textPrimary : textMuted,
-                          padding: compactView ? '6px 5px' : '10px 12px',
+                          padding: compactView ? '7px 6px' : '10px 12px',
                           whiteSpace: 'nowrap',
                           fontSize: compactView ? 9 : 10,
-                          letterSpacing: '0.05em',
+                          letterSpacing: 0,
                           position: 'sticky',
                           top: 0,
                           left: col.key === 'branch' ? 0 : undefined,
@@ -802,16 +752,6 @@ export default function DailyAuditReport() {
                     )
                   })}
                   
-                {viewMode === 'single' && canEdit && (
-                    <th className="no-print" style={{ 
-                      padding: compactView ? '6px 5px' : '10px 12px', 
-                      width: compactView ? '30px' : '60px',
-                      position: 'sticky',
-                      top: 0,
-                      zIndex: 20,
-                      backgroundColor: inputBg,
-                    }} />
-                  )}
                 </tr>
               </thead>
 
@@ -823,7 +763,7 @@ export default function DailyAuditReport() {
                   const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
                   const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
-                  const p          = compactView ? '4px 5px' : '10px 12px'
+                  const p          = compactView ? '7px 6px' : '10px 12px'
                   const isSelected = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
 
                   return (
@@ -1054,28 +994,6 @@ export default function DailyAuditReport() {
                         {editing ? renderEditInput('totalUnitsFreeInstall', true) : row.totalUnitsFreeInstall}
                       </td>
 
-                      {/* ⑳ Actions */}
-                      {viewMode === 'single' && canEdit && (
-                        <td className="no-print" style={{ padding: p, textAlign: 'right' }}>
-                          {editing ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={e => handleSaveRow(row, e)} disabled={saving} className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-[9px] font-bold rounded">
-                                Save
-                              </button>
-                              <button onClick={e => { e.stopPropagation(); setEditingRowKey(null) }} disabled={saving} className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold rounded">
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={e => startEditing(row, e)}
-                              className="px-2 py-1 border border-slate-300 hover:bg-slate-100 text-slate-600 text-[9px] font-bold rounded transition-colors"
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </td>
-                      )}
                     </tr>
                   )
                 })}
@@ -1117,7 +1035,6 @@ export default function DailyAuditReport() {
                   </td>
                   {/* Units + Cancelled + Free */}
                   <td colSpan={3} />
-                  {viewMode === 'single' && canEdit && <td className="no-print" />}
                 </tr>
               </tfoot>
             </table>
@@ -1172,12 +1089,12 @@ export default function DailyAuditReport() {
         ) : (
           visibleRows.map((row, idx) => {
             const key = rowKey(row)
-            const editing = isEditing(row)
+            const editing = false
             const isAbove = row.remarks === 'ABOVE QUOTA'
             const isPending = row.remarks === 'PENDING'
             const noRecord = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
             const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
-            const isExpanded = expandedMobileRow === key || editing
+            const isExpanded = false
             const statusColor = isPending ? '#F59E0B' : noTransaction ? '#EF4444' : '#10B981'
             const diffColor = noRecord ? textMuted : isAbove ? '#10B981' : '#EF4444'
 
@@ -1186,15 +1103,16 @@ export default function DailyAuditReport() {
                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                 <button type="button" className="w-full text-left px-4 py-3"
                   onClick={() => {
-                    if (editing) return
-                    setExpandedMobileRow(isExpanded && expandedMobileRow === key ? null : key)
+                    setSelectedRow(row)
+                    setRowExpenses(null)
+                    fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
                   }}>
                   <div className="flex items-start gap-3">
                     <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{row.branchName}</span>
-                        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                        <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="mobile-status-dot" style={{ backgroundColor: statusColor }} />
@@ -1276,27 +1194,6 @@ export default function DailyAuditReport() {
                         style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
                         Details
                       </button>
-                      {viewMode === 'single' && canEdit && (
-                        editing ? (
-                          <>
-                            <button type="button" onClick={e => handleSaveRow(row, e)} disabled={saving}
-                              className="flex-1 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                              style={{ backgroundColor: '#10B981' }}>
-                              {saving ? 'Saving…' : 'Save'}
-                            </button>
-                            <button type="button" onClick={e => { e.stopPropagation(); setEditingRowKey(null) }} disabled={saving}
-                              className="px-3 py-2 rounded-lg text-xs font-medium" style={{ color: textMuted, border: `1px solid ${inputBorder}` }}>
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <button type="button" onClick={e => { startEditing(row, e); setExpandedMobileRow(key) }}
-                            className="flex-1 py-2 rounded-lg text-xs font-medium"
-                            style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
-                            Edit
-                          </button>
-                        )
-                      )}
                       <button type="button" onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
                         className="p-2 rounded-lg" style={{ border: `1px solid ${inputBorder}` }} title="Hide">
                         <EyeOff className="w-3.5 h-3.5" style={{ color: textMuted }} />
@@ -1404,14 +1301,74 @@ export default function DailyAuditReport() {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setSelectedRow(null)}
-                className="p-2 rounded-xl transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {viewMode === 'single' && canEdit && (
+                  isEditing(selectedRow) ? (
+                    <>
+                      <button type="button" onClick={e => handleSaveRow(selectedRow, e)} disabled={saving}
+                        className="px-3 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                        style={{ backgroundColor: '#10B981' }}>
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button type="button" onClick={() => setEditingRowKey(null)} disabled={saving}
+                        className="px-3 py-2 rounded-lg text-xs font-medium"
+                        style={{ color: textMuted, border: `1px solid ${inputBorder}` }}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => startEditing(selectedRow)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold"
+                      style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
+                      Edit
+                    </button>
+                  )
+                )}
+                <button onClick={() => { setEditingRowKey(null); setSelectedRow(null) }}
+                  className="p-2 rounded-xl transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+              {isEditing(selectedRow) && (
+                <div className="rounded-xl p-4 border flex flex-col gap-4" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { label: 'Time Uploaded', field: 'timeUploaded', type: 'time' },
+                      { label: 'Remarks', field: 'remarks' },
+                      { label: 'Target Quota', field: 'targetDailyQuota' },
+                      { label: 'COH Previous Day', field: 'cohPreviousDay' },
+                      { label: 'Fund from HO', field: 'fundFromHo' },
+                      { label: 'Cash Returns', field: 'cashReturns' },
+                      { label: 'Cash Collection', field: 'totalCashCollection' },
+                      { label: 'Online Collection', field: 'totalOnlineCollection' },
+                      { label: 'Total Expenses', field: 'totalExpenses' },
+                      { label: 'For Collection', field: 'forCollection' },
+                      { label: 'Rebates', field: 'rebatesForCollection' },
+                      { label: 'Units Installed/Serviced', field: 'totalUnitsInstalledServiced', inputMode: 'numeric' },
+                      { label: 'Cancelled', field: 'totalCancelled', inputMode: 'numeric' },
+                      { label: 'Free Install', field: 'totalUnitsFreeInstall', inputMode: 'numeric' },
+                    ].map(item => (
+                      <label key={item.field} className="flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
+                        <input
+                          type={item.type || 'text'}
+                          inputMode={(item.inputMode as any) || 'decimal'}
+                          value={editValues[item.field] || ''}
+                          onChange={e => setEditValues(prev => ({ ...prev, [item.field]: item.type === 'time' ? e.target.value : e.target.value.replace(/,/g, '') }))}
+                          disabled={saving}
+                          className="rounded-lg px-3 py-2 text-sm font-medium outline-none"
+                          style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Top status info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>

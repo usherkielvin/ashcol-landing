@@ -1460,6 +1460,8 @@ export default function LineUp() {
                                 onClick={() => { fileInputRef.current?.click(); setMoreMenuOpen(false) }} />
                             </>
                           )}
+                          <DropdownItem icon={<Download className="w-3.5 h-3.5" />} label="Export" color={textMuted}
+                            onClick={() => { handleExportExcel(); setMoreMenuOpen(false) }} />
                           <DropdownItem icon={<Printer className="w-3.5 h-3.5" />} label="Print" color={textMuted}
                             onClick={() => { window.print(); setMoreMenuOpen(false) }} />
                         </div>
@@ -1484,33 +1486,8 @@ export default function LineUp() {
                   )}
                 </div>
               </div>
-
-              <div className="lineup-import-export-actions">
-                {canEdit && (
-                  <button type="button" onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
-                    style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
-                    <Upload className="w-3.5 h-3.5" /> Import
-                  </button>
-                )}
-                <button type="button" onClick={handleExportExcel}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
-                  style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
-                  <Download className="w-3.5 h-3.5" /> Export
-                </button>
-              </div>
             </div>
           </div>
-
-          {rows.length > 0 && (
-            <div className="mobile-scroll-snap px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
-              <StatPill label="Trucks" value={rows.length} color="#10B981" chip />
-              <StatPill label="Units" value={totalUnits} color="#3B82F6" chip />
-              {totalSurvey > 0 && <StatPill label="Survey" value={totalSurvey} color="#F59E0B" chip />}
-              {totalBackJob > 0 && <StatPill label="Back job" value={totalBackJob} color="#EF4444" chip />}
-              {totalDismantle > 0 && <StatPill label="Dismantle" value={totalDismantle} color="#F43F5E" chip />}
-            </div>
-          )}
 
           {/* Scan alerts */}
           {scanError && (
@@ -2264,23 +2241,5 @@ function DropdownItem({ icon, label, color, onClick, disabled }: {
       style={{ color }}>
       {icon} {label}
     </button>
-  )
-}
-
-function StatPill({ label, value, color = '#64748b', chip }: { label: string; value: number; color?: string; chip?: boolean }) {
-  if (chip) {
-    return (
-      <div className="mobile-kpi-chip" style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}>
-        <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
-        <span className="text-[10px] font-medium" style={{ color: `${color}99` }}>{label}</span>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
-      style={{ backgroundColor: (color ?? '#64748b') + '18', border: `1px solid ${(color ?? '#64748b')}30`, color: color ?? '#64748b' }}>
-      <span className="font-semibold text-sm leading-none">{value}</span>
-      <span className="text-[10px]">{label}</span>
-    </div>
   )
 }
