@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
-  ArrowUp, ArrowDown, Trophy, Award, Crown, Trash2,
+  ArrowUp, ArrowDown, Trophy, Trash2,
   Minimize2, Maximize2, Printer
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -102,8 +102,9 @@ export default function DailyAuditReport() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
 
-  const [drilldown, setDrilldown] = useState<{ branchName: string; items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
-  const [drillLoading, setDrillLoading] = useState(false)
+  const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
+  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
+  const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [compactView, setCompactView] = useState(false)
@@ -254,8 +255,8 @@ export default function DailyAuditReport() {
     finally { setClearing(false) }
   }
 
-  const openDrilldown = async (branchName: string) => {
-    setDrillLoading(true)
+  const fetchRowExpenses = async (branchName: string) => {
+    setRowExpensesLoading(true)
     const allExpenses = await loadAuditExpenses()
     const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : new Date(rangeFrom + 'T00:00:00')
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -266,15 +267,21 @@ export default function DailyAuditReport() {
       e.branchName.toLowerCase() === branchName.toLowerCase() &&
       (e.date === format1 || e.date === format2 || e.date === isoFormat)
     )
-    setDrilldown({ branchName, items: [], auditExpenses: matchedExpenses })
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?branchName=${encodeURIComponent(branchName)}&date=${isoFormat}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (res.ok) setDrilldown({ branchName, items: await res.json(), auditExpenses: matchedExpenses })
-    } catch { setDrilldown({ branchName, items: [], auditExpenses: matchedExpenses }) }
-    finally { setDrillLoading(false) }
+      if (res.ok) {
+        setRowExpenses({ items: await res.json(), auditExpenses: matchedExpenses })
+      } else {
+        setRowExpenses({ items: [], auditExpenses: matchedExpenses })
+      }
+    } catch {
+      setRowExpenses({ items: [], auditExpenses: matchedExpenses })
+    } finally {
+      setRowExpensesLoading(false)
+    }
   }
 
   const toggleHideBranch = (branchName: string) => {
@@ -328,12 +335,9 @@ export default function DailyAuditReport() {
   // Column definitions — key/label/compact label pairs
   const columns = [
     { key: 'branch',      label: 'Branch',                 short: 'Branch' },
-    { key: 'time',        label: viewMode==='single' ? 'Time Uploaded' : 'Days Reported', short: viewMode==='single' ? 'Time' : 'Days' },
-    { key: 'status',      label: 'Status',                 short: 'Status' },
     { key: 'grossSales',  label: 'Gross Sales',            short: 'Sales' },
     { key: 'target',      label: 'Target Quota',           short: 'Quota' },
-    { key: 'difference',  label: 'Difference',             short: 'Diff' },
-    { key: 'remarks',     label: 'Remarks',                short: 'Rem.' },
+    { key: 'difference',  label: 'Diff / Remarks',         short: 'Diff/Rem.' },
     { key: 'coh',         label: 'COH Prev Day',           short: 'COH' },
     { key: 'fundHo',      label: 'Fund from HO',           short: 'HO' },
     { key: 'cashReturns', label: 'Cash Returns',           short: 'Ret.' },
@@ -341,11 +345,11 @@ export default function DailyAuditReport() {
     { key: 'cashColl',    label: 'Cash Collection',        short: 'Cash' },
     { key: 'onlineColl',  label: 'Online Collection',      short: 'Online' },
     { key: 'totalExp',    label: 'Total Expenses',         short: 'Exp.' },
+    { key: 'forColl',     label: 'For Collection',         short: 'Coll.' },
+    { key: 'rebates',     label: 'Rebates',                short: 'Reb.' },
     { key: 'units',       label: 'Units Inst./Serv.',      short: 'Units' },
     { key: 'cancelled',   label: 'Cancelled',              short: 'Canc.' },
     { key: 'freeInstall', label: 'Free Install',           short: 'Free' },
-    { key: 'forColl',     label: 'For Collection',         short: 'Coll.' },
-    { key: 'rebates',     label: 'Rebates',                short: 'Reb.' },
   ]
 
   // A small styled input for edit mode
@@ -508,49 +512,17 @@ export default function DailyAuditReport() {
         ).sort((a, b) => b.difference - a.difference)
         if (aboveQuotaBranches.length === 0) return null
         return (
-          <div className="rounded-2xl overflow-hidden no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)' }}>
-                <Trophy className="w-4 h-4" style={{ color: '#F59E0B' }} />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
-                  {viewMode === 'single'
-                    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-                    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
-                </p>
-                <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Above Quota Branches</h3>
-              </div>
-              <span className="ml-auto text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider"
-                style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
-                {aboveQuotaBranches.length} exceeded
-              </span>
-            </div>
-            <div className="p-4 flex flex-wrap gap-3">
-              {aboveQuotaBranches.map((branch, idx) => {
-                const RankIcon = idx === 0 ? Crown : Award
-                const rankStyle = idx === 0
-                  ? { iconBg:'rgba(245,158,11,0.12)', iconColor:'#F59E0B', cardBorder:'rgba(245,158,11,0.25)' }
-                  : idx === 1 ? { iconBg:'rgba(148,163,184,0.12)', iconColor:'#94A3B8', cardBorder: border }
-                  : idx === 2 ? { iconBg:'rgba(180,100,50,0.12)', iconColor:'#CD7F32', cardBorder: border }
-                  : { iconBg:'rgba(16,185,129,0.1)', iconColor:'#10B981', cardBorder: border }
-                return (
-                  <div key={branch.branchName} className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${rankStyle.cardBorder}`, minWidth: '210px' }}>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: rankStyle.iconBg }}>
-                      <RankIcon className="w-4 h-4" style={{ color: rankStyle.iconColor }} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-black text-xs truncate" style={{ color: textPrimary }}>{branch.branchName}</p>
-                      <p className="text-[11px]" style={{ color: textMuted }}>₱{peso(branch.grossSales)}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs font-black" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</p>
-                      <p className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: textMuted }}>#{idx + 1}</p>
-                    </div>
-                  </div>
-                )
-              })}
+          <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-xl border no-print"
+            style={{ backgroundColor: cardBg, borderColor: border }}>
+            <span className="font-black uppercase tracking-wider text-[10px]" style={{ color: '#10B981' }}>Above Quota:</span>
+            <div className="flex flex-wrap gap-2">
+              {aboveQuotaBranches.map((branch) => (
+                <div key={branch.branchName} className="flex items-center gap-2 px-3 py-1 rounded-full border text-xs"
+                  style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <span className="font-bold" style={{ color: textPrimary }}>{branch.branchName}</span>
+                  <span className="font-extrabold text-[11px]" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</span>
+                </div>
+              ))}
             </div>
           </div>
         )
@@ -661,73 +633,123 @@ export default function DailyAuditReport() {
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
                   const noSched    = row.remarks === 'NO SCHED'
                   const p          = compactView ? '4px 5px' : '10px 12px'
+                  const isSelected = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
 
                   return (
                     <tr
                       key={idx}
                       id={`audit-row-${idx}`}
+                      onClick={() => {
+                        if (editing) return
+                        setSelectedRow(row)
+                        setRowExpenses(null)
+                        fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                      }}
+                      onContextMenu={e => {
+                        if (editing) return
+                        e.preventDefault()
+                        setSelectedRow(row)
+                        setRowExpenses(null)
+                        fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                      }}
                       style={{
                         borderBottom: `1px solid ${border}`,
-                        backgroundColor: 'transparent',
+                        backgroundColor: isSelected
+                          ? (isLight ? '#E0F2FE' : '#1E293B')
+                          : 'transparent',
+                        cursor: editing ? 'pointer' : 'pointer'
                       }}
                       className="transition-colors group"
-                      onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHover }) }}
-                      onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = td.classList.contains('sticky') ? cardBg : 'transparent' }) }}
+                      onMouseEnter={e => {
+                        if (editingRowKey !== rowKey(row)) {
+                          e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
+                            td.style.backgroundColor = rowHover
+                          })
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        const isSel = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
+                        e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
+                          td.style.backgroundColor = td.classList.contains('sticky')
+                            ? (isSel ? (isLight ? '#E0F2FE' : '#1E293B') : cardBg)
+                            : (isSel ? (isLight ? '#E0F2FE' : '#1E293B') : 'transparent')
+                        })
+                      }}
                     >
-                      {/* ① Branch */}
+                      {/* ① Branch (with combined status & time upload inline) */}
                       <td className="font-semibold sticky left-0"
-                        onClick={() => openDrilldown((row.logicalBranchName ?? row.branchName).trim())}
-                        style={{ color: textPrimary, backgroundColor: cardBg, padding: p, whiteSpace: 'nowrap', transition: 'background-color 0.15s ease-in-out' }}>
-                        <div className="flex items-center gap-1.5">
-                          <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
-                          <span style={{ fontSize: compactView ? 9 : undefined }}>{row.branchName}</span>
-                          {!compactView && (
-                            <button
-                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-red-400 ml-1 no-print"
-                              onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
-                              title="Hide branch"
-                            >
-                              <EyeOff className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* ② Time */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap', fontSize: compactView ? 9 : undefined }}>
-                        {editing ? (
-                          <input 
-                            type="time" 
-                            value={editValues.timeUploaded || ''}
-                            onChange={e => setEditValues(prev => ({ ...prev, timeUploaded: e.target.value }))}
-                            className="bg-transparent focus:outline-none"
-                            style={{ 
-                              color: textPrimary, 
-                              borderBottom: `1px solid ${inputBorder}`,
-                              width: compactView ? '60px' : '85px',
-                              fontSize: compactView ? 9 : 11
-                            }}
-                          />
-                        ) : (
-                          row.timeUploaded || '—'
-                        )}
-                      </td>
-
-                      {/* ③ Status */}
-                      <td style={{ padding: p }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: compactView ? '1px 4px' : '2px 7px',
-                          borderRadius: 999,
-                          fontSize: compactView ? 8 : 10,
-                          fontWeight: 700,
+                        style={{
+                          color: textPrimary,
+                          backgroundColor: isSelected
+                            ? (isLight ? '#E0F2FE' : '#1E293B')
+                            : cardBg,
+                          padding: p,
                           whiteSpace: 'nowrap',
-                          ...(noRecord
-                            ? { backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }
-                            : { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' })
+                          transition: 'background-color 0.15s ease-in-out'
                         }}>
-                          {noRecord ? (compactView ? 'No Rec' : 'No Record') : 'Checked'}
-                        </span>
+                        {editing ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
+                              <span style={{ fontSize: compactView ? 9 : undefined }}>{row.branchName}</span>
+                            </div>
+                            {viewMode === 'single' && (
+                              <div className="flex items-center gap-1">
+                                <span style={{ color: textMuted, fontSize: compactView ? 8 : 10 }}>Time:</span>
+                                <input 
+                                  type="time" 
+                                  value={editValues.timeUploaded || ''}
+                                  onChange={e => setEditValues(prev => ({ ...prev, timeUploaded: e.target.value }))}
+                                  onClick={e => e.stopPropagation()}
+                                  className="bg-transparent focus:outline-none"
+                                  style={{ 
+                                    color: textPrimary, 
+                                    borderBottom: `1px solid ${inputBorder}`,
+                                    width: compactView ? '55px' : '80px',
+                                    fontSize: compactView ? 8 : 10
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
+                              <span className="font-bold" style={{ fontSize: compactView ? 10 : 12 }}>{row.branchName}</span>
+                              {!compactView && (
+                                <button
+                                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-red-400 ml-1 no-print"
+                                  onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
+                                  title="Hide branch"
+                                >
+                                  <EyeOff className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5" style={{ fontSize: compactView ? '8px' : '10px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                backgroundColor: noRecord ? '#EF4444' : '#10B981'
+                              }} />
+                              <span style={{ color: noRecord ? '#EF4444' : '#10B981', fontWeight: 600 }}>
+                                {noSched
+                                  ? (compactView ? 'No Sch' : 'No Sched')
+                                  : noRecord
+                                    ? (compactView ? 'No Trans' : 'No Transaction')
+                                    : 'Checked'}
+                              </span>
+                              {!noRecord && row.timeUploaded && (
+                                <span style={{ color: textMuted }}>
+                                  • {row.timeUploaded}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </td>
 
                       {/* ④ Gross Sales */}
@@ -738,40 +760,41 @@ export default function DailyAuditReport() {
                         {editing ? renderEditInput('targetDailyQuota', false, '#8B5CF6') : <>₱{peso(row.targetDailyQuota)}</>}
                       </td>
 
-                      {/* ⑥ Difference */}
+                      {/* ⑥ Difference & Remarks */}
                       <td style={{ padding: p, whiteSpace: 'nowrap' }}>
-                        {noRecord
-                          ? <span style={{ color: textMuted }}>—</span>
-                          : <span className="font-bold" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
+                        <div className="flex flex-col gap-0.5">
+                          <span style={{
+                            display: 'inline-block',
+                            alignSelf: 'start',
+                            padding: compactView ? '1px 3px' : '1.5px 5px',
+                            borderRadius: 4,
+                            fontSize: compactView ? 7 : 9,
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            ...(noSched
+                              ? { backgroundColor: 'rgba(148,163,184,0.15)', color: '#94A3B8' }
+                              : noRecord
+                                ? { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
+                                : isAbove
+                                  ? { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
+                                  : { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' })
+                          }}>
+                            {noSched
+                              ? (compactView ? 'No Sch' : 'No Sched')
+                              : noRecord
+                                ? (compactView ? 'No Trans' : 'No Transaction')
+                                : compactView && row.remarks === 'ABOVE QUOTA' ? 'ABOVE'
+                                : compactView && row.remarks === 'BELOW QUOTA' ? 'BELOW'
+                                : row.remarks}
+                          </span>
+                          {noRecord ? (
+                            noSched ? null : <span style={{ color: textMuted }}>—</span>
+                          ) : (
+                            <span className="font-bold text-[11px]" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
                               {isAbove ? '+' : ''}₱{peso(row.difference)}
-                            </span>}
-                      </td>
-
-                      {/* ⑦ Remarks */}
-                      <td style={{ padding: p }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: compactView ? '1px 4px' : '2px 7px',
-                          borderRadius: 6,
-                          fontSize: compactView ? 8 : 10,
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap',
-                          ...(noSched
-                            ? { backgroundColor: 'rgba(148,163,184,0.15)', color: '#94A3B8' }
-                            : noRecord
-                              ? { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
-                              : isAbove
-                                ? { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
-                                : { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' })
-                        }}>
-                          {noSched
-                            ? (compactView ? 'No Sch' : 'No Sched')
-                            : noRecord
-                              ? (compactView ? 'No Rec' : 'No Record')
-                              : compactView && row.remarks === 'ABOVE QUOTA' ? 'ABOVE'
-                              : compactView && row.remarks === 'BELOW QUOTA' ? 'BELOW'
-                              : row.remarks}
-                        </span>
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* ⑧ COH Prev Day */}
@@ -809,14 +832,28 @@ export default function DailyAuditReport() {
                           : (
                             <button
                               id={`expense-drilldown-${idx}`}
-                              onClick={e => { e.stopPropagation(); openDrilldown((row.logicalBranchName ?? row.branchName).trim()) }}
+                              onClick={e => {
+                                e.stopPropagation()
+                                setSelectedRow(row)
+                                setRowExpenses(null)
+                                fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                              }}
                               className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
                               style={{ color: '#EF4444' }}
                             >
                               ₱{peso(row.totalExpenses)}
-                              {!compactView && <Receipt className="w-3 h-3 shrink-0 no-print" />}
                             </button>
                           )}
+                      </td>
+
+                      {/* ⑱ For Collection */}
+                      <td className="font-semibold" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap' }} >
+                        {editing ? renderEditInput('forCollection', false, '#F59E0B') : <>₱{peso(row.forCollection)}</>}
+                      </td>
+
+                      {/* ⑲ Rebates */}
+                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }}>
+                        {editing ? renderEditInput('rebatesForCollection') : <>₱{peso(row.rebatesForCollection)}</>}
                       </td>
 
                       {/* ⑮ Units */}
@@ -832,16 +869,6 @@ export default function DailyAuditReport() {
                       {/* ⑰ Free Install */}
                       <td className="text-center" style={{ color: textMuted, padding: p }} >
                         {editing ? renderEditInput('totalUnitsFreeInstall', true) : row.totalUnitsFreeInstall}
-                      </td>
-
-                      {/* ⑱ For Collection */}
-                      <td className="font-semibold" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('forCollection', false, '#F59E0B') : <>₱{peso(row.forCollection)}</>}
-                      </td>
-
-                      {/* ⑲ Rebates */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }}>
-                        {editing ? renderEditInput('rebatesForCollection') : <>₱{peso(row.rebatesForCollection)}</>}
                       </td>
 
                       {/* ⑳ Actions */}
@@ -874,7 +901,7 @@ export default function DailyAuditReport() {
               {/* ── Totals Footer ── */}
               <tfoot>
                 <tr style={{ borderTop: `2px solid ${border}`, backgroundColor: inputBg }}>
-                  <td colSpan={3} style={{ padding: compactView ? '5px 5px' : '10px 12px' }} />
+                  <td colSpan={1} style={{ padding: compactView ? '5px 5px' : '10px 12px' }} />
                   {/* Gross Sales */}
                   <td className="font-black whitespace-nowrap" style={{ color: '#3B82F6', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.grossSales)}
@@ -884,7 +911,7 @@ export default function DailyAuditReport() {
                     ₱{peso(totals.targetDailyQuota)}
                   </td>
                   {/* Difference + Remarks + COH + HO + Returns + CFD */}
-                  <td colSpan={6} />
+                  <td colSpan={5} />
                   {/* Cash Collection */}
                   <td className="font-black whitespace-nowrap" style={{ color: '#10B981', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.totalCashCollection)}
@@ -897,8 +924,6 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: '#EF4444', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.totalExpenses)}
                   </td>
-                  {/* Units + Cancelled + Free */}
-                  <td colSpan={3} />
                   {/* For Collection */}
                   <td className="font-black whitespace-nowrap" style={{ color: '#F59E0B', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.forCollection)}
@@ -907,6 +932,8 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: textMuted, fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.rebatesForCollection)}
                   </td>
+                  {/* Units + Cancelled + Free */}
+                  <td colSpan={3} />
                   {viewMode === 'single' && canEdit && <td className="no-print" />}
                 </tr>
               </tfoot>
@@ -982,101 +1009,234 @@ export default function DailyAuditReport() {
         }
       `}</style>
 
-      {/* ── Drilldown Modal ───────────────────────────────────────── */}
-      {drilldown && (
+      {/* ── Row Details Modal ───────────────────────────────────────── */}
+      {selectedRow && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setDrilldown(null)}
+          onClick={() => setSelectedRow(null)}
         >
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '80vh' }}
+            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-2xl flex flex-col"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-2">
-                <Receipt className="w-4 h-4" style={{ color: '#10B981' }} />
-                <h4 className="font-black text-sm" style={{ color: textPrimary }}>{drilldown.branchName} — Expense Detail</h4>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-emerald-500" />
+                <div>
+                  <h4 className="font-black text-base" style={{ color: textPrimary }}>
+                    {selectedRow.branchName}
+                  </h4>
+                  <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                    {viewMode === 'single'
+                      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                      : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  </p>
+                </div>
               </div>
-              <button id="drilldown-close-btn" onClick={() => setDrilldown(null)}
-                className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
+              <button onClick={() => setSelectedRow(null)}
+                className="p-2 rounded-xl transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
-              {drillLoading ? (
-                <div className="flex flex-col gap-2">
-                  {[1,2,3].map(i => <div key={i} className="h-10 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+              {/* Top status info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
+                  <span style={{
+                    alignSelf: 'start',
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    ...(selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED'
+                      ? { backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }
+                      : { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' })
+                  }}>
+                    {selectedRow.remarks === 'NO SCHED'
+                      ? 'NO SCHED'
+                      : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT')
+                        ? 'NO TRANSACTION'
+                        : selectedRow.status}
+                  </span>
                 </div>
-              ) : drilldown.items.length === 0 && drilldown.auditExpenses.length === 0 ? (
-                <div className="flex flex-col items-center py-10 gap-2">
-                  <Receipt className="w-8 h-8 opacity-20" style={{ color: textMuted }} />
-                  <p className="text-sm" style={{ color: textMuted }}>No expense items recorded</p>
+                <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Time Uploaded</span>
+                  <span className="text-xs font-bold" style={{ color: textPrimary }}>
+                    {selectedRow.timeUploaded || 'N/A'}
+                  </span>
                 </div>
-              ) : (
-                <div className="flex flex-col gap-8">
-                  {drilldown.items.length > 0 && (
-                    <div>
-                      <h5 className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Summary Breakdown</h5>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr style={{ borderBottom: `1px solid ${border}` }}>
-                            {['Type','Description','Amount'].map(h => (
-                              <th key={h} className="pb-2 text-left text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {drilldown.items.map((item, i) => {
-                            const tc = item.type === 'EXPENSE' ? '#EF4444' : item.type === 'PURCHASE' ? '#F59E0B' : item.type === 'CASH_SALE' ? '#10B981' : '#3B82F6'
-                            return (
-                              <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                                <td className="py-2.5 pr-3">
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>{item.type.replace('_',' ')}</span>
-                                </td>
-                                <td className="py-2.5 pr-3 text-xs" style={{ color: textPrimary }}>{item.description}</td>
-                                <td className="py-2.5 font-black text-xs whitespace-nowrap" style={{ color: tc }}>₱{peso(item.amount)}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  {drilldown.auditExpenses.length > 0 && (
-                    <div>
-                      <h5 className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#10B981' }}>Detailed Audit Expenses (Excel format)</h5>
-                      <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${border}` }}>
-                        <table className="w-full text-xs min-w-[700px]">
+              </div>
+
+              {/* Main metrics grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Sales & Quota */}
+                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                    <BarChart2 className="w-4 h-4 text-blue-500" />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Sales Summary</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span style={{ color: textMuted }}>Gross Sales:</span>
+                    <span className="font-bold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.grossSales)}</span>
+                    <span style={{ color: textMuted }}>Target Quota:</span>
+                    <span className="font-bold text-right" style={{ color: '#8B5CF6' }}>₱{peso(selectedRow.targetDailyQuota)}</span>
+                    <span style={{ color: textMuted }}>Difference:</span>
+                    <span className="font-bold text-right" style={{ color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444' }}>
+                      {selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱{peso(selectedRow.difference)}
+                    </span>
+                    <span style={{ color: textMuted }}>Remarks:</span>
+                    <span className="font-bold text-right" style={{
+                      color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'NO SCHED' ? textMuted : '#EF4444'
+                    }}>
+                      {selectedRow.remarks === 'NO SCHED'
+                        ? 'NO SCHED'
+                        : (selectedRow.remarks === 'NO RECORD' || selectedRow.remarks === 'NO REPORT')
+                          ? 'NO TRANSACTION'
+                          : selectedRow.remarks}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Cash Flow */}
+                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Cash Flow</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span style={{ color: textMuted }}>COH Prev Day:</span>
+                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.cohPreviousDay)}</span>
+                    <span style={{ color: textMuted }}>Fund from HO:</span>
+                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.fundFromHo)}</span>
+                    <span style={{ color: textMuted }}>Cash Returns:</span>
+                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.cashReturns)}</span>
+                    <span className="font-bold" style={{ color: textPrimary }}>Total COH/CFD:</span>
+                    <span className="font-bold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.totalCohCfd)}</span>
+                  </div>
+                </div>
+
+                {/* 3. Collections */}
+                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                    <Receipt className="w-4 h-4 text-purple-500" />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Collections</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span style={{ color: textMuted }}>Cash Collection:</span>
+                    <span className="font-bold text-right" style={{ color: '#10B981' }}>₱{peso(selectedRow.totalCashCollection)}</span>
+                    <span style={{ color: textMuted }}>Online Collection:</span>
+                    <span className="font-bold text-right" style={{ color: '#3B82F6' }}>₱{peso(selectedRow.totalOnlineCollection)}</span>
+                    <span style={{ color: textMuted }}>For Collection:</span>
+                    <span className="font-bold text-right" style={{ color: '#F59E0B' }}>₱{peso(selectedRow.forCollection)}</span>
+                    <span style={{ color: textMuted }}>Rebates:</span>
+                    <span className="font-semibold text-right" style={{ color: textMuted }}>₱{peso(selectedRow.rebatesForCollection)}</span>
+                  </div>
+                </div>
+
+                {/* 4. Operations */}
+                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                    <Trophy className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Operations</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span style={{ color: textMuted }}>Units Installed/Serviced:</span>
+                    <span className="font-bold text-right" style={{ color: textPrimary }}>{selectedRow.totalUnitsInstalledServiced}</span>
+                    <span style={{ color: textMuted }}>Cancelled:</span>
+                    <span className="font-bold text-right" style={{ color: selectedRow.totalCancelled > 0 ? '#EF4444' : textMuted }}>{selectedRow.totalCancelled}</span>
+                    <span style={{ color: textMuted }}>Free Install:</span>
+                    <span className="font-semibold text-right" style={{ color: textMuted }}>{selectedRow.totalUnitsFreeInstall}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Expense Breakdown details */}
+              <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: border }}>
+                  <div className="flex items-center gap-1.5">
+                    <Receipt className="w-4 h-4 text-red-500" />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Expenses Breakdown (₱{peso(selectedRow.totalExpenses)})
+                    </span>
+                  </div>
+                </div>
+
+                {rowExpensesLoading ? (
+                  <div className="flex flex-col gap-2 py-4">
+                    <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
+                    <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
+                  </div>
+                ) : !rowExpenses || (rowExpenses.items.length === 0 && rowExpenses.auditExpenses.length === 0) ? (
+                  <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
+                ) : (
+                  <div className="flex flex-col gap-5 text-xs">
+                    {rowExpenses.items.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Summary Breakdown</span>
+                        <table className="w-full">
                           <thead>
-                            <tr style={{ backgroundColor: 'rgba(16,185,129,0.13)' }}>
-                              {['DATE','INCURRED BY','DESCRIPTION','COMPANY','RECEIPT NO','AMOUNT','CATEGORY','SOURCE'].map(h => (
-                                <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{h}</th>
-                              ))}
+                            <tr style={{ borderBottom: `1px solid ${border}` }}>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
+                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {drilldown.auditExpenses.map(row => (
-                              <tr key={row.id} style={{ borderTop: `1px solid ${border}` }}>
-                                <td className="px-3 py-2 whitespace-nowrap" style={{ color: textPrimary }}>{row.date}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.incurredBy}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.description}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.company}</td>
-                                <td className="px-3 py-2" style={{ color: textMuted }}>{row.receiptNo || '—'}</td>
-                                <td className="px-3 py-2 font-black" style={{ color: '#EF4444' }}>₱{peso(row.amount)}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary }}>{row.expenseCategory}</td>
-                                <td className="px-3 py-2" style={{ color: textMuted }}>{row.sourceOfFunds || '—'}</td>
-                              </tr>
-                            ))}
+                            {rowExpenses.items.map((item, i) => {
+                              const tc = item.type === 'EXPENSE' ? '#EF4444' : item.type === 'PURCHASE' ? '#F59E0B' : item.type === 'CASH_SALE' ? '#10B981' : '#3B82F6'
+                              return (
+                                <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                                  <td className="py-1.5 pr-2">
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>
+                                      {item.type.replace('_',' ')}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5" style={{ color: textPrimary }}>{item.description}</td>
+                                  <td className="py-1.5 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+
+                    {rowExpenses.auditExpenses.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: '#10B981' }}>Detailed Audit Expenses (Excel format)</span>
+                        <div className="overflow-x-auto border rounded-lg" style={{ borderColor: border }}>
+                          <table className="w-full min-w-[500px]">
+                            <thead>
+                              <tr style={{ backgroundColor: 'rgba(16,185,129,0.1)' }}>
+                                {['Date', 'Incurred By', 'Description', 'Amount', 'Category'].map(h => (
+                                  <th key={h} className="text-left px-2 py-1 text-[9px] font-bold uppercase" style={{ color: textMuted }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rowExpenses.auditExpenses.map((row, i) => (
+                                <tr key={i} style={{ borderTop: `1px solid ${border}` }}>
+                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.date}</td>
+                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.incurredBy}</td>
+                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.description}</td>
+                                  <td className="px-2 py-1.5 font-bold text-red-500">₱{peso(row.amount)}</td>
+                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.expenseCategory}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
