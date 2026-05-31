@@ -207,7 +207,9 @@ export default function Branches() {
         employeesList = payload?.data || payload || []
       }
 
-      const merged = apiBranches.map((api: Branch) => {
+      const merged: Branch[] = []
+
+      const processBranch = (api: Branch, suffix?: 'sales' | 'services', customName?: string) => {
         const apiName = normalize(api.name || '')
         const apiLocation = normalize(api.location || '')
         const pub = PUBLIC_BRANCHES.find(candidate => {
@@ -219,20 +221,36 @@ export default function Branches() {
         // Roster assignment
         // 1. OIC
         let oicName = ''
-        if (api.managerId) {
+        const branchManagers = managersList.filter((m: any) => m.branchId === api.id)
+        if (suffix) {
+          const matchedMgr = branchManagers.find((m: any) => {
+            const emailLower = (m.email || '').toLowerCase()
+            const nameLower = (m.name || '').toLowerCase()
+            const isServiceMgr = emailLower.includes('service') || nameLower.includes('service')
+            return suffix === 'services' ? isServiceMgr : !isServiceMgr
+          })
+          if (matchedMgr) oicName = matchedMgr.name
+        } else if (api.managerId) {
           const foundMgr = managersList.find((m: any) => m.id === api.managerId)
           if (foundMgr) oicName = foundMgr.name
+        } else if (branchManagers.length > 0) {
+          oicName = branchManagers[0].name
         }
-        if (!oicName) {
-          const foundMgr = managersList.find((m: any) => m.branchId === api.id)
-          if (foundMgr) oicName = foundMgr.name
-        }
-        
+
         // 2. Employees (Drivers vs Installers)
-        const branchStaff = employeesList.filter((e: any) => e.branchId === api.id)
+        let branchStaff = employeesList.filter((e: any) => e.branchId === api.id || e.branchId === `${api.id}-${suffix}`)
+        if (suffix) {
+          branchStaff = branchStaff.filter((e: any) => {
+            const emailLower = (e.email || '').toLowerCase()
+            const titleLower = (e.jobTitle || '').toLowerCase()
+            const isServiceStaff = emailLower.includes('service') || titleLower.includes('service')
+            return suffix === 'services' ? isServiceStaff : !isServiceStaff
+          })
+        }
+
         let drivers: string[] = []
         let installers: string[] = []
-        
+
         if (branchStaff.length > 0) {
           branchStaff.forEach((e: any) => {
             const title = (e.jobTitle || '').toLowerCase()
@@ -248,8 +266,9 @@ export default function Branches() {
 
         // Fallback to mock if empty
         const key = apiName.replace('ashcol ', '').trim()
-        const fallback = MOCK_ROSTER[apiName] || MOCK_ROSTER[`ashcol ${key}`] || MOCK_ROSTER[key] || {
-          oic: 'Juan Dela Cruz',
+        const fallbackName = suffix ? `taguig - ${suffix}` : key
+        const fallback = MOCK_ROSTER[fallbackName] || MOCK_ROSTER[key] || {
+          oic: suffix === 'services' ? 'Taguig Services OIC' : 'Rommel Neil Laurente',
           drivers: ['ANGELO', 'JOJO'],
           installers: ['RANIL', 'JHUMAR', 'KENNAN']
         }
@@ -260,7 +279,8 @@ export default function Branches() {
 
         return {
           ...api,
-          name: api.name,
+          id: suffix ? `${api.id}-${suffix}` : api.id,
+          name: customName || api.name,
           location: api.location || pub?.tag || '',
           address: pub?.address || api.address || '',
           phone: pub?.phones?.[0] || api.phone,
@@ -273,12 +293,21 @@ export default function Branches() {
           mapUrl: pub?.mapUrl || api.mapUrl || '',
           region: pub?.region || api.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
-          // Assigned personnel
           oic: oicName,
           drivers,
           installers
         }
-      })
+      }
+
+      for (const api of apiBranches) {
+        const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
+        if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
+          merged.push(processBranch(api, 'sales', 'TAGUIG SALES'))
+          merged.push(processBranch(api, 'services', 'TAGUIG SERVICES'))
+        } else {
+          merged.push(processBranch(api))
+        }
+      }
       setBranches(merged)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load branch directory')
@@ -350,9 +379,17 @@ export default function Branches() {
 
   const myBranch = useMemo(() => {
     if (!user?.branchId) return null
+    const isTaguig = user.branchId.replace(/-sales$|-services$/, '') === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    if (isTaguig) {
+      const emailLower = (user.email || '').toLowerCase()
+      const titleLower = (user.jobTitle || '').toLowerCase()
+      const isService = emailLower.includes('service') || titleLower.includes('service')
+      const targetId = `2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-${isService ? 'services' : 'sales'}`
+      return branches.find(b => b.id === targetId) || null
+    }
     const baseBranchId = user.branchId.replace(/-sales$|-services$/, '')
     return branches.find(b => b.id === baseBranchId) || null
-  }, [branches, user?.branchId])
+  }, [branches, user?.branchId, user?.email, user?.jobTitle])
 
   // Filtered branches list
   const filteredBranches = branches.filter(b => {
