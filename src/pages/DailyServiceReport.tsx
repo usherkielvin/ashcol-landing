@@ -594,10 +594,26 @@ export default function DailyServiceReport() {
                 value={branchFilter}
                 onChange={e => setBranchFilter(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-1"
-                style={{ color: textPrimary, backgroundColor: inputBg }}
+                style={{
+                  color: textPrimary,
+                  backgroundColor: inputBg,
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none',
+                  appearance: 'none',
+                }}
               >
                 {branches.map(b => (
-                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{b.name}</option>
+                  <option
+                    key={b.id}
+                    value={b.id}
+                    style={{
+                      backgroundColor: inputBg,
+                      color: textPrimary,
+                      WebkitTextFillColor: textPrimary,
+                    }}
+                  >
+                    {b.name}
+                  </option>
                 ))}
               </select>
             </div>
