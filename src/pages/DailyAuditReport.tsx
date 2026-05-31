@@ -489,7 +489,7 @@ export default function DailyAuditReport() {
           <div className="min-w-0">
             <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
               <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-              Performance
+              Daily Branch Performance
             </h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
