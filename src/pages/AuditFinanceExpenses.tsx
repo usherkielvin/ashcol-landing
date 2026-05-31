@@ -61,6 +61,7 @@ export default function AuditFinanceExpenses() {
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError, setScanError] = useState('')
+  const [savingReceipt, setSavingReceipt] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
 
   // Dynamic categories state
@@ -436,8 +437,13 @@ export default function AuditFinanceExpenses() {
   }
 
   const saveExpense = async (expense: AuditExpense) => {
-    await upsertAuditExpense(expense)
-    await reload()
+    setSavingReceipt(true)
+    try {
+      await upsertAuditExpense(expense)
+      await reload()
+    } finally {
+      setSavingReceipt(false)
+    }
     if (editing) {
       // Updating an existing receipt — close the form
       setShowForm(false); setEditing(null); setForm(emptyForm(branchId)); setDateRaw(formatTodayReceiptDate()); setDateError('')
@@ -1189,9 +1195,9 @@ export default function AuditFinanceExpenses() {
           </div>
 
           <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-sm rounded-lg" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>Cancel</button>
-            <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow" style={{ backgroundColor: accent }}>
-              {editing ? 'Update Record' : 'Save Record'}
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-sm rounded-lg" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }} disabled={savingReceipt}>Cancel</button>
+            <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow flex items-center gap-2 justify-center" style={{ backgroundColor: accent }} disabled={savingReceipt}>
+              {savingReceipt ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : (editing ? 'Update Record' : 'Save Record')}
             </button>
           </div>
         </div>

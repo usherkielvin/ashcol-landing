@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, EyeOff,
+  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, Download,
   ArrowUp, ArrowDown, Trophy,
   Minimize2, Maximize2, MoreVertical,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -365,6 +366,45 @@ export default function DailyAuditReport() {
     rebatesForCollection: acc.rebatesForCollection + r.rebatesForCollection,
   }), { grossSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, forCollection:0, rebatesForCollection:0 })
 
+  const handleExportExcel = () => {
+    if (visibleRows.length === 0) {
+      alert('No performance data to export.')
+      return
+    }
+
+    const exportLabel = viewMode === 'single'
+      ? `Daily_${date}`
+      : `Range_${rangeFrom}_to_${rangeTo}`
+
+    const wsData = visibleRows.map((row, index) => ({
+      '#': index + 1,
+      Branch: row.branchName,
+      Time: row.timeUploaded || '',
+      Status: row.status,
+      'Gross Sales': row.grossSales,
+      'Target Quota': row.targetDailyQuota,
+      Difference: row.difference,
+      Remarks: row.remarks,
+      'COH Prev Day': row.cohPreviousDay,
+      'Fund from HO': row.fundFromHo,
+      'Cash Returns': row.cashReturns,
+      'Total COH/CFD': row.totalCohCfd,
+      'Cash Collection': row.totalCashCollection,
+      'Online Collection': row.totalOnlineCollection,
+      'Total Expenses': row.totalExpenses,
+      'For Collection': row.forCollection,
+      Rebates: row.rebatesForCollection,
+      'Units Installed/Serviced': row.totalUnitsInstalledServiced,
+      Cancelled: row.totalCancelled,
+      'Free Install': row.totalUnitsFreeInstall,
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(wsData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Performance')
+    XLSX.writeFile(wb, `ASHCOL_Performance_${exportLabel}.xlsx`)
+  }
+
   // Column definitions — key/label/compact label pairs
   const columns = [
     { key: 'branch',      label: 'Branch',                 short: 'Branch' },
@@ -492,6 +532,12 @@ export default function DailyAuditReport() {
                 <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
                   style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                   <div className="py-1">
+                    {visibleRows.length > 0 && (
+                      <button type="button" onClick={() => { handleExportExcel(); setMobileMenuOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
+                        <Download className="w-3.5 h-3.5" style={{ color: textMuted }} /> Export Excel
+                      </button>
+                    )}
                     {canImportExcel && (
                       <>
                         <button type="button" onClick={() => { document.getElementById('excel-import-input')?.click(); setMobileMenuOpen(false) }}
@@ -606,6 +652,14 @@ export default function DailyAuditReport() {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {visibleRows.length > 0 && (
+            <button type="button" onClick={handleExportExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print"
+              style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.25)', color: '#3B82F6' }}>
+              <Download className="w-3.5 h-3.5" /> Export Excel
+            </button>
+          )}
+
           {hiddenBranches.length > 0 && (
             <button type="button" onClick={() => setHiddenBranches([])}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
@@ -874,15 +928,6 @@ export default function DailyAuditReport() {
                             <div className="flex items-center gap-1.5">
                               <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
                               <span className="font-bold" style={{ fontSize: compactView ? 10 : 12 }}>{row.branchName}</span>
-                              {!compactView && (
-                                <button
-                                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-red-400 ml-1 no-print"
-                                  onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
-                                  title="Hide branch"
-                                >
-                                  <EyeOff className="w-3 h-3" />
-                                </button>
-                              )}
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5" style={{ fontSize: compactView ? '8px' : '10px' }}>
                               <span style={{
@@ -1219,10 +1264,6 @@ export default function DailyAuditReport() {
                         className="flex-1 py-2 rounded-lg text-xs font-medium"
                         style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
                         Details
-                      </button>
-                      <button type="button" onClick={e => { e.stopPropagation(); toggleHideBranch(row.branchName) }}
-                        className="p-2 rounded-lg" style={{ border: `1px solid ${inputBorder}` }} title="Hide">
-                        <EyeOff className="w-3.5 h-3.5" style={{ color: textMuted }} />
                       </button>
                     </div>
                   </div>
