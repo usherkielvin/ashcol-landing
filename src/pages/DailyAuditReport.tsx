@@ -56,7 +56,7 @@ const peso = (v: number | null | undefined) =>
 
 // Helper to convert backend time string to HH:mm for native time input
 const parseTimeForInput = (t: string | null | undefined) => {
-  if (!t || t === '—' || t === 'N/A' || t === 'NO SCHED') return ''
+  if (!t || t === '—' || t === 'N/A' || t === 'NO SCHED' || t === 'NO TRANSACTION') return ''
   const match = t.match(/(\d+):(\d+)\s*(AM|PM)?/i)
   if (match) {
     let [, h, m, ampm] = match
@@ -68,6 +68,29 @@ const parseTimeForInput = (t: string | null | undefined) => {
     return `${hr.toString().padStart(2, '0')}:${m}`
   }
   return t
+}
+
+const isNoTransactionRemarks = (remarks: string) =>
+  remarks === 'NO SCHED' || remarks === 'NO TRANSACTION' || remarks === 'NO RECORD' || remarks === 'NO REPORT'
+
+const formatRemarksLabel = (remarks: string, compact: boolean) => {
+  if (isNoTransactionRemarks(remarks)) return compact ? 'No Trans' : 'No Transaction'
+  if (compact && remarks === 'ABOVE QUOTA') return 'ABOVE'
+  if (compact && remarks === 'BELOW QUOTA') return 'BELOW'
+  return remarks
+}
+
+const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean) => {
+  if (remarks === 'PENDING') {
+    return { backgroundColor: 'rgba(245,158,11,0.15)', color: '#F59E0B' }
+  }
+  if (isNoTransactionRemarks(remarks) || noRecord) {
+    return { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
+  }
+  if (isAbove) {
+    return { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
+  }
+  return { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
 }
 
 export default function DailyAuditReport() {
@@ -134,6 +157,7 @@ export default function DailyAuditReport() {
       totalUnitsFreeInstall: String(row.totalUnitsFreeInstall || 0),
       forCollection: String(row.forCollection || 0).replace(/,/g, ''),
       rebatesForCollection: String(row.rebatesForCollection || 0).replace(/,/g, ''),
+      remarks: row.remarks || '',
     })
   }
 
@@ -160,6 +184,7 @@ export default function DailyAuditReport() {
         totalUnitsFreeInstall:      parseInt(editValues.totalUnitsFreeInstall) || 0,
         forCollection:              parseFloat(editValues.forCollection) || 0,
         rebatesForCollection:       parseFloat(editValues.rebatesForCollection) || 0,
+        remarks:                    (editValues.remarks || '').trim(),
       }
       const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
         method: 'PUT',
@@ -384,6 +409,33 @@ export default function DailyAuditReport() {
     />
   )
 
+  const renderEditRemarksInput = () => (
+    <input
+      type="text"
+      value={editValues.remarks || ''}
+      onChange={e => setEditValues(prev => ({ ...prev, remarks: e.target.value }))}
+      onClick={e => e.stopPropagation()}
+      onKeyDown={e => {
+        if (e.key === 'Escape') setEditingRowKey(null)
+      }}
+      placeholder="e.g. PENDING"
+      disabled={saving}
+      style={{
+        width: compactView ? '56px' : '90px',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `1px solid ${isLight ? '#93C5FD' : '#3B82F6'}`,
+        outline: 'none',
+        textAlign: 'left',
+        color: textPrimary,
+        fontSize: compactView ? 8 : 10,
+        fontWeight: 700,
+        padding: '0 1px',
+        opacity: saving ? 0.5 : 1,
+      }}
+    />
+  )
+
   const isEditing = (row: AuditRow) => editingRowKey === rowKey(row)
 
   return (
@@ -513,7 +565,7 @@ export default function DailyAuditReport() {
       {/* ── Above Quota Spotlight ─────────────────────────────────────── */}
       {!loading && rows.length > 0 && (() => {
         const aboveQuotaBranches = rows.filter(r =>
-          r.remarks === 'ABOVE QUOTA' && r.status !== 'NO SCHED' && r.status !== 'NO RECORD' && r.status !== 'NO REPORT'
+          r.remarks === 'ABOVE QUOTA' && r.status !== 'NO RECORD' && r.status !== 'NO REPORT'
         ).sort((a, b) => b.difference - a.difference)
         if (aboveQuotaBranches.length === 0) return null
         return (
@@ -635,8 +687,9 @@ export default function DailyAuditReport() {
                 {visibleRows.map((row, idx) => {
                   const editing    = isEditing(row)
                   const isAbove    = row.remarks === 'ABOVE QUOTA'
+                  const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
-                  const noSched    = row.remarks === 'NO SCHED'
+                  const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
                   const p          = compactView ? '4px 5px' : '10px 12px'
                   const isSelected = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
 
@@ -738,12 +791,12 @@ export default function DailyAuditReport() {
                                 width: '6px',
                                 height: '6px',
                                 borderRadius: '50%',
-                                backgroundColor: noRecord ? '#EF4444' : '#10B981'
+                                backgroundColor: isPending ? '#F59E0B' : noRecord ? '#EF4444' : '#10B981'
                               }} />
-                              <span style={{ color: noRecord ? '#EF4444' : '#10B981', fontWeight: 600 }}>
-                                {noSched
-                                  ? (compactView ? 'No Sch' : 'No Sched')
-                                  : noRecord
+                              <span style={{ color: noTransaction && !isPending ? '#EF4444' : isPending ? '#F59E0B' : '#10B981', fontWeight: 600 }}>
+                                {isPending
+                                  ? (compactView ? 'Pending' : 'Pending')
+                                  : noTransaction
                                     ? (compactView ? 'No Trans' : 'No Transaction')
                                     : 'Checked'}
                               </span>
@@ -768,37 +821,29 @@ export default function DailyAuditReport() {
                       {/* ⑥ Difference & Remarks */}
                       <td style={{ padding: p, whiteSpace: 'nowrap' }}>
                         <div className="flex flex-col gap-0.5">
-                          <span style={{
-                            display: 'inline-block',
-                            alignSelf: 'start',
-                            padding: compactView ? '1px 3px' : '1.5px 5px',
-                            borderRadius: 4,
-                            fontSize: compactView ? 7 : 9,
-                            fontWeight: 700,
-                            whiteSpace: 'nowrap',
-                            ...(noSched
-                              ? { backgroundColor: 'rgba(148,163,184,0.15)', color: '#94A3B8' }
-                              : noRecord
-                                ? { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
-                                : isAbove
-                                  ? { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
-                                  : { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' })
-                          }}>
-                            {noSched
-                              ? (compactView ? 'No Sch' : 'No Sched')
-                              : noRecord
-                                ? (compactView ? 'No Trans' : 'No Transaction')
-                                : compactView && row.remarks === 'ABOVE QUOTA' ? 'ABOVE'
-                                : compactView && row.remarks === 'BELOW QUOTA' ? 'BELOW'
-                                : row.remarks}
-                          </span>
-                          {noRecord ? (
-                            noSched ? null : <span style={{ color: textMuted }}>—</span>
+                          {editing ? (
+                            renderEditRemarksInput()
                           ) : (
+                            <span style={{
+                              display: 'inline-block',
+                              alignSelf: 'start',
+                              padding: compactView ? '1px 3px' : '1.5px 5px',
+                              borderRadius: 4,
+                              fontSize: compactView ? 7 : 9,
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                              ...remarksBadgeStyle(row.remarks, noRecord, isAbove),
+                            }}>
+                              {formatRemarksLabel(row.remarks, compactView)}
+                            </span>
+                          )}
+                          {noRecord && !editing ? (
+                            <span style={{ color: textMuted }}>—</span>
+                          ) : !noRecord && !editing ? (
                             <span className="font-bold text-[11px]" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
                               {isAbove ? '+' : ''}₱{peso(row.difference)}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </td>
 
@@ -1061,11 +1106,13 @@ export default function DailyAuditReport() {
                     fontWeight: 700,
                     ...(selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED'
                       ? { backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }
-                      : { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' })
+                      : selectedRow.remarks === 'PENDING'
+                        ? { backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B' }
+                        : { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' })
                   }}>
-                    {selectedRow.remarks === 'NO SCHED'
-                      ? 'NO SCHED'
-                      : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT')
+                    {selectedRow.remarks === 'PENDING'
+                      ? 'PENDING'
+                      : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
                         ? 'NO TRANSACTION'
                         : selectedRow.status}
                   </span>
@@ -1097,13 +1144,15 @@ export default function DailyAuditReport() {
                     </span>
                     <span style={{ color: textMuted }}>Remarks:</span>
                     <span className="font-bold text-right" style={{
-                      color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'NO SCHED' ? textMuted : '#EF4444'
+                      color: selectedRow.remarks === 'ABOVE QUOTA'
+                        ? '#10B981'
+                        : selectedRow.remarks === 'PENDING'
+                          ? '#F59E0B'
+                          : isNoTransactionRemarks(selectedRow.remarks)
+                            ? textMuted
+                            : '#EF4444'
                     }}>
-                      {selectedRow.remarks === 'NO SCHED'
-                        ? 'NO SCHED'
-                        : (selectedRow.remarks === 'NO RECORD' || selectedRow.remarks === 'NO REPORT')
-                          ? 'NO TRANSACTION'
-                          : selectedRow.remarks}
+                      {formatRemarksLabel(selectedRow.remarks, false)}
                     </span>
                   </div>
                 </div>
