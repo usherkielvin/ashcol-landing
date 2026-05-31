@@ -17,6 +17,24 @@ interface Employee {
   profileImage?: string
 }
 
+const JOB_TYPE_OPTIONS = [
+  { value: 'EMPLOYEE|Technician', label: 'Technician' },
+  { value: 'EMPLOYEE|Helper', label: 'Helper' },
+  { value: 'EMPLOYEE|Driver', label: 'Driver' },
+  { value: 'EMPLOYEE|Coordinator', label: 'Coordinator' },
+  { value: 'EMPLOYEE|Sales Coordinator', label: 'Sales Coordinator' },
+  { value: 'EMPLOYEE|Payroll', label: 'Payroll' },
+  { value: 'EMPLOYEE|Inventory', label: 'Inventory' },
+  { value: 'MANAGER|', label: 'OIC / Officer in Charge' },
+  { value: 'ADMIN|', label: 'Manager' },
+]
+
+const memberTypeValue = (member: Employee) => {
+  const role = (member.role || 'EMPLOYEE').toUpperCase()
+  if (role === 'MANAGER' || role === 'ADMIN') return `${role}|`
+  return `EMPLOYEE|${member.jobTitle || 'Technician'}`
+}
+
 export default function Employees() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -72,7 +90,7 @@ export default function Employees() {
   }, [activeDropdown])
   const [editing, setEditing] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState<Employee | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', phone: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'Technician' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -89,9 +107,13 @@ export default function Employees() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const headers = { Authorization: `Bearer ${token}` }
       
-      const resEmp = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
+      const [resEmp, resMgr] = await Promise.all([
+        fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers }),
+        isAdmin ? fetch(`${API_BASE_URL}/user/all?role=MANAGER`, { headers }).catch(() => null) : Promise.resolve(null),
+      ])
       const dataEmp = resEmp.ok ? await resEmp.json() : { data: [] }
-      const employeesList = dataEmp?.data || []
+      const dataMgr = resMgr && resMgr.ok ? await resMgr.json() : { data: [] }
+      const employeesList = [...(dataEmp?.data || []), ...(dataMgr?.data || [])]
 
       // Fetch branches for branch name resolution
       let branchMap: Record<string, string> = {}
@@ -204,8 +226,52 @@ export default function Employees() {
 
   const openEdit = (emp: Employee) => {
     setEditing(emp)
-    setForm({ name: emp.name, email: emp.email, phone: emp.phone || '' })
+    setForm({
+      name: emp.name,
+      email: emp.email,
+      phone: emp.phone || '',
+      branchId: emp.branchId || '',
+      role: (emp.role || 'EMPLOYEE').toUpperCase(),
+      jobTitle: emp.jobTitle || ((emp.role || '').toUpperCase() === 'EMPLOYEE' ? 'Technician' : ''),
+    })
     setErr('')
+  }
+
+  const handleQuickMemberTypeChange = async (emp: Employee, value: string) => {
+    const [role, jobTitle = ''] = value.split('|')
+    await handleQuickUpdate(emp, { role, jobTitle })
+  }
+
+  const handleQuickBranchChange = async (emp: Employee, branchId: string) => {
+    await handleQuickUpdate(emp, { branchId })
+  }
+
+  const handleQuickUpdate = async (emp: Employee, patch: Partial<{ role: string; jobTitle: string; branchId: string }>) => {
+    if (!isAdmin) return
+    setErr('')
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/admin/users/${emp.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: emp.name,
+          email: emp.email,
+          phone: emp.phone || '',
+          branchId: patch.branchId ?? emp.branchId ?? '',
+          role: patch.role ?? emp.role,
+          jobTitle: patch.jobTitle ?? emp.jobTitle ?? '',
+        })
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setErr(d.message || 'Failed to update member.')
+        return
+      }
+      fetchEmployees()
+    } catch {
+      setErr('Network error while updating member.')
+    }
   }
 
   const handleCreateTech = async () => {
@@ -370,6 +436,11 @@ export default function Employees() {
             ))}
           </div>
         </div>
+        {err && !editing && !showCreate && (
+          <div className="mx-5 mt-4 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+            {err}
+          </div>
+        )}
 
         {/* Mobile/Tablet Card View */}
         <div className="lg:hidden flex flex-col gap-3 p-4">
@@ -389,6 +460,16 @@ export default function Employees() {
                     <UserCheck className="w-3 h-3" />
                     {e.jobTitle || e.role}
                   </div>
+                  {isAdmin && (
+                    <select
+                      value={memberTypeValue(e)}
+                      onChange={event => handleQuickMemberTypeChange(e, event.target.value)}
+                      className="mt-2 w-full border rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-[#10B981]"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    >
+                      {JOB_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -403,7 +484,19 @@ export default function Employees() {
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center gap-2" style={{ color: textMuted }}><Mail className="w-4 h-4 shrink-0" /><span className="truncate">{e.email}</span></div>
                 {e.phone && <div className="flex items-center gap-2" style={{ color: textMuted }}><Phone className="w-4 h-4 shrink-0" />{e.phone}</div>}
-                {e.branchName && <div className="flex items-center gap-2" style={{ color: textPrimary }}><Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />{e.branchName}</div>}
+                {isAdmin ? (
+                  <select
+                    value={e.branchId || ''}
+                    onChange={event => handleQuickBranchChange(e, event.target.value)}
+                    className="w-full border rounded-lg px-2 py-1.5 text-xs font-bold outline-none focus:border-[#10B981]"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="">Unassigned</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                ) : (
+                  e.branchName && <div className="flex items-center gap-2" style={{ color: textPrimary }}><Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />{e.branchName}</div>
+                )}
               </div>
               <div className="pt-2 border-t" style={{ borderColor: border }}>
                 <div
@@ -462,14 +555,35 @@ export default function Employees() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="inline-flex items-center gap-1.5 font-black uppercase tracking-[0.05em] text-[10px] px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
-                      <UserCheck className="w-3 h-3" />
-                      {e.jobTitle || formatRole(e.role)}
-                    </div>
+                    {isAdmin ? (
+                      <select
+                        value={memberTypeValue(e)}
+                        onChange={event => handleQuickMemberTypeChange(e, event.target.value)}
+                        className="w-full border rounded-lg px-2 py-2 text-xs font-black outline-none focus:border-[#10B981]"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        {JOB_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 font-black uppercase tracking-[0.05em] text-[10px] px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
+                        <UserCheck className="w-3 h-3" />
+                        {e.jobTitle || formatRole(e.role)}
+                      </div>
+                    )}
                   </td>
                   {!isManager && (
                   <td className="px-6 py-4">
-                    {e.branchName ? (
+                    {isAdmin ? (
+                      <select
+                        value={e.branchId || ''}
+                        onChange={event => handleQuickBranchChange(e, event.target.value)}
+                        className="w-full border rounded-lg px-2 py-2 text-xs font-bold outline-none focus:border-[#10B981]"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Unassigned</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    ) : e.branchName ? (
                       <div className="flex items-center gap-2 text-xs font-bold" style={{ color: textPrimary }}>
                         <Building2 className="w-3.5 h-3.5 text-[#10B981]" />
                         <span className="truncate">{e.branchName}</span>
@@ -710,6 +824,36 @@ export default function Employees() {
               <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Phone</label>
               <input value={form.phone} onChange={el => setForm(p => ({ ...p, phone: el.target.value }))} className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
             </div>
+            {isAdmin && (
+              <>
+                <div>
+                  <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Role / Job Type</label>
+                  <select
+                    value={`${form.role}|${form.role === 'EMPLOYEE' ? form.jobTitle : ''}`}
+                    onChange={el => {
+                      const [role, jobTitle = ''] = el.target.value.split('|')
+                      setForm(p => ({ ...p, role, jobTitle }))
+                    }}
+                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    {JOB_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold mb-1 block uppercase tracking-wide" style={{ color: textMuted }}>Branch</label>
+                  <select
+                    value={form.branchId}
+                    onChange={el => setForm(p => ({ ...p, branchId: el.target.value }))}
+                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="">Unassigned</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setEditing(null)} className="flex-1 border rounded-xl py-2.5 text-sm font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>Cancel</button>
