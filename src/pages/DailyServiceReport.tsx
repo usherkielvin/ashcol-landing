@@ -157,8 +157,9 @@ export default function DailyServiceReport() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
-  const isBranchScoped = isManager || role === 'staff' || role === 'employee'
-  const canImport = isAdmin || isBranchScoped
+  const isAllBranchUser = isAdmin || isManager
+  const isBranchScoped = role === 'staff' || role === 'employee'
+  const canImport = isAllBranchUser || isBranchScoped
   const canDelete = isAdmin || isManager
   const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee'
 
@@ -269,10 +270,10 @@ export default function DailyServiceReport() {
       setBranchFilter(user.branchId)
       return
     }
-    if (isAdmin && !branchFilter && branches.length > 0) {
+    if (isAllBranchUser && !branchFilter && branches.length > 0) {
       setBranchFilter(branches[0].id)
     }
-  }, [isAdmin, isBranchScoped, user?.branchId, branchFilter, branches])
+  }, [isAllBranchUser, isBranchScoped, user?.branchId, branchFilter, branches])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -281,8 +282,8 @@ export default function DailyServiceReport() {
       const params = new URLSearchParams({ date, weekly: String(viewMode === 'weekly') })
       
       let apiBranchId = branchFilter
-      if (branchFilter && (branchFilter.endsWith('-sales') || branchFilter.endsWith('-services'))) {
-        apiBranchId = branchFilter.split('-')[0]
+      if (branchFilter && /-(sales|services)$/i.test(branchFilter)) {
+        apiBranchId = branchFilter.replace(/-sales$|-services$/i, '')
       }
       if (apiBranchId) params.set('branchId', apiBranchId)
 
@@ -593,10 +594,10 @@ export default function DailyServiceReport() {
                 value={branchFilter}
                 onChange={e => setBranchFilter(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-1"
-                style={{ color: textPrimary }}
+                style={{ color: textPrimary, backgroundColor: inputBg }}
               >
                 {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{b.name}</option>
                 ))}
               </select>
             </div>
