@@ -241,8 +241,8 @@ export default function DailySalesForm() {
           : selectedBranchId
 
         const [resLineup, resService, resEmployees] = await Promise.all([
-          fetch(`${API_BASE_URL}/lineup?date=${reportDate}&branchId=${lineupQueryBranchId}`, { headers }),
-          fetch(`${API_BASE_URL}/service-reports?date=${reportDate}&branchId=${selectedBranchId}`, { headers }),
+          fetch(`${API_BASE_URL}/v1/lineup?date=${reportDate}&branchId=${lineupQueryBranchId}`, { headers }),
+          fetch(`${API_BASE_URL}/v1/service-reports?date=${reportDate}&branchId=${selectedBranchId}`, { headers }),
           fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
         ])
 
