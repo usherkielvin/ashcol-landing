@@ -448,7 +448,6 @@ export default function DailySalesForm() {
     window.addEventListener('paste', handleGlobalPaste)
     return () => window.removeEventListener('paste', handleGlobalPaste)
   }, [scanning])
-
   const handlePasteClick = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (scanning) return
@@ -479,12 +478,12 @@ export default function DailySalesForm() {
   const totalOnline          = sumArr(onlineTx.map(r => r.amount))
   const totalCheck           = sumArr(checkRem.map(r => r.amount))
   const totalForColl         = sumArr(forColl.map(r => r.amount))
-  const totalRebates         = sumArr(rebates.map(r => r.total || String(num(r.amount) * num(r.units))))
+  const totalRebates         = rebates.reduce((s, r) => s + num(r.amount) * num(r.units), 0)
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const grandTotalExpenses   = totalExpReceipt + totalExpPurch
-  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection
+  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
   const dtrCashFromDenoms    = dtrDenoms.reduce((s, d) => s + (parseInt(d.qty) || 0) * d.value, 0)
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
