@@ -549,6 +549,30 @@ export default function DailySalesForm() {
     } finally { setSubmitting(false) }
   }
 
+  const handleClearForm = () => {
+    if (!canSubmit) return
+    const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
+    if (!ok) return
+
+    setError(null)
+    setScanError(null)
+    setSuccess(false)
+    setTrNo('')
+    setCashOnHand('')
+    setFundFromHo('')
+    setCashTx([mkCash()])
+    setCashRet([mkRet()])
+    setOnlineTx([mkOnl()])
+    setCheckRem([mkChk()])
+    setPartsSales([mkPart()])
+    setForColl([mkColl()])
+    setRebates([mkReb()])
+    setOrders([mkOrd()])
+    setExpReceipt([mkExp()])
+    setExpPurch([mkExp()])
+    setDtrDenoms(DENOMS.map(d => ({ ...d })))
+  }
+
   // ── Style helper tokens ──────────────────────────────────────────
 
   const tableTh = 'px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider'
@@ -1342,15 +1366,26 @@ export default function DailySalesForm() {
 
       {/* Submit Button */}
       {canSubmit && (
-        <button
-          id="submit-dtr-btn"
-          onClick={handleDtrSubmit}
-          disabled={submitting}
-          className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60 mt-2"
-          style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-        >
-          {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Transaction Report</>}
-        </button>
+        <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
+          <button
+            type="button"
+            onClick={handleClearForm}
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+            style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+          >
+            <Trash2 className="w-4 h-4" /> Clear Form
+          </button>
+          <button
+            id="submit-dtr-btn"
+            onClick={handleDtrSubmit}
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+            style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+          >
+            {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Transaction Report</>}
+          </button>
+        </div>
       )}
 
       {/* Autocomplete Datalist */}
