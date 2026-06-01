@@ -275,9 +275,10 @@ export default function DailyAuditReport() {
     finally { setImporting(false); e.target.value = '' }
   }
 
-  const fetchRowExpenses = async (branchName: string) => {
+  const fetchRowExpenses = async (row: AuditRow) => {
     setRowExpensesLoading(true)
     const allExpenses = await loadAuditExpenses()
+    const branchName = (row.logicalBranchName ?? row.branchName).trim()
     const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : new Date(rangeFrom + 'T00:00:00')
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}`
@@ -289,7 +290,13 @@ export default function DailyAuditReport() {
     )
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?branchName=${encodeURIComponent(branchName)}&date=${isoFormat}`, {
+      const params = new URLSearchParams({
+        branchId: row.branchId,
+        branchName,
+        date: isoFormat,
+      })
+      if (row.auditLine) params.set('auditLine', row.auditLine)
+      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
@@ -862,14 +869,14 @@ export default function DailyAuditReport() {
                         if (editing) return
                         setSelectedRow(row)
                         setRowExpenses(null)
-                        fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                        fetchRowExpenses(row)
                       }}
                       onContextMenu={e => {
                         if (editing) return
                         e.preventDefault()
                         setSelectedRow(row)
                         setRowExpenses(null)
-                        fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                        fetchRowExpenses(row)
                       }}
                       style={{
                         borderBottom: `1px solid ${border}`,
@@ -1038,7 +1045,7 @@ export default function DailyAuditReport() {
                                 e.stopPropagation()
                                 setSelectedRow(row)
                                 setRowExpenses(null)
-                                fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                                fetchRowExpenses(row)
                               }}
                               className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
                               style={{ color: '#EF4444' }}
@@ -1184,7 +1191,7 @@ export default function DailyAuditReport() {
                   onClick={() => {
                     setSelectedRow(row)
                     setRowExpenses(null)
-                    fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim())
+                    fetchRowExpenses(row)
                   }}>
                   <div className="flex items-start gap-3">
                     <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
@@ -1268,7 +1275,7 @@ export default function DailyAuditReport() {
 
                     <div className="flex items-center gap-2 mt-3">
                       <button type="button"
-                        onClick={e => { e.stopPropagation(); setSelectedRow(row); setRowExpenses(null); fetchRowExpenses((row.logicalBranchName ?? row.branchName).trim()) }}
+                        onClick={e => { e.stopPropagation(); setSelectedRow(row); setRowExpenses(null); fetchRowExpenses(row) }}
                         className="flex-1 py-2 rounded-lg text-xs font-medium"
                         style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
                         Details
