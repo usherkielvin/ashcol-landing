@@ -2143,11 +2143,12 @@ export default function LineUp() {
               </button>
             </div>
 
-            <div className="flex-1 px-5 py-6 md:px-10 md:py-10">
+            <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
               <div
                 className="lineup-showcase-sheet mx-auto"
                 style={{
-                  maxWidth: '1560px',
+                  maxWidth: '1720px',
+                  width: '96vw',
                   backgroundColor: isLight ? '#ffffff' : '#07111f',
                   border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
                   boxShadow: isLight ? '0 24px 80px rgba(15,23,42,0.14)' : '0 24px 80px rgba(0,0,0,0.5)',
@@ -2189,18 +2190,27 @@ export default function LineUp() {
 
                 <div className="overflow-x-auto">
                   <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <colgroup>
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '8%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '28%' }} />
+                      <col style={{ width: '28%' }} />
+                    </colgroup>
                     <thead>
                       <tr>
                         {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => (
                           <th
                             key={label}
                             style={{
-                              padding: '13px 12px',
+                              padding: '13px 10px',
                               backgroundColor: isLight ? '#ecfdf5' : '#09241d',
                               border: `1px solid ${isLight ? '#bbf7d0' : '#14533f'}`,
                               color: isLight ? '#065f46' : '#a7f3d0',
                               fontSize: 'clamp(12px, 1vw, 16px)',
-                              fontWeight: 950,
+                              fontWeight: 850,
                               textAlign: 'center',
                               whiteSpace: 'nowrap',
                             }}
@@ -2240,15 +2250,15 @@ export default function LineUp() {
                             <td
                               key={cellIdx}
                               style={{
-                                padding: cellIdx >= 6 ? '15px 16px' : '15px 12px',
+                                padding: cellIdx >= 5 ? '14px 18px' : '14px 10px',
                                 border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
                                 color: textPrimary,
-                                fontSize: cellIdx >= 5 ? 'clamp(15px, 1.25vw, 22px)' : 'clamp(15px, 1.35vw, 24px)',
-                                fontWeight: cellIdx === 0 ? 950 : 800,
+                                fontSize: cellIdx >= 5 ? 'clamp(14px, 1.08vw, 19px)' : 'clamp(14px, 1.15vw, 21px)',
+                                fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
                                 textAlign: cellIdx >= 5 ? 'left' : 'center',
-                                lineHeight: 1.25,
+                                lineHeight: 1.32,
                                 verticalAlign: 'middle',
-                                minWidth: cellIdx >= 5 ? 240 : 108,
+                                minWidth: cellIdx >= 5 ? 320 : 96,
                               }}
                             >
                               {value}

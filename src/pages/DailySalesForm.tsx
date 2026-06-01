@@ -350,35 +350,35 @@ export default function DailySalesForm() {
     if (data.cohPreviousDay != null) setCashOnHand(String(data.cohPreviousDay))
     if (data.fundFromHo != null) setFundFromHo(String(data.fundFromHo))
 
-    if (data.cashTransactions && Array.isArray(data.cashTransactions)) {
+    if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
       setCashTx(data.cashTransactions.map((item: any) => ({ id: uid(), name: item.name || '', amount: item.amount ? String(item.amount) : '' })))
-    } else if (data.totalCashCollection != null) {
+    } else if (data.totalCashCollection) {
       setCashTx([{ id: uid(), name: 'Scanned Cash Collection', amount: String(data.totalCashCollection) }])
     }
 
-    if (data.cashReturns != null) setCashRet([{ id: uid(), name: 'Scanned Cash Returns', amount: String(data.cashReturns) }])
+    if (data.cashReturns) setCashRet([{ id: uid(), name: 'Scanned Cash Returns', amount: String(data.cashReturns) }])
 
-    if (data.onlineTransactions && Array.isArray(data.onlineTransactions)) {
+    if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
       setOnlineTx(data.onlineTransactions.map((item: any) => ({ id: uid(), installer: item.installer || '', customer: item.customer || '', bank: item.bank || '', amount: item.amount ? String(item.amount) : '' })))
-    } else if (data.totalOnlineCollection != null) {
+    } else if (data.totalOnlineCollection) {
       setOnlineTx([{ id: uid(), installer: 'Scanned Online', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
     }
 
-    if (data.forCollection != null) setForColl([{ id: uid(), installer: 'Scanned For Collection', customer: '', amount: String(data.forCollection) }])
+    if (data.forCollection) setForColl([{ id: uid(), installer: 'Scanned For Collection', customer: '', amount: String(data.forCollection) }])
 
-    if (data.rebates && Array.isArray(data.rebates)) {
+    if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
       setRebates(data.rebates.map((item: any) => ({ id: uid(), company: item.company || '', units: String(item.units || '1'), amount: item.amount ? String(item.amount) : '', total: item.amount ? String(item.amount) : '' })))
-    } else if (data.rebatesForCollection != null) {
+    } else if (data.rebatesForCollection) {
       setRebates([{ id: uid(), company: 'Scanned Rebates', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
     }
 
-    if (data.expReceipt && Array.isArray(data.expReceipt)) {
+    if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
       setExpReceipt(data.expReceipt.map((item: any) => ({ id: uid(), name: item.name || '', description: item.description || '', amount: item.amount ? String(item.amount) : '' })))
-    } else if (data.totalExpenses != null) {
+    } else if (data.totalExpenses) {
       setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
     }
 
-    if (data.expPurch && Array.isArray(data.expPurch)) {
+    if (data.expPurch && Array.isArray(data.expPurch) && data.expPurch.length > 0) {
       setExpPurch(data.expPurch.map((item: any) => ({ id: uid(), name: item.name || '', description: item.description || '', amount: item.amount ? String(item.amount) : '' })))
     }
 
@@ -456,7 +456,7 @@ export default function DailySalesForm() {
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const grandTotalExpenses   = totalExpReceipt + totalExpPurch
-  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalOnline + totalCheck
+  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection
   const dtrCashFromDenoms    = dtrDenoms.reduce((s, d) => s + (parseInt(d.qty) || 0) * d.value, 0)
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
