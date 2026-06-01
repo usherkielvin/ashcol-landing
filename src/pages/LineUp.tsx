@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, MoreVertical, Camera, Copy, Save, Check,
+  ChevronDown, MoreVertical, Camera, Copy, Save, Check, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -117,6 +117,7 @@ export default function LineUp() {
   const [scanPreview, setScanPreview]       = useState<string | null>(null)
   const [scanError, setScanError]           = useState('')
   const [copyingImage, setCopyingImage]     = useState(false)
+  const [showcaseOpen, setShowcaseOpen]     = useState(false)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [selectedRowId, setSelectedRowId]   = useState<string | null>(null)
@@ -206,6 +207,17 @@ export default function LineUp() {
       void fetchSuggestions(branchId)
     }
   }, [branchId, fetchSuggestions])
+
+  useEffect(() => {
+    if (!showcaseOpen) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowcaseOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showcaseOpen])
 
 
 
@@ -1434,6 +1446,11 @@ export default function LineUp() {
                     <Plus className="w-4 h-4" />
                   </button>
                 )}
+                <button type="button" onClick={() => setShowcaseOpen(true)} title="Showcase view"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg"
+                  style={{ border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                  <Maximize2 className="w-4 h-4" />
+                </button>
                 <div className="relative" ref={moreMenuRef}>
                   <button type="button" onClick={() => setMoreMenuOpen(o => !o)}
                     className="w-8 h-8 flex items-center justify-center rounded-lg"
@@ -1462,6 +1479,8 @@ export default function LineUp() {
                           )}
                           <DropdownItem icon={<Download className="w-3.5 h-3.5" />} label="Export" color={textMuted}
                             onClick={() => { handleExportExcel(); setMoreMenuOpen(false) }} />
+                          <DropdownItem icon={<Maximize2 className="w-3.5 h-3.5" />} label="Showcase" color={textMuted}
+                            onClick={() => { setShowcaseOpen(true); setMoreMenuOpen(false) }} />
                           <DropdownItem icon={<Printer className="w-3.5 h-3.5" />} label="Print" color={textMuted}
                             onClick={() => { window.print(); setMoreMenuOpen(false) }} />
                         </div>
@@ -1685,6 +1704,13 @@ export default function LineUp() {
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
 
+            <button type="button" onClick={() => setShowcaseOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white transition-all hover:scale-105"
+              style={{ backgroundColor: '#2563EB' }}>
+              <Maximize2 className="w-4 h-4" />
+              Showcase
+            </button>
+
             {/* ── Import Dropdown ── */}
             {canEdit && (
               <div className="relative" ref={importMenuRef}>
@@ -1806,8 +1832,6 @@ export default function LineUp() {
                 </>
               )}
             </div>
-
-
 
              {/* ── Load Template (standalone) ── */}
             {canEdit && (
@@ -2086,6 +2110,204 @@ export default function LineUp() {
 
 
 
+
+      {showcaseOpen && (
+        <div
+          className="fixed inset-0 z-[10000] overflow-auto"
+          style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
+        >
+          <div className="min-h-screen flex flex-col">
+            <div
+              className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3"
+              style={{
+                backgroundColor: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,7,18,0.94)',
+                borderBottom: `1px solid ${border}`,
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              <div className="min-w-0">
+                <div className="text-xs font-black uppercase tracking-widest" style={{ color: '#10B981' }}>
+                  Field Schedule Showcase
+                </div>
+                <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                  {branchName || 'Selected branch'} · {englishLabel(date)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowcaseOpen(false)}
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 px-5 py-6 md:px-10 md:py-10">
+              <div
+                className="lineup-showcase-sheet mx-auto"
+                style={{
+                  maxWidth: '1560px',
+                  backgroundColor: isLight ? '#ffffff' : '#07111f',
+                  border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                  boxShadow: isLight ? '0 24px 80px rgba(15,23,42,0.14)' : '0 24px 80px rgba(0,0,0,0.5)',
+                  borderRadius: 18,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    backgroundColor: '#047857',
+                    padding: '18px 24px 16px',
+                    textAlign: 'center',
+                    borderBottom: '5px solid #10B981',
+                  }}
+                >
+                  <div
+                    style={{
+                      color: '#ffffff',
+                      fontWeight: 950,
+                      fontSize: 'clamp(24px, 3vw, 42px)',
+                      lineHeight: 1.05,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    TEAM {branchName ? branchName.toUpperCase() : 'FIELD'} LINE UP
+                  </div>
+                  <div
+                    style={{
+                      color: 'rgba(255,255,255,0.92)',
+                      fontWeight: 900,
+                      fontSize: 'clamp(13px, 1.3vw, 20px)',
+                      marginTop: 8,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {englishLabel(date)}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => (
+                          <th
+                            key={label}
+                            style={{
+                              padding: '13px 12px',
+                              backgroundColor: isLight ? '#ecfdf5' : '#09241d',
+                              border: `1px solid ${isLight ? '#bbf7d0' : '#14533f'}`,
+                              color: isLight ? '#065f46' : '#a7f3d0',
+                              fontSize: 'clamp(12px, 1vw, 16px)',
+                              fontWeight: 950,
+                              textAlign: 'center',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            style={{
+                              padding: '96px 24px',
+                              textAlign: 'center',
+                              color: textMuted,
+                              fontSize: 'clamp(16px, 1.5vw, 22px)',
+                              fontWeight: 800,
+                            }}
+                          >
+                            No field schedule entries
+                          </td>
+                        </tr>
+                      ) : rows.map((row, idx) => (
+                        <tr key={row.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#07111f') : (isLight ? '#f8fafc' : '#0b1628') }}>
+                          {[
+                            row.service || '-',
+                            row.driverName || '-',
+                            row.driverTime || '-',
+                            row.installerName || '-',
+                            row.installerTime || '-',
+                            row.route || '-',
+                            row.remarks || '-',
+                          ].map((value, cellIdx) => (
+                            <td
+                              key={cellIdx}
+                              style={{
+                                padding: cellIdx >= 6 ? '15px 16px' : '15px 12px',
+                                border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                color: textPrimary,
+                                fontSize: cellIdx >= 5 ? 'clamp(15px, 1.25vw, 22px)' : 'clamp(15px, 1.35vw, 24px)',
+                                fontWeight: cellIdx === 0 ? 950 : 800,
+                                textAlign: cellIdx >= 5 ? 'left' : 'center',
+                                lineHeight: 1.25,
+                                verticalAlign: 'middle',
+                                minWidth: cellIdx >= 5 ? 240 : 108,
+                              }}
+                            >
+                              {value}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {(lineupNotes || rows.length > 0) && (
+                  <div
+                    className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5"
+                    style={{
+                      padding: '22px 28px',
+                      borderTop: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                      backgroundColor: isLight ? '#f8fafc' : '#0b1628',
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: '#EF4444',
+                        fontSize: 'clamp(14px, 1.1vw, 19px)',
+                        fontWeight: 950,
+                        textTransform: 'uppercase',
+                        whiteSpace: 'pre-line',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {lineupNotes}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:min-w-[420px]">
+                      {[
+                        ['INSTALLATION', totalUnits, '#10B981'],
+                        ['SURVEY', totalSurvey, '#D97706'],
+                        ['BACK JOB', totalBackJob, '#EF4444'],
+                        ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+                      ].map(([label, value, color]) => (
+                        <div
+                          key={label}
+                          style={{
+                            border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                            backgroundColor: isLight ? '#ffffff' : '#07111f',
+                            padding: '12px 14px',
+                          }}
+                        >
+                          <div style={{ color: String(color), fontSize: '12px', fontWeight: 950, textTransform: 'uppercase' }}>{label}</div>
+                          <div style={{ color: String(color), fontSize: 'clamp(20px, 2vw, 32px)', fontWeight: 950, lineHeight: 1 }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeMenu && (
         <div
