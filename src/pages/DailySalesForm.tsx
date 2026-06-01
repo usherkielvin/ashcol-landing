@@ -43,6 +43,34 @@ const DENOMS: Denomination[] = [
 const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 const num = (s: string) => parseFloat(s) || 0
 const sumArr = (arr: string[]) => arr.reduce((a, b) => a + num(b), 0)
+const normalizeTransactionBranch = (branchId?: string | null, email?: string | null) => {
+  const raw = branchId || ''
+  const lower = raw.toLowerCase()
+  const emailLower = (email || '').toLowerCase()
+  if (lower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+    const isServices = emailLower.includes('service')
+    return {
+      branchId: raw,
+      auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
+      branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
+    }
+  }
+  if (/-services$/i.test(raw)) {
+    return {
+      branchId: raw.replace(/-services$/i, ''),
+      auditLine: 'TAGUIG_SERVICE',
+      branchName: 'TAGUIG SERVICES',
+    }
+  }
+  if (/-sales$/i.test(raw)) {
+    return {
+      branchId: raw.replace(/-sales$/i, ''),
+      auditLine: 'TAGUIG_SALES',
+      branchName: 'TAGUIG SALES',
+    }
+  }
+  return { branchId: raw, auditLine: null as string | null, branchName: '' }
+}
 
 const mkCash = (): CashTxRow   => ({ id: uid(), name: '', amount: '' })
 const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
@@ -66,18 +94,17 @@ export default function DailySalesForm() {
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
 
   const role = (user?.role || '').toLowerCase()
-  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')
+  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee'
   const isAdmin = role === 'admin'
 
   const today = new Date().toISOString().split('T')[0]
 
   const emailLower = (user?.email || '').toLowerCase()
-  const isTaguig = user?.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
-  const isTaguigServicesUser = isTaguig && emailLower.includes('service')
+  const normalizedAssignedBranch = normalizeTransactionBranch(user?.branchId, emailLower)
   
-  const initialBranchId = user?.branchId || ''
-  const initialAuditLine = isTaguigServicesUser ? 'TAGUIG_SERVICE' : (isTaguig ? 'TAGUIG_SALES' : null)
-  const initialBranchName = isTaguigServicesUser ? 'TAGUIG SERVICES' : (isTaguig ? 'TAGUIG SALES' : '')
+  const initialBranchId = normalizedAssignedBranch.branchId
+  const initialAuditLine = normalizedAssignedBranch.auditLine
+  const initialBranchName = normalizedAssignedBranch.branchName
 
   // ── Form State ───────────────────────────────────────────────────
   const [reportDate, setReportDate] = useState(today)
@@ -192,7 +219,7 @@ export default function DailySalesForm() {
           const data = await resAudit.json()
           const myRow = data.find((r: any) => {
             if (r.branchId !== selectedBranchId) return false
-            if (selectedBranchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+            if (selectedAuditLine) {
               const isServiceRow = r.auditLine === 'TAGUIG_SERVICE'
               const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
               return isServiceRow === isServiceTarget
@@ -209,7 +236,7 @@ export default function DailySalesForm() {
         }
 
         // 3. Fetch lineup, service reports, and branch employees to collect technician names
-        const lineupQueryBranchId = selectedBranchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+        const lineupQueryBranchId = selectedAuditLine
           ? `${selectedBranchId}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
           : selectedBranchId
 
@@ -234,7 +261,7 @@ export default function DailySalesForm() {
         if (resService.ok) {
           const list = await resService.json()
           list.forEach((r: any) => {
-            if (selectedBranchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+            if (selectedAuditLine) {
               const type = (r.serviceType || '').toUpperCase()
               const code = (r.statusCode || '').toUpperCase()
               const isSales = type.includes('INSTALL') || code === 'I'
@@ -255,7 +282,8 @@ export default function DailySalesForm() {
           const data = await resEmployees.json()
           const list = data?.data || []
           list.forEach((emp: any) => {
-            if (emp.branchId === selectedBranchId && emp.isActive !== false && emp.name?.trim()) {
+            const empBranch = normalizeTransactionBranch(emp.branchId, emp.email).branchId
+            if (empBranch === selectedBranchId && emp.isActive !== false && emp.name?.trim()) {
               namesSet.add(emp.name.trim())
             }
           })

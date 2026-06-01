@@ -98,13 +98,13 @@ export default function DashboardLayout() {
     { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
     { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff'] },
+    { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'manager', 'staff', 'employee'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff'
+  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee'
 
   const isSalesUser = (role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
     (user?.name || '').toUpperCase().includes('SALES') ||
@@ -120,7 +120,7 @@ export default function DashboardLayout() {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Directory')
+      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Transactions' || link.name === 'Directory')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
