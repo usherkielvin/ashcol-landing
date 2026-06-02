@@ -112,10 +112,13 @@ export default function DailySalesForm() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
+  const [reviewMode, setReviewMode] = useState(false)
+  const isFormDisabled = !canSubmit || reviewMode
 
   const [scanning, setScanning]     = useState(false)
   const [scanError, setScanError]   = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const ignoreNextCohFetch = useRef(false)
 
   const [trNo, setTrNo]         = useState('')
   const [branchName, setBranch] = useState(initialBranchName)
@@ -124,7 +127,7 @@ export default function DailySalesForm() {
   const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string }[]>([])
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!canSubmit) return
     const loadBranchesList = async () => {
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -147,9 +150,12 @@ export default function DailySalesForm() {
           newList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(newList)
           if (newList.length > 0) {
-            setSelectedBranchId(newList[0].id)
-            setSelectedAuditLine(newList[0].auditLine || null)
-            setBranch(newList[0].name)
+            const exists = newList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
+            if (!exists) {
+              setSelectedBranchId(newList[0].id)
+              setSelectedAuditLine(newList[0].auditLine || null)
+              setBranch(newList[0].name)
+            }
           }
         }
       } catch (err) {
@@ -157,7 +163,7 @@ export default function DailySalesForm() {
       }
     }
     loadBranchesList()
-  }, [isAdmin])
+  }, [canSubmit, selectedBranchId, selectedAuditLine])
 
   // I. Cash Transactions
   const [cashTx, setCashTx]     = useState<CashTxRow[]>([mkCash()])
@@ -226,13 +232,21 @@ export default function DailySalesForm() {
             }
             return true
           })
-          if (myRow && myRow.totalCohCfd !== undefined) {
-            setCashOnHand(String(myRow.totalCohCfd))
+          if (ignoreNextCohFetch.current) {
+            ignoreNextCohFetch.current = false
+          } else {
+            if (myRow && myRow.totalCohCfd !== undefined) {
+              setCashOnHand(String(myRow.totalCohCfd))
+            } else {
+              setCashOnHand('')
+            }
+          }
+        } else {
+          if (ignoreNextCohFetch.current) {
+            ignoreNextCohFetch.current = false
           } else {
             setCashOnHand('')
           }
-        } else {
-          setCashOnHand('')
         }
 
         // 3. Fetch lineup, service reports, and branch employees to collect technician names
@@ -328,10 +342,31 @@ export default function DailySalesForm() {
     }
   }, [branchName, reportDate])
 
+  const clearForm = (clearTrNo = true) => {
+    setError(null)
+    setScanError(null)
+    setSuccess(false)
+    if (clearTrNo) setTrNo('')
+    setCashOnHand('')
+    setFundFromHo('')
+    setCashTx([mkCash()])
+    setCashRet([mkRet()])
+    setOnlineTx([mkOnl()])
+    setCheckRem([mkChk()])
+    setPartsSales([mkPart()])
+    setForColl([mkColl()])
+    setRebates([mkReb()])
+    setOrders([mkOrd()])
+    setExpReceipt([mkExp()])
+    setExpPurch([mkExp()])
+    setDtrDenoms(DENOMS.map(d => ({ ...d })))
+  }
+
   // ── DTR Scanner Logic ────────────────────────────────────────────
   const processImage = async (file: File) => {
     setScanning(true)
     setScanError(null)
+    clearForm(true) // Clear form state completely on new upload
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -375,46 +410,117 @@ export default function DailySalesForm() {
   }
 
   const applyScannedData = (data: Record<string, any>) => {
-    if (data.cohPreviousDay != null) setCashOnHand(String(data.cohPreviousDay))
-    if (data.fundFromHo != null) setFundFromHo(String(data.fundFromHo))
+    if (data.date) {
+      setReportDate(data.date)
+    }
+
+    if (data.branchId) {
+      setSelectedBranchId(data.branchId)
+      setSelectedAuditLine(data.auditLine || null)
+      if (data.branchName) {
+        setBranch(data.branchName)
+      }
+    }
+
+    if (data.cohPreviousDay != null || data.fundFromHo != null) {
+      ignoreNextCohFetch.current = true
+    }
+    setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
+    setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
 
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
-      setCashTx(data.cashTransactions.map((item: any) => ({ id: uid(), name: item.name || '', amount: item.amount ? String(item.amount) : '' })))
+      setCashTx(data.cashTransactions.map((scanned: any) => ({
+        id: uid(),
+        name: (scanned.name || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })))
     } else if (data.totalCashCollection) {
-      setCashTx([{ id: uid(), name: 'Scanned Cash Collection', amount: String(data.totalCashCollection) }])
+      setCashTx([{ id: uid(), name: '', amount: String(data.totalCashCollection) }])
+    } else {
+      setCashTx([mkCash()])
     }
 
-    if (data.cashReturns) setCashRet([{ id: uid(), name: 'Scanned Cash Returns', amount: String(data.cashReturns) }])
+    if (data.cashReturnsList && Array.isArray(data.cashReturnsList) && data.cashReturnsList.length > 0) {
+      setCashRet(data.cashReturnsList.map((scanned: any) => ({
+        id: uid(),
+        name: (scanned.name || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })))
+    } else if (data.cashReturns != null) {
+      setCashRet([{ id: uid(), name: '', amount: String(data.cashReturns) }])
+    } else {
+      setCashRet([mkRet()])
+    }
 
     if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
-      setOnlineTx(data.onlineTransactions.map((item: any) => ({ id: uid(), installer: item.installer || '', customer: item.customer || '', bank: item.bank || '', amount: item.amount ? String(item.amount) : '' })))
+      setOnlineTx(data.onlineTransactions.map((scanned: any) => ({
+        id: uid(),
+        installer: (scanned.installer || '').trim(),
+        customer: (scanned.customer || '').trim(),
+        bank: (scanned.bank || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })))
     } else if (data.totalOnlineCollection) {
       setOnlineTx([{ id: uid(), installer: 'Scanned Online', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
+    } else {
+      setOnlineTx([mkOnl()])
     }
 
-    if (data.forCollection) setForColl([{ id: uid(), installer: 'Scanned For Collection', customer: '', amount: String(data.forCollection) }])
+    if (data.forCollection) {
+      setForColl([{ id: uid(), installer: 'Scanned For Collection', customer: '', amount: String(data.forCollection) }])
+    } else {
+      setForColl([mkColl()])
+    }
 
     if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
-      setRebates(data.rebates.map((item: any) => ({ id: uid(), company: item.company || '', units: String(item.units || '1'), amount: item.amount ? String(item.amount) : '', total: item.amount ? String(item.amount) : '' })))
+      setRebates(data.rebates.map((scanned: any) => {
+        const sAmount = scanned.amount != null ? String(scanned.amount) : ''
+        const sUnits = scanned.units != null ? String(scanned.units) : '1'
+        return {
+          id: uid(),
+          company: (scanned.company || '').trim(),
+          amount: sAmount,
+          units: sUnits,
+          total: String(num(sAmount) * num(sUnits))
+        }
+      }))
     } else if (data.rebatesForCollection) {
       setRebates([{ id: uid(), company: 'Scanned Rebates', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
+    } else {
+      setRebates([mkReb()])
     }
 
     if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
-      setExpReceipt(data.expReceipt.map((item: any) => ({ id: uid(), name: item.name || '', description: item.description || '', amount: item.amount ? String(item.amount) : '' })))
+      setExpReceipt(data.expReceipt.map((scanned: any) => ({
+        id: uid(),
+        name: (scanned.name || '').trim(),
+        description: (scanned.description || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })))
     } else if (data.totalExpenses) {
       setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
+    } else {
+      setExpReceipt([mkExp()])
     }
 
     if (data.expPurch && Array.isArray(data.expPurch) && data.expPurch.length > 0) {
-      setExpPurch(data.expPurch.map((item: any) => ({ id: uid(), name: item.name || '', description: item.description || '', amount: item.amount ? String(item.amount) : '' })))
+      setExpPurch(data.expPurch.map((scanned: any) => ({
+        id: uid(),
+        name: (scanned.name || '').trim(),
+        description: (scanned.description || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })))
+    } else {
+      setExpPurch([mkExp()])
     }
 
     if (data.cashBreakdown && Array.isArray(data.cashBreakdown)) {
       setDtrDenoms(prev => prev.map(d => {
         const found = data.cashBreakdown.find((cb: any) => cb.label === d.label)
-        return found ? { ...d, qty: String(found.qty) } : d
+        return found ? { ...d, qty: String(found.qty) } : { ...d, qty: '' }
       }))
+    } else {
+      setDtrDenoms(DENOMS.map(d => ({ ...d })))
     }
   }
 
@@ -491,6 +597,11 @@ export default function DailySalesForm() {
 
   const handleDtrSubmit = async () => {
     if (!canSubmit) return
+    if (!reviewMode) {
+      setReviewMode(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     setSubmitting(true); setError(null)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -543,6 +654,7 @@ export default function DailySalesForm() {
       })
       if (!res.ok) throw new Error(await res.text())
       setSuccess(true)
+      setReviewMode(false)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Submission failed. Please try again.')
     } finally { setSubmitting(false) }
@@ -552,32 +664,15 @@ export default function DailySalesForm() {
     if (!canSubmit) return
     const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
     if (!ok) return
-
-    setError(null)
-    setScanError(null)
-    setSuccess(false)
-    setTrNo('')
-    setCashOnHand('')
-    setFundFromHo('')
-    setCashTx([mkCash()])
-    setCashRet([mkRet()])
-    setOnlineTx([mkOnl()])
-    setCheckRem([mkChk()])
-    setPartsSales([mkPart()])
-    setForColl([mkColl()])
-    setRebates([mkReb()])
-    setOrders([mkOrd()])
-    setExpReceipt([mkExp()])
-    setExpPurch([mkExp()])
-    setDtrDenoms(DENOMS.map(d => ({ ...d })))
+    clearForm(true)
   }
 
   // ── Style helper tokens ──────────────────────────────────────────
 
   const tableTh = 'px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider'
   const tableTd = 'px-2 py-1 border-b border-slate-100 dark:border-slate-800/40'
-  const flushInput = 'w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400'
-  const flushInputNumber = 'w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400'
+  const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
+  const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
 
   const SectionHeader = ({ label, total }: { label: string; total?: number }) => (
     <div className="px-3 py-2 flex items-center gap-2 bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
@@ -611,7 +706,10 @@ export default function DailySalesForm() {
         <p className="text-sm" style={{ color: textMuted }}>Your transaction report has been recorded successfully.</p>
         <div className="flex gap-3">
           <button
-            onClick={() => setSuccess(false)}
+            onClick={() => {
+              clearForm(true)
+              setSuccess(false)
+            }}
             className="px-5 py-2.5 rounded-xl text-sm font-bold border transition-all hover:scale-105"
             style={{ borderColor: border, color: textMuted }}
           >
@@ -644,6 +742,15 @@ export default function DailySalesForm() {
         <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Transactions Report</p>
       </div>
 
+      {reviewMode && (
+        <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">
+          <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
+          <p className="text-sm text-amber-600 dark:text-amber-400">
+            <strong>Review Mode:</strong> Please double-check all details below. All fields are locked. Scroll down and click <strong>Confirm & Submit</strong> to record the report, or <strong>Go Back & Edit</strong> to make adjustments.
+          </p>
+        </div>
+      )}
+
       {!canSubmit && (
         <div className="rounded-xl p-4 flex items-center gap-3 bg-red-500/5 border border-red-500/20">
           <Receipt className="w-5 h-5 shrink-0 text-red-500" />
@@ -664,7 +771,7 @@ export default function DailySalesForm() {
               value={reportDate}
               onChange={e => setReportDate(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={!canSubmit}
+              disabled={isFormDisabled}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -676,7 +783,7 @@ export default function DailySalesForm() {
               value={receivedBy}
               onChange={e => setReceivedBy(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={!canSubmit}
+              disabled={isFormDisabled}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -688,12 +795,12 @@ export default function DailySalesForm() {
               value={trNo}
               onChange={e => setTrNo(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={!canSubmit}
+              disabled={isFormDisabled}
             />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch</label>
-            {isAdmin ? (
+            {canSubmit ? (
               <select
                 id="branch-select"
                 value={`${selectedBranchId}-${selectedAuditLine || ''}`}
@@ -707,6 +814,7 @@ export default function DailySalesForm() {
                   }
                 }}
                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 cursor-pointer"
+                disabled={isFormDisabled}
               >
                 {branchesList.map(b => (
                   <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
@@ -728,7 +836,7 @@ export default function DailySalesForm() {
       </div>
 
       {/* ── DTR Scanner Actions ──────────────────────────────────────── */}
-      {canSubmit && (
+      {canSubmit && !reviewMode && (
         <div className="rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
@@ -781,7 +889,7 @@ export default function DailySalesForm() {
                   <tr>
                     <th className={tableTh}>Name (Installer/Technician)</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -791,14 +899,14 @@ export default function DailySalesForm() {
                         <input type="text" placeholder="Name" value={row.name}
                           onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
                           list="tech-suggestions"
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setCashTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setCashTx(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -807,7 +915,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setCashTx(p => [...p, mkCash()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCashTx(p => [...p, mkCash()])} label="Add row" />}
             </div>
           </div>
 
@@ -820,7 +928,7 @@ export default function DailySalesForm() {
                   <tr>
                     <th className={tableTh}>Name (Installer/Technician/Driver)</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -830,14 +938,14 @@ export default function DailySalesForm() {
                         <input type="text" placeholder="Name" value={row.name}
                           onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
                           list="tech-suggestions"
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setCashRet(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setCashRet(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -846,7 +954,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setCashRet(p => [...p, mkRet()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCashRet(p => [...p, mkRet()])} label="Add row" />}
             </div>
           </div>
 
@@ -868,7 +976,7 @@ export default function DailySalesForm() {
                         value={cashOnHand}
                         onValueChange={(values) => setCashOnHand(values.value)}
                         className={flushInputNumber}
-                        disabled={!canSubmit}
+                        disabled={isFormDisabled}
                       />
                     </td>
                   </tr>
@@ -884,7 +992,7 @@ export default function DailySalesForm() {
                         value={fundFromHo}
                         onValueChange={(values) => setFundFromHo(values.value)}
                         className={flushInputNumber}
-                        disabled={!canSubmit}
+                        disabled={isFormDisabled}
                       />
                     </td>
                   </tr>
@@ -910,7 +1018,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
                     <th className={tableTh + ' text-right w-24'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -919,24 +1027,24 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Installer" value={row.installer}
                           onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Bank" value={row.bank}
                           onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, bank: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setOnlineTx(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -945,7 +1053,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setOnlineTx(p => [...p, mkOnl()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOnlineTx(p => [...p, mkOnl()])} label="Add row" />}
             </div>
           </div>
 
@@ -960,7 +1068,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
                     <th className={tableTh + ' text-right w-24'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -969,24 +1077,24 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Installer" value={row.installer}
                           onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Bank" value={row.bank}
                           onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, bank: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setCheckRem(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -995,7 +1103,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setCheckRem(p => [...p, mkChk()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCheckRem(p => [...p, mkChk()])} label="Add row" />}
             </div>
           </div>
 
@@ -1010,7 +1118,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-24'}>Capital</th>
                     <th className={tableTh + ' text-right w-24'}>Sale Price</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1019,24 +1127,24 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital} 
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, capital: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice} 
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, salePrice: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setPartsSales(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -1045,7 +1153,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setPartsSales(p => [...p, mkPart()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setPartsSales(p => [...p, mkPart()])} label="Add row" />}
             </div>
           </div>
 
@@ -1059,7 +1167,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Installer</th>
                     <th className={tableTh}>Customer</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1068,19 +1176,19 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Installer" value={row.installer}
                           onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -1089,7 +1197,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
             </div>
           </div>
 
@@ -1104,7 +1212,7 @@ export default function DailySalesForm() {
                     <th className={tableTh + ' text-right w-24'}>Amount</th>
                     <th className={tableTh + ' text-center w-16'}>Units</th>
                     <th className={tableTh + ' text-right w-24'}>Total</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1115,22 +1223,22 @@ export default function DailySalesForm() {
                         <td className={tableTd}>
                           <input type="text" placeholder="Company" value={row.company}
                             onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                            className={flushInput} disabled={!canSubmit} />
+                            className={flushInput} disabled={isFormDisabled} />
                         </td>
                         <td className={tableTd}>
                           <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                             onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                            className={flushInputNumber} disabled={!canSubmit} />
+                            className={flushInputNumber} disabled={isFormDisabled} />
                         </td>
                         <td className={tableTd}>
                           <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0" value={row.units} min="0"
                             onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, units: values.value } : r))}
-                            className="w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-center transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200" disabled={!canSubmit} />
+                            className="w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-center transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200" disabled={isFormDisabled} />
                         </td>
                         <td className={tableTd + ' text-right font-bold text-slate-700 dark:text-slate-300 pr-2 text-xs'}>
                           {php(calc)}
                         </td>
-                        {canSubmit && (
+                        {canSubmit && !reviewMode && (
                           <td className={tableTd + ' text-center'}>
                             <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
                           </td>
@@ -1140,7 +1248,7 @@ export default function DailySalesForm() {
                   })}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
             </div>
           </div>
 
@@ -1159,7 +1267,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Customer</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1168,19 +1276,19 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setOrders(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setOrders(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -1189,7 +1297,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
             </div>
           </div>
 
@@ -1203,7 +1311,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1212,19 +1320,19 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Name" value={row.name}
                           onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setExpReceipt(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -1233,7 +1341,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
             </div>
           </div>
 
@@ -1247,7 +1355,7 @@ export default function DailySalesForm() {
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && <th className={tableTh + ' w-10'}></th>}
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1256,19 +1364,19 @@ export default function DailySalesForm() {
                       <td className={tableTd}>
                         <input type="text" placeholder="Name" value={row.name}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={!canSubmit} />
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
                           onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={!canSubmit} />
+                          className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
-                      {canSubmit && (
+                      {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
                           <DelBtn onClick={() => setExpPurch(p => p.filter(r => r.id !== row.id))} />
                         </td>
@@ -1277,7 +1385,7 @@ export default function DailySalesForm() {
                   ))}
                 </tbody>
               </table>
-              {canSubmit && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
             </div>
           </div>
 
@@ -1309,7 +1417,7 @@ export default function DailySalesForm() {
                             value={denom.qty}
                             onValueChange={(values) => setDtrDenoms(prev => prev.map((d, i) => i === idx ? { ...d, qty: values.value } : d))}
                             className="w-16 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs font-bold rounded focus:outline-none focus:ring-1 focus:ring-emerald-500/30 py-0.5 text-slate-800 dark:text-slate-200"
-                            disabled={!canSubmit}
+                            disabled={isFormDisabled}
                           />
                         </td>
                         <td className="px-3 py-1.5 text-right font-bold text-slate-700 dark:text-slate-300">
@@ -1365,26 +1473,49 @@ export default function DailySalesForm() {
 
       {/* Submit Button */}
       {canSubmit && (
-        <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
-          <button
-            type="button"
-            onClick={handleClearForm}
-            disabled={submitting}
-            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-            style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
-          >
-            <Trash2 className="w-4 h-4" /> Clear Form
-          </button>
-          <button
-            id="submit-dtr-btn"
-            onClick={handleDtrSubmit}
-            disabled={submitting}
-            className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-            style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-          >
-            {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Transaction Report</>}
-          </button>
-        </div>
+        reviewMode ? (
+          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setReviewMode(false)}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+              style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+            >
+              Go Back & Edit
+            </button>
+            <button
+              id="confirm-submit-dtr-btn"
+              onClick={handleDtrSubmit}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+              style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+            >
+              {submitting ? <>Submitting...</> : <><Check className="w-4 h-4" /> Confirm & Submit</>}
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
+            <button
+              type="button"
+              onClick={handleClearForm}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+              style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+            >
+              <Trash2 className="w-4 h-4" /> Clear Form
+            </button>
+            <button
+              id="submit-dtr-btn"
+              onClick={handleDtrSubmit}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+              style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+            >
+              {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Transaction Report</>}
+            </button>
+          </div>
+        )
       )}
 
       {/* Autocomplete Datalist */}

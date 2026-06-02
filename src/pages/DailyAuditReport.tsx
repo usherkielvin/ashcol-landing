@@ -110,20 +110,45 @@ export default function DailyAuditReport() {
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [importing, setImporting] = useState(false)
-  const [viewMode, setViewMode]   = useState<'single' | 'range'>('single')
+  const [viewMode, setViewMode]   = useState<'single' | 'range'>(() => {
+    const stored = localStorage.getItem('perf-view-mode')
+    return (stored === 'single' || stored === 'range') ? stored : 'single'
+  })
 
   const [date, setDate] = useState(() => {
+    const stored = localStorage.getItem('perf-selected-date')
+    if (stored) return stored
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
   const [rangeFrom, setRangeFrom] = useState(() => {
+    const stored = localStorage.getItem('perf-range-from')
+    if (stored) return stored
     const d = new Date(); d.setDate(d.getDate() - 6)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
   const [rangeTo, setRangeTo] = useState(() => {
+    const stored = localStorage.getItem('perf-range-to')
+    if (stored) return stored
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
+
+  useEffect(() => {
+    localStorage.setItem('perf-view-mode', viewMode)
+  }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem('perf-selected-date', date)
+  }, [date])
+
+  useEffect(() => {
+    localStorage.setItem('perf-range-from', rangeFrom)
+  }, [rangeFrom])
+
+  useEffect(() => {
+    localStorage.setItem('perf-range-to', rangeTo)
+  }, [rangeTo])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
   const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
@@ -212,6 +237,37 @@ export default function DailyAuditReport() {
     } catch { alert('Failed to save changes') }
     finally { setSaving(false) }
   }
+
+  const handleClearRow = async (row: AuditRow) => {
+    if (!row.id) return
+    const confirmed = window.confirm(
+      `Are you sure you want to clear all transaction and performance data for ${row.branchName} on this date?\n\n` +
+      `This action will permanently delete the report and its items from the database.`
+    )
+    if (!confirmed) return
+    setSaving(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const params = new URLSearchParams({ id: row.id })
+      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?${params.toString()}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        setEditingRowKey(null)
+        setSelectedRow(null)
+        fetchAudit()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Clear failed (HTTP ${res.status})`)
+      }
+    } catch {
+      alert('Failed to clear row data')
+    } finally {
+      setSaving(false)
+    }
+  }
+
 
   const role = (user?.role || '').toLowerCase()
   const isSalesCoordinator = role === 'employee' && user?.jobTitle === 'Sales Coordinator'
@@ -1399,11 +1455,20 @@ export default function DailyAuditReport() {
                       </button>
                     </>
                   ) : (
-                    <button type="button" onClick={() => startEditing(selectedRow)}
-                      className="px-3 py-2 rounded-lg text-xs font-semibold"
-                      style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
-                      Edit
-                    </button>
+                    <>
+                      <button type="button" onClick={() => startEditing(selectedRow)}
+                        className="px-3 py-2 rounded-lg text-xs font-semibold"
+                        style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
+                        Edit
+                      </button>
+                      {isAdmin && selectedRow.id && (
+                        <button type="button" onClick={() => handleClearRow(selectedRow)} disabled={saving}
+                          className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors"
+                          style={{ border: 'none' }}>
+                          Clear Row
+                        </button>
+                      )}
+                    </>
                   )
                 )}
                 <button onClick={() => { setEditingRowKey(null); setSelectedRow(null) }}
