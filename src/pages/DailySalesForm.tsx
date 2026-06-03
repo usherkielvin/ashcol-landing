@@ -208,14 +208,20 @@ export default function DailySalesForm() {
 
   useEffect(() => {
     if (!reviewMode) return
-    requestAnimationFrame(() => {
+    const scrollToTop = () => {
       const mainEl = document.querySelector('main')
       if (mainEl) {
-        mainEl.scrollTo({ top: 0, behavior: 'smooth' })
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' })
+        mainEl.scrollTo({ top: 0, behavior: 'auto' })
       }
-    })
+      window.scrollTo({ top: 0, behavior: 'auto' })
+      document.documentElement.scrollTo({ top: 0, behavior: 'auto' })
+      document.body.scrollTo({ top: 0, behavior: 'auto' })
+    }
+    
+    // Scroll immediately and on a short delay to handle layout adjustments after entering review mode
+    scrollToTop()
+    const t = setTimeout(scrollToTop, 50)
+    return () => clearTimeout(t)
   }, [reviewMode])
 
   // I. Cash Transactions
@@ -849,6 +855,16 @@ export default function DailySalesForm() {
     if (!reviewMode) {
       setReviewStartedAt(new Date())
       setReviewMode(true)
+      
+      // Scroll to top immediately when user enters checking/review mode
+      const mainEl = document.querySelector('main')
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, behavior: 'auto' })
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' })
+      document.documentElement.scrollTo({ top: 0, behavior: 'auto' })
+      document.body.scrollTo({ top: 0, behavior: 'auto' })
+      
       return
     }
     setSubmitting(true); setError(null)
@@ -957,7 +973,7 @@ export default function DailySalesForm() {
           <Check className="w-10 h-10" style={{ color: '#10B981' }} />
         </div>
         <h2 className="text-2xl font-black" style={{ color: textPrimary }}>Report Submitted!</h2>
-        <p className="text-sm" style={{ color: textMuted }}>Your transaction report has been recorded successfully.</p>
+        <p className="text-sm" style={{ color: textMuted }}>Your daily report has been recorded successfully.</p>
         <div className="flex gap-3">
           <button
             onClick={() => {
@@ -989,11 +1005,11 @@ export default function DailySalesForm() {
       <div className="rounded-xl p-4 md:p-6 relative overflow-hidden bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
         <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-[0.03] pointer-events-none"
           style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
-        <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Transaction Form</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Daily Report</p>
         <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-          {reportId ? 'Edit Daily Transaction Report' : 'Branch Daily Transaction Report'}
+          {reportId ? 'Edit Daily Report' : 'Branch Daily Report'}
         </h2>
-        <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Transactions Report</p>
+        <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Report</p>
       </div>
 
       {reviewMode && (
@@ -1771,7 +1787,7 @@ export default function DailySalesForm() {
               className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
               style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
             >
-              {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Transaction Report</>}
+              {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Daily Report</>}
             </button>
           </div>
         )
