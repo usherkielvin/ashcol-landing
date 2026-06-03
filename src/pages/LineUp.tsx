@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, Camera, Copy, Save, Check, Maximize2, Sun, Moon,
+  ChevronDown, Camera, Copy, Save, Check, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -148,7 +148,7 @@ function lsNextId() { return `local-${Date.now()}-${Math.random().toString(36).s
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LineUp() {
-  const { theme, toggleTheme } = useTheme()
+  const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
 
@@ -1561,33 +1561,6 @@ export default function LineUp() {
              </button>
            </div>
 
-           {/* Mode Toggles */}
-           <div className="flex items-center gap-0.5 p-1 rounded-xl w-full justify-between mt-1" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
-             <button
-               type="button"
-               onClick={() => { if (!isLight) toggleTheme() }}
-               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all"
-               style={{
-                 backgroundColor: isLight ? cardBg : 'transparent',
-                 color: isLight ? currentTheme.accent : textMuted,
-                 boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-               }}
-             >
-               <Sun className="w-3.5 h-3.5" /> Light
-             </button>
-             <button
-               type="button"
-               onClick={() => { if (isLight) toggleTheme() }}
-               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all"
-               style={{
-                 backgroundColor: !isLight ? cardBg : 'transparent',
-                 color: !isLight ? currentTheme.accent : textMuted,
-                 boxShadow: !isLight ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
-               }}
-             >
-               <Moon className="w-3.5 h-3.5" /> Dark
-             </button>
-           </div>
          </div>
        </div>
      </div>
@@ -1935,34 +1908,6 @@ export default function LineUp() {
               <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
               <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
-            </div>
-
-            {/* Mode Switcher */}
-            <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
-              <button
-                type="button"
-                onClick={() => { if (!isLight) toggleTheme() }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{
-                  backgroundColor: isLight ? cardBg : 'transparent',
-                  color: isLight ? currentTheme.accent : textMuted,
-                  boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                }}
-              >
-                <Sun className="w-3.5 h-3.5" /> Light
-              </button>
-              <button
-                type="button"
-                onClick={() => { if (isLight) toggleTheme() }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{
-                  backgroundColor: !isLight ? cardBg : 'transparent',
-                  color: !isLight ? currentTheme.accent : textMuted,
-                  boxShadow: !isLight ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
-                }}
-              >
-                <Moon className="w-3.5 h-3.5" /> Dark
-              </button>
             </div>
 
             {/* View Switcher */}
@@ -2612,7 +2557,7 @@ export default function LineUp() {
               }}
             >
               <div className="min-w-0">
-                <div className="text-xs font-black uppercase tracking-widest" style={{ color: '#10B981' }}>
+                <div className="text-xs font-black uppercase tracking-widest" style={{ color: currentTheme.accent }}>
                   Field Schedule Showcase
                 </div>
                 <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>
@@ -2644,10 +2589,10 @@ export default function LineUp() {
               >
                 <div
                   style={{
-                    backgroundColor: '#047857',
+                    background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
                     padding: '18px 24px 16px',
                     textAlign: 'center',
-                    borderBottom: '5px solid #10B981',
+                    borderBottom: `5px solid ${currentTheme.accentDark}`,
                   }}
                 >
                   <div
@@ -2692,9 +2637,9 @@ export default function LineUp() {
                             key={label}
                             style={{
                               padding: '13px 10px',
-                              backgroundColor: isLight ? '#ecfdf5' : '#09241d',
-                              border: `1px solid ${isLight ? '#bbf7d0' : '#14533f'}`,
-                              color: isLight ? '#065f46' : '#a7f3d0',
+                              backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
+                              border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
+                              color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
                               fontSize: 'clamp(12px, 1vw, 16px)',
                               fontWeight: 850,
                               textAlign: 'center',
@@ -2779,7 +2724,7 @@ export default function LineUp() {
                     </div>
                     <div className="grid grid-cols-2 gap-2 md:min-w-[420px]">
                       {[
-                        ['INSTALLATION', totalUnits, '#10B981'],
+                        ['INSTALLATION', totalUnits, currentTheme.accent],
                         ['SURVEY', totalSurvey, '#D97706'],
                         ['BACK JOB', totalBackJob, '#EF4444'],
                         ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
@@ -2987,4 +2932,3 @@ export default function LineUp() {
     </div>
   )
 }
-
