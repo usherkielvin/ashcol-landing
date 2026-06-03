@@ -846,6 +846,7 @@ export default function ClientMasterlist() {
         relayedDate: addForm.relayedDate || '',
         finalDate: addForm.finalDate || ''
       }
+      const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -869,13 +870,13 @@ export default function ClientMasterlist() {
           installerName: addForm.installerName || undefined,
           serviceVehicle: addForm.serviceVehicle || undefined,
           remarksUpdate: addForm.remarksUpdate || undefined,
-          installationCharges: Number(addForm.installationCharges) || 0,
-          modeOfPayment: addForm.modeOfPayment || undefined,
+          installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
+          modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
           controlNumber: addForm.controlNumber || undefined,
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
-          branchId: ((addForm.status !== 'PENDING' || /collect/i.test(`${addForm.serviceType} ${addForm.title}`)) && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
+          branchId: ((addForm.status !== 'PENDING' || isCollectionTicket) && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
         })
       })
 
@@ -2226,7 +2227,9 @@ export default function ClientMasterlist() {
                               serviceType: option.value,
                               title: option.title,
                               status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType
+                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType,
+                              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
+                              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
                             }))
                           }}
                           className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
@@ -2247,7 +2250,9 @@ export default function ClientMasterlist() {
                               serviceType: option.value,
                               title: option.title,
                               status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType
+                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType,
+                              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
+                              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
                             }))}
                             className="h-8 rounded-md border text-[10px] font-bold transition-all"
                             style={{
@@ -2444,6 +2449,34 @@ export default function ClientMasterlist() {
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit</label>
                         <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / amount / promo" className={compactInput} style={fieldStyle(addForm.commitType)} />
                       </div>
+                      {addCategory === 'Collection' && (
+                        <>
+                          <div>
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Collection Amount</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={addForm.installationCharges}
+                              onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))}
+                              placeholder="0.00"
+                              className={compactInput}
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Payment Mode</label>
+                            <input
+                              type="text"
+                              value={addForm.modeOfPayment}
+                              onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))}
+                              placeholder="Cash / GCash / Bank"
+                              className={compactInput}
+                              style={fieldStyle(addForm.modeOfPayment)}
+                            />
+                          </div>
+                        </>
+                      )}
                       <div className="md:col-span-2">
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Last Update</label>
                         <input
