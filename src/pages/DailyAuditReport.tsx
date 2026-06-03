@@ -67,21 +67,7 @@ const formatLocalTime = (utcString: string | null | undefined, fallback: string 
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-// Helper to convert backend time string to HH:mm for native time input
-const parseTimeForInput = (t: string | null | undefined) => {
-  if (!t || t === '—' || t === 'N/A' || t === 'NO SCHED' || t === 'NO TRANSACTION') return ''
-  const match = t.match(/(\d+):(\d+)\s*(AM|PM)?/i)
-  if (match) {
-    let [, h, m, ampm] = match
-    let hr = parseInt(h)
-    if (ampm) {
-      if (ampm.toUpperCase() === 'PM' && hr < 12) hr += 12
-      if (ampm.toUpperCase() === 'AM' && hr === 12) hr = 0
-    }
-    return `${hr.toString().padStart(2, '0')}:${m}`
-  }
-  return t
-}
+
 
 const isNoTransactionRemarks = (remarks: string) =>
   remarks === 'NO SCHED' || remarks === 'NO TRANSACTION' || remarks === 'NO RECORD' || remarks === 'NO REPORT'
@@ -180,66 +166,13 @@ export default function DailyAuditReport() {
     input.focus()
   }
 
-  const [saving, setSaving] = useState(false)
-
-  const rowKey = (row: AuditRow) => `${row.branchId}:${row.auditLine || ''}`
-
-  const startEditing = (row: AuditRow, e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    setEditingRowKey(rowKey(row))
-    setEditValues({
-      timeUploaded: parseTimeForInput(row.timeUploaded),
-      targetDailyQuota: String(row.targetDailyQuota || 0).replace(/,/g, ''),
-      cohPreviousDay: String(row.cohPreviousDay || 0).replace(/,/g, ''),
-      fundFromHo: String(row.fundFromHo || 0).replace(/,/g, ''),
-      cashReturns: String(row.cashReturns || 0).replace(/,/g, ''),
-      totalCashCollection: String(row.totalCashCollection || 0).replace(/,/g, ''),
-      totalOnlineCollection: String(row.totalOnlineCollection || 0).replace(/,/g, ''),
-      totalExpenses: String(row.totalExpenses || 0).replace(/,/g, ''),
-      totalUnitsInstalledServiced: String(row.totalUnitsInstalledServiced || 0),
-      totalCancelled: String(row.totalCancelled || 0),
-      totalUnitsFreeInstall: String(row.totalUnitsFreeInstall || 0),
-      forCollection: String(row.forCollection || 0).replace(/,/g, ''),
-      rebatesForCollection: String(row.rebatesForCollection || 0).replace(/,/g, ''),
-      remarks: row.remarks || '',
-    })
-  }
-
-  const handleSaveRow = async (row: AuditRow, e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    setSaving(true)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const payload = {
-        id: row.id,
-        branchId: row.branchId,
-        date: viewMode === 'single' ? date : rangeFrom,
-        auditLine: row.auditLine,
-      }
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      })
-      if (res.ok) {
-        setSelectedRow(null)
-        fetchAudit()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || `Save failed (HTTP ${res.status})`)
-      }
-    } catch { alert('Failed to save changes') }
-    finally { setSaving(false) }
-  }
-
   const handleClearRow = async (row: AuditRow) => {
     if (!row.id) return
     const confirmed = window.confirm(
-      `Are you sure you want to clear all transaction and performance data for ${row.branchName} on this date?\n\n` +
-      `This action will permanently delete the report and its items from the database.`
+      `Are you sure you want to clear all data for ${row.branchName} on this date?\n\nThis will permanently delete the report.`
     )
     if (!confirmed) return
-    setSaving(true)
+    let clearing = false; void clearing
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ id: row.id })
@@ -256,8 +189,6 @@ export default function DailyAuditReport() {
       }
     } catch {
       alert('Failed to clear row data')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -268,7 +199,6 @@ export default function DailyAuditReport() {
   const isManager = role === 'manager' || isSalesCoordinator
   const isAdmin = role === 'admin'
   const canImportExcel = isAdmin || isManager
-  const canEdit = isAdmin || isManager
 
   const hasAlreadySubmitted = useMemo(() => {
     if (!user?.branchId) return false
@@ -509,7 +439,7 @@ export default function DailyAuditReport() {
     { key: 'grossSales', label: 'Sales' },
   ]
 
-  const isEditing = (_row: AuditRow) => false
+
 
   const mobileDateLabel = viewMode === 'single'
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -799,7 +729,7 @@ export default function DailyAuditReport() {
           <button
             id="audit-compact-toggle"
             type="button"
-            onClick={() => { setCompactView(v => !v); setEditingRowKey(null) }}
+            onClick={() => { setCompactView(v => !v) }}
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all hover:scale-105 no-print"
             style={compactView
               ? { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }
@@ -870,7 +800,7 @@ export default function DailyAuditReport() {
               {/* ── Table Body ── */}
               <tbody>
                 {visibleRows.map((row, idx) => {
-                  const editing    = false // editing removed — use DTR form tab
+
                   const isAbove    = row.remarks === 'ABOVE QUOTA'
                   const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
@@ -1152,8 +1082,7 @@ export default function DailyAuditReport() {
           </div>
         ) : (
           visibleRows.map((row, idx) => {
-            const key = rowKey(row)
-            const editing = false
+
             const isAbove = row.remarks === 'ABOVE QUOTA'
             const isPending = row.remarks === 'PENDING'
             const noRecord = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
@@ -1163,7 +1092,7 @@ export default function DailyAuditReport() {
             const diffColor = noRecord ? textMuted : isAbove ? '#10B981' : '#EF4444'
 
             return (
-              <div key={key} className="relative rounded-xl overflow-hidden"
+              <div key={idx} className="relative rounded-xl overflow-hidden"
                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                 <button type="button" className="w-full text-left px-4 py-3"
                   onClick={() => {
@@ -1215,41 +1144,14 @@ export default function DailyAuditReport() {
                       ].map(item => (
                         <div key={item.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
                           <span className="text-[10px] font-medium block mb-0.5" style={{ color: textMuted }}>{item.label}</span>
-                          {editing && item.field && !item.readOnly ? (
-                            <input
-                              type="text"
-                              inputMode={item.int ? 'numeric' : 'decimal'}
-                              value={editValues[item.field] || ''}
-                              onChange={e => setEditValues(prev => ({ ...prev, [item.field!]: e.target.value.replace(/,/g, '') }))}
-                              onClick={e => e.stopPropagation()}
-                              className="w-full bg-transparent outline-none text-xs font-medium border-b"
-                              style={{ color: item.color, borderColor: inputBorder }}
-                            />
-                          ) : (
-                            <span className="text-xs font-medium tabular-nums" style={{ color: item.color }}>
-                              {item.money ? `₱${peso(item.val as number)}` : String(item.val ?? 0)}
-                            </span>
-                          )}
+                          <span className="text-xs font-medium tabular-nums" style={{ color: item.color }}>
+                            {item.money ? `₱${peso(item.val as number)}` : String(item.val ?? 0)}
+                          </span>
                         </div>
                       ))}
                     </div>
 
-                    {editing && (
-                      <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
-                        <span className="text-[10px] font-medium block mb-1" style={{ color: textMuted }}>Remarks</span>
-                        {renderEditRemarksInput()}
-                        {viewMode === 'single' && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <span className="text-[10px] font-medium" style={{ color: textMuted }}>Time</span>
-                            <input type="time" value={editValues.timeUploaded || ''}
-                              onChange={e => setEditValues(prev => ({ ...prev, timeUploaded: e.target.value }))}
-                              onClick={e => e.stopPropagation()}
-                              className="bg-transparent outline-none text-xs font-medium border-b flex-1"
-                              style={{ color: textPrimary, borderColor: inputBorder }} />
-                          </div>
-                        )}
-                      </div>
-                    )}
+
 
                     <div className="flex items-center gap-2 mt-3">
                       <button type="button"
@@ -1362,42 +1264,23 @@ export default function DailyAuditReport() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {viewMode === 'single' && canEdit && (
-                  isEditing(selectedRow) ? (
-                    <>
-                      <button type="button" onClick={e => handleSaveRow(selectedRow, e)} disabled={saving}
-                        className="px-3 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                        style={{ backgroundColor: '#10B981' }}>
-                        {saving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button type="button" onClick={() => setEditingRowKey(null)} disabled={saving}
-                        className="px-3 py-2 rounded-lg text-xs font-medium"
-                        style={{ color: textMuted, border: `1px solid ${inputBorder}` }}>
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {canEdit && (
-                        <a
-                          href="/branch-report"
-                          className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors hover:opacity-90"
-                          style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
-                        >
-                          Go to DTR Form
-                        </a>
-                      )}
-                      {isAdmin && selectedRow.id && (
-                        <button type="button" onClick={() => handleClearRow(selectedRow)} disabled={saving}
-                          className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors"
-                          style={{ border: 'none' }}>
-                          Clear Row
-                        </button>
-                      )}
-                    </>
-                  )
+                {isAdmin && selectedRow.id && (
+                  <button type="button" onClick={() => handleClearRow(selectedRow)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                    style={{ border: 'none' }}>
+                    Clear Row
+                  </button>
                 )}
-                <button onClick={() => { setEditingRowKey(null); setSelectedRow(null) }}
+                {(isAdmin || isManager) && (
+                  <a
+                    href="/branch-report"
+                    className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                    style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
+                  >
+                    Go to DTR Form
+                  </a>
+                )}
+                <button onClick={() => setSelectedRow(null)}
                   className="p-2 rounded-xl transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
                   <X className="w-5 h-5" />
                 </button>

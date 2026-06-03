@@ -7,11 +7,6 @@ import { API_BASE_URL } from '../utils/api'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface Denomination {
-  label: string
-  value: number
-  qty: string
-}
 
 // DTR-specific row types
 interface CashTxRow    { id: string; name: string; amount: string }
@@ -28,17 +23,7 @@ interface ExpenseRow   { id: string; name: string; description: string; amount: 
 
 const uid = () => Math.random().toString(36).slice(2)
 
-const DENOMS: Denomination[] = [
-  { label: '₱1,000', value: 1000, qty: '' },
-  { label: '₱500',   value: 500,  qty: '' },
-  { label: '₱200',   value: 200,  qty: '' },
-  { label: '₱100',   value: 100,  qty: '' },
-  { label: '₱50',    value: 50,   qty: '' },
-  { label: '₱20',    value: 20,   qty: '' },
-  { label: '₱10',    value: 10,   qty: '' },
-  { label: '₱5',     value: 5,    qty: '' },
-  { label: '₱1',     value: 1,    qty: '' },
-]
+
 
 const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 const num = (s: string) => parseFloat(s) || 0
@@ -1504,7 +1489,7 @@ export default function DailySalesForm() {
                   </tr>
                   <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
                     <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200 font-bold text-sm">XIV. Total Cash on Hand / Deposit</td>
-                    <td className="px-3 py-2.5 text-right text-base text-emerald-600 dark:text-emerald-400">
+                    <td className="px-3 py-2.5 text-right text-base text-emerald-600 dark:text-emerald-400 font-black">
                       {php(totalCashOnHand)}
                     </td>
                   </tr>
