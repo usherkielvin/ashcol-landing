@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  LayoutDashboard, Ticket as TicketIcon, Users,
+  LayoutDashboard, Ticket as TicketIcon,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, Receipt, Scan,
+  PanelLeftOpen, Receipt,
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
   BarChart2
 } from 'lucide-react'
@@ -97,8 +97,6 @@ export default function DashboardLayout() {
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
-    { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
-    { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },

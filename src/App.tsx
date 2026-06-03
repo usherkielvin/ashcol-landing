@@ -8,7 +8,6 @@ import DashboardLayout from './layouts/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
 import CreateTicket from './pages/CreateTicket'
-import Customers from './pages/Customers'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
@@ -18,7 +17,6 @@ import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import DailySalesForm from './pages/DailySalesForm'
 import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
-import DTRScanner from './pages/DTRScanner'
 import ClientMasterlist from './pages/ClientMasterlist'
 import Analytics from './pages/Analytics'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -75,7 +73,6 @@ export default function App() {
               <Route path="/tickets/create" element={<CreateTicket />} />
               <Route path="/create-ticket" element={<CreateTicket />} />
               <Route path="/schedules" element={<ClientMasterlist />} />
-              <Route path="/customers" element={<Customers />} />
               <Route path="/branches" element={<Branches />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
@@ -85,7 +82,6 @@ export default function App() {
               <Route path="/daily-report" element={<DailySalesForm />} />
               <Route path="/lineup" element={<LineUp />} />
               <Route path="/service-report" element={<DailyServiceReport />} />
-              <Route path="/dtr-scanner" element={<DTRScanner />} />
               <Route path="/analytics" element={<Analytics />} />
             </Route>
           </Routes>
