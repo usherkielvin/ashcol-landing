@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { PUBLIC_BRANCHES } from '../data/branches'
+import { getPortalUrl } from '../utils/portalUrl'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -525,20 +526,11 @@ export default function Landing() {
 
             {/* Login Link */}
             <a
-              href="/login"
-              className="hidden sm:flex items-center justify-center px-4 py-2.5 text-sm font-bold rounded-lg border transition-all hover:bg-slate-100/10"
-              style={{ borderColor: t.border, color: t.text }}
-            >
-              Login
-            </a>
-
-            {/* Book a Service Link */}
-            <a
-              href="#contact"
+              href={getPortalUrl('/login')}
               className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
               style={{ backgroundColor: t.accent }}
             >
-              Book a Service
+              Login
             </a>
 
             {/* Mobile hamburger */}
@@ -567,18 +559,11 @@ export default function Landing() {
             ))}
             <div className="flex gap-2 mt-1">
               <a
-                href="/login"
-                className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold rounded-lg border transition-all"
-                style={{ borderColor: t.border, color: t.text }}
-              >
-                Login
-              </a>
-              <a
-                href="#contact"
+                href={getPortalUrl('/login')}
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green"
                 style={{ backgroundColor: t.accent }}
               >
-                Book a Service
+                Login
               </a>
             </div>
           </div>

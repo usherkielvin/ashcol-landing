@@ -3,13 +3,79 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, MoreVertical, Camera, Copy, Save, Check, Maximize2,
+  ChevronDown, MoreVertical, Camera, Copy, Save, Check, Maximize2, Sun, Moon,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import * as XLSX from 'xlsx'
 import html2canvas from 'html2canvas'
+
+const branchThemes: Record<string, { name: string; accent: string; accentDark: string; accentLight: string }> = {
+  "TAGUIG SALES": {
+    name: "Emerald Green",
+    accent: "#059669",
+    accentDark: "#047857",
+    accentLight: "#D1FAE5"
+  },
+  "TAGUIG SERVICES": {
+    name: "Technical Teal",
+    accent: "#0F766E",
+    accentDark: "#115E59",
+    accentLight: "#CCFBF1"
+  },
+  "PAMPANGA": {
+    name: "Crimson Red",
+    accent: "#DC2626",
+    accentDark: "#991B1B",
+    accentLight: "#FEE2E2"
+  },
+  "DASMA": {
+    name: "Royal Blue",
+    accent: "#2563EB",
+    accentDark: "#1D4ED8",
+    accentLight: "#DBEAFE"
+  },
+  "BULACAN": {
+    name: "Violet Purple",
+    accent: "#7C3AED",
+    accentDark: "#5B21B6",
+    accentLight: "#EDE9FE"
+  },
+  "CANDELARIA": {
+    name: "Arctic Teal",
+    accent: "#14B8A6",
+    accentDark: "#0F766E",
+    accentLight: "#CCFBF1"
+  },
+  "SILANG": {
+    name: "Olive Green",
+    accent: "#65A30D",
+    accentDark: "#3F6212",
+    accentLight: "#ECFCCB"
+  },
+  "RIZAL": {
+    name: "Indigo",
+    accent: "#4338CA",
+    accentDark: "#312E81",
+    accentLight: "#E0E7FF"
+  },
+  "CALAUAN": {
+    name: "Rose Pink",
+    accent: "#EC4899",
+    accentDark: "#BE185D",
+    accentLight: "#FCE7F3"
+  }
+};
+
+const getBranchThemeKey = (name: string): string => {
+  const upper = name.toUpperCase().trim()
+  if (upper === 'LAGUNA' || upper === 'CALAUAN') return 'CALAUAN'
+  if (upper === 'DASMARIÑAS' || upper === 'DASMA') return 'DASMA'
+  if (branchThemes[upper]) return upper
+  return 'TAGUIG SALES' // fallback
+}
+
 
 const VEHICLE_OPTIONS = ['STRADA', 'T3', 'FB19', 'T2']
 const DRIVER_OPTIONS = ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC']
