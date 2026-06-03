@@ -137,6 +137,7 @@ export default function DailySalesForm() {
   const initialBranchName = normalizedAssignedBranch.branchName
 
   // ── Form State ───────────────────────────────────────────────────
+  const [reportId, setReportId] = useState<string | null>(null)
   const [reportDate, setReportDate] = useState(today)
   const [receivedBy, setReceivedBy] = useState(user?.name || '')
   const [submitting, setSubmitting] = useState(false)
@@ -347,8 +348,167 @@ export default function DailySalesForm() {
     loadData()
   }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin])
 
+  const fetchReportDetails = async (id: string) => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Failed to fetch report details')
+      const data = await res.json()
+
+      // Populate metadata
+      setReportDate(data.reportDate)
+      setReceivedBy(data.receivedBy || '')
+      setTrNo(data.trNo || '')
+      setSelectedBranchId(data.branchId)
+      setSelectedAuditLine(data.auditLine || null)
+      if (data.branchName) setBranch(data.branchName)
+
+      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
+      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
+
+      // Populate cash returns (total represented as single row)
+      if (data.cashReturns != null && data.cashReturns > 0) {
+        setCashRet([{ id: uid(), name: '', amount: String(data.cashReturns) }])
+      } else {
+        setCashRet([mkRet()])
+      }
+
+      // Populate for collection (total represented as single row)
+      if (data.forCollection != null && data.forCollection > 0) {
+        setForColl([{ id: uid(), installer: '', customer: '', amount: String(data.forCollection) }])
+      } else {
+        setForColl([mkColl()])
+      }
+
+      // Populate rebates (total represented as single row)
+      if (data.rebatesForCollection != null && data.rebatesForCollection > 0) {
+        setRebates([{ id: uid(), company: 'Rebates', amount: String(data.rebatesForCollection), units: '1', total: String(data.rebatesForCollection) }])
+      } else {
+        setRebates([mkReb()])
+      }
+
+      // Populate units
+      setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '')
+      setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '')
+      setFreeInstallUnits(data.totalUnitsFreeInstall != null ? String(data.totalUnitsFreeInstall) : '')
+
+      // Map items lists
+      const cashSales: CashTxRow[] = []
+      const partsSalesList: PartsSaleRow[] = []
+      const onlineTxList: OnlineTxRow[] = []
+      const checkRemList: CheckRow[] = []
+      const expReceiptList: ExpenseRow[] = []
+      const expPurchList: ExpenseRow[] = []
+      const ordersList: OrderRow[] = []
+
+      if (data.items && Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          const type = item.type
+          const desc = item.description || ''
+          const amt = item.amount != null ? String(item.amount) : ''
+
+          if (type === 'CASH_SALE') {
+            if (desc.startsWith('PARTS|')) {
+              const parts = desc.split('|')
+              partsSalesList.push({
+                id: uid(),
+                customer: parts[1] || '',
+                description: parts[2] || '',
+                capital: '',
+                salePrice: amt
+              })
+            } else {
+              cashSales.push({
+                id: uid(),
+                name: desc,
+                amount: amt
+              })
+            }
+          } else if (type === 'ONLINE_SALE') {
+            if (desc.startsWith('CHECK|')) {
+              checkRemList.push({
+                id: uid(),
+                installer: desc.replace('CHECK|', ''),
+                customer: item.customer || '',
+                bank: item.bank || '',
+                amount: amt
+              })
+            } else {
+              onlineTxList.push({
+                id: uid(),
+                installer: desc,
+                customer: item.customer || '',
+                bank: item.bank || '',
+                amount: amt
+              })
+            }
+          } else if (type === 'EXPENSE') {
+            const parts = desc.split('|')
+            expReceiptList.push({
+              id: uid(),
+              name: parts[0] || '',
+              description: parts[1] || '',
+              amount: amt
+            })
+          } else if (type === 'PURCHASE') {
+            if (desc.startsWith('ORDER|')) {
+              const parts = desc.split('|')
+              ordersList.push({
+                id: uid(),
+                customer: parts[1] || '',
+                description: parts[2] || '',
+                amount: amt
+              })
+            } else {
+              const parts = desc.split('|')
+              expPurchList.push({
+                id: uid(),
+                name: parts[0] || '',
+                description: parts[1] || '',
+                amount: amt
+              })
+            }
+          }
+        })
+      }
+
+      setCashTx(cashSales.length > 0 ? cashSales : [mkCash()])
+      setPartsSales(partsSalesList.length > 0 ? partsSalesList : [mkPart()])
+      setOnlineTx(onlineTxList.length > 0 ? onlineTxList : [mkOnl()])
+      setCheckRem(checkRemList.length > 0 ? checkRemList : [mkChk()])
+      setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
+      setExpPurch(expPurchList.length > 0 ? expPurchList : [mkExp()])
+      setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
+
+    } catch (err) {
+      console.error(err)
+      setError('Error loading existing DTR report details.')
+    }
+  }
+
+  // Load query params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const urlId = params.get('id')
+    const urlBranchId = params.get('branchId')
+    const urlDate = params.get('date')
+    const urlAuditLine = params.get('auditLine')
+
+    if (urlId) {
+      setReportId(urlId)
+      fetchReportDetails(urlId)
+    } else {
+      if (urlBranchId) setSelectedBranchId(urlBranchId)
+      if (urlDate) setReportDate(urlDate)
+      if (urlAuditLine) setSelectedAuditLine(urlAuditLine || null)
+    }
+  }, [])
+
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
+    if (reportId) return
     if (branchName && reportDate) {
       const clean = branchName.toUpperCase()
         .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '') // remove ASHCOL prefix and dashes
@@ -402,6 +562,7 @@ export default function DailySalesForm() {
     setError(null)
     setScanError(null)
     setSuccess(false)
+    setReportId(null)
     if (clearTrNo) setTrNo('')
     setCashOnHand('')
     setFundFromHo('')
@@ -688,6 +849,7 @@ export default function DailySalesForm() {
       ]
 
       const payload = {
+        id: reportId,
         branchId: selectedBranchId,
         auditLine: selectedAuditLine,
         reportDate,
@@ -796,7 +958,7 @@ export default function DailySalesForm() {
           style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
         <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Transaction Form</p>
         <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-          Branch Transaction Report
+          {reportId ? 'Edit Daily Transaction Report' : 'Branch Daily Transaction Report'}
         </h2>
         <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Transactions Report</p>
       </div>

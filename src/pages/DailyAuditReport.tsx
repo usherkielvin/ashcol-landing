@@ -1273,11 +1273,14 @@ export default function DailyAuditReport() {
                 )}
                 {(isAdmin || isManager) && (
                   <a
-                    href="/daily-report"
+                    href={selectedRow.id
+                      ? `/daily-report?id=${selectedRow.id}`
+                      : `/daily-report?branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
+                    }
                     className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
                   >
-                    Go to DTR Form
+                    {selectedRow.id ? 'Edit DTR' : 'Create DTR'}
                   </a>
                 )}
                 <button onClick={() => setSelectedRow(null)}
