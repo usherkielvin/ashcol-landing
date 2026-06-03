@@ -22,6 +22,7 @@ interface AuditRow {
   logicalBranchName?: string | null
   branchName: string
   timeUploaded: string | null
+  createdAt?: string | null
   status: string
   grossSales: number
   targetDailyQuota: number
@@ -52,6 +53,17 @@ interface DrilldownItem {
 
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+const formatLocalTime = (utcString: string | null | undefined, fallback: string | null | undefined) => {
+  if (!utcString) return fallback || ''
+  try {
+    const d = new Date(utcString)
+    if (isNaN(d.getTime())) return fallback || ''
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  } catch {
+    return fallback || ''
+  }
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -442,7 +454,7 @@ export default function DailyAuditReport() {
     const wsData = visibleRows.map((row, index) => ({
       '#': index + 1,
       Branch: row.branchName,
-      Time: row.timeUploaded || '',
+      Time: formatLocalTime(row.createdAt, row.timeUploaded) || '',
       Status: row.status,
       'Gross Sales': row.grossSales,
       'Target Quota': row.targetDailyQuota,
@@ -1015,9 +1027,9 @@ export default function DailyAuditReport() {
                                     ? (compactView ? 'No Trans' : 'No Transaction')
                                     : 'Checked'}
                               </span>
-                              {!noRecord && row.timeUploaded && (
+                              {!noRecord && (row.createdAt || row.timeUploaded) && (
                                 <span style={{ color: textMuted }}>
-                                  • {row.timeUploaded}
+                                  • {formatLocalTime(row.createdAt, row.timeUploaded)}
                                 </span>
                               )}
                             </div>
@@ -1261,8 +1273,8 @@ export default function DailyAuditReport() {
                         <span className="text-xs font-medium" style={{ color: statusColor }}>
                           {isPending ? 'Pending' : noTransaction ? 'No transaction' : 'Checked'}
                         </span>
-                        {!noRecord && row.timeUploaded && (
-                          <span className="text-xs" style={{ color: textMuted }}>{row.timeUploaded}</span>
+                        {!noRecord && (row.createdAt || row.timeUploaded) && (
+                          <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
                         )}
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
                           style={remarksBadgeStyle(row.remarks, noRecord, isAbove)}>
@@ -1519,8 +1531,8 @@ export default function DailyAuditReport() {
               {/* Top status info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
-                  <span style={{
+                   <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
+                   <span style={{
                     alignSelf: 'start',
                     padding: '2px 8px',
                     borderRadius: 999,
