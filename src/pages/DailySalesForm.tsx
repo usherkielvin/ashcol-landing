@@ -350,20 +350,43 @@ export default function DailySalesForm() {
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
     if (branchName && reportDate) {
-      const upperBranch = branchName.toUpperCase()
+      const clean = branchName.toUpperCase()
+        .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '') // remove ASHCOL prefix and dashes
+        .replace(/[^A-Z0-9\s]/g, '') // remove special characters
+        .trim()
+
       let prefix = ''
       
-      if (upperBranch.includes('TAGUIG')) {
-        if (selectedAuditLine === 'TAGUIG_SERVICE' || upperBranch.includes('SERVICE') || upperBranch.includes('SERVICES')) {
+      if (clean.includes('TAGUIG')) {
+        if (selectedAuditLine === 'TAGUIG_SERVICE' || clean.includes('SERVICE') || clean.includes('SERVICES')) {
           prefix = 'TSE'
         } else {
           prefix = 'TSA'
         }
-      } else if (upperBranch.includes('DASMA')) {
+      } else if (clean.includes('DASMA') || clean.includes('DASMARI')) {
         prefix = 'D'
+      } else if (clean.includes('CALAUAN')) {
+        prefix = 'CL'
+      } else if (clean.includes('CANDELARIA')) {
+        prefix = 'CN'
+      } else if (clean.includes('VALENZUELA')) {
+        prefix = 'V'
+      } else if (clean.includes('RODRIGUEZ') || clean.includes('RIZAL')) {
+        prefix = 'R'
+      } else if (clean.includes('PAMPANGA')) {
+        prefix = 'P'
+      } else if (clean.includes('BULACAN')) {
+        prefix = 'B'
+      } else if (clean.includes('GENTRI') || clean.includes('GENERAL TRIAS')) {
+        prefix = 'GT'
+      } else if (clean.includes('STA ROSA') || clean.includes('SANTA ROSA')) {
+        prefix = 'SR'
+      } else if (clean.includes('BATANGAS')) {
+        prefix = 'BT'
+      } else if (clean.includes('LAGUNA')) {
+        prefix = 'L'
       } else {
-        const cleanBranch = branchName.toUpperCase().replace('ASHCOL', '').trim()
-        const words = cleanBranch.split(' ')
+        const words = clean.split(/\s+/)
         prefix = words.map(w => w[0]).join('')
       }
       
