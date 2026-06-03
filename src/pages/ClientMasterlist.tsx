@@ -2213,7 +2213,7 @@ export default function ClientMasterlist() {
 
                     <div className="space-y-2">
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket Category</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Category</label>
                         <select
                           value={addCategory}
                           onChange={e => {
@@ -2262,6 +2262,30 @@ export default function ClientMasterlist() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>No</label>
+                        <input
+                          type="text"
+                          value="Auto"
+                          readOnly
+                          className={compactInput}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No</label>
+                        <input
+                          type="text"
+                          value={addForm.controlNumber}
+                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
+                          placeholder="Transaction no."
+                          className={`${compactInput} whitespace-nowrap`}
+                          style={fieldStyle(addForm.controlNumber)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store</label>
                         <select
                           value={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : (addForm.sourceVendor || '').toLowerCase().includes('abenson') ? 'Abenson' : 'Direct'}
@@ -2275,14 +2299,14 @@ export default function ClientMasterlist() {
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator</label>
                         <input
                           type="text"
-                          value={addForm.controlNumber}
-                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
-                          placeholder="Transaction no."
-                          className={`${compactInput} whitespace-nowrap`}
-                          style={fieldStyle(addForm.controlNumber)}
+                          value={addForm.installerName}
+                          onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
+                          placeholder="Assigned staff"
+                          className={compactInput}
+                          style={fieldStyle(addForm.installerName)}
                         />
                       </div>
                     </div>
@@ -2323,7 +2347,7 @@ export default function ClientMasterlist() {
 
                     {canAssignBranch && (
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Queue</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Assigned</label>
                         <select
                           value={addForm.branchId}
                           onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
@@ -2338,16 +2362,16 @@ export default function ClientMasterlist() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Date Relayed</label>
                         <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Request</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Requested Schedule</label>
                         <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
                       </div>
                     </div>
 
-                    {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                    {addForm.status !== 'CANCELLED' && (
                       <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Schedule</label>
                         <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
@@ -2415,16 +2439,16 @@ export default function ClientMasterlist() {
                         <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={compactInput} style={fieldStyle(addForm.serialNumber)} />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit / Promo</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit</label>
                         <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / amount / promo" className={compactInput} style={fieldStyle(addForm.commitType)} />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Last Update</label>
                         <input
                           type="text"
                           value={addForm.description}
                           onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                          placeholder="Dispatch notes"
+                          placeholder="Latest update / dispatch notes"
                           className={compactInput}
                           style={fieldStyle(addForm.description)}
                         />
