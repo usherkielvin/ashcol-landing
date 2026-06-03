@@ -289,6 +289,28 @@ export default function DailyAuditReport() {
   const canImportExcel = isAdmin || isManager
   const canEdit = isAdmin || isManager
 
+  const hasAlreadySubmitted = useMemo(() => {
+    if (!user?.branchId) return false
+    const userBid = user.branchId.toLowerCase().trim()
+    const userEmailLower = (user.email || '').toLowerCase()
+    const isUserServices = userEmailLower.includes('service')
+
+    return rows.some(row => {
+      const isSubmitted = row.status !== 'NO RECORD' && row.status !== 'NO REPORT' && row.status !== 'NO SCHED'
+      if (!isSubmitted) return false
+
+      const isSameBranchId = row.branchId.toLowerCase().trim() === userBid
+      const isTaguig = userBid === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || userBid.startsWith('br-taguig') || userBid.includes('taguig')
+
+      if (isTaguig) {
+        const isRowService = row.auditLine === 'TAGUIG_SERVICE' || row.branchName.toLowerCase().includes('service') || row.branchName.toLowerCase().includes('services')
+        return isSameBranchId && (isUserServices === isRowService)
+      }
+
+      return isSameBranchId
+    })
+  }, [user, rows])
+
   const fetchAudit = useCallback(async () => {
     if (viewMode === 'range' && (!rangeFrom || !rangeTo)) return
     setLoading(true)
@@ -792,7 +814,7 @@ export default function DailyAuditReport() {
       )}
 
       {/* ── Manager/Staff CTA ─────────────────────────────────────────── */}
-      {isManagerOrStaff && (
+      {isManagerOrStaff && !hasAlreadySubmitted && (
         <div className="hidden md:flex rounded-xl px-4 py-2.5 items-center justify-between gap-3 text-xs no-print"
           style={{ backgroundColor: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
           <div className="flex items-center gap-2">
