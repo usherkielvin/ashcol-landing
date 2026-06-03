@@ -56,9 +56,8 @@ export default function PurchaseMonitor() {
 
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
-  const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
-  const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee'
+  const canAccess = isAdmin
 
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')

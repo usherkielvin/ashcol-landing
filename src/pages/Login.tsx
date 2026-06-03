@@ -21,6 +21,7 @@ export default function Login() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
+  const getLandingPath = (role?: string) => (role || '').toLowerCase() === 'admin' ? '/audit-report' : '/daily-report'
 
   // Pre-fill remembered email on mount
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function Login() {
   }, [prefillEmail, prefillPassword])
   useEffect(() => {
     if (user) {
-      navigate('/audit-report', { replace: true })
+      navigate(getLandingPath(user.role), { replace: true })
     }
   }, [user, navigate])
 
@@ -103,7 +104,7 @@ export default function Login() {
         jobTitle: appUser.jobTitle ?? null,
       })
 
-      navigate('/audit-report')
+      navigate(getLandingPath(appUser.role))
     } catch (err: any) {
       console.error('Login Error:', err)
       setError(err.message || 'Failed to login. Please check your credentials.')
@@ -170,7 +171,7 @@ export default function Login() {
           branchId: appUser.branchId ?? null,
           jobTitle: appUser.jobTitle ?? null,
         })
-        navigate('/audit-report')
+        navigate(getLandingPath(appUser.role))
       } catch (err: any) {
         console.error('Google Auth Error:', err)
         setError(err.message || 'Google login failed. Please try again.')

@@ -25,6 +25,8 @@ import { NotificationProvider } from './contexts/NotificationContext'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
+const getPortalHomePath = (role?: string) => (role || '').toLowerCase() === 'admin' ? '/audit-report' : '/daily-report'
+
 // Helper component to handle the root path ("/") based on the domain
 function RootRouter() {
   const { user } = useAuth()
@@ -38,7 +40,7 @@ function RootRouter() {
   
   if (isPortalSubdomain) {
     if (user) {
-      return <Navigate to="/audit-report" replace />
+      return <Navigate to={getPortalHomePath(user.role)} replace />
     }
     return <Navigate to="/login" replace />
   }
@@ -50,7 +52,7 @@ function RootRouter() {
 function DashboardRedirect() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  return <Navigate to="/audit-report" replace />
+  return <Navigate to={getPortalHomePath(user.role)} replace />
 }
 
 export default function App() {

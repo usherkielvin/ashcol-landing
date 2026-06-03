@@ -97,7 +97,7 @@ export default function DashboardLayout() {
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
@@ -106,6 +106,7 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
+  const nonAdminWorkspaceLinks = ['Field Schedule', 'Service Report', 'Transactions', 'Performance']
   const isSalesUser = (role === 'oic') || ((role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
     (user?.name || '').toUpperCase().includes('SALES') ||
     (user?.branchId || '').endsWith('-sales') ||
@@ -114,13 +115,15 @@ export default function DashboardLayout() {
   ))
 
   const navLinks = isSalesUser
-    ? allLinks.filter(link => ['Performance', 'Field Schedule', 'Service Report', 'Transactions', 'Purchase Monitor'].includes(link.name))
-    : isAuthorizedRole
+    ? allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
+    : role === 'admin'
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Transactions' || link.name === 'Purchase Monitor')
+      : isAuthorizedRole
+        ? allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
+        : allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
@@ -131,7 +134,8 @@ export default function DashboardLayout() {
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
-      navigate(navLinks[0].path, { replace: true })
+      const fallback = role === 'admin' ? navLinks[0].path : '/daily-report'
+      navigate(fallback, { replace: true })
     }
   }, [location.pathname, navLinks, user, navigate])
 
