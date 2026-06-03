@@ -448,6 +448,7 @@ export default function ClientMasterlist() {
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
   const [editFinalDate, setEditFinalDate] = useState('')
+  const [editWarrantyRegistrationCompleted, setEditWarrantyRegistrationCompleted] = useState(false)
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
@@ -957,6 +958,9 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
+      if (editWarrantyRegistrationCompleted !== Boolean(selectedTicket.warrantyRegistrationCompleted)) {
+        payload.warrantyRegistrationCompleted = editWarrantyRegistrationCompleted
+      }
       
       const acDetailsObj = {
         landmarks: editLandmarks || '',
@@ -1101,6 +1105,7 @@ export default function ClientMasterlist() {
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
     setEditFinalDate(parsedDetails.finalDate || '')
+    setEditWarrantyRegistrationCompleted(Boolean(ticket.warrantyRegistrationCompleted))
 
     setIsActionDrawerOpen(true)
   }
