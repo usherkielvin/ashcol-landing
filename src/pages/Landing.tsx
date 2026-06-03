@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { getPortalUrl } from '../utils/portalUrl'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -231,7 +230,7 @@ const FAQS = [
   },
   {
     q: 'How do I book a service?',
-    a: 'You can book a service directly through this portal by creating an account and submitting a service ticket. Alternatively, you can reach us by phone at +63 (917) 7143810 or by email at headoffice@ashcol.com.ph.',
+    a: 'Use the Book a Service button on this page, then choose the best contact channel in the contact section.',
   },
   {
     q: 'What AC brands does ASHCOL service?',
@@ -526,11 +525,11 @@ export default function Landing() {
 
             {/* Login link */}
             <a
-              href={getPortalUrl('/login')}
+              href="#contact"
               className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
               style={{ backgroundColor: t.accent }}
             >
-              Login
+              Book a Service
             </a>
 
             {/* Mobile hamburger */}
@@ -559,11 +558,11 @@ export default function Landing() {
             ))}
             <div className="flex gap-2 mt-1">
               <a
-                href={getPortalUrl('/login')}
+                href="#contact"
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green"
                 style={{ backgroundColor: t.accent }}
               >
-                Login
+                Book a Service
               </a>
             </div>
           </div>
@@ -600,9 +599,9 @@ export default function Landing() {
           <p className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: t.textFaint }}>How it works</p>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { num: '1', label: 'Login',        sub: 'Open the service portal' },
-              { num: '2', label: 'Coordinate',   sub: 'Manage your requests' },
-              { num: '3', label: 'Track Updates', sub: 'Follow team progress' },
+              { num: '1', label: 'Call or Message', sub: 'Use the contacts below' },
+              { num: '2', label: 'Book a Service',  sub: 'Tell us your AC concern' },
+              { num: '3', label: 'We Come to You',  sub: 'Our team handles the rest' },
             ].map((step, i) => (
               <div key={i} className="flex flex-col items-center text-center rounded-xl px-2 py-3 sm:px-4 sm:py-4 gap-2" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.accentBg, border: `1px solid ${t.accent}40` }}>
@@ -620,12 +619,11 @@ export default function Landing() {
         {/* CTA — below steps */}
         <div className="relative w-full max-w-lg">
           <a
-            href={getPortalUrl('/login')}
+            href="#contact"
             className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
           >
-            Login to Portal
+            Book a Service
           </a>
-
         </div>
 
       </section>
@@ -789,7 +787,7 @@ export default function Landing() {
           {/* Right: Feature pills */}
           <div className="w-full lg:flex-1 grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-sm">
             {[
-              { icon: <Calendar className="w-4 h-4" />, title: 'Portal Access', desc: 'Open your workspace and view service activity' },
+              { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation support' },
               { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
               { icon: <Bell className="w-4 h-4" />, title: 'Get Notified', desc: 'Alerts when a technician is assigned or en route' },
             ].map((feat, i) => (
@@ -1243,25 +1241,18 @@ export default function Landing() {
         <div className="absolute inset-0 orb-green opacity-30 pointer-events-none" />
         <img src={logoImg} alt="ASHCOL" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
         <h2 className="relative text-[clamp(1.4rem,4vw,2.5rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
-          Ready to stay cool?<br />Access your portal.
+          Ready to stay cool?<br />Book a service today.
         </h2>
         <p className="relative max-w-md text-[14px] md:text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
           Residential or commercial — our team is ready to help, 7 days a week.
         </p>
         <div className="relative w-full max-w-lg mx-auto">
-          <div className="flex flex-row justify-center gap-2 sm:gap-3 w-full">
+          <div className="flex justify-center w-full">
             <a
-              href={getPortalUrl('/login')}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[180px]"
+              href="#contact"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[220px]"
             >
-              Login to Portal
-            </a>
-            <a
-              href="mailto:headoffice@ashcol.com.ph"
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-7 py-3.5 text-[14px] font-semibold rounded-xl transition-all sm:min-w-[180px]"
-              style={{ color: t.accent, backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-            >
-              <Mail className="w-4 h-4" /> <span className="hidden sm:inline">Send an Email</span><span className="sm:hidden">Email</span>
+              Book a Service
             </a>
           </div>
         </div>
@@ -1301,7 +1292,7 @@ export default function Landing() {
           {/* Quick Links + App */}
           <div className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Login</a>
+            <a href="#contact" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Book a Service</a>
           </div>
         </div>
 
