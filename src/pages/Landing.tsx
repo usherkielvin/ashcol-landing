@@ -511,13 +511,13 @@ export default function Landing() {
           </div>
 
           {/* Right side actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 sm:gap-4">
 
             {/* Theme toggle */}
             <button
               onClick={() => setIsDark(!isDark)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
-              style={{ backgroundColor: t.accentBg, color: t.accent }}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all border"
+              style={{ backgroundColor: t.accentBg, color: t.accent, borderColor: isDark ? 'rgba(16,185,129,0.16)' : 'rgba(16,185,129,0.24)' }}
               aria-label="Toggle theme"
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -527,7 +527,7 @@ export default function Landing() {
             {/* Login link */}
             <a
               href={getPortalUrl('/login')}
-              className="hidden sm:flex items-center justify-center px-4 py-2 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
+              className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
               style={{ backgroundColor: t.accent }}
             >
               Login
