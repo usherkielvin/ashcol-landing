@@ -6,8 +6,7 @@ import {
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, Receipt,
-  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
-  BarChart2
+  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole } from '../utils/api'
@@ -91,7 +90,7 @@ export default function DashboardLayout() {
 
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
-    { name: 'Analytics',       path: '/analytics',       icon: BarChart2,       roles: ['admin', 'manager'] },
+
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
