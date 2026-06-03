@@ -28,6 +28,15 @@ const uid = () => Math.random().toString(36).slice(2)
 const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 const num = (s: string) => parseFloat(s) || 0
 const sumArr = (arr: string[]) => arr.reduce((a, b) => a + num(b), 0)
+const formatReviewTime = (date: Date) =>
+  date.toLocaleString('en-PH', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })
 
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
@@ -144,6 +153,7 @@ export default function DailySalesForm() {
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [reviewMode, setReviewMode] = useState(false)
+  const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
   const isFormDisabled = !canSubmit || reviewMode
 
   const [scanning, setScanning]     = useState(false)
@@ -195,6 +205,13 @@ export default function DailySalesForm() {
     }
     loadBranchesList()
   }, [canSubmit, selectedBranchId, selectedAuditLine])
+
+  useEffect(() => {
+    if (!reviewMode) return
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }, [reviewMode])
 
   // I. Cash Transactions
   const [cashTx, setCashTx]     = useState<CashTxRow[]>([mkCash()])
@@ -825,8 +842,8 @@ export default function DailySalesForm() {
   const handleDtrSubmit = async () => {
     if (!canSubmit) return
     if (!reviewMode) {
+      setReviewStartedAt(new Date())
       setReviewMode(true)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
     setSubmitting(true); setError(null)
@@ -886,6 +903,7 @@ export default function DailySalesForm() {
       if (!res.ok) throw new Error(await res.text())
       setSuccess(true)
       setReviewMode(false)
+      setReviewStartedAt(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Submission failed. Please try again.')
     } finally { setSubmitting(false) }
@@ -1687,6 +1705,9 @@ export default function DailySalesForm() {
                   </tr>
                 </tbody>
               </table>
+              <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Review note: {branchName || 'No branch selected'} - {reportDate || 'No date selected'} - {formatReviewTime(reviewStartedAt || new Date())}
+              </div>
             </div>
           </div>
 
@@ -1707,7 +1728,10 @@ export default function DailySalesForm() {
           <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
             <button
               type="button"
-              onClick={() => setReviewMode(false)}
+              onClick={() => {
+                setReviewMode(false)
+                setReviewStartedAt(null)
+              }}
               disabled={submitting}
               className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
               style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
