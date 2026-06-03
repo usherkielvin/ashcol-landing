@@ -207,7 +207,7 @@ export default function Dashboard() {
           fetch(`${apiUrl}${ticketEp}?size=50`, { headers })
         ]
 
-        if (role === 'manager') {
+        if (isAdminOrManager) {
            promises.push(fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }))
         }
 
@@ -222,7 +222,7 @@ export default function Dashboard() {
           const t = await tRes.json()
           setTickets(t?.data?.tickets || t?.tickets || [])
         }
-        if (role === 'manager' && res[2]?.ok) {
+        if (isAdminOrManager && res[2]?.ok) {
            const techData = await res[2].json()
            setTechnicians(techData?.data || [])
         }
@@ -950,7 +950,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Technician Workload & Quick Assign ── */}
-      {role === 'manager' && (
+      {isAdminOrManager && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
              <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
@@ -1037,7 +1037,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Fleet Map for Managers ── */}
-      {role === 'manager' && (
+      {isAdminOrManager && (
         <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, height: '400px' }}>
           <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
             <h3 className="font-black text-base" style={{ color: textPrimary }}>Fleet Map</h3>

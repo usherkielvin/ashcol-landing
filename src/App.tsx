@@ -20,6 +20,8 @@ import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
 import DTRScanner from './pages/DTRScanner'
 import ClientMasterlist from './pages/ClientMasterlist'
+import Analytics from './pages/Analytics'
+import Inventory from './pages/Inventory'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -85,6 +87,8 @@ export default function App() {
               <Route path="/lineup" element={<LineUp />} />
               <Route path="/service-report" element={<DailyServiceReport />} />
               <Route path="/dtr-scanner" element={<DTRScanner />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/inventory" element={<Inventory />} />
             </Route>
           </Routes>
         </BrowserRouter>

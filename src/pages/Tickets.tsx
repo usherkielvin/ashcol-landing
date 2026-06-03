@@ -194,7 +194,7 @@ export default function Tickets() {
   const isEmployee = user?.role?.toLowerCase() === 'employee'
 
   useEffect(() => {
-    if (!isManager || !user) {
+    if ((!isManager && !isAdmin) || !user) {
       setBranchTechs([])
       return
     }
@@ -215,7 +215,7 @@ export default function Tickets() {
       }
     }
     loadTechs()
-  }, [user, isManager])
+  }, [user, isManager, isAdmin])
 
   // ── Color tokens ─────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -1204,7 +1204,7 @@ export default function Tickets() {
                   )}
 
                   {/* Assign technician (branch manager) */}
-                  {isManager && branchTechs.length > 0 && (
+                  {(isManager || isAdmin) && branchTechs.length > 0 && (
                     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
                       <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
                         Assign technician

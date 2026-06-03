@@ -6,7 +6,8 @@ import {
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, Receipt, Scan,
-  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
+  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
+  BarChart2, Boxes
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole } from '../utils/api'
@@ -90,10 +91,12 @@ export default function DashboardLayout() {
 
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
+    { name: 'Analytics',       path: '/analytics',       icon: BarChart2,       roles: ['admin', 'manager'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Inventory',       path: '/inventory',        icon: Boxes,           roles: ['admin', 'manager'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
     { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },

@@ -327,14 +327,14 @@ export default function ClientMasterlist() {
     // 3. Legacy hardcoded ID mapping
     const idLower = branchIdOrName.toLowerCase()
     let keyword = ''
-    if (idLower === '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'calauan'
-    else if (idLower === '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'silang'
-    else if (idLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'taguig'
-    else if (idLower === '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'rizal'
-    else if (idLower === '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'pampanga'
-    else if (idLower === '2880c407-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'bulacan'
-    else if (idLower === '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'dasma'
-    else if (idLower === '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b') keyword = 'candelaria'
+    if (idLower === '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-calauan') keyword = 'calauan'
+    else if (idLower === '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-silang') keyword = 'silang'
+    else if (idLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-taguig-sales' || idLower === 'br-taguig-services' || idLower === 'br-taguig') keyword = 'taguig'
+    else if (idLower === '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-rizal') keyword = 'rizal'
+    else if (idLower === '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-pampanga') keyword = 'pampanga'
+    else if (idLower === '2880c407-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-bulacan') keyword = 'bulacan'
+    else if (idLower === '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-dasma') keyword = 'dasma'
+    else if (idLower === '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-candelaria') keyword = 'candelaria'
 
     if (keyword) {
       found = branches.find(b => b.name.toLowerCase().includes(keyword))

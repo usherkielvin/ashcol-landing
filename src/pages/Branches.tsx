@@ -330,13 +330,13 @@ export default function Branches() {
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
         const isTaguig = cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG' || cleanName.includes('TAGUIG')
-        const isTaguigSales = isTaguig && (apiIdUpper === 'BR-TAGUIG-SALES' || cleanName.includes('SALES'))
-        const isTaguigServices = isTaguig && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
-        if (isTaguigSales) {
+        const isTaguigSalesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT' || (cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'))
+        const isTaguigServicesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
+        if (isTaguigSalesExplicit) {
           merged.push(processBranch(api, undefined, 'TAGUIG SALES'))
-        } else if (isTaguigServices) {
+        } else if (isTaguigServicesExplicit) {
           merged.push(processBranch(api, undefined, 'TAGUIG SERVICES'))
-        } else if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
+        } else if (isTaguig) {
           merged.push(processBranch(api, 'sales', 'TAGUIG SALES'))
           merged.push(processBranch(api, 'services', 'TAGUIG SERVICES'))
         } else {
@@ -423,7 +423,7 @@ export default function Branches() {
       const branchIdLower = user.branchId.toLowerCase()
       const isService = branchIdLower.includes('service') || emailLower.includes('service') || titleLower.includes('service')
       const wanted = isService ? 'services' : 'sales'
-      const targetId = `2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-${isService ? 'services' : 'sales'}`
+      const targetId = `${user.branchId.replace(/-sales$|-services$/, '')}-${wanted}`
       return branches.find(b => b.id === targetId)
         || branches.find(b => {
           const id = (b.id || '').toLowerCase()
