@@ -156,7 +156,7 @@ export default function DashboardLayout() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden font-['Inter',sans-serif]"
+      className={`flex h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
       style={{ backgroundColor: bg, color: textPrimary }}
     >
       {/* ── Mobile Backdrop ─────────────────────────────── */}

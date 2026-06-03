@@ -2113,7 +2113,7 @@ export default function LineUp() {
 
       {showcaseOpen && (
         <div
-          className="fixed inset-0 z-[10000] overflow-auto"
+          className="lineup-showcase-overlay fixed inset-y-0 right-0 z-[10000] overflow-auto"
           style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
         >
           <div className="min-h-screen flex flex-col">
@@ -2148,7 +2148,7 @@ export default function LineUp() {
                 className="lineup-showcase-sheet mx-auto"
                 style={{
                   maxWidth: '1720px',
-                  width: '96vw',
+                  width: '100%',
                   backgroundColor: isLight ? '#ffffff' : '#07111f',
                   border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
                   boxShadow: isLight ? '0 24px 80px rgba(15,23,42,0.14)' : '0 24px 80px rgba(0,0,0,0.5)',
@@ -2457,6 +2457,24 @@ export default function LineUp() {
         }
         .no-scrollbar::-webkit-scrollbar { display: none !important; }
         .no-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+
+        .lineup-showcase-overlay {
+          left: 0;
+          transition: left 0.3s ease-in-out;
+        }
+        @media (min-width: 768px) {
+          .sidebar-expanded .lineup-showcase-overlay {
+            left: 240px;
+          }
+          .sidebar-collapsed .lineup-showcase-overlay {
+            left: 64px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .sidebar-expanded .lineup-showcase-overlay {
+            left: 260px;
+          }
+        }
       `}</style>
     </div>
   )
