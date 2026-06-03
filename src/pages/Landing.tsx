@@ -523,7 +523,16 @@ export default function Landing() {
             </button>
 
 
-            {/* Login link */}
+            {/* Login Link */}
+            <a
+              href="/login"
+              className="hidden sm:flex items-center justify-center px-4 py-2.5 text-sm font-bold rounded-lg border transition-all hover:bg-slate-100/10"
+              style={{ borderColor: t.border, color: t.text }}
+            >
+              Login
+            </a>
+
+            {/* Book a Service Link */}
             <a
               href="#contact"
               className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
@@ -557,6 +566,13 @@ export default function Landing() {
               </button>
             ))}
             <div className="flex gap-2 mt-1">
+              <a
+                href="/login"
+                className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold rounded-lg border transition-all"
+                style={{ borderColor: t.border, color: t.text }}
+              >
+                Login
+              </a>
               <a
                 href="#contact"
                 className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green"
