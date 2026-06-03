@@ -2211,8 +2211,30 @@ export default function ClientMasterlist() {
                       </div>
                     )}
 
-                    <div>
-                      <label className="text-[10px] font-bold uppercase block mb-1.5" style={{ color: textMuted }}>Category</label>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket Category</label>
+                        <select
+                          value={addCategory}
+                          onChange={e => {
+                            const option = categoryOptions.find(item => item.value === e.target.value)
+                            if (!option) return
+                            setAddForm(prev => ({
+                              ...prev,
+                              serviceType: option.value,
+                              title: option.title,
+                              status: option.value === 'Collection' ? 'PENDING' : prev.status,
+                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType
+                            }))
+                          }}
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        >
+                          {categoryOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="grid grid-cols-2 gap-1.5">
                         {categoryOptions.map(option => (
                           <button
