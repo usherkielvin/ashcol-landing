@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, MoreVertical, Camera, Copy, Save, Check, Maximize2, Sun, Moon,
+  ChevronDown, Camera, Copy, Save, Check, Maximize2, Sun, Moon,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -148,17 +148,9 @@ function lsNextId() { return `local-${Date.now()}-${Math.random().toString(36).s
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LineUp() {
-  const { theme } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
-
-  const cardBg      = isLight ? '#ffffff'  : '#0A1120'
-  const pageBg      = isLight ? '#f1f5f9'  : '#060B18'
-  const border      = isLight ? '#e2e8f0'  : '#1E2D48'
-  const textPrimary = isLight ? '#0f172a'  : '#E2E8F0'
-  const textMuted   = isLight ? '#64748b'  : '#7A95B8'
-  const inputBg     = isLight ? '#f8fafc'  : '#0F1A2E'
-  const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const role      = (user?.role || '').toLowerCase()
   const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
@@ -166,11 +158,22 @@ export default function LineUp() {
   const [date, setDate]         = useState(tomorrowStr)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [branchId, setBranchId] = useState('')
+
+  const branchName = branches.find(b => b.id === branchId)?.name ?? ''
+  const currentThemeKey = getBranchThemeKey(branchName)
+  const currentTheme = branchThemes[currentThemeKey] || branchThemes["TAGUIG SALES"]
+
+  const cardBg      = isLight ? '#FFFFFF'  : '#1E293B'
+  const pageBg      = isLight ? '#F8FAFC'  : '#0F172A'
+  const border      = isLight ? '#E2E8F0'  : '#334155'
+  const textPrimary = isLight ? '#0F172A'  : '#F8FAFC'
+  const textMuted   = isLight ? '#64748B'  : '#CBD5E1'
+  const inputBg     = isLight ? '#F8FAFC'  : '#0F172A'
+  const inputBorder = isLight ? '#E2E8F0'  : '#334155'
+
   const [rows, setRows]         = useState<LineUpRow[]>([])
   const [loading, setLoading]   = useState(false)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const moreMenuRef    = useRef<HTMLDivElement>(null)
   const fileInputRef   = useRef<HTMLInputElement>(null)
   const scanFileRef    = useRef<HTMLInputElement>(null)
   const printAreaRef   = useRef<HTMLDivElement>(null)
@@ -215,7 +218,6 @@ export default function LineUp() {
   const mobileDateInputRef   = useRef<HTMLInputElement>(null)
   const desktopDateInputRef  = useRef<HTMLInputElement>(null)
 
-  const branchName = branches.find(b => b.id === branchId)?.name ?? ''
 
   const [suggestions, setSuggestions] = useState<{
     services: string[]
@@ -1395,7 +1397,7 @@ export default function LineUp() {
     if (/DISMANTLE/i.test(txt)) return { label: 'DISMANTLE', color: '#F43F5E', bg: 'rgba(244,63,94,0.1)' }
     if (/SURVEY/i.test(txt)) return { label: 'SURVEY', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' }
     const m = txt.match(/\((\d+)\s*UNIT/i)
-    if (m) return { label: `${m[1]} UNIT${parseInt(m[1]) > 1 ? 'S' : ''}`, color: '#10B981', bg: 'rgba(16,185,129,0.1)' }
+    if (m) return { label: `${m[1]} UNIT${parseInt(m[1]) > 1 ? 'S' : ''}`, color: currentTheme.accent, bg: isLight ? currentTheme.accentLight : `${currentTheme.accent}20` }
     return null
   }
 
@@ -1413,7 +1415,21 @@ export default function LineUp() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ backgroundColor: pageBg, minHeight: '100%' }}>
+    <div
+      style={{
+        backgroundColor: pageBg,
+        minHeight: '100%',
+        '--branch-accent': currentTheme.accent,
+        '--branch-accent-dark': currentTheme.accentDark,
+        '--branch-accent-light': currentTheme.accentLight,
+        '--page-bg': pageBg,
+        '--card-bg': cardBg,
+        '--text-main': textPrimary,
+        '--text-muted': textMuted,
+        '--border-color': border,
+        '--date-bar-bg': '#020617',
+      } as React.CSSProperties}
+    >
 
       {/* ── Toast — portalled to body so it always clears the sticky header ── */}
       {createPortal(
@@ -1483,264 +1499,415 @@ export default function LineUp() {
       {/* ═══════════════════════════════════════════════════════
           MOBILE VIEW  — cards + 3-dot menu  (hidden on md+)
           ═══════════════════════════════════════════════════════ */}
-      <div className="md:hidden flex flex-col gap-4 pb-28">
 
-        {/* Mobile Header */}
-        <div className="rounded-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="px-4 pt-4 pb-3">
-            <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
-              <Truck className="w-4 h-4" style={{ color: '#10B981' }} />
-              Field Schedule
-            </h2>
-            <p className="text-xs mt-0.5" style={{ color: textMuted }}>{englishLabel(date)}</p>
+   <div className="md:hidden flex flex-col gap-4 pb-28">
+     {/* Dynamic Branch Chips selector for Mobile */}
+     <div className="no-print flex flex-col gap-2 px-1">
+       <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
+       <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1">
+         {branches.map(b => {
+           const isSelected = b.id === branchId
+           const bThemeKey = getBranchThemeKey(b.name)
+           const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
+           return (
+             <button
+               key={b.id}
+               type="button"
+               onClick={() => setBranchId(b.id)}
+               className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap"
+               style={{
+                 backgroundColor: isSelected ? bTheme.accent : cardBg,
+                 color: isSelected ? '#FFFFFF' : textMuted,
+                 border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
+               }}
+             >
+               {b.name}
+             </button>
+           )
+         })}
+       </div>
+     </div>
 
-            <div className="lineup-toolbar mt-3">
-              <div className="lineup-date-control">
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs w-full"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                  <ClipboardList className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                  <input ref={mobileDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                    className="bg-transparent outline-none text-xs w-full" style={{ color: textPrimary }} />
-                </div>
-              </div>
+     {/* Mobile Header */}
+     <div className="rounded-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+       <div className="px-4 pt-4 pb-3">
+         <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
+           <Truck className="w-4 h-4" style={{ color: currentTheme.accent }} />
+           Field Schedule
+         </h2>
+         <p className="text-xs mt-0.5" style={{ color: textMuted }}>{englishLabel(date)}</p>
 
-              <div className="lineup-actions">
-                {canEdit && (
-                  <button type="button" onClick={handleAddRow} title="Add row"
-                    className="w-8 h-8 flex items-center justify-center rounded-lg"
-                    style={{ border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                    <Plus className="w-4 h-4" />
-                  </button>
-                )}
-                <button type="button" onClick={() => setShowcaseOpen(true)} title="Showcase view"
-                  className="w-8 h-8 flex items-center justify-center rounded-lg"
-                  style={{ border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-                <div className="relative" ref={moreMenuRef}>
-                  <button type="button" onClick={() => setMoreMenuOpen(o => !o)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg"
-                    style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                  {moreMenuOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-                      <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
-                        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                        <div className="py-1">
-                          {canEdit && (
-                            <>
-                              <DropdownItem icon={<ClipboardList className="w-3.5 h-3.5" />} label="Load template" color={textMuted}
-                                onClick={() => { handleLoadDefaultTemplate(); setMoreMenuOpen(false) }} />
-                              {rows.length > 0 && (
-                                <DropdownItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Clear" color={textMuted}
-                                  onClick={() => { handleClearAllRows(); setMoreMenuOpen(false) }} />
-                              )}
-                              <DropdownItem icon={<ClipboardPaste className="w-3.5 h-3.5" />} label="Paste image" color={textMuted} disabled={scanning}
-                                onClick={() => { handlePasteScan(); setMoreMenuOpen(false) }} />
-                              <DropdownItem icon={<Upload className="w-3.5 h-3.5" />} label="Import" color={textMuted}
-                                onClick={() => { fileInputRef.current?.click(); setMoreMenuOpen(false) }} />
-                            </>
-                          )}
-                          <DropdownItem icon={<Download className="w-3.5 h-3.5" />} label="Export" color={textMuted}
-                            onClick={() => { handleExportExcel(); setMoreMenuOpen(false) }} />
-                          <DropdownItem icon={<Maximize2 className="w-3.5 h-3.5" />} label="Showcase" color={textMuted}
-                            onClick={() => { setShowcaseOpen(true); setMoreMenuOpen(false) }} />
-                          <DropdownItem icon={<Printer className="w-3.5 h-3.5" />} label="Print" color={textMuted}
-                            onClick={() => { window.print(); setMoreMenuOpen(false) }} />
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+         <div className="lineup-toolbar mt-3 flex flex-col gap-2">
+           <div className="flex items-center gap-2 w-full justify-between">
+             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1"
+               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+               <ClipboardList className="w-3.5 h-3.5 shrink-0" style={{ color: currentTheme.accent }} />
+               <input ref={mobileDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                 className="bg-transparent outline-none text-xs w-full font-bold" style={{ color: textPrimary }} />
+             </div>
+             
+             <button
+               type="button"
+               onClick={() => setShowcaseOpen(!showcaseOpen)}
+               className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 shrink-0"
+               style={{
+                 backgroundColor: showcaseOpen ? currentTheme.accent : 'transparent',
+                 borderColor: showcaseOpen ? currentTheme.accentDark : border,
+                 color: showcaseOpen ? '#FFFFFF' : textPrimary,
+               }}
+             >
+               <Maximize2 className="w-3.5 h-3.5" />
+               {showcaseOpen ? 'Edit Mode' : 'Showcase'}
+             </button>
+           </div>
 
-              <div className="lineup-branch-control">
-                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs w-full"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                  <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                  {role === 'admin' ? (
-                    <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                      className="bg-transparent outline-none text-xs w-full cursor-pointer" style={{ color: textPrimary }}>
-                      {branches.length === 0 && <option value="">Loading…</option>}
-                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
-                  ) : (
-                    <span className="text-xs truncate" style={{ color: textPrimary }}>{branchName || 'Loading…'}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+           {/* Mode Toggles */}
+           <div className="flex items-center gap-0.5 p-1 rounded-xl w-full justify-between mt-1" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+             <button
+               type="button"
+               onClick={() => { if (!isLight) toggleTheme() }}
+               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+               style={{
+                 backgroundColor: isLight ? cardBg : 'transparent',
+                 color: isLight ? currentTheme.accent : textMuted,
+                 boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+               }}
+             >
+               <Sun className="w-3.5 h-3.5" /> Light
+             </button>
+             <button
+               type="button"
+               onClick={() => { if (isLight) toggleTheme() }}
+               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+               style={{
+                 backgroundColor: !isLight ? cardBg : 'transparent',
+                 color: !isLight ? currentTheme.accent : textMuted,
+                 boxShadow: !isLight ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
+               }}
+             >
+               <Moon className="w-3.5 h-3.5" /> Dark
+             </button>
+           </div>
+         </div>
+       </div>
+     </div>
 
-          {/* Scan alerts */}
-          {scanError && (
-            <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-xl flex items-center justify-between gap-2"
-              style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-              <span className="text-xs font-semibold text-red-400">{scanError}</span>
-              <button onClick={() => setScanError('')}><X className="w-3.5 h-3.5 text-red-400" /></button>
-            </div>
-          )}
-          {scanPreview && (
-            <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-xl flex items-center gap-3"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <img src={scanPreview} alt="Scanned" className="h-10 w-16 object-cover rounded-lg" />
-              <span className="text-xs font-semibold flex-1" style={{ color: textMuted }}>Scanned preview</span>
-              <button onClick={() => setScanPreview(null)}><X className="w-3.5 h-3.5" style={{ color: textMuted }} /></button>
-            </div>
-          )}
-        </div>
+     {/* Mobile View Routing */}
+     {showcaseOpen ? (
+       <div ref={captureAreaRef}
+         className="lineup-showcase-sheet mx-auto shadow-xl rounded-xl overflow-hidden"
+         style={{
+           width: '100%',
+           backgroundColor: cardBg,
+           border: `1px solid ${border}`,
+         }}
+       >
+         <div style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`, padding: '12px 16px', textAlign: 'center' }}>
+           <div style={{ color: '#fff', fontWeight: 900, fontSize: '15px', textTransform: 'uppercase' }}>
+             TEAM {branchName ? branchName.toUpperCase() : 'FIELD'} LINE UP
+           </div>
+         </div>
+         <div style={{ backgroundColor: '#020617', padding: '6px 12px', textAlign: 'center' }}>
+           <div style={{ color: '#fff', fontWeight: 800, fontSize: '11px', textTransform: 'uppercase' }}>{englishLabel(date)}</div>
+         </div>
 
-        {/* Mobile content */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin" style={{ color: textMuted }} />
-              <p className="text-sm" style={{ color: textMuted }}>Loading…</p>
-            </div>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-xl flex flex-col items-center justify-center py-16 gap-3"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <Truck className="w-8 h-8" style={{ color: textMuted, opacity: 0.4 }} />
-            <div className="text-center">
-              <p className="text-sm font-medium" style={{ color: textPrimary }}>No schedule yet</p>
-              <p className="text-xs mt-1" style={{ color: textMuted }}>{branchName ? `${branchName} · ` : ''}{englishLabel(date)}</p>
-            </div>
-            {canEdit && (
-              <button type="button" onClick={handleAddRow}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-                style={{ backgroundColor: '#10B981' }}>
-                <Plus className="w-4 h-4" /> Add entry
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {rows.map((row, idx) => {
-              const badge = getRemarkBadge(row)
-              const isExpanded = expandedCard === row.id
-              const accentColor = badge?.color ?? '#10B981'
-              return (
-                <div key={row.id} className="lineup-mobile-card relative rounded-xl"
-                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                  <div className="mobile-card-accent" style={{ backgroundColor: accentColor }} />
+         <div className="overflow-x-auto">
+           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+             <thead>
+               <tr>
+                 {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => {
+                   const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
+                   const showcaseHeaderColor = isLight ? currentTheme.accentDark : currentTheme.accent
+                   return (
+                     <th
+                       key={label}
+                       style={{
+                         padding: '10px 8px',
+                         backgroundColor: showcaseHeaderBg,
+                         border: `1px solid ${border}`,
+                         color: showcaseHeaderColor,
+                         fontSize: '11px',
+                         fontWeight: 850,
+                         textAlign: 'center',
+                         whiteSpace: 'nowrap',
+                       }}
+                     >
+                       {label}
+                     </th>
+                   )
+                 })}
+               </tr>
+             </thead>
+             <tbody>
+               {rows.length === 0 ? (
+                 <tr>
+                   <td colSpan={7} style={{ padding: '48px 16px', textAlign: 'center', color: textMuted, fontSize: '12px' }}>
+                     No schedule entries
+                   </td>
+                 </tr>
+               ) : rows.map((row, idx) => (
+                 <tr key={row.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#1E293B') : (isLight ? '#f8fafc' : '#162031') }}>
+                   {[
+                     row.service || '-',
+                     row.driverName || '-',
+                     row.driverTime || '-',
+                     row.installerName || '-',
+                     row.installerTime || '-',
+                     row.route || '-',
+                     row.remarks || '-',
+                   ].map((value, cellIdx) => (
+                     <td
+                       key={cellIdx}
+                       style={{
+                         padding: '10px 8px',
+                         border: `1px solid ${border}`,
+                         color: textPrimary,
+                         fontSize: '11px',
+                         fontWeight: cellIdx === 0 ? 800 : 600,
+                         textAlign: cellIdx >= 5 ? 'left' : 'center',
+                         whiteSpace: 'nowrap',
+                       }}
+                     >
+                       {value}
+                     </td>
+                   ))}
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+         </div>
 
-                  <button type="button" className="w-full flex items-start gap-3 px-4 py-3 pl-5 text-left"
-                    onClick={() => setExpandedCard(isExpanded ? null : row.id)}>
-                    <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>{row.service || '—'}</span>
-                        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-                      </div>
-                      <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>
-                        {row.route || 'No route'}
-                      </p>
-                      {badge && (
-                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                          style={{ color: badge.color, backgroundColor: badge.bg }}>
-                          {badge.label}
-                        </span>
-                      )}
-                      {(row.driverName || row.installerName) && (
-                        <p className="text-xs mt-1 truncate" style={{ color: textMuted }}>
-                          {row.driverName && <span style={{ color: '#3B82F6' }}>{row.driverName} {row.driverTime}</span>}
-                          {row.driverName && row.installerName && ' · '}
-                          {row.installerName && <span style={{ color: '#10B981' }}>{row.installerName} {row.installerTime}</span>}
-                        </p>
-                      )}
-                    </div>
-                  </button>
+         {(lineupNotes || rows.length > 0) && (
+           <div
+             className="flex flex-col gap-4 p-4"
+             style={{
+               borderTop: `1px solid ${border}`,
+               backgroundColor: isLight ? '#f8fafc' : '#0F172A',
+             }}
+           >
+             <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', whiteSpace: 'pre-line' }}>
+               {lineupNotes}
+             </div>
+             <div className="grid grid-cols-2 gap-2">
+               {[
+                 ['INSTALLATION', totalUnits, currentTheme.accent],
+                 ['SURVEY', totalSurvey, '#D97706'],
+                 ['BACK JOB', totalBackJob, '#EF4444'],
+                 ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+               ].map(([label, value, color]) => (
+                 <div
+                   key={label as string}
+                   style={{
+                     border: `1px solid ${border}`,
+                     backgroundColor: cardBg,
+                     padding: '10px',
+                     borderRadius: '6px',
+                   }}
+                 >
+                   <div style={{ color: String(color), fontSize: '10px', fontWeight: 900, textTransform: 'uppercase' }}>{label}</div>
+                   <div style={{ color: String(color), fontSize: '18px', fontWeight: 900, lineHeight: 1 }}>{value}</div>
+                 </div>
+               ))}
+             </div>
+           </div>
+         )}
+       </div>
+     ) : (
+       <>
+         {scanError && (
+           <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-xl flex items-center justify-between gap-2"
+             style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+             <span className="text-xs font-semibold text-red-400">{scanError}</span>
+             <button onClick={() => setScanError('')}><X className="w-3.5 h-3.5 text-red-400" /></button>
+           </div>
+         )}
+         {scanPreview && (
+           <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-xl flex items-center gap-3"
+             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+             <img src={scanPreview} alt="Scanned" className="h-10 w-16 object-cover rounded-lg" />
+             <span className="text-xs font-semibold flex-1" style={{ color: textMuted }}>Scanned preview</span>
+             <button onClick={() => setScanPreview(null)}><X className="w-3.5 h-3.5" style={{ color: textMuted }} /></button>
+           </div>
+         )}
 
-                  {isExpanded && (
-                    <div style={{ borderTop: `1px solid ${border}` }}>
-                      <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: border }}>
-                        {renderMobileCell(row, 'service', 'Service', <Truck className="w-3 h-3" />, finalVehicleOptions, true)}
-                        {renderMobileCell(row, 'driverName', 'Driver', <User className="w-3 h-3" />, finalDriverOptions)}
-                        {renderMobileCell(row, 'driverTime', 'Driver in', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
-                        {renderMobileCell(row, 'installerName', 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
-                        {renderMobileCell(row, 'installerTime', 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
-                        {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
-                        {renderMobileCell(row, 'remarks', 'Remarks', <MessageSquare className="w-3 h-3" />, finalRemarksOptions, true)}
-                      </div>
-                      {canEdit && (
-                        <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
-                          <button type="button" onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }}
-                            className="flex-1 py-2 rounded-lg text-xs font-semibold text-white"
-                            style={{ backgroundColor: '#3B82F6' }}>
-                            Edit
-                          </button>
-                          <button type="button" onClick={() => handleDelete(row)}
-                            className="px-3 py-2 rounded-lg text-xs font-medium"
-                            style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.35)' }}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+         {loading ? (
+           <div className="flex items-center justify-center py-20">
+             <div className="flex flex-col items-center gap-3">
+               <Loader2 className="w-6 h-6 animate-spin" style={{ color: textMuted }} />
+               <p className="text-sm" style={{ color: textMuted }}>Loading…</p>
+             </div>
+           </div>
+         ) : rows.length === 0 ? (
+           <div className="rounded-xl flex flex-col items-center justify-center py-16 gap-3"
+             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+             <Truck className="w-8 h-8" style={{ color: currentTheme.accent, opacity: 0.4 }} />
+             <div className="text-center">
+               <p className="text-sm font-medium" style={{ color: textPrimary }}>No schedule yet</p>
+               <p className="text-xs mt-1" style={{ color: textMuted }}>{branchName ? `${branchName} · ` : ''}{englishLabel(date)}</p>
+             </div>
+             {canEdit && (
+               <button type="button" onClick={handleAddRow}
+                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white shadow"
+                 style={{ backgroundColor: currentTheme.accent }}>
+                 <Plus className="w-4 h-4" /> Add entry
+               </button>
+             )}
+           </div>
+         ) : (
+           <div className="flex flex-col gap-2">
+             {rows.map((row, idx) => {
+               const badge = getRemarkBadge(row)
+               const isExpanded = expandedCard === row.id
+               const accentColor = badge?.color ?? currentTheme.accent
+               return (
+                 <div key={row.id} className="lineup-mobile-card relative rounded-xl"
+                   style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                   <div className="mobile-card-accent" style={{ backgroundColor: accentColor }} />
 
-        {/* Mobile Notes Card */}
-        {rows.length > 0 && (
-          <div className="rounded-xl p-4 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <span className="text-[11px] font-medium" style={{ color: textMuted }}>Notes</span>
-            {canEdit ? (
-              <textarea
-                value={lineupNotes}
-                onChange={e => handleUpdateNotes(e.target.value)}
-                onBlur={handleSaveNotes}
-                placeholder="Team notes (e.g. day off, reminders)…"
-                className="w-full text-xs outline-none resize-none min-h-[72px] no-scrollbar rounded-lg px-3 py-2"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              />
-            ) : (
-              <div className="text-xs whitespace-pre-line" style={{ color: textPrimary }}>
-                {lineupNotes || '—'}
-              </div>
-            )}
-          </div>
-        )}
+                   <button type="button" className="w-full flex items-start gap-3 px-4 py-3 pl-5 text-left"
+                     onClick={() => setExpandedCard(isExpanded ? null : row.id)}>
+                     <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
+                     <div className="flex-1 min-w-0">
+                       <div className="flex items-center justify-between gap-2">
+                         <span className="text-sm font-semibold" style={{ color: textPrimary }}>{row.service || '—'}</span>
+                         <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                       </div>
+                       <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>
+                         {row.route || 'No route'}
+                       </p>
+                       {badge && (
+                         <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                           style={{ color: badge.color, backgroundColor: badge.bg }}>
+                           {badge.label}
+                         </span>
+                       )}
+                       {(row.driverName || row.installerName) && (
+                         <p className="text-xs mt-1 truncate" style={{ color: textMuted }}>
+                           {row.driverName && <span style={{ color: '#3B82F6' }}>{row.driverName} {row.driverTime}</span>}
+                           {row.driverName && row.installerName && ' · '}
+                           {row.installerName && <span style={{ color: currentTheme.accent }}>{row.installerName} {row.installerTime}</span>}
+                         </p>
+                       )}
+                     </div>
+                   </button>
 
-        {canEdit && (
-          <div className="lineup-sticky-save no-print flex items-center gap-2">
-            {rows.length > 0 && (
-              <button type="button" onClick={handleSaveAll}
-                className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white"
-                style={{ backgroundColor: '#10B981' }}>
-                Save
-              </button>
-            )}
-            <button type="button" onClick={handleAddRow} title="Add row"
-              className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg text-white"
-              style={{ backgroundColor: '#3B82F6' }}>
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
+                   {isExpanded && (
+                     <div style={{ borderTop: `1px solid ${border}` }}>
+                       <div className="grid grid-cols-2 gap-px" style={{ backgroundColor: border }}>
+                         {renderMobileCell(row, 'service', 'Service', <Truck className="w-3 h-3" />, finalVehicleOptions, true)}
+                         {renderMobileCell(row, 'driverName', 'Driver', <User className="w-3 h-3" />, finalDriverOptions)}
+                         {renderMobileCell(row, 'driverTime', 'Driver in', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
+                         {renderMobileCell(row, 'installerName', 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
+                         {renderMobileCell(row, 'installerTime', 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
+                         {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
+                         {renderMobileCell(row, 'remarks', 'Remarks', <MessageSquare className="w-3 h-3" />, finalRemarksOptions, true)}
+                       </div>
+                       {canEdit && (
+                         <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
+                           <button type="button" onClick={() => { setEditingCell({ rowId: row.id, field: 'service' }); setTempValue(row.service || '') }}
+                             className="flex-1 py-2 rounded-lg text-xs font-semibold text-white"
+                             style={{ backgroundColor: '#3B82F6' }}>
+                             Edit
+                           </button>
+                           <button type="button" onClick={() => handleDelete(row)}
+                             className="px-3 py-2 rounded-lg text-xs font-medium"
+                             style={{ color: '#EF4444', border: '1px solid rgba(239,68,68,0.35)' }}>
+                             <Trash2 className="w-3.5 h-3.5" />
+                           </button>
+                         </div>
+                       )}
+                     </div>
+                   )}
+                 </div>
+               )
+             })}
+           </div>
+         )}
+
+         {/* Mobile Notes Card */}
+         {rows.length > 0 && (
+           <div className="rounded-xl p-4 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+             <span className="text-[11px] font-medium" style={{ color: textMuted }}>Notes</span>
+             {canEdit ? (
+               <textarea
+                 value={lineupNotes}
+                 onChange={e => handleUpdateNotes(e.target.value)}
+                 onBlur={handleSaveNotes}
+                 placeholder="Team notes (e.g. day off, reminders)…"
+                 className="w-full text-xs outline-none resize-none min-h-[72px] no-scrollbar rounded-lg px-3 py-2"
+                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+               />
+             ) : (
+               <div className="text-xs whitespace-pre-line" style={{ color: textPrimary }}>
+                 {lineupNotes || '—'}
+               </div>
+             )}
+           </div>
+         )}
+
+         {canEdit && (
+           <div className="lineup-sticky-save no-print flex items-center gap-2">
+             {rows.length > 0 && (
+               <button type="button" onClick={handleSaveAll}
+                 className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white shadow-md transition-all duration-150 active:scale-95"
+                 style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})` }}>
+                 Save
+               </button>
+             )}
+             <button type="button" onClick={handleAddRow} title="Add row"
+               className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg text-white shadow-md transition-all duration-150 active:scale-95"
+               style={{ backgroundColor: '#3B82F6' }}>
+               <Plus className="w-4 h-4" />
+             </button>
+           </div>
+         )}
+       </>
+     )}
+   </div>
 
       {/* ═══════════════════════════════════════════════════════
           DESKTOP VIEW  — original design  (hidden below md)
           ═══════════════════════════════════════════════════════ */}
       <div className="hidden md:flex flex-col gap-6 pb-8">
 
-        {/* Original Top Control Bar */}
+        {/* Dynamic Branch Chips selector */}
+        <div className="no-print flex flex-col gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
+          <div className="flex flex-wrap gap-2">
+            {branches.map(b => {
+              const isSelected = b.id === branchId
+              const bThemeKey = getBranchThemeKey(b.name)
+              const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setBranchId(b.id)}
+                  className="px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm"
+                  style={{
+                    backgroundColor: isSelected ? bTheme.accent : cardBg,
+                    color: isSelected ? '#FFFFFF' : textMuted,
+                    border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
+                    boxShadow: isSelected ? `0 4px 10px ${bTheme.accent}30` : 'none',
+                  }}
+                >
+                  {b.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Top Control Bar */}
         <div className="rounded-2xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div>
-            <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#10B981' }}>Scheduling</p>
+            <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: currentTheme.accent }}>Scheduling</p>
             <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
             <p className="text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 w-full lg:w-auto justify-start lg:justify-end">
-            {/* Branch */}
+          <div className="flex items-center gap-2 shrink-0 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
+            {/* Branch dropdown (fallback / legacy) */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
               {role === 'admin' ? (
@@ -1765,359 +1932,630 @@ export default function LineUp() {
             <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-              <ClipboardList className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+              <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
               <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
 
-            <button type="button" onClick={() => setShowcaseOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white transition-all hover:scale-105"
-              style={{ backgroundColor: '#2563EB' }}>
-              <Maximize2 className="w-4 h-4" />
-              Showcase
-            </button>
-
-            {/* ── Import Dropdown ── */}
-            {canEdit && (
-              <div className="relative" ref={importMenuRef}>
-                <button type="button"
-                  onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Upload className="w-3.5 h-3.5" />
-                  Import
-                  <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${importMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {importMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setImportMenuOpen(false)} />
-                    <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
-                      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                      <div className="py-1">
-                        <button type="button"
-                          onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false) }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-                          style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                          <Upload className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                          <div>
-                            <div>Import Excel</div>
-                            <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx / .xls file</div>
-                          </div>
-                        </button>
-                        <button type="button"
-                          onClick={() => { handlePasteScan(); setImportMenuOpen(false) }}
-                          disabled={scanning}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-                          style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                          <ClipboardPaste className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                          <div>
-                            <div>Paste Image</div>
-                            <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Ctrl+V screenshot</div>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ── Export Dropdown ── */}
-            <div className="relative" ref={exportMenuRef}>
-              <button type="button"
-                onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                <Download className="w-3.5 h-3.5" />
-                Export
-                <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            {/* Mode Switcher */}
+            <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+              <button
+                type="button"
+                onClick={() => { if (!isLight) toggleTheme() }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  backgroundColor: isLight ? cardBg : 'transparent',
+                  color: isLight ? currentTheme.accent : textMuted,
+                  boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                <Sun className="w-3.5 h-3.5" /> Light
               </button>
-              {exportMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
-                  <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
-                    style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="py-1">
-                      <button type="button"
-                        onClick={() => { handleExportExcel(); setExportMenuOpen(false) }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-                        style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                        <Download className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                        <div>
-                          <div>Export Excel</div>
-                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx spreadsheet</div>
-                        </div>
-                      </button>
-                      <button type="button"
-                        onClick={() => { handleCopyImage(); setExportMenuOpen(false) }}
-                        disabled={copyingImage}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-                        style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Copy className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
-                        <div>
-                          <div>Copy Image</div>
-                          <div className="text-[10px] font-medium opacity-60">Paste to group chat</div>
-                        </div>
-                      </button>
-                      <button type="button"
-                        onClick={() => { handleSaveImage(); setExportMenuOpen(false) }}
-                        disabled={copyingImage}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-                        style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                        {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
-                        <div>
-                          <div>Save Image</div>
-                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Download .png file</div>
-                        </div>
-                      </button>
-                      <div style={{ height: '1px', backgroundColor: border, margin: '4px 16px' }} />
-                      <button type="button"
-                        onClick={() => { window.print(); setExportMenuOpen(false) }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-                        style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                        <Printer className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                        <div>
-                          <div>Print</div>
-                          <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Send to printer</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
+              <button
+                type="button"
+                onClick={() => { if (isLight) toggleTheme() }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  backgroundColor: !isLight ? cardBg : 'transparent',
+                  color: !isLight ? currentTheme.accent : textMuted,
+                  boxShadow: !isLight ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
+                }}
+              >
+                <Moon className="w-3.5 h-3.5" /> Dark
+              </button>
             </div>
 
-             {/* ── Load Template (standalone) ── */}
-            {canEdit && (
-              <button type="button" onClick={handleLoadDefaultTemplate}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-emerald-600 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all hover:scale-105">
-                <ClipboardList className="w-4 h-4" /> Load Template
+            {/* View Switcher */}
+            <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+              <button
+                type="button"
+                onClick={() => setShowcaseOpen(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  backgroundColor: !showcaseOpen ? cardBg : 'transparent',
+                  color: !showcaseOpen ? currentTheme.accent : textMuted,
+                  boxShadow: !showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                Edit
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => setShowcaseOpen(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  backgroundColor: showcaseOpen ? cardBg : 'transparent',
+                  color: showcaseOpen ? currentTheme.accent : textMuted,
+                  boxShadow: showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                Showcase
+              </button>
+            </div>
 
-            {/* ── Clear Schedule (standalone) ── */}
-            {canEdit && rows.length > 0 && (
-              <button type="button" onClick={handleClearAllRows}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
-                <Trash2 className="w-4 h-4" /> Clear Schedule
-              </button>
-            )}
+            {/* Edit View Exclusive Actions */}
+            {!showcaseOpen && (
+              <>
+                {/* Import Dropdown */}
+                {canEdit && (
+                  <div className="relative" ref={importMenuRef}>
+                    <button type="button"
+                      onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                      <Upload className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
+                      Import
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${importMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {importMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setImportMenuOpen(false)} />
+                        <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
+                          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                          <div className="py-1">
+                            <button type="button"
+                              onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false) }}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                              style={{ color: textPrimary }}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                              <Upload className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                              <div>
+                                <div>Import Excel</div>
+                                <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx / .xls file</div>
+                              </div>
+                            </button>
+                            <button type="button"
+                              onClick={() => { handlePasteScan(); setImportMenuOpen(false) }}
+                              disabled={scanning}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                              style={{ color: textPrimary }}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                              <ClipboardPaste className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                              <div>
+                                <div>Paste Image</div>
+                                <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Ctrl+V screenshot</div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
-            {/* ── Add Row (standalone) ── */}
-            {canEdit && (
-              <button type="button" onClick={handleAddRow}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/10 transition-all hover:scale-105">
-                <Plus className="w-4 h-4" /> Add Row
-              </button>
+                {/* Export Dropdown */}
+                <div className="relative" ref={exportMenuRef}>
+                  <button type="button"
+                    onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                    <Download className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
+                    Export
+                    <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {exportMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+                      <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
+                        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                        <div className="py-1">
+                          <button type="button"
+                            onClick={() => { handleExportExcel(); setExportMenuOpen(false) }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                            style={{ color: textPrimary }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                            <Download className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                            <div>
+                              <div>Export Excel</div>
+                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx spreadsheet</div>
+                            </div>
+                          </button>
+                          <button type="button"
+                            onClick={() => { handleCopyImage(); setExportMenuOpen(false) }}
+                            disabled={copyingImage}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                            style={{ color: textPrimary }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                            {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Copy className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
+                            <div>
+                              <div>Copy Image</div>
+                              <div className="text-[10px] font-medium opacity-60">Paste to group chat</div>
+                            </div>
+                          </button>
+                          <button type="button"
+                            onClick={() => { handleSaveImage(); setExportMenuOpen(false) }}
+                            disabled={copyingImage}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
+                            style={{ color: textPrimary }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                            {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
+                            <div>
+                              <div>Save Image</div>
+                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Download .png file</div>
+                            </div>
+                          </button>
+                          <div style={{ height: '1px', backgroundColor: border, margin: '4px 16px' }} />
+                          <button type="button"
+                            onClick={() => { window.print(); setExportMenuOpen(false) }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
+                            style={{ color: textPrimary }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                            <Printer className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                            <div>
+                              <div>Print</div>
+                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Send to printer</div>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Load Template */}
+                {canEdit && (
+                  <button type="button" onClick={handleLoadDefaultTemplate}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all hover:scale-105"
+                    style={{
+                      color: currentTheme.accent,
+                      border: `1px solid ${currentTheme.accent}30`,
+                      backgroundColor: `${currentTheme.accent}08`,
+                    }}>
+                    <ClipboardList className="w-4 h-4" /> Load Template
+                  </button>
+                )}
+
+                {/* Clear Schedule */}
+                {canEdit && rows.length > 0 && (
+                  <button type="button" onClick={handleClearAllRows}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
+                    <Trash2 className="w-4 h-4" /> Clear Schedule
+                  </button>
+                )}
+
+                {/* Add Row */}
+                {canEdit && (
+                  <button type="button" onClick={handleAddRow}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white transition-all hover:scale-105"
+                    style={{
+                      background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
+                      boxShadow: `0 4px 12px ${currentTheme.accent}20`,
+                    }}>
+                    <Plus className="w-4 h-4" /> Add Row
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
 
-
-
-        {/* Original Line-Up Sheet */}
-        <div ref={captureAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
-          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-          {/* Scan error / preview banners */}
-          {scanError && (
-            <div className="px-4 py-2 flex items-center justify-between gap-2"
-              style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderBottom: `1px solid rgba(239,68,68,0.2)` }}>
-              <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>{scanError}</span>
-              <button onClick={() => setScanError('')} style={{ color: '#EF4444' }}><X className="w-3.5 h-3.5" /></button>
+        {/* Showcase / Edit View toggle rendering */}
+        {showcaseOpen ? (
+          /* Inline Showcase View Layout */
+          <div ref={captureAreaRef}
+            className="lineup-showcase-sheet mx-auto shadow-xl"
+            style={{
+              maxWidth: '1720px',
+              width: '100%',
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+              borderRadius: 18,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Team title bar with gradient */}
+            <div
+              style={{
+                background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
+                padding: '18px 24px 16px',
+                textAlign: 'center',
+              }}
+            >
+              <div
+                style={{
+                  color: '#ffffff',
+                  fontWeight: 950,
+                  fontSize: 'clamp(24px, 3vw, 42px)',
+                  lineHeight: 1.05,
+                  textTransform: 'uppercase',
+                }}
+              >
+                TEAM {branchName ? branchName.toUpperCase() : 'FIELD'} LINE UP
+              </div>
             </div>
-          )}
-          {scanPreview && (
-            <div className="px-4 py-2 flex items-center gap-3" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
-              <img src={scanPreview} alt="Scanned lineup" className="h-14 w-24 object-cover rounded-lg border" style={{ borderColor: inputBorder }} />
-              <span className="text-xs font-semibold" style={{ color: textMuted }}>Scanned image preview</span>
-              <button onClick={() => setScanPreview(null)} className="ml-auto" style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>
-            </div>
-          )}
 
-          {/* Green banner */}
-          <div style={{ background: isLight ? 'linear-gradient(135deg, #059669, #047857)' : 'linear-gradient(135deg, #064e3b, #022c22)', padding: '16px 20px', textAlign: 'center' }}>
-            <div style={{ color: '#fff', fontWeight: 950, fontSize: '20px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              TEAM {branchName ? branchName.toUpperCase() : '—'} LINE UP
+            {/* Black Date Bar */}
+            <div
+              style={{
+                backgroundColor: '#020617',
+                padding: '10px 20px',
+                textAlign: 'center',
+              }}
+            >
+              <div
+                style={{
+                  color: '#ffffff',
+                  fontWeight: 900,
+                  fontSize: 'clamp(13px, 1.3vw, 20px)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                }}
+              >
+                {englishLabel(date)}
+              </div>
             </div>
-          </div>
-          <div style={{ backgroundColor: isLight ? '#10b981' : '#065f46', padding: '8px 20px', textAlign: 'center' }}>
-            <div style={{ color: '#fff', fontWeight: 800, fontSize: '13px', letterSpacing: '0.08em' }}>{englishLabel(date)}</div>
-          </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  {thOrig('SERVICE')}
-                  {thOrig('DRIVER')}
-                  {thOrig('SCHEDULED TIME – IN OF DRIVER')}
-                  {thOrig('INSTALLER')}
-                  {thOrig('SCHEDULED TIME – IN OF INSTALLER')}
-                  {thOrig('ROUTE', true)}
-                  {thOrig('REMARKS', true)}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
-                ) : rows.length === 0 ? (
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <colgroup>
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '28%' }} />
+                  <col style={{ width: '28%' }} />
+                </colgroup>
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '64px', color: textMuted, fontSize: '13px' }}>
-                      No entries scheduled for {branchName || 'this branch'} on {englishLabel(date)}.<br />
-                      {canEdit && (
-                        <button onClick={handleAddRow}
-                          style={{ color: '#10B981', fontWeight: 700, marginTop: '12px', fontSize: '12px' }}
-                          className="hover:underline">
-                          + Add the first entry
-                        </button>
-                      )}
-                    </td>
+                    {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => {
+                      const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
+                      const showcaseHeaderColor = isLight ? currentTheme.accentDark : currentTheme.accent
+                      return (
+                        <th
+                          key={label}
+                          style={{
+                            padding: '13px 10px',
+                            backgroundColor: showcaseHeaderBg,
+                            border: `1px solid ${border}`,
+                            color: showcaseHeaderColor,
+                            fontSize: 'clamp(12px, 1vw, 16px)',
+                            fontWeight: 850,
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {label}
+                        </th>
+                      )
+                    })}
                   </tr>
-                ) : (
-                  rows.map((row, idx) => {
-                    const isRowSelected   = selectedRowId === row.id
-                    const isEditingThis   = editingCell?.rowId === row.id
-                    const defaultBg       = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#09101E') : 'transparent'
-                    const selectedBg      = isLight ? 'rgba(16,185,129,0.07)' : 'rgba(16,185,129,0.12)'
-                    const hoverBgColor    = isLight ? '#f8fafc' : '#101B30'
-
-                    const isDraggedOver = dragOverIndex === idx
-                    const isSource = dragSourceIndexRef.current === idx
-
-                    let borderTopStyle = undefined
-                    let borderBottomStyle = `1px solid ${border}`
-
-                    if (isDraggedOver && !isSource && dragSourceIndexRef.current !== null) {
-                      if (dragSourceIndexRef.current > idx) {
-                        borderTopStyle = '3px solid #10B981'
-                      } else {
-                        borderBottomStyle = '3px solid #10B981'
-                      }
-                    }
-
-                    return (
-                      <tr key={row.id}
-                        draggable={canEdit && isRowSelected && !isEditingThis}
-                        onDragStart={(e) => handleDragStart(e, idx)}
-                        onDragOver={(e) => handleDragOver(e, idx)}
-                        onDragEnd={handleDragEnd}
-                        onDrop={(e) => handleDrop(e, idx)}
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
                         style={{
-                          backgroundColor: (isRowSelected || isEditingThis) ? selectedBg : defaultBg,
-                          borderTop: borderTopStyle,
-                          borderBottom: borderBottomStyle,
-                          cursor: canEdit ? (isRowSelected ? (dragSourceIndexRef.current === idx ? 'grabbing' : 'grab') : 'pointer') : 'default',
-                          outline: isRowSelected ? `2px solid #10B98140` : 'none',
-                          outlineOffset: '-1px',
-                          position: 'relative',
+                          padding: '96px 24px',
+                          textAlign: 'center',
+                          color: textMuted,
+                          fontSize: 'clamp(16px, 1.5vw, 22px)',
+                          fontWeight: 800,
                         }}
-                        className="transition-colors"
-                        onMouseEnter={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = hoverBgColor }}
-                        onMouseLeave={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = defaultBg }}
-                        onClick={e => {
-                          // Don't toggle selection if clicking inside an active input or button
-                          if ((e.target as HTMLElement).closest('input,button,a,select')) return
-                          if (!canEdit) return
-
-                          setSelectedRowId(prev => prev === row.id ? null : row.id)
-                          // If already editing a different cell, deselect editing
-                          if (editingCell && editingCell.rowId !== row.id) {
-                            const activeRow = rows.find(r => r.id === editingCell.rowId)
-                            if (activeRow) {
-                              void saveCell(activeRow, editingCell.field, tempValue)
-                            }
-                          }
-                        }}
-                        onContextMenu={e => {
-                          // Don't show context menu if clicking inside an active input or dropdown
-                          if ((e.target as HTMLElement).closest('input,button,a,select')) return
-                          if (!canEdit) return
-
-                          e.preventDefault()
-                          setSelectedRowId(row.id)
-                          setActiveMenu({
-                            row,
-                            x: e.clientX,
-                            y: e.clientY
-                          })
-                        }}>
-                        {renderEditableTd(row, 'service',       finalVehicleOptions,   { textAlign: 'center', fontWeight: 900, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'driverTime',    ['8:00AM','7:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                        {renderEditableTd(row, 'route',   finalRouteOptions,   { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
-                        {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary, position: 'relative' }, 'e.g. INSTALL - INSTALL (3 UNITS)')}
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer note */}
-          <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-            <p style={{ fontSize: '11px', fontStyle: 'italic', color: textMuted, fontWeight: 500 }}>
-              NOTE: Installers must report earlier than drivers to handle returns and log out.
-            </p>
-          </div>
-
-          {/* Summary boxes */}
-          <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: `1px solid ${border}` }}>
-            {/* Notes / Comments Section */}
-            <div className="w-[45%] flex flex-col gap-2 print:block">
-              {canEdit ? (
-                <>
-                  <textarea
-                    value={lineupNotes}
-                    onChange={e => handleUpdateNotes(e.target.value)}
-                    onBlur={handleSaveNotes}
-                    placeholder="e.g. SIR ROMMEL - DAY OFF"
-                    rows={3}
-                    className="w-full text-xs font-bold outline-none resize-none print:hidden no-scrollbar"
-                    style={{
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      padding: 0,
-                      color: '#EF4444',
-                      lineHeight: '1.6',
-                    }}
-                  />
-                  {/* Print version */}
-                  <div className="hidden print:block text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
-                    {lineupNotes}
-                  </div>
-                </>
-              ) : (
-                lineupNotes ? (
-                  <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
-                    {lineupNotes}
-                  </div>
-                ) : null
-              )}
+                      >
+                        No field schedule entries
+                      </td>
+                    </tr>
+                  ) : rows.map((row, idx) => (
+                    <tr key={row.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#1E293B') : (isLight ? '#f8fafc' : '#162031') }}>
+                      {[
+                        row.service || '-',
+                        row.driverName || '-',
+                        row.driverTime || '-',
+                        row.installerName || '-',
+                        row.installerTime || '-',
+                        row.route || '-',
+                        row.remarks || '-',
+                      ].map((value, cellIdx) => (
+                        <td
+                          key={cellIdx}
+                          style={{
+                            padding: cellIdx >= 5 ? '14px 18px' : '14px 10px',
+                            border: `1px solid ${border}`,
+                            color: textPrimary,
+                            fontSize: cellIdx >= 5 ? 'clamp(14px, 1.08vw, 19px)' : 'clamp(14px, 1.15vw, 21px)',
+                            fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
+                            textAlign: cellIdx >= 5 ? 'left' : 'center',
+                            lineHeight: 1.32,
+                            verticalAlign: 'middle',
+                            minWidth: cellIdx >= 5 ? 320 : 96,
+                          }}
+                        >
+                          {value}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            <div className="flex flex-col gap-3 items-end print:hidden">
-              <table style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
+            {/* Note & Totals summary block */}
+            {(lineupNotes || rows.length > 0) && (
+              <div
+                className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5"
+                style={{
+                  padding: '22px 28px',
+                  borderTop: `1px solid ${border}`,
+                  backgroundColor: isLight ? '#f8fafc' : '#1E293B',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#EF4444',
+                    fontSize: 'clamp(14px, 1.1vw, 19px)',
+                    fontWeight: 950,
+                    textTransform: 'uppercase',
+                    whiteSpace: 'pre-line',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {lineupNotes}
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:min-w-[420px]">
+                  {[
+                    ['INSTALLATION', totalUnits, currentTheme.accent],
+                    ['SURVEY', totalSurvey, '#D97706'],
+                    ['BACK JOB', totalBackJob, '#EF4444'],
+                    ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+                  ].map(([label, value, color]) => (
+                    <div
+                      key={label as string}
+                      style={{
+                        border: `1px solid ${border}`,
+                        backgroundColor: cardBg,
+                        padding: '12px 14px',
+                      }}
+                    >
+                      <div style={{ color: String(color), fontSize: '12px', fontWeight: 950, textTransform: 'uppercase' }}>{label}</div>
+                      <div style={{ color: String(color), fontSize: 'clamp(20px, 2vw, 32px)', fontWeight: 950, lineHeight: 1 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Editable lineup sheet card */
+          <div ref={captureAreaRef} className="rounded-2xl overflow-hidden print-area shadow-xl shadow-slate-900/5"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+
+            {/* Scan error / preview banners */}
+            {scanError && (
+              <div className="px-4 py-2 flex items-center justify-between gap-2"
+                style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderBottom: `1px solid rgba(239,68,68,0.2)` }}>
+                <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>{scanError}</span>
+                <button onClick={() => setScanError('')} style={{ color: '#EF4444' }}><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+            {scanPreview && (
+              <div className="px-4 py-2 flex items-center gap-3" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
+                <img src={scanPreview} alt="Scanned lineup" className="h-14 w-24 object-cover rounded-lg border" style={{ borderColor: inputBorder }} />
+                <span className="text-xs font-semibold" style={{ color: textMuted }}>Scanned image preview</span>
+                <button onClick={() => setScanPreview(null)} className="ml-auto" style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+
+            {/* Team specific accent background title bar */}
+            <div style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`, padding: '16px 20px', textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontWeight: 950, fontSize: '20px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                TEAM {branchName ? branchName.toUpperCase() : '—'} LINE UP
+              </div>
+            </div>
+            
+            {/* Near black date bar */}
+            <div style={{ backgroundColor: '#020617', padding: '8px 20px', textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: '13px', letterSpacing: '0.08em' }}>{englishLabel(date)}</div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {thOrig('SERVICE')}
+                    {thOrig('DRIVER')}
+                    {thOrig('SCHEDULED TIME – IN OF DRIVER')}
+                    {thOrig('INSTALLER')}
+                    {thOrig('SCHEDULED TIME – IN OF INSTALLER')}
+                    {thOrig('ROUTE', true)}
+                    {thOrig('REMARKS', true)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
+                  ) : rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '64px', color: textMuted, fontSize: '13px' }}>
+                        No entries scheduled for {branchName || 'this branch'} on {englishLabel(date)}.<br />
+                        {canEdit && (
+                          <button onClick={handleAddRow}
+                            style={{ color: currentTheme.accent, fontWeight: 700, marginTop: '12px', fontSize: '12px' }}
+                            className="hover:underline">
+                            + Add the first entry
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((row, idx) => {
+                      const isRowSelected   = selectedRowId === row.id
+                      const isEditingThis   = editingCell?.rowId === row.id
+                      const defaultBg       = idx % 2 === 0 ? (isLight ? '#fcfdfd' : '#1e293b') : 'transparent'
+                      const selectedBg      = `${currentTheme.accent}22`
+                      const hoverBgColor    = isLight ? '#f8fafc' : '#0F172A'
+
+                      const isDraggedOver = dragOverIndex === idx
+                      const isSource = dragSourceIndexRef.current === idx
+
+                      let borderTopStyle = undefined
+                      let borderBottomStyle = `1px solid ${border}`
+
+                      if (isDraggedOver && !isSource && dragSourceIndexRef.current !== null) {
+                        if (dragSourceIndexRef.current > idx) {
+                          borderTopStyle = `3px solid ${currentTheme.accent}`
+                        } else {
+                          borderBottomStyle = `3px solid ${currentTheme.accent}`
+                        }
+                      }
+
+                      return (
+                        <tr key={row.id}
+                          draggable={canEdit && isRowSelected && !isEditingThis}
+                          onDragStart={(e) => handleDragStart(e, idx)}
+                          onDragOver={(e) => handleDragOver(e, idx)}
+                          onDragEnd={handleDragEnd}
+                          onDrop={(e) => handleDrop(e, idx)}
+                          style={{
+                            backgroundColor: (isRowSelected || isEditingThis) ? selectedBg : defaultBg,
+                            borderTop: borderTopStyle,
+                            borderBottom: borderBottomStyle,
+                            cursor: canEdit ? (isRowSelected ? (dragSourceIndexRef.current === idx ? 'grabbing' : 'grab') : 'pointer') : 'default',
+                            outline: isRowSelected ? `2px solid ${currentTheme.accent}60` : 'none',
+                            outlineOffset: '-1px',
+                            position: 'relative',
+                          }}
+                          className="transition-colors"
+                          onMouseEnter={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = hoverBgColor }}
+                          onMouseLeave={e => { if (!isRowSelected && !isEditingThis) e.currentTarget.style.backgroundColor = defaultBg }}
+                          onClick={e => {
+                            if ((e.target as HTMLElement).closest('input,button,a,select')) return
+                            if (!canEdit) return
+
+                            setSelectedRowId(prev => prev === row.id ? null : row.id)
+                            if (editingCell && editingCell.rowId !== row.id) {
+                              const activeRow = rows.find(r => r.id === editingCell.rowId)
+                              if (activeRow) {
+                                void saveCell(activeRow, editingCell.field, tempValue)
+                              }
+                            }
+                          }}
+                          onContextMenu={e => {
+                            if ((e.target as HTMLElement).closest('input,button,a,select')) return
+                            if (!canEdit) return
+
+                            e.preventDefault()
+                            setSelectedRowId(row.id)
+                            setActiveMenu({
+                              row,
+                              x: e.clientX,
+                              y: e.clientY
+                            })
+                          }}>
+                          {renderEditableTd(row, 'service',       finalVehicleOptions,   { textAlign: 'center', fontWeight: 950, fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'driverTime',    ['8:00AM','7:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'route',   finalRouteOptions,   { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
+                          {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary, position: 'relative' }, 'e.g. INSTALL - INSTALL (3 UNITS)')}
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer note */}
+            <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
+              <p style={{ fontSize: '11px', fontStyle: 'italic', color: textMuted, fontWeight: 500 }}>
+                NOTE: Installers must report earlier than drivers to handle returns and log out.
+              </p>
+            </div>
+
+            {/* Summary boxes */}
+            <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: `1px solid ${border}` }}>
+              {/* Notes / Comments Section */}
+              <div className="w-[45%] flex flex-col gap-2 print:block">
+                {canEdit ? (
+                  <>
+                    <textarea
+                      value={lineupNotes}
+                      onChange={e => handleUpdateNotes(e.target.value)}
+                      onBlur={handleSaveNotes}
+                      placeholder="e.g. SIR ROMMEL - DAY OFF"
+                      rows={3}
+                      className="w-full text-xs font-bold outline-none resize-none print:hidden no-scrollbar"
+                      style={{
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        color: '#EF4444',
+                        lineHeight: '1.6',
+                      }}
+                    />
+                    {/* Print version */}
+                    <div className="hidden print:block text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
+                      {lineupNotes}
+                    </div>
+                  </>
+                ) : (
+                  lineupNotes ? (
+                    <div className="text-xs font-black uppercase tracking-wide whitespace-pre-line" style={{ color: '#EF4444', lineHeight: '1.6' }}>
+                      {lineupNotes}
+                    </div>
+                  ) : null
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3 items-end print:hidden">
+                <table style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
+                  <tbody>
+                    <tr style={{ backgroundColor: isLight ? '#e8f5e9' : 'rgba(16,185,129,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: currentTheme.accent }}>TOTAL UNITS INSTALLATION</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: currentTheme.accent }}>{totalUnits}</td>
+                    </tr>
+                    <tr style={{ backgroundColor: isLight ? '#fef9c3' : 'rgba(234,179,8,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: isLight ? '#854d0e' : '#facc15' }}>TOTAL UNITS FOR SURVEY</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: isLight ? '#854d0e' : '#facc15' }}>{totalSurvey}</td>
+                    </tr>
+                    <tr style={{ backgroundColor: isLight ? '#fee2e2' : 'rgba(239,68,68,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#EF4444' }}>TOTAL BACK JOB</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#EF4444' }}>{totalBackJob}</td>
+                    </tr>
+                    <tr style={{ backgroundColor: isLight ? '#fecdd3' : 'rgba(244,63,94,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#F43F5E' }}>SERVICE / DISMANTLE</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#F43F5E' }}>{totalDismantle}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {/* Print fallback for totals table */}
+              <table className="hidden print:table" style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
                 <tbody>
                   <tr style={{ backgroundColor: isLight ? '#e8f5e9' : 'rgba(16,185,129,0.1)' }}>
-                    <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#10B981' }}>TOTAL UNITS INSTALLATION</td>
-                    <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#10B981' }}>{totalUnits}</td>
+                    <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: currentTheme.accent }}>TOTAL UNITS INSTALLATION</td>
+                    <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: currentTheme.accent }}>{totalUnits}</td>
                   </tr>
                   <tr style={{ backgroundColor: isLight ? '#fef9c3' : 'rgba(234,179,8,0.1)' }}>
                     <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: isLight ? '#854d0e' : '#facc15' }}>TOTAL UNITS FOR SURVEY</td>
@@ -2134,38 +2572,20 @@ export default function LineUp() {
                 </tbody>
               </table>
             </div>
-            {/* Print fallback for totals table */}
-            <table className="hidden print:table" style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
-              <tbody>
-                <tr style={{ backgroundColor: isLight ? '#e8f5e9' : 'rgba(16,185,129,0.1)' }}>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#10B981' }}>TOTAL UNITS INSTALLATION</td>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#10B981' }}>{totalUnits}</td>
-                </tr>
-                <tr style={{ backgroundColor: isLight ? '#fef9c3' : 'rgba(234,179,8,0.1)' }}>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: isLight ? '#854d0e' : '#facc15' }}>TOTAL UNITS FOR SURVEY</td>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: isLight ? '#854d0e' : '#facc15' }}>{totalSurvey}</td>
-                </tr>
-                <tr style={{ backgroundColor: isLight ? '#fee2e2' : 'rgba(239,68,68,0.1)' }}>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#EF4444' }}>TOTAL BACK JOB</td>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#EF4444' }}>{totalBackJob}</td>
-                </tr>
-                <tr style={{ backgroundColor: isLight ? '#fecdd3' : 'rgba(244,63,94,0.1)' }}>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#F43F5E' }}>SERVICE / DISMANTLE</td>
-                  <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#F43F5E' }}>{totalDismantle}</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
-        </div>
+        )}
 
         {/* Save button — below the card */}
-        {canEdit && (
+        {!showcaseOpen && canEdit && (
           <div className="no-print flex justify-end">
             <button
               type="button"
               onClick={handleSaveAll}
               className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 shadow-md"
-              style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.25)' }}
+              style={{
+                background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
+                boxShadow: `0 4px 14px ${currentTheme.accent}25`
+              }}
             >
               <Save className="w-4 h-4" /> Save Schedule
             </button>
@@ -2515,6 +2935,28 @@ export default function LineUp() {
 
       {/* Print Styles */}
       <style>{`
+        :root {
+          --branch-accent: ${currentTheme.accent};
+          --branch-accent-dark: ${currentTheme.accentDark};
+          --branch-accent-light: ${currentTheme.accentLight};
+
+          --page-bg: #F8FAFC;
+          --card-bg: #FFFFFF;
+          --text-main: #0F172A;
+          --text-muted: #64748B;
+          --border-color: #E2E8F0;
+          --date-bar-bg: #020617;
+        }
+
+        .dark {
+          --page-bg: #0F172A;
+          --card-bg: #1E293B;
+          --text-main: #F8FAFC;
+          --text-muted: #CBD5E1;
+          --border-color: #334155;
+          --date-bar-bg: #020617;
+        }
+
         @media print {
           body * { visibility: hidden !important; }
           .print-area, .print-area * { visibility: visible !important; }
@@ -2546,16 +2988,4 @@ export default function LineUp() {
   )
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
 
-function DropdownItem({ icon, label, color, onClick, disabled }: {
-  icon: React.ReactNode; label: string; color: string; onClick: () => void; disabled?: boolean
-}) {
-  return (
-    <button type="button" onClick={onClick} disabled={disabled}
-      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-bold transition-colors hover:bg-black/5 disabled:opacity-40"
-      style={{ color }}>
-      {icon} {label}
-    </button>
-  )
-}
