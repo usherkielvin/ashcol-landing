@@ -349,13 +349,23 @@ export default function DailySalesForm() {
   }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin])
 
   const fetchReportDetails = async (id: string) => {
+    console.log('[fetchReportDetails] Requested ID:', id)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      if (!res.ok) throw new Error('Failed to fetch report details')
+      console.log('[fetchReportDetails] Response Status:', res.status)
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[fetchReportDetails] Error body:', text)
+        throw new Error('Failed to fetch report details: ' + res.status)
+      }
       const data = await res.json()
+      console.log('[fetchReportDetails] Response Data:', data)
+
+      // Set ignoreNextCohFetch to true so that the branch details/COH pre-fill useEffect doesn't overwrite cashOnHand
+      ignoreNextCohFetch.current = true
 
       // Populate metadata
       setReportDate(data.reportDate)
