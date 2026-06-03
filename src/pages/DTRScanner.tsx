@@ -80,7 +80,7 @@ export default function DTRScanner() {
   const danger     = '#EF4444'
 
   const role      = (user?.role || '').toLowerCase()
-  const isManager = role === 'manager'
+  const isBranchRestricted = role !== 'admin' && !!user?.branchId
 
   const [branches,      setBranches]      = useState<BranchOption[]>([])
   const [scanning,      setScanning]      = useState(false)
@@ -102,8 +102,8 @@ export default function DTRScanner() {
           const data = await res.json()
           const list: BranchOption[] = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name }))
           setBranches(list)
-          // For managers, pre-fill branch automatically
-          if (isManager && user?.branchId) {
+          // For branch-restricted users, pre-fill branch automatically
+          if (isBranchRestricted && user?.branchId) {
             const myBranch = list.find(b => b.id === user.branchId)
             setForm(f => ({ ...f, branchId: user.branchId || '', branchName: myBranch?.name || '' }))
           }
@@ -111,7 +111,7 @@ export default function DTRScanner() {
       } catch (e) { console.error(e) }
     }
     loadBranches()
-  }, [isManager, user?.branchId])
+  }, [isBranchRestricted, user?.branchId])
 
   const processImage = async (file: File) => {
     const url = URL.createObjectURL(file)
@@ -171,8 +171,14 @@ export default function DTRScanner() {
       const next = { ...prev }
 
       // Auto-detected branch from scanner
-      if (data.branchId)   { next.branchId   = String(data.branchId);   filled.add('branchId') }
-      if (data.branchName) { next.branchName = String(data.branchName); filled.add('branchName') }
+      if (isBranchRestricted && user?.branchId) {
+        next.branchId = user.branchId
+        const myBranch = branches.find(b => b.id === user.branchId)
+        next.branchName = myBranch?.name || prev.branchName
+      } else {
+        if (data.branchId)   { next.branchId   = String(data.branchId);   filled.add('branchId') }
+        if (data.branchName) { next.branchName = String(data.branchName); filled.add('branchName') }
+      }
       if (data.date)       { next.date        = String(data.date);       filled.add('date') }
 
       SCAN_FIELDS.forEach(({ key }) => {
@@ -396,7 +402,7 @@ export default function DTRScanner() {
                 <select
                   value={form.branchId}
                   onChange={e => handleBranchChange(e.target.value)}
-                  disabled={isManager}
+                  disabled={isBranchRestricted}
                   className="w-full rounded-xl py-2 text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-emerald-500/30"
                   style={{
                     backgroundColor: inputBg,
@@ -405,8 +411,8 @@ export default function DTRScanner() {
                     color: form.branchId ? textPrimary : textMuted,
                     paddingLeft: 30,
                     paddingRight: 12,
-                    cursor: isManager ? 'not-allowed' : 'pointer',
-                    opacity: isManager ? 0.7 : 1,
+                    cursor: isBranchRestricted ? 'not-allowed' : 'pointer',
+                    opacity: isBranchRestricted ? 0.7 : 1,
                   }}
                 >
                   <option value="" disabled>— Select branch —</option>

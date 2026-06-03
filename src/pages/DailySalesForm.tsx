@@ -134,6 +134,7 @@ export default function DailySalesForm() {
   const role = (user?.role || '').toLowerCase()
   const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee'
   const isAdmin = role === 'admin'
+  const isBranchRestricted = !isAdmin && !!user?.branchId
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -861,8 +862,10 @@ export default function DailySalesForm() {
                     setBranch(found.name)
                   }
                 }}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 cursor-pointer"
-                disabled={isFormDisabled}
+                className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 ${
+                  isFormDisabled || isBranchRestricted ? 'cursor-not-allowed text-slate-400 opacity-80' : 'cursor-pointer'
+                }`}
+                disabled={isFormDisabled || isBranchRestricted}
               >
                 {branchesList.map(b => (
                   <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
