@@ -49,10 +49,10 @@ const branchThemes: Record<string, { name: string; accent: string; accentDark: s
     accentLight: "#CCFBF1"
   },
   "SILANG": {
-    name: "Olive Green",
-    accent: "#65A30D",
-    accentDark: "#3F6212",
-    accentLight: "#ECFCCB"
+    name: "Ice Cyan",
+    accent: "#0891B2",
+    accentDark: "#0E7490",
+    accentLight: "#E0F7FA"
   },
   "RIZAL": {
     name: "Indigo",
@@ -2987,5 +2987,4 @@ export default function LineUp() {
     </div>
   )
 }
-
 
