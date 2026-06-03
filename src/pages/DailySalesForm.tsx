@@ -227,8 +227,11 @@ export default function DailySalesForm() {
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
   // XI. Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
-  // XIII. Cash Breakdown (denominations grid)
-  const [dtrDenoms, setDtrDenoms]       = useState<Denomination[]>(DENOMS.map(d => ({ ...d })))
+  // XIII. Unit Summary
+  const [scheduledUnits, setScheduledUnits]     = useState('')
+  const [installedUnits, setInstalledUnits]     = useState('')
+  const [cancelledUnits, setCancelledUnits]     = useState('')
+  const [freeInstallUnits, setFreeInstallUnits] = useState('')
 
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
@@ -407,7 +410,10 @@ export default function DailySalesForm() {
     setOrders([mkOrd()])
     setExpReceipt([mkExp()])
     setExpPurch([mkExp()])
-    setDtrDenoms(DENOMS.map(d => ({ ...d })))
+    setScheduledUnits('')
+    setInstalledUnits('')
+    setCancelledUnits('')
+    setFreeInstallUnits('')
   }
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
@@ -564,13 +570,9 @@ export default function DailySalesForm() {
       setExpPurch([mkExp()])
     }
 
-    if (data.cashBreakdown && Array.isArray(data.cashBreakdown)) {
-      setDtrDenoms(prev => prev.map(d => {
-        const found = data.cashBreakdown.find((cb: any) => cb.label === d.label)
-        return found ? { ...d, qty: String(found.qty) } : { ...d, qty: '' }
-      }))
-    } else {
-      setDtrDenoms(DENOMS.map(d => ({ ...d })))
+    // Unit summary from scan
+    if (data.totalUnitsInstalledServiced != null) {
+      setInstalledUnits(String(data.totalUnitsInstalledServiced))
     }
   }
 
@@ -640,7 +642,6 @@ export default function DailySalesForm() {
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const grandTotalExpenses   = totalExpReceipt + totalExpPurch
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
-  const dtrCashFromDenoms    = dtrDenoms.reduce((s, d) => s + (parseInt(d.qty) || 0) * d.value, 0)
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
   // ── Submit handler ───────────────────────────────────────────────
@@ -693,7 +694,10 @@ export default function DailySalesForm() {
         cashReturns: totalCashReturns,
         forCollection: totalForColl,
         rebatesForCollection: totalRebates,
-        cashBreakdownJson: JSON.stringify(dtrDenoms.map(d => ({ label: d.label, value: d.value, qty: parseInt(d.qty) || 0 }))),
+        totalUnitsScheduled: parseInt(scheduledUnits) || 0,
+        totalUnitsInstalled: parseInt(installedUnits) || 0,
+        totalUnitsCancelled: parseInt(cancelledUnits) || 0,
+        totalUnitsFreeInstall: parseInt(freeInstallUnits) || 0,
         items: dtrItems,
       }
 
@@ -1440,43 +1444,41 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* XIII. Cash Breakdown */}
+          {/* XIII. Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="XIII. Cash Breakdown" total={dtrCashFromDenoms} />
+            <SectionHeader label="XIII. Unit Summary" />
             <div className="p-3">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr>
-                    <th className="px-3 py-1 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Denomination</th>
-                    <th className="px-3 py-1 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center w-24">Pcs</th>
-                    <th className="px-3 py-1 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right w-36">Total</th>
+                    <th className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Category</th>
+                    <th className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center w-28">Count</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dtrDenoms.map((denom, idx) => {
-                    const subtotal = (parseInt(denom.qty) || 0) * denom.value
-                    return (
-                      <tr key={denom.label} className="border-b border-slate-100 dark:border-slate-800/40">
-                        <td className="px-3 py-1.5 font-bold text-slate-600 dark:text-slate-400">{denom.label}</td>
-                        <td className="px-3 py-1 text-center w-24">
-                          <NumericFormat
-                            thousandSeparator=","
-                            decimalScale={0}
-                            fixedDecimalScale={false}
-                            allowNegative={false}
-                            placeholder="0"
-                            value={denom.qty}
-                            onValueChange={(values) => setDtrDenoms(prev => prev.map((d, i) => i === idx ? { ...d, qty: values.value } : d))}
-                            className="w-16 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs font-bold rounded focus:outline-none focus:ring-1 focus:ring-emerald-500/30 py-0.5 text-slate-800 dark:text-slate-200"
-                            disabled={isFormDisabled}
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 text-right font-bold text-slate-700 dark:text-slate-300">
-                          {subtotal > 0 ? php(subtotal) : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {([
+                    { label: 'Total Scheduled Units',   value: scheduledUnits,   setter: setScheduledUnits },
+                    { label: 'Total Installed Units',   value: installedUnits,   setter: setInstalledUnits },
+                    { label: 'Total Cancelled',         value: cancelledUnits,   setter: setCancelledUnits },
+                    { label: 'Total Free Install',      value: freeInstallUnits, setter: setFreeInstallUnits },
+                  ] as { label: string; value: string; setter: (v: string) => void }[]).map(({ label, value, setter }) => (
+                    <tr key={label} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className="px-3 py-1.5 font-medium text-slate-600 dark:text-slate-400">{label}</td>
+                      <td className="px-3 py-1 text-center w-28">
+                        <NumericFormat
+                          thousandSeparator={false}
+                          decimalScale={0}
+                          fixedDecimalScale={false}
+                          allowNegative={false}
+                          placeholder="0"
+                          value={value}
+                          onValueChange={(values) => setter(values.value)}
+                          className="w-20 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs font-bold rounded focus:outline-none focus:ring-1 focus:ring-emerald-500/30 py-0.5 px-2 text-slate-800 dark:text-slate-200"
+                          disabled={isFormDisabled}
+                        />
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

@@ -180,9 +180,6 @@ export default function DailyAuditReport() {
     input.focus()
   }
 
-  // Edit state
-  const [editingRowKey, setEditingRowKey] = useState<string | null>(null)
-  const [editValues, setEditValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   const rowKey = (row: AuditRow) => `${row.branchId}:${row.auditLine || ''}`
@@ -218,20 +215,6 @@ export default function DailyAuditReport() {
         branchId: row.branchId,
         date: viewMode === 'single' ? date : rangeFrom,
         auditLine: row.auditLine,
-        excelTimeUploaded: editValues.timeUploaded || '',
-        targetDailyQuota:           parseFloat(editValues.targetDailyQuota) || 0,
-        cohPreviousDay:             parseFloat(editValues.cohPreviousDay) || 0,
-        fundFromHo:                 parseFloat(editValues.fundFromHo) || 0,
-        cashReturns:                parseFloat(editValues.cashReturns) || 0,
-        totalCashCollection:        parseFloat(editValues.totalCashCollection) || 0,
-        totalOnlineCollection:      parseFloat(editValues.totalOnlineCollection) || 0,
-        totalExpenses:              parseFloat(editValues.totalExpenses) || 0,
-        totalUnitsInstalledServiced:parseInt(editValues.totalUnitsInstalledServiced) || 0,
-        totalCancelled:             parseInt(editValues.totalCancelled) || 0,
-        totalUnitsFreeInstall:      parseInt(editValues.totalUnitsFreeInstall) || 0,
-        forCollection:              parseFloat(editValues.forCollection) || 0,
-        rebatesForCollection:       parseFloat(editValues.rebatesForCollection) || 0,
-        remarks:                    (editValues.remarks || '').trim(),
       }
       const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
         method: 'PUT',
@@ -239,7 +222,6 @@ export default function DailyAuditReport() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        setEditingRowKey(null)
         setSelectedRow(null)
         fetchAudit()
       } else {
@@ -266,7 +248,6 @@ export default function DailyAuditReport() {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.ok) {
-        setEditingRowKey(null)
         setSelectedRow(null)
         fetchAudit()
       } else {
@@ -528,61 +509,7 @@ export default function DailyAuditReport() {
     { key: 'grossSales', label: 'Sales' },
   ]
 
-  // A small styled input for edit mode
-  const renderEditInput = (field: string, isInt = false, color?: string) => (
-    <input
-      type="text"
-      inputMode={isInt ? 'numeric' : 'decimal'}
-      value={editValues[field] || ''}
-      onChange={e => setEditValues(prev => ({ ...prev, [field]: e.target.value.replace(/,/g, '') }))}
-      onClick={e => e.stopPropagation()}
-      onKeyDown={e => {
-        if (e.key === 'Escape') setEditingRowKey(null)
-      }}
-      disabled={saving}
-      style={{
-        width: compactView ? '44px' : '70px',
-        background: 'transparent',
-        border: 'none',
-        borderBottom: `1px solid ${isLight ? '#93C5FD' : '#3B82F6'}`,
-        outline: 'none',
-        textAlign: 'right',
-        color: color || textPrimary,
-        fontSize: 'inherit',
-        padding: '0 1px',
-        opacity: saving ? 0.5 : 1,
-      }}
-    />
-  )
-
-  const renderEditRemarksInput = () => (
-    <input
-      type="text"
-      value={editValues.remarks || ''}
-      onChange={e => setEditValues(prev => ({ ...prev, remarks: e.target.value }))}
-      onClick={e => e.stopPropagation()}
-      onKeyDown={e => {
-        if (e.key === 'Escape') setEditingRowKey(null)
-      }}
-      placeholder="e.g. PENDING"
-      disabled={saving}
-      style={{
-        width: compactView ? '56px' : '90px',
-        background: 'transparent',
-        border: 'none',
-        borderBottom: `1px solid ${isLight ? '#93C5FD' : '#3B82F6'}`,
-        outline: 'none',
-        textAlign: 'left',
-        color: textPrimary,
-        fontSize: compactView ? 8 : 10,
-        fontWeight: 700,
-        padding: '0 1px',
-        opacity: saving ? 0.5 : 1,
-      }}
-    />
-  )
-
-  const isEditing = (row: AuditRow) => editingRowKey === rowKey(row)
+  const isEditing = (_row: AuditRow) => false
 
   const mobileDateLabel = viewMode === 'single'
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -943,7 +870,7 @@ export default function DailyAuditReport() {
               {/* ── Table Body ── */}
               <tbody>
                 {visibleRows.map((row, idx) => {
-                  const editing    = isEditing(row)
+                  const editing    = false // editing removed — use DTR form tab
                   const isAbove    = row.remarks === 'ABOVE QUOTA'
                   const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
@@ -956,13 +883,11 @@ export default function DailyAuditReport() {
                       key={idx}
                       id={`audit-row-${idx}`}
                       onClick={() => {
-                        if (editing) return
                         setSelectedRow(row)
                         setRowExpenses(null)
                         fetchRowExpenses(row)
                       }}
                       onContextMenu={e => {
-                        if (editing) return
                         e.preventDefault()
                         setSelectedRow(row)
                         setRowExpenses(null)
@@ -973,15 +898,13 @@ export default function DailyAuditReport() {
                         backgroundColor: isSelected
                           ? (isLight ? '#E0F2FE' : '#1E293B')
                           : 'transparent',
-                        cursor: editing ? 'pointer' : 'pointer'
+                        cursor: 'pointer'
                       }}
                       className="transition-colors group"
                       onMouseEnter={e => {
-                        if (editingRowKey !== rowKey(row)) {
-                          e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
-                            td.style.backgroundColor = rowHover
-                          })
-                        }
+                        e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
+                          td.style.backgroundColor = rowHover
+                        })
                       }}
                       onMouseLeave={e => {
                         const isSel = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
@@ -1003,32 +926,6 @@ export default function DailyAuditReport() {
                           whiteSpace: 'nowrap',
                           transition: 'background-color 0.15s ease-in-out'
                         }}>
-                        {editing ? (
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-1.5">
-                              <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
-                              <span style={{ fontSize: compactView ? 9 : undefined }}>{row.branchName}</span>
-                            </div>
-                            {viewMode === 'single' && (
-                              <div className="flex items-center gap-1">
-                                <span style={{ color: textMuted, fontSize: compactView ? 8 : 10 }}>Time:</span>
-                                <input 
-                                  type="time" 
-                                  value={editValues.timeUploaded || ''}
-                                  onChange={e => setEditValues(prev => ({ ...prev, timeUploaded: e.target.value }))}
-                                  onClick={e => e.stopPropagation()}
-                                  className="bg-transparent focus:outline-none"
-                                  style={{ 
-                                    color: textPrimary, 
-                                    borderBottom: `1px solid ${inputBorder}`,
-                                    width: compactView ? '55px' : '80px',
-                                    fontSize: compactView ? 8 : 10
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        ) : (
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
                               <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
@@ -1056,7 +953,6 @@ export default function DailyAuditReport() {
                               )}
                             </div>
                           </div>
-                        )}
                       </td>
 
                       {/* ④ Gross Sales */}
@@ -1064,51 +960,47 @@ export default function DailyAuditReport() {
 
                       {/* ⑤ Target Quota */}
                       <td style={{ color: '#8B5CF6', fontWeight: 600, padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('targetDailyQuota', false, '#8B5CF6') : <>₱{peso(row.targetDailyQuota)}</>}
+                        <>₱{peso(row.targetDailyQuota)}</>
                       </td>
 
                       {/* ⑥ Difference & Remarks */}
                       <td style={{ padding: p, whiteSpace: 'nowrap' }}>
                         <div className="flex flex-col gap-0.5">
-                          {editing ? (
-                            renderEditRemarksInput()
-                          ) : (
-                            <span style={{
-                              display: 'inline-block',
-                              alignSelf: 'start',
-                              padding: compactView ? '1px 3px' : '1.5px 5px',
-                              borderRadius: 4,
-                              fontSize: compactView ? 7 : 9,
-                              fontWeight: 700,
-                              whiteSpace: 'nowrap',
-                              ...remarksBadgeStyle(row.remarks, noRecord, isAbove),
-                            }}>
-                              {formatRemarksLabel(row.remarks, compactView)}
-                            </span>
-                          )}
-                          {noRecord && !editing ? (
+                          <span style={{
+                            display: 'inline-block',
+                            alignSelf: 'start',
+                            padding: compactView ? '1px 3px' : '1.5px 5px',
+                            borderRadius: 4,
+                            fontSize: compactView ? 7 : 9,
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            ...remarksBadgeStyle(row.remarks, noRecord, isAbove),
+                          }}>
+                            {formatRemarksLabel(row.remarks, compactView)}
+                          </span>
+                          {noRecord ? (
                             <span style={{ color: textMuted }}>—</span>
-                          ) : !noRecord && !editing ? (
+                          ) : (
                             <span className="font-bold text-[11px]" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
                               {isAbove ? '+' : ''}₱{peso(row.difference)}
                             </span>
-                          ) : null}
+                          )}
                         </div>
                       </td>
 
                       {/* ⑧ COH Prev Day */}
                       <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('cohPreviousDay') : <>₱{peso(row.cohPreviousDay)}</>}
+                        <>₱{peso(row.cohPreviousDay)}</>
                       </td>
 
                       {/* ⑨ Fund from HO */}
                       <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('fundFromHo') : <>₱{peso(row.fundFromHo)}</>}
+                        <>₱{peso(row.fundFromHo)}</>
                       </td>
 
                       {/* ⑩ Cash Returns */}
                       <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('cashReturns') : <>₱{peso(row.cashReturns)}</>}
+                        <>₱{peso(row.cashReturns)}</>
                       </td>
 
                       {/* ⑪ Total COH/CFD */}
@@ -1116,58 +1008,54 @@ export default function DailyAuditReport() {
 
                       {/* ⑫ Cash Collection */}
                       <td className="font-semibold" style={{ color: '#10B981', padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('totalCashCollection', false, '#10B981') : <>₱{peso(row.totalCashCollection)}</>}
+                        <>₱{peso(row.totalCashCollection)}</>
                       </td>
 
                       {/* ⑬ Online Collection */}
                       <td className="font-semibold" style={{ color: '#3B82F6', padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('totalOnlineCollection', false, '#3B82F6') : <>₱{peso(row.totalOnlineCollection)}</>}
+                        <>₱{peso(row.totalOnlineCollection)}</>
                       </td>
 
-                      {/* ⑭ Total Expenses — clickable drilldown (but editable when editing) */}
+                      {/* ⑭ Total Expenses — clickable drilldown */}
                       <td className="font-semibold" style={{ padding: p, whiteSpace: 'nowrap' }}>
-                        {editing
-                          ? renderEditInput('totalExpenses', false, '#EF4444')
-                          : (
-                            <button
-                              id={`expense-drilldown-${idx}`}
-                              onClick={e => {
-                                e.stopPropagation()
-                                setSelectedRow(row)
-                                setRowExpenses(null)
-                                fetchRowExpenses(row)
-                              }}
-                              className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
-                              style={{ color: '#EF4444' }}
-                            >
-                              ₱{peso(row.totalExpenses)}
-                            </button>
-                          )}
+                        <button
+                          id={`expense-drilldown-${idx}`}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setSelectedRow(row)
+                            setRowExpenses(null)
+                            fetchRowExpenses(row)
+                          }}
+                          className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
+                          style={{ color: '#EF4444' }}
+                        >
+                          ₱{peso(row.totalExpenses)}
+                        </button>
                       </td>
 
                       {/* ⑱ For Collection */}
                       <td className="font-semibold" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap' }} >
-                        {editing ? renderEditInput('forCollection', false, '#F59E0B') : <>₱{peso(row.forCollection)}</>}
+                        <>₱{peso(row.forCollection)}</>
                       </td>
 
                       {/* ⑲ Rebates */}
                       <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }}>
-                        {editing ? renderEditInput('rebatesForCollection') : <>₱{peso(row.rebatesForCollection)}</>}
+                        <>₱{peso(row.rebatesForCollection)}</>
                       </td>
 
                       {/* ⑮ Units */}
                       <td className="text-center font-semibold" style={{ color: textPrimary, padding: p }} >
-                        {editing ? renderEditInput('totalUnitsInstalledServiced', true) : row.totalUnitsInstalledServiced}
+                        {row.totalUnitsInstalledServiced}
                       </td>
 
                       {/* ⑯ Cancelled */}
                       <td className="text-center" style={{ color: row.totalCancelled > 0 ? '#EF4444' : textMuted, padding: p }} >
-                        {editing ? renderEditInput('totalCancelled', true, row.totalCancelled > 0 ? '#EF4444' : textMuted) : row.totalCancelled}
+                        {row.totalCancelled}
                       </td>
 
                       {/* ⑰ Free Install */}
                       <td className="text-center" style={{ color: textMuted, padding: p }} >
-                        {editing ? renderEditInput('totalUnitsFreeInstall', true) : row.totalUnitsFreeInstall}
+                        {row.totalUnitsFreeInstall}
                       </td>
 
                     </tr>
@@ -1490,11 +1378,15 @@ export default function DailyAuditReport() {
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={() => startEditing(selectedRow)}
-                        className="px-3 py-2 rounded-lg text-xs font-semibold"
-                        style={{ color: textPrimary, border: `1px solid ${inputBorder}` }}>
-                        Edit
-                      </button>
+                      {canEdit && (
+                        <a
+                          href="/branch-report"
+                          className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors hover:opacity-90"
+                          style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
+                        >
+                          Go to DTR Form
+                        </a>
+                      )}
                       {isAdmin && selectedRow.id && (
                         <button type="button" onClick={() => handleClearRow(selectedRow)} disabled={saving}
                           className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors"
@@ -1514,41 +1406,6 @@ export default function DailyAuditReport() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-              {isEditing(selectedRow) && (
-                <div className="rounded-xl p-4 border flex flex-col gap-4" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[
-                      { label: 'Time Uploaded', field: 'timeUploaded', type: 'time' },
-                      { label: 'Remarks', field: 'remarks' },
-                      { label: 'Target Quota', field: 'targetDailyQuota' },
-                      { label: 'COH Previous Day', field: 'cohPreviousDay' },
-                      { label: 'Fund from HO', field: 'fundFromHo' },
-                      { label: 'Cash Returns', field: 'cashReturns' },
-                      { label: 'Cash Collection', field: 'totalCashCollection' },
-                      { label: 'Online Collection', field: 'totalOnlineCollection' },
-                      { label: 'Total Expenses', field: 'totalExpenses' },
-                      { label: 'For Collection', field: 'forCollection' },
-                      { label: 'Rebates', field: 'rebatesForCollection' },
-                      { label: 'Units Installed/Serviced', field: 'totalUnitsInstalledServiced', inputMode: 'numeric' },
-                      { label: 'Cancelled', field: 'totalCancelled', inputMode: 'numeric' },
-                      { label: 'Free Install', field: 'totalUnitsFreeInstall', inputMode: 'numeric' },
-                    ].map(item => (
-                      <label key={item.field} className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
-                        <input
-                          type={item.type || 'text'}
-                          inputMode={(item.inputMode as any) || 'decimal'}
-                          value={editValues[item.field] || ''}
-                          onChange={e => setEditValues(prev => ({ ...prev, [item.field]: item.type === 'time' ? e.target.value : e.target.value.replace(/,/g, '') }))}
-                          disabled={saving}
-                          className="rounded-lg px-3 py-2 text-sm font-medium outline-none"
-                          style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Top status info */}
               <div className="grid grid-cols-2 gap-4">
