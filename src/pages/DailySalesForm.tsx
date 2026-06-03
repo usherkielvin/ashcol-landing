@@ -28,15 +28,15 @@ const uid = () => Math.random().toString(36).slice(2)
 const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 const num = (s: string) => parseFloat(s) || 0
 const sumArr = (arr: string[]) => arr.reduce((a, b) => a + num(b), 0)
-const formatReviewTime = (date: Date) =>
-  date.toLocaleString('en-PH', {
-    month: 'short',
+const formatReviewDateTime = (date: Date) =>
+  date.toLocaleString('en-US', {
+    month: 'long',
     day: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
-  })
+  }).replace(/, (?=\d{1,2}:)/, ' ').replace(/\s(AM|PM)$/i, (_, meridiem) => meridiem.toUpperCase()).toUpperCase()
 
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
@@ -1706,7 +1706,7 @@ export default function DailySalesForm() {
                 </tbody>
               </table>
               <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                Review note: {branchName || 'No branch selected'} - {reportDate || 'No date selected'} - {formatReviewTime(reviewStartedAt || new Date())}
+                {(branchName || 'No branch selected').toUpperCase()} - {formatReviewDateTime(reviewStartedAt || new Date())}
               </div>
             </div>
           </div>
