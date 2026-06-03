@@ -43,6 +43,44 @@ const DENOMS: Denomination[] = [
 const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 const num = (s: string) => parseFloat(s) || 0
 const sumArr = (arr: string[]) => arr.reduce((a, b) => a + num(b), 0)
+
+const cleanInstallerName = (name: string, currentBranchName?: string) => {
+  let cleaned = name.trim()
+  if (currentBranchName) {
+    const cleanBranch = currentBranchName.toUpperCase().replace('ASHCOL', '').trim()
+    if (cleanBranch) {
+      const prefixes = [cleanBranch]
+      
+      // If it ends with SERVICES, also add SERVICE
+      if (cleanBranch.endsWith('SERVICES')) {
+        prefixes.push(cleanBranch.slice(0, -1))
+      } else if (cleanBranch.endsWith('SERVICE')) {
+        prefixes.push(cleanBranch + 'S')
+      }
+      
+      // Also add first word (e.g. "TAGUIG", "DASMA", "RIZAL")
+      const firstWord = cleanBranch.split(' ')[0]
+      if (firstWord && firstWord !== 'ASHCOL' && firstWord.length > 2) {
+        prefixes.push(firstWord)
+      }
+
+      // Sort by length descending to match longest first
+      prefixes.sort((a, b) => b.length - a.length)
+
+      for (const prefix of prefixes) {
+        const escaped = prefix.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
+        const regex = new RegExp(`^(${escaped})\\s*[-|:]?\\s*`, 'i')
+        const newCleaned = cleaned.replace(regex, '')
+        if (newCleaned !== cleaned) {
+          cleaned = newCleaned
+          break
+        }
+      }
+    }
+  }
+  return cleaned
+}
+
 const normalizeTransactionBranch = (branchId?: string | null, email?: string | null) => {
   const raw = branchId || ''
   const lower = raw.toLowerCase()
@@ -266,8 +304,8 @@ export default function DailySalesForm() {
         if (resLineup.ok) {
           const list = await resLineup.json()
           list.forEach((r: any) => {
-            if (r.installerName?.trim()) namesSet.add(r.installerName.trim())
-            if (r.driverName?.trim()) namesSet.add(r.driverName.trim())
+            if (r.installerName?.trim()) namesSet.add(cleanInstallerName(r.installerName, branchName))
+            if (r.driverName?.trim()) namesSet.add(cleanInstallerName(r.driverName, branchName))
           })
         }
 
@@ -284,7 +322,7 @@ export default function DailySalesForm() {
             }
             if (r.technicianName?.trim()) {
               r.technicianName.split(/[,/&]+/).forEach((n: string) => {
-                const cleaned = n.trim()
+                const cleaned = cleanInstallerName(n, branchName)
                 if (cleaned) namesSet.add(cleaned)
               })
             }
@@ -298,7 +336,7 @@ export default function DailySalesForm() {
           list.forEach((emp: any) => {
             const empBranch = normalizeTransactionBranch(emp.branchId, emp.email).branchId
             if (empBranch === selectedBranchId && emp.isActive !== false && emp.name?.trim()) {
-              namesSet.add(emp.name.trim())
+              namesSet.add(cleanInstallerName(emp.name, branchName))
             }
           })
         }
@@ -325,22 +363,31 @@ export default function DailySalesForm() {
 
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
-    if (branchName) {
-      const cleanBranch = branchName.toUpperCase().replace('ASHCOL', '').trim()
-      const words = cleanBranch.split(' ')
-      const initials = words.map(w => w[0]).join('')
-      const dateObj = new Date(reportDate)
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-      const day = String(dateObj.getDate()).padStart(2, '0')
+    if (branchName && reportDate) {
+      const upperBranch = branchName.toUpperCase()
+      let prefix = ''
       
-      setTrNo(current => {
-        if (!current) {
-          return `${initials || 'TR'}-${month}${day}`
+      if (upperBranch.includes('TAGUIG')) {
+        if (selectedAuditLine === 'TAGUIG_SERVICE' || upperBranch.includes('SERVICE') || upperBranch.includes('SERVICES')) {
+          prefix = 'TSE'
+        } else {
+          prefix = 'TSA'
         }
-        return current
-      })
+      } else if (upperBranch.includes('DASMA')) {
+        prefix = 'D'
+      } else {
+        const cleanBranch = branchName.toUpperCase().replace('ASHCOL', '').trim()
+        const words = cleanBranch.split(' ')
+        prefix = words.map(w => w[0]).join('')
+      }
+      
+      const dateParts = reportDate.split('-')
+      const month = dateParts[1] || '01'
+      const day = dateParts[2] || '01'
+      
+      setTrNo(`${prefix || 'TR'}-${month}${day}`)
     }
-  }, [branchName, reportDate])
+  }, [branchName, reportDate, selectedAuditLine])
 
   const clearForm = (clearTrNo = true) => {
     setError(null)
@@ -410,6 +457,7 @@ export default function DailySalesForm() {
   }
 
   const applyScannedData = (data: Record<string, any>) => {
+    let activeBranchName = branchName
     if (data.date) {
       setReportDate(data.date)
     }
@@ -419,6 +467,7 @@ export default function DailySalesForm() {
       setSelectedAuditLine(data.auditLine || null)
       if (data.branchName) {
         setBranch(data.branchName)
+        activeBranchName = data.branchName
       }
     }
 
@@ -431,7 +480,7 @@ export default function DailySalesForm() {
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
       setCashTx(data.cashTransactions.map((scanned: any) => ({
         id: uid(),
-        name: (scanned.name || '').trim(),
+        name: cleanInstallerName(scanned.name || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
     } else if (data.totalCashCollection) {
@@ -443,7 +492,7 @@ export default function DailySalesForm() {
     if (data.cashReturnsList && Array.isArray(data.cashReturnsList) && data.cashReturnsList.length > 0) {
       setCashRet(data.cashReturnsList.map((scanned: any) => ({
         id: uid(),
-        name: (scanned.name || '').trim(),
+        name: cleanInstallerName(scanned.name || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
     } else if (data.cashReturns != null) {
@@ -455,7 +504,7 @@ export default function DailySalesForm() {
     if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
       setOnlineTx(data.onlineTransactions.map((scanned: any) => ({
         id: uid(),
-        installer: (scanned.installer || '').trim(),
+        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
         customer: (scanned.customer || '').trim(),
         bank: (scanned.bank || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
@@ -793,9 +842,8 @@ export default function DailySalesForm() {
               type="text"
               placeholder="e.g. HO-0002"
               value={trNo}
-              onChange={e => setTrNo(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={isFormDisabled}
+              readOnly={true}
+              className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
             />
           </div>
           <div className="flex flex-col gap-1">
