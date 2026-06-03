@@ -1273,7 +1273,7 @@ export default function DailyAuditReport() {
                 )}
                 {(isAdmin || isManager) && (
                   <a
-                    href="/branch-report"
+                    href="/daily-report"
                     className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
                   >
