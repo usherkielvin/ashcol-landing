@@ -353,6 +353,7 @@ export default function ClientMasterlist() {
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [activeTab, setActiveTab] = useState<'ALL' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL')
+  const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
@@ -456,18 +457,22 @@ export default function ClientMasterlist() {
 
   const columns = useMemo(() => {
     const rawCols = [
-      { label: 'STATUS',           defaultW: 125, expW: 180, sticky: true,  freeze: false, center: false, right: false },
-      { label: "CUSTOMER'S NAME",   defaultW: 160, expW: 280, sticky: true,  freeze: false, center: false, right: false },
-      { label: 'DESTINATION',       defaultW: 200, expW: 450, sticky: true,  freeze: true,  center: false, right: false },
-      { label: 'CONTACT NO.',       defaultW: 115, expW: 180, sticky: false, freeze: false, center: false, right: false },
-      { label: 'BRAND / UNIT',      defaultW: 120, expW: 240, sticky: false, freeze: false, center: false, right: false },
-      { label: 'DLR / STORE',       defaultW: 100, expW: 180, sticky: false, freeze: false, center: false, right: false },
-      { label: 'RELAYED SCHED',     defaultW: 110, expW: 180, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'COMMIT',            defaultW: 110, expW: 220, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'RELAYED DATE',      defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
-      { label: 'PREFERRED DATE',    defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
-      { label: 'FINAL DATE',        defaultW: 110, expW: 180, sticky: false, freeze: false, center: false, right: false },
-      { label: 'REMARKS / UPDATE',  defaultW: 180, expW: 350, sticky: false, freeze: false, center: false, right: false },
+      { label: 'NO',                defaultW: 54,  expW: 70,  sticky: true,  freeze: false, center: true,  right: false },
+      { label: 'TICKET NO',         defaultW: 112, expW: 180, sticky: true,  freeze: false, center: true,  right: false },
+      { label: 'STATUS',            defaultW: 118, expW: 170, sticky: true,  freeze: true,  center: true,  right: false },
+      { label: 'CATEGORY',          defaultW: 110, expW: 180, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'BRANCH ASSIGNED',   defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'NEGOTIATOR',        defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'CUSTOMER NAME',     defaultW: 165, expW: 280, sticky: false, freeze: false, center: false, right: false },
+      { label: 'DISTRICT',          defaultW: 120, expW: 220, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'STORE',             defaultW: 135, expW: 220, sticky: false, freeze: false, center: false, right: false },
+      { label: 'BRAND',             defaultW: 105, expW: 180, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'CAPACITY',          defaultW: 100, expW: 150, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'COMMIT',            defaultW: 140, expW: 240, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'DATE RELAYED',      defaultW: 120, expW: 170, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'REQUESTED SCHEDULE', defaultW: 150, expW: 200, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'FINAL SCHEDULE',    defaultW: 135, expW: 190, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'LAST UPDATE',       defaultW: 230, expW: 420, sticky: false, freeze: false, center: false, right: false },
       { label: 'ACTIONS',           defaultW: 90,  expW: 90,  sticky: false, freeze: false, center: false, right: true  },
     ]
 
@@ -1276,6 +1281,90 @@ export default function ClientMasterlist() {
     return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: store || 'Other Store' }
   }
 
+  const parseAcDetails = (ticket: Ticket) => {
+    const fallback = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
+    if (!ticket.acDetails) return fallback
+    try {
+      return { ...fallback, ...JSON.parse(ticket.acDetails) }
+    } catch (e) {
+      return fallback
+    }
+  }
+
+  const formatShortDate = (value?: string) => {
+    if (!value) return ''
+    try {
+      const d = new Date(value)
+      if (isNaN(d.getTime())) return value
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    } catch (e) {
+      return value
+    }
+  }
+
+  const getRelayStatusLabel = (ticket: Ticket) => {
+    const status = (ticket.status || '').toUpperCase()
+    const details = parseAcDetails(ticket)
+    if (status === 'CANCELLED') return 'Cancelled'
+    if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+    if ((ticket.branchId || ticket.assignedTo) && details.finalDate) return 'Scheduled'
+    if (status === 'ASSIGNED' || ticket.branchId || ticket.assignedTo) return 'Assigned'
+    if (status === 'IN_PROGRESS') return 'In Progress'
+    if (status === 'ON_THE_WAY') return 'On the Way'
+    return 'Pending'
+  }
+
+  const getTicketNumber = (ticket: Ticket) => {
+    if (ticket.controlNumber) return ticket.controlNumber
+    return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()
+  }
+
+  const relaySummary = useMemo(() => {
+    const grouped = new Map<string, {
+      branch: string
+      store: string
+      total: number
+      pending: number
+      assigned: number
+      scheduled: number
+      installed: number
+      cancelled: number
+      latestUpdate: string
+    }>()
+
+    filtered.forEach(ticket => {
+      const branch = resolveBranch(ticket.branchId)?.name || 'No Branch'
+      const store = getStoreStyle(ticket.sourceVendor).label
+      const key = `${branch}__${store}`
+      const status = getRelayStatusLabel(ticket).toUpperCase()
+      const current = grouped.get(key) || {
+        branch,
+        store,
+        total: 0,
+        pending: 0,
+        assigned: 0,
+        scheduled: 0,
+        installed: 0,
+        cancelled: 0,
+        latestUpdate: ''
+      }
+
+      current.total += 1
+      if (status === 'PENDING') current.pending += 1
+      else if (status === 'ASSIGNED' || status === 'IN PROGRESS' || status === 'ON THE WAY') current.assigned += 1
+      else if (status === 'SCHEDULED') current.scheduled += 1
+      else if (status === 'INSTALLED') current.installed += 1
+      else if (status === 'CANCELLED') current.cancelled += 1
+
+      if (!current.latestUpdate || new Date(ticket.updatedAt || ticket.createdAt) > new Date(current.latestUpdate)) {
+        current.latestUpdate = ticket.updatedAt || ticket.createdAt
+      }
+      grouped.set(key, current)
+    })
+
+    return Array.from(grouped.values()).sort((a, b) => a.branch.localeCompare(b.branch) || a.store.localeCompare(b.store))
+  }, [filtered, branches])
+
 
 
 
@@ -1341,6 +1430,29 @@ export default function ClientMasterlist() {
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
 
+          <div className="flex items-center rounded-lg border overflow-hidden"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            {[
+              { key: 'DETAILS', label: 'Details', icon: List },
+              { key: 'SUMMARY', label: 'Summary', icon: LayoutGrid },
+            ].map(item => {
+              const Icon = item.icon
+              const active = relayView === item.key
+              return (
+                <button key={item.key} type="button" onClick={() => setRelayView(item.key as typeof relayView)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold transition-colors"
+                  style={{
+                    backgroundColor: active ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.16)') : 'transparent',
+                    color: active ? '#059669' : textMuted,
+                    borderRight: item.key === 'DETAILS' ? `1px solid ${inputBorder}` : undefined
+                  }}>
+                  <Icon className="w-3.5 h-3.5" />
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
@@ -1399,6 +1511,63 @@ export default function ClientMasterlist() {
         </div>
       )}
 
+      {relayView === 'SUMMARY' ? (
+        <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
+            <div>
+              <h2 className="text-sm font-black" style={{ color: textPrimary }}>Relay Summary</h2>
+              <p className="text-xs mt-0.5" style={{ color: textMuted }}>{relaySummary.length} branch/store group{relaySummary.length !== 1 ? 's' : ''} from {filtered.length} filtered ticket{filtered.length !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { label: 'Pending', value: filtered.filter(t => getRelayStatusLabel(t) === 'Pending').length, color: '#F59E0B' },
+                { label: 'Assigned', value: filtered.filter(t => ['Assigned', 'In Progress', 'On the Way'].includes(getRelayStatusLabel(t))).length, color: '#3B82F6' },
+                { label: 'Scheduled', value: filtered.filter(t => getRelayStatusLabel(t) === 'Scheduled').length, color: '#06B6D4' },
+                { label: 'Installed', value: filtered.filter(t => getRelayStatusLabel(t) === 'Installed').length, color: '#10B981' },
+                { label: 'Cancelled', value: filtered.filter(t => getRelayStatusLabel(t) === 'Cancelled').length, color: '#EF4444' },
+              ].map(stat => (
+                <span key={stat.label} className="px-2.5 py-1 rounded-lg text-xs font-black border"
+                  style={{ color: stat.color, backgroundColor: `${stat.color}14`, borderColor: `${stat.color}33` }}>
+                  {stat.label}: {stat.value}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+              <thead>
+                <tr style={{ backgroundColor: inputBg }}>
+                  {['BRANCH', 'STORE', 'TOTAL', 'PENDING', 'ASSIGNED', 'SCHEDULED', 'INSTALLED', 'CANCELLED', 'LAST UPDATE'].map(label => (
+                    <th key={label} className="px-3 py-2.5 text-left font-black text-[10px]" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {relaySummary.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-16 text-center" style={{ color: textMuted }}>No relay records match the current filters.</td>
+                  </tr>
+                ) : relaySummary.map((row, idx) => (
+                  <tr key={`${row.branch}-${row.store}`}
+                    style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c') }}>
+                    <td className="px-3 py-2.5 font-bold" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{row.branch}</td>
+                    <td className="px-3 py-2.5" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{row.store}</td>
+                    <td className="px-3 py-2.5 font-black" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{row.total}</td>
+                    <td className="px-3 py-2.5 font-bold text-amber-500" style={{ borderBottom: `1px solid ${border}` }}>{row.pending}</td>
+                    <td className="px-3 py-2.5 font-bold text-blue-500" style={{ borderBottom: `1px solid ${border}` }}>{row.assigned}</td>
+                    <td className="px-3 py-2.5 font-bold text-cyan-500" style={{ borderBottom: `1px solid ${border}` }}>{row.scheduled}</td>
+                    <td className="px-3 py-2.5 font-bold text-emerald-500" style={{ borderBottom: `1px solid ${border}` }}>{row.installed}</td>
+                    <td className="px-3 py-2.5 font-bold text-red-500" style={{ borderBottom: `1px solid ${border}` }}>{row.cancelled}</td>
+                    <td className="px-3 py-2.5" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(row.latestUpdate) || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -1453,14 +1622,14 @@ export default function ClientMasterlist() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={13} className="py-20 text-center">
+                  <td colSpan={columns.length} className="py-20 text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#10B981]" />
                     <p className="text-sm font-semibold" style={{ color: textMuted }}>Loading masterlist...</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-20 text-center">
+                  <td colSpan={columns.length} className="py-20 text-center">
                     <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
                     <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
                     <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
@@ -1469,16 +1638,61 @@ export default function ClientMasterlist() {
               ) : (
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
-                  const isInstalled = ticket.status.toUpperCase() === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)
-                  const isAssigned = !!(ticket.assignedTo || ticket.branchId)
-                  const isCancelled = ticket.status.toUpperCase() === 'CANCELLED'
-
-                  // Base background for this row — used for sticky cells that need explicit bg
+                  const details = parseAcDetails(ticket)
+                  const statusLabel = getRelayStatusLabel(ticket)
+                  const ticketNumber = getTicketNumber(ticket)
+                  const branchName = resolveBranch(ticket.branchId)?.name || '—'
+                  const category = ticket.serviceType || ticket.unitType || '—'
+                  const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
+                  const district = ticket.district || guessDistrict(ticket.location || '') || '—'
+                  const relayedDate = formatShortDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
+                  const requestedDate = formatShortDate(ticket.preferredDate)
+                  const finalDate = formatShortDate(details.finalDate)
+                  const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatShortDate(ticket.updatedAt)}` : '')
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
                   const rowBaseBg = isSelected
                     ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
                     : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
                   const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+                  const statusColor = statusLabel === 'Cancelled' ? '#EF4444'
+                    : statusLabel === 'Installed' ? '#10B981'
+                    : statusLabel === 'Scheduled' ? '#06B6D4'
+                    : statusLabel === 'Assigned' ? '#3B82F6'
+                    : '#F59E0B'
+
+                  const cells = [
+                    { value: <span className="font-black tabular-nums">{idx + 1}</span>, center: true },
+                    { value: <span className="font-black font-mono tracking-wide" style={{ color: statusColor }}>{ticketNumber}</span>, center: true },
+                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
+                    { value: <span className="font-bold uppercase text-[10px]">{category}</span>, center: true },
+                    { value: <span className="font-bold uppercase text-[10px]">{branchName}</span>, center: true },
+                    { value: <span className="font-bold uppercase text-[10px]">{negotiator}</span>, center: true },
+                    { value: <span className={`${columns[6].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
+                    { value: <span className="font-semibold uppercase text-[10px]">{district}</span>, center: true },
+                    { value: <span className="font-semibold truncate block" title={storeStyle.label}>{storeStyle.label}</span> },
+                    { value: <span className="font-bold uppercase text-[10px]">{details.brand || '—'}</span>, center: true },
+                    { value: <span className="font-bold uppercase text-[10px]">{details.capacity || '—'}</span>, center: true },
+                    { value: <span className={`${columns[11].isExpanded ? 'break-words' : 'line-clamp-2'} block font-semibold uppercase text-[10px]`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
+                    { value: <span className="font-semibold whitespace-nowrap">{relayedDate || '—'}</span>, center: true },
+                    { value: <span className="font-semibold whitespace-nowrap">{requestedDate || '—'}</span>, center: true },
+                    { value: <span className="font-semibold whitespace-nowrap">{finalDate || '—'}</span>, center: true },
+                    { value: <span className={`${columns[15].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={lastUpdate}>{lastUpdate || '—'}</span> },
+                    { value: (
+                        <div className="flex justify-end gap-1.5">
+                          <button type="button" onClick={e => { e.stopPropagation(); openDrawer(ticket) }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                            Edit
+                          </button>
+                          {isAdmin && (
+                            <button type="button" onClick={e => { e.stopPropagation(); handleDeleteTicket(ticket.id, ticket.customerName) }}
+                              className="px-2 py-1 rounded-lg border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      ), right: true },
+                  ]
 
                   return (
                     <tr key={ticket.id}
@@ -1496,363 +1710,35 @@ export default function ClientMasterlist() {
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
                       onClick={() => setSelectedPreviewTicket(ticket)}
                       className="transition-colors">
-
-                      {/* 1. Status Tag — sticky col 1 */}
-                      <td 
-                        id={`cell-${ticket.id}-0`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(0)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px',
-                          position: 'sticky', left: columns[0].left, zIndex: 5,
-                          backgroundColor: rowBaseBg,
-                          width: columns[0].w, minWidth: columns[0].w, maxWidth: columns[0].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 0 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        <div className="flex flex-col gap-1.5 items-start">
-                          {(() => {
-                            const status = (ticket.status || '').toUpperCase()
-                            if (isCancelled) {
-                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
-                            }
-                            if (isInstalled) {
-                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
-                            }
-                            if (status === 'IN_PROGRESS') {
-                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">In Progress</span>
-                            }
-                            if (status === 'ON_THE_WAY') {
-                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">On the Way</span>
-                            }
-                            if (status === 'ASSIGNED' || isAssigned) {
-                              let parsedDetails: any = null
-                              if (ticket.acDetails) {
-                                try {
-                                  parsedDetails = JSON.parse(ticket.acDetails)
-                                } catch (e) {}
-                              }
-                              const hasFinalDate = !!parsedDetails?.finalDate
-                              if (ticket.branchId && hasFinalDate) {
-                                  return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Scheduled</span>
-                              }
-                              return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
-                            }
-                            return <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
-                          })()}
-                          {ticket.branchId ? (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider block w-fit"
-                              style={{ 
-                                backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.15)', 
-                                color: isLight ? '#059669' : '#10B981',
-                                border: isLight ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(16,185,129,0.25)'
-                              }}>
-                               {resolveBranch(ticket.branchId)?.name || 'Assigned'}
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider block w-fit"
-                              style={{ 
-                                backgroundColor: isLight ? '#f1f5f9' : '#1E2D48', 
-                                color: textMuted,
-                                border: `1px solid ${border}`
-                              }}>
-                              No Branch
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 2. Customer Name — sticky col 2 */}
-                      <td 
-                        id={`cell-${ticket.id}-1`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(1)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary,
-                          position: 'sticky', left: columns[1].left, zIndex: 5,
-                          backgroundColor: rowBaseBg,
-                          width: columns[1].w, minWidth: columns[1].w, maxWidth: columns[1].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 1 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }} className="font-bold">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-start gap-1.5">
-                            <span style={{ color: textMuted, fontSize: '9px', marginTop: '2px' }} className="shrink-0">{idx + 1}</span>
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className={`text-xs block ${columns[1].isExpanded ? 'break-words' : 'truncate max-w-[130px]'}`} title={ticket.customerName || 'Direct Client'}>
-                                {ticket.customerName || 'Direct Client'}
-                              </span>
-                              <span className="text-[9px] font-black font-mono tracking-wider mt-0.5 text-slate-400 dark:text-slate-500 block truncate" title={`Full ID: ${ticket.id}`}>
-                                {ticket.controlNumber ? `${ticket.controlNumber} • ` : ''}ID: {ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* 3. Destination — sticky col 3 (freeze line) */}
-                      <td 
-                        id={`cell-${ticket.id}-2`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(2)
-                        }}
-                        style={{
-                          padding: '8px 10px', color: textMuted,
-                          position: 'sticky', left: columns[2].left, zIndex: 5,
-                          backgroundColor: rowBaseBg,
-                          borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                          boxShadow: (isSelected && selectedColIndex === 2 ? 'inset 0 0 0 2px #10B981, ' : '') + (isLight
-                            ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                            : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)'),
-                          width: columns[2].w, minWidth: columns[2].w, maxWidth: columns[2].w,
-                          transition: 'all 0.15s ease-in-out'
-                        }}>
-                        <span className={`text-[11px] leading-relaxed block ${columns[2].isExpanded ? 'break-words' : 'line-clamp-2'}`} title={ticket.location || ''}>{ticket.location || '—'}</span>
-                      </td>
-
-                      {/* 4. Contact */}
-                      <td 
-                        id={`cell-${ticket.id}-3`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(3)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px',
-                          width: columns[3].w, minWidth: columns[3].w, maxWidth: columns[3].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 3 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        <FormatPhone raw={ticket.contactPhone} />
-                      </td>
-
-                      {/* 5. Unit/Brand */}
-                      <td 
-                        id={`cell-${ticket.id}-4`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(4)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted, fontSize: '11px',
-                          width: columns[4].w, minWidth: columns[4].w, maxWidth: columns[4].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 4 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {(() => {
-                          let parsedDetails: any = null
-                          if (ticket.acDetails) {
-                            try {
-                              parsedDetails = JSON.parse(ticket.acDetails)
-                            } catch (e) {}
-                          }
-                          const brand = parsedDetails?.brand || ''
-                          const capacity = parsedDetails?.capacity || ''
-                          const sku = parsedDetails?.sku || ''
-                          
-                          if (brand || capacity || sku) {
-                            return (
-                              <div className="flex flex-col gap-0.5 font-semibold">
-                                {(brand || capacity) && <span style={{ color: textPrimary }} className={columns[4].isExpanded ? "break-words" : "truncate block"}>{brand} {capacity}</span>}
-                                {sku && <span className="text-[10px] text-slate-400 truncate block">{sku}</span>}
-                              </div>
-                            )
-                          }
-                          return ticket.unitType || <span className="italic">—</span>
-                        })()}
-                      </td>
-
-                      {/* 6. DLR/Store */}
-                      <td 
-                        id={`cell-${ticket.id}-5`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(5)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', color: textMuted,
-                          width: columns[5].w, minWidth: columns[5].w, maxWidth: columns[5].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 5 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        <span className="font-semibold truncate block">{storeStyle.label}</span>
-                      </td>
-
-                      {/* 6b. Relayed Sched */}
-                      <td 
-                        id={`cell-${ticket.id}-6`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(6)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted,
-                          width: columns[6].w, minWidth: columns[6].w, maxWidth: columns[6].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 6 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {ticket.serviceType ? (
-                          <span className="font-semibold uppercase text-[10px] truncate block">{ticket.serviceType}</span>
-                        ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
-                      </td>
-
-                      {/* 6c. Commit */}
-                      <td 
-                        id={`cell-${ticket.id}-7`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(7)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, fontSize: '11px', textAlign: 'center', color: textMuted,
-                          width: columns[7].w, minWidth: columns[7].w, maxWidth: columns[7].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 7 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {ticket.commitType ? (
-                          <span className={`font-semibold uppercase text-[10px] block ${columns[7].isExpanded ? 'break-words' : 'truncate'}`}>{ticket.commitType}</span>
-                        ) : <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>}
-                      </td>
-
-                      {/* 8. Relayed Date */}
-                      <td 
-                        id={`cell-${ticket.id}-8`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(8)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
-                          width: columns[8].w, minWidth: columns[8].w, maxWidth: columns[8].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 8 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {(() => {
-                          let parsedDetails: any = null
-                          if (ticket.acDetails) {
-                            try {
-                              parsedDetails = JSON.parse(ticket.acDetails)
-                            } catch (e) {}
-                          }
-                          const relayed = parsedDetails?.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : '')
-                          if (!relayed) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
-                          try {
-                            const d = new Date(relayed)
-                            if (isNaN(d.getTime())) return <span>{relayed}</span>
-                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          } catch (e) {
-                            return <span>{relayed}</span>
-                          }
-                        })()}
-                      </td>
-
-                      {/* 9. Preferred Date */}
-                      <td 
-                        id={`cell-${ticket.id}-9`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(9)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
-                          width: columns[9].w, minWidth: columns[9].w, maxWidth: columns[9].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 9 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {(() => {
-                          if (!ticket.preferredDate) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
-                          try {
-                            const d = new Date(ticket.preferredDate)
-                            if (isNaN(d.getTime())) return <span>{ticket.preferredDate}</span>
-                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          } catch (e) {
-                            return <span>{ticket.preferredDate}</span>
-                          }
-                        })()}
-                      </td>
-
-                      {/* 10. Final Date */}
-                      <td 
-                        id={`cell-${ticket.id}-10`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(10)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textPrimary, fontSize: '11px',
-                          width: columns[10].w, minWidth: columns[10].w, maxWidth: columns[10].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 10 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        {(() => {
-                          let parsedDetails: any = null
-                          if (ticket.acDetails) {
-                            try {
-                              parsedDetails = JSON.parse(ticket.acDetails)
-                            } catch (e) {}
-                          }
-                          const finalDate = parsedDetails?.finalDate || ''
-                          if (!finalDate) return <span className="italic text-[10px]" style={{ color: textMuted }}>—</span>
-                          try {
-                            const d = new Date(finalDate)
-                            if (isNaN(d.getTime())) return <span>{finalDate}</span>
-                            return <span className="whitespace-nowrap font-medium">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          } catch (e) {
-                            return <span>{finalDate}</span>
-                          }
-                        })()}
-                      </td>
-
-                      {/* 11. Remarks */}
-                      <td 
-                        id={`cell-${ticket.id}-11`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(11)
-                        }}
-                        style={{
-                          padding: '8px 10px', borderRight: `1px solid ${border}`, color: textMuted,
-                          width: columns[11].w, minWidth: columns[11].w, maxWidth: columns[11].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 11 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        <span className={`text-[11px] leading-relaxed block ${columns[11].isExpanded ? 'break-words' : 'line-clamp-2'}`} title={ticket.remarksUpdate || ticket.description || ''}>
-                          {ticket.remarksUpdate || ticket.description || '—'}
-                        </span>
-                      </td>
-
-                      {/* 16. Actions */}
-                      <td 
-                        id={`cell-${ticket.id}-12`}
-                        onClick={() => {
-                          setSelectedPreviewTicket(ticket)
-                          setSelectedColIndex(12)
-                        }}
-                        style={{
-                          padding: '8px 10px', textAlign: 'right',
-                          width: columns[12].w, minWidth: columns[12].w, maxWidth: columns[12].w,
-                          transition: 'all 0.15s ease-in-out',
-                          boxShadow: isSelected && selectedColIndex === 12 ? 'inset 0 0 0 2px #10B981' : undefined
-                        }}>
-                        <div className="flex justify-end gap-1.5">
-                          <button type="button" onClick={() => openDrawer(ticket)}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                            Edit
-                          </button>
-                          {isAdmin && (
-                            <button type="button" onClick={() => handleDeleteTicket(ticket.id, ticket.customerName)}
-                              className="px-2 py-1 rounded-lg border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all">
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
+                      {cells.map((cell, colIdx) => {
+                        const col = columns[colIdx]
+                        return (
+                          <td key={col.label}
+                            id={`cell-${ticket.id}-${colIdx}`}
+                            onClick={() => {
+                              setSelectedPreviewTicket(ticket)
+                              setSelectedColIndex(colIdx)
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRight: col.freeze ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}` : `1px solid ${border}`,
+                              color: textMuted,
+                              fontSize: '11px',
+                              textAlign: cell.right ? 'right' : cell.center || col.center ? 'center' : 'left',
+                              width: col.w,
+                              minWidth: col.w,
+                              maxWidth: col.w,
+                              transition: 'all 0.15s ease-in-out',
+                              backgroundColor: rowBaseBg,
+                              boxShadow: (isSelected && selectedColIndex === colIdx ? 'inset 0 0 0 2px #10B981' : undefined) || (col.freeze ? (isLight
+                                ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                                : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)') : undefined),
+                              ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {})
+                            }}>
+                            {cell.value}
+                          </td>
+                        )
+                      })}
                     </tr>
                   )
                 })
@@ -1896,6 +1782,7 @@ export default function ClientMasterlist() {
           )}
         </div>
       </div>
+      )}
 
       {isActionDrawerOpen && selectedTicket && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
