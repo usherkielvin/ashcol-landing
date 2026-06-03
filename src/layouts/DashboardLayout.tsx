@@ -96,7 +96,6 @@ export default function DashboardLayout() {
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Inventory',       path: '/inventory',        icon: Boxes,           roles: ['admin', 'manager'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Customers',       path: '/customers',        icon: Users,           roles: ['admin', 'manager', 'staff'] },
     { name: 'DTR Scanner',     path: '/dtr-scanner',     icon: Scan,            roles: ['admin', 'manager', 'staff'] },

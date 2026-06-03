@@ -43,6 +43,9 @@ interface Ticket {
   installationCharges?: number
   modeOfPayment?: string
   controlNumber?: string
+  warrantyRegistrationCompleted?: boolean
+  warrantyRegistrationCompletedAt?: string
+  warrantyRegistrationCompletedBy?: string
 }
 
 interface ParsedVoucher {
@@ -354,6 +357,7 @@ export default function ClientMasterlist() {
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [activeTab, setActiveTab] = useState<'ALL' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL')
   const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
+  const [ticketScope, setTicketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
@@ -508,10 +512,16 @@ export default function ClientMasterlist() {
   // Load Initial Data
   const fetchData = async () => {
     try {
+      setLoading(true)
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const endpoint = ticketScope === 'MY'
+        ? '/tickets/assigned'
+        : ticketScope === 'BRANCH'
+          ? '/tickets/branch'
+          : '/tickets'
       
       // Fetch Tickets
-      const ticketRes = await fetch(`${API_BASE_URL}/tickets?page=0&size=100`, {
+      const ticketRes = await fetch(`${API_BASE_URL}${endpoint}?page=0&size=100`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (ticketRes.ok) {
@@ -538,7 +548,7 @@ export default function ClientMasterlist() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [ticketScope])
 
   // File Upload OCR (PDF/Image)
   const handleVoucherScan = async (file: File) => {
@@ -1305,6 +1315,7 @@ export default function ClientMasterlist() {
   const getRelayStatusLabel = (ticket: Ticket) => {
     const status = (ticket.status || '').toUpperCase()
     const details = parseAcDetails(ticket)
+    if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
     if (status === 'CANCELLED') return 'Cancelled'
     if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
     if ((ticket.branchId || ticket.assignedTo) && details.finalDate) return 'Scheduled'
@@ -1317,6 +1328,29 @@ export default function ClientMasterlist() {
   const getTicketNumber = (ticket: Ticket) => {
     if (ticket.controlNumber) return ticket.controlNumber
     return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()
+  }
+
+  const getTicketCategory = (ticket: Ticket) => {
+    const raw = `${ticket.serviceType || ''} ${ticket.title || ''}`.toLowerCase()
+    if (raw.includes('collection') || raw.includes('collect')) return 'Collection'
+    if (raw.includes('survey')) return 'Survey'
+    if (raw.includes('service') && !raw.includes('s/i')) return 'Service'
+    if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Installation'
+    return ticket.serviceType || 'Service'
+  }
+
+  const getCategoryColor = (category: string) => {
+    const c = category.toLowerCase()
+    if (c.includes('collection')) return '#7C3AED'
+    if (c.includes('service')) return '#EF4444'
+    return isLight ? '#111827' : '#F8FAFC'
+  }
+
+  const isCollectionPaid = (ticket: Ticket) => {
+    const hasAmount = !!(ticket.installationCharges && ticket.installationCharges > 0)
+    const hasPayment = !!(ticket.modeOfPayment && ticket.modeOfPayment.trim())
+    const remarks = (ticket.remarksUpdate || '').toLowerCase()
+    return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
   }
 
   const relaySummary = useMemo(() => {
@@ -1453,6 +1487,28 @@ export default function ClientMasterlist() {
             })}
           </div>
 
+          <div className="flex items-center rounded-lg border overflow-hidden"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            {[
+              { key: 'ALL', label: 'All' },
+              { key: 'MY', label: 'My Tickets' },
+              { key: 'BRANCH', label: 'Branch Tickets' },
+            ].map(item => {
+              const active = ticketScope === item.key
+              return (
+                <button key={item.key} type="button" onClick={() => setTicketScope(item.key as typeof ticketScope)}
+                  className="px-2.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap"
+                  style={{
+                    backgroundColor: active ? (isLight ? '#eef2ff' : 'rgba(99,102,241,0.16)') : 'transparent',
+                    color: active ? '#4F46E5' : textMuted,
+                    borderRight: item.key !== 'BRANCH' ? `1px solid ${inputBorder}` : undefined
+                  }}>
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
@@ -1515,59 +1571,82 @@ export default function ClientMasterlist() {
         <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
             <div>
-              <h2 className="text-sm font-black" style={{ color: textPrimary }}>Relay Summary</h2>
-              <p className="text-xs mt-0.5" style={{ color: textMuted }}>{relaySummary.length} branch/store group{relaySummary.length !== 1 ? 's' : ''} from {filtered.length} filtered ticket{filtered.length !== 1 ? 's' : ''}</p>
+              <h2 className="text-sm font-black" style={{ color: textPrimary }}>Ticket Summary</h2>
+              <p className="text-xs mt-0.5" style={{ color: textMuted }}>{filtered.length} ticket{filtered.length !== 1 ? 's' : ''} matching the current filters</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {[
-                { label: 'Pending', value: filtered.filter(t => getRelayStatusLabel(t) === 'Pending').length, color: '#F59E0B' },
-                { label: 'Assigned', value: filtered.filter(t => ['Assigned', 'In Progress', 'On the Way'].includes(getRelayStatusLabel(t))).length, color: '#3B82F6' },
-                { label: 'Scheduled', value: filtered.filter(t => getRelayStatusLabel(t) === 'Scheduled').length, color: '#06B6D4' },
-                { label: 'Installed', value: filtered.filter(t => getRelayStatusLabel(t) === 'Installed').length, color: '#10B981' },
-                { label: 'Cancelled', value: filtered.filter(t => getRelayStatusLabel(t) === 'Cancelled').length, color: '#EF4444' },
-              ].map(stat => (
-                <span key={stat.label} className="px-2.5 py-1 rounded-lg text-xs font-black border"
-                  style={{ color: stat.color, backgroundColor: `${stat.color}14`, borderColor: `${stat.color}33` }}>
-                  {stat.label}: {stat.value}
-                </span>
-              ))}
+              {['Service', 'Installation', 'Survey', 'Collection'].map(category => {
+                const color = getCategoryColor(category)
+                return (
+                  <span key={category} className="px-2.5 py-1 rounded-lg text-xs font-black border"
+                    style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>
+                    {category}: {filtered.filter(t => getTicketCategory(t) === category).length}
+                  </span>
+                )
+              })}
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead>
                 <tr style={{ backgroundColor: inputBg }}>
-                  {['BRANCH', 'STORE', 'TOTAL', 'PENDING', 'ASSIGNED', 'SCHEDULED', 'INSTALLED', 'CANCELLED', 'LAST UPDATE'].map(label => (
-                    <th key={label} className="px-3 py-2.5 text-left font-black text-[10px]" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                  {['TICKET NO', 'CATEGORY', 'STATUS', 'CUSTOMER', 'BRANCH', 'NEGOTIATOR', 'STORE', 'REQUESTED', 'FINAL', 'PAYMENT', 'ACTION'].map(label => (
+                    <th key={label} className="px-3 py-2.5 text-left font-black text-[10px] whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
                       {label}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {relaySummary.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td colSpan={9} className="py-16 text-center" style={{ color: textMuted }}>No relay records match the current filters.</td>
+                    <td colSpan={11} className="py-16 text-center" style={{ color: textMuted }}>
+                      <Loader2 className="w-7 h-7 animate-spin mx-auto mb-3 text-[#10B981]" />
+                      Loading tickets...
+                    </td>
                   </tr>
-                ) : relaySummary.map((row, idx) => (
-                  <tr key={`${row.branch}-${row.store}`}
-                    style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c') }}>
-                    <td className="px-3 py-2.5 font-bold" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{row.branch}</td>
-                    <td className="px-3 py-2.5" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{row.store}</td>
-                    <td className="px-3 py-2.5 font-black" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{row.total}</td>
-                    <td className="px-3 py-2.5 font-bold text-amber-500" style={{ borderBottom: `1px solid ${border}` }}>{row.pending}</td>
-                    <td className="px-3 py-2.5 font-bold text-blue-500" style={{ borderBottom: `1px solid ${border}` }}>{row.assigned}</td>
-                    <td className="px-3 py-2.5 font-bold text-cyan-500" style={{ borderBottom: `1px solid ${border}` }}>{row.scheduled}</td>
-                    <td className="px-3 py-2.5 font-bold text-emerald-500" style={{ borderBottom: `1px solid ${border}` }}>{row.installed}</td>
-                    <td className="px-3 py-2.5 font-bold text-red-500" style={{ borderBottom: `1px solid ${border}` }}>{row.cancelled}</td>
-                    <td className="px-3 py-2.5" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(row.latestUpdate) || '—'}</td>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-16 text-center" style={{ color: textMuted }}>No tickets match the current filters.</td>
                   </tr>
-                ))}
+                ) : filtered.map((ticket, idx) => {
+                  const category = getTicketCategory(ticket)
+                  const color = getCategoryColor(category)
+                  const details = parseAcDetails(ticket)
+                  const status = getRelayStatusLabel(ticket)
+                  const paymentText = category === 'Collection'
+                    ? (isCollectionPaid(ticket) ? 'Collected' : 'Pending collection')
+                    : (ticket.modeOfPayment || (ticket.installationCharges ? `₱${ticket.installationCharges.toLocaleString()}` : '—'))
+                  return (
+                    <tr key={ticket.id}
+                      onClick={() => { setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
+                      style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'), cursor: 'pointer' }}>
+                      <td className="px-3 py-2.5 font-black font-mono whitespace-nowrap max-w-[160px] truncate" title={getTicketNumber(ticket)} style={{ color, borderBottom: `1px solid ${border}` }}>{getTicketNumber(ticket)}</td>
+                      <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>{category}</span>
+                      </td>
+                      <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{status}</td>
+                      <td className="px-3 py-2.5 font-bold max-w-[210px] truncate" title={ticket.customerName || 'Direct Client'} style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{ticket.customerName || 'Direct Client'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{resolveBranch(ticket.branchId)?.name || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{ticket.assignedEmployeeName || ticket.installerName || '—'}</td>
+                      <td className="px-3 py-2.5 max-w-[180px] truncate" title={ticket.sourceVendor || ''} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{getStoreStyle(ticket.sourceVendor).label}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(ticket.preferredDate) || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(details.finalDate) || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap font-semibold" style={{ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted, borderBottom: `1px solid ${border}` }}>{paymentText}</td>
+                      <td className="px-3 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}>
+                        <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
-        </div>
-      ) : (
+        </div>      ) : (
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
           <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -1642,7 +1721,8 @@ export default function ClientMasterlist() {
                   const statusLabel = getRelayStatusLabel(ticket)
                   const ticketNumber = getTicketNumber(ticket)
                   const branchName = resolveBranch(ticket.branchId)?.name || '—'
-                  const category = ticket.serviceType || ticket.unitType || '—'
+                  const category = getTicketCategory(ticket)
+                  const categoryColor = getCategoryColor(category)
                   const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
                   const district = ticket.district || guessDistrict(ticket.location || '') || '—'
                   const relayedDate = formatShortDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
@@ -1662,9 +1742,9 @@ export default function ClientMasterlist() {
 
                   const cells = [
                     { value: <span className="font-black tabular-nums">{idx + 1}</span>, center: true },
-                    { value: <span className="font-black font-mono tracking-wide" style={{ color: statusColor }}>{ticketNumber}</span>, center: true },
+                    { value: <span className="font-black font-mono tracking-wide whitespace-nowrap block truncate" title={ticketNumber} style={{ color: categoryColor }}>{ticketNumber}</span>, center: true },
                     { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
-                    { value: <span className="font-bold uppercase text-[10px]">{category}</span>, center: true },
+                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color: categoryColor, backgroundColor: `${categoryColor}14`, borderColor: `${categoryColor}33` }}>{category}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{branchName}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{negotiator}</span>, center: true },
                     { value: <span className={`${columns[6].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
