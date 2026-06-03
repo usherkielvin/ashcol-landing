@@ -232,7 +232,7 @@ export default function Profile() {
   const handleRequestEmailCode = async () => {
     if (!newEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail))
       return setEmailErr('Enter a valid email address.')
-    setEmailLoading(true); setEmailErr('')
+    setEmailLoading(true); setEmailErr(''); setEmailSuccess('')
     try {
       const res = await fetch(`${apiUrl}/user/change-email/request`, {
         method: 'POST', headers: authHeaders(),
@@ -240,6 +240,8 @@ export default function Profile() {
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to send code.')
       setEmailStep('verify')
+      setEmailSuccess('Verification code sent successfully!')
+      setTimeout(() => setEmailSuccess(''), 5000)
     } catch (err: any) {
       setEmailErr(err.message || 'Could not send verification code.')
     } finally { setEmailLoading(false) }
@@ -914,10 +916,16 @@ export default function Profile() {
                   className="w-full py-3.5 rounded-xl font-bold text-white bg-[#10B981] hover:bg-emerald-500 transition-all disabled:opacity-50">
                   {emailLoading ? 'Verifying...' : 'Verify & Update Email'}
                 </button>
-                <button type="button" onClick={() => { setEmailStep('input'); setEmailErr('') }}
-                  className="text-sm font-semibold text-center hover:underline" style={{ color: textMuted }}>
-                  Use a different email
-                </button>
+                <div className="flex justify-between items-center mt-2 px-1">
+                  <button type="button" onClick={() => { setEmailStep('input'); setEmailErr(''); setEmailSuccess('') }}
+                    className="text-xs font-semibold hover:underline" style={{ color: textMuted }}>
+                    Use a different email
+                  </button>
+                  <button type="button" onClick={handleRequestEmailCode} disabled={emailLoading}
+                    className="text-xs font-bold text-[#10B981] hover:underline disabled:opacity-50">
+                    {emailLoading ? 'Sending...' : 'Resend Code'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
