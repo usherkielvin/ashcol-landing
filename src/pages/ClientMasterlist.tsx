@@ -312,6 +312,7 @@ export default function ClientMasterlist() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const pageBg = isLight ? '#f1f5f9' : '#060B18'
+  const compactInput = `w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20`
 
   // State
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -1419,7 +1420,7 @@ export default function ClientMasterlist() {
               style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL">All Status</option>
               <option value="UNASSIGNED">Unassigned</option>
-              <option value="PENDING">Scheduled</option>
+              <option value="PENDING">Pending / Scheduled</option>
               <option value="INSTALLED">Installed</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
@@ -1826,79 +1827,84 @@ export default function ClientMasterlist() {
       </div>
       )}
 
+      {/* Centered Manage/Edit Ticket Modal */}
       {isActionDrawerOpen && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
-          {/* Header */}
-          <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
-                  <Wrench className="w-5 h-5 text-[#10B981]" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
+            style={{ backgroundColor: cardBg, borderColor: border }}>
+            {/* Header */}
+            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-b" style={{ backgroundColor: cardBg, borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
+                  <Wrench className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="font-black text-base leading-none" style={{ color: textPrimary }}>Manage Client Ticket</h2>
+                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Manage Client Ticket</h2>
                   <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>
                     ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()} · Edit details and branch assignments
                   </p>
                 </div>
               </div>
               <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02]"
-                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
-                <X className="w-4 h-4" /> Close
+                className="p-1.5 rounded-lg border text-slate-400 hover:text-slate-600 transition-colors"
+                style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto px-6 py-8 max-w-5xl mx-auto w-full">
-            <div className="flex flex-col gap-6">
-              
-              {/* Section 1: Customer Details */}
-              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
-                    <User className="w-3.5 h-3.5 text-[#10B981]" />
-                  </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Client Information</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Customer Name</label>
-                    <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
-                      placeholder="Customer Name" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Primary Phone</label>
-                    <input type="text" value={editContactPhone} onChange={e => setEditContactPhone(e.target.value)}
-                      placeholder="Primary Contact Number" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Alternate Contact</label>
-                    <input type="text" value={editAlternatePhone} onChange={e => setEditAlternatePhone(e.target.value)}
-                      placeholder="e.g. Email or Phone number" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Store / Vendor Source</label>
-                    <select
-                      value={
-                        editSourceVendor.toLowerCase().includes('robinsons')
-                          ? 'Robinsons'
-                          : editSourceVendor.toLowerCase().includes('abenson')
-                          ? 'Abenson'
-                          : 'Direct'
-                      }
-                      onChange={e => setEditSourceVendor(e.target.value)}
-                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                      <option value="Robinsons">Robinsons</option>
-                      <option value="Abenson">Abenson</option>
-                      <option value="Direct">Direct Store</option>
-                    </select>
+
+            {/* Form Container */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Grid Container */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Left Column: Client & Address */}
+                <div className="space-y-4">
+                  {/* Block 1: Client Info */}
+                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 pb-1 border-b" style={{ borderColor: border }}>
+                      Client Information
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Customer Name</label>
+                        <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
+                          placeholder="Customer Name" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Primary Phone</label>
+                        <input type="text" value={editContactPhone} onChange={e => setEditContactPhone(e.target.value)}
+                          placeholder="Primary Phone" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Alternate Contact</label>
+                        <input type="text" value={editAlternatePhone} onChange={e => setEditAlternatePhone(e.target.value)}
+                          placeholder="Alternate contact" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store / Vendor Source</label>
+                        <select
+                          value={
+                            editSourceVendor.toLowerCase().includes('robinsons')
+                              ? 'Robinsons'
+                              : editSourceVendor.toLowerCase().includes('abenson')
+                              ? 'Abenson'
+                              : 'Direct'
+                          }
+                          onChange={e => setEditSourceVendor(e.target.value)}
+                          className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                          <option value="Robinsons">Robinsons</option>
+                          <option value="Abenson">Abenson</option>
+                          <option value="Direct">Direct Store</option>
+                        </select>
+                      </div>
+                    </div>
+                    {/* Optional vendor branch input */}
                     {(editSourceVendor.toLowerCase().includes('robinsons') || editSourceVendor.toLowerCase().includes('abenson')) && (
-                      <div className="mt-3">
-                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>
+                      <div className="mt-1">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
                           {editSourceVendor.toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
                         </label>
                         <input
@@ -1913,721 +1919,142 @@ export default function ClientMasterlist() {
                             setEditSourceVendor(e.target.value || prefix)
                           }}
                           placeholder={editSourceVendor.toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                          className={compactInput}
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                         />
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
 
-              {/* Section 2: Destination & Address */}
-              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(59,130,246,0.12)' }}>
-                    <MapPin className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-                  </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#3B82F6' }}>Destination & Address</p>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Full Address / Destination *</label>
-                  <textarea value={editLocation} rows={3}
-                    onChange={e => {
-                      const val = e.target.value
-                      setEditLocation(val)
-                      const guessed = guessDistrict(val)
-                      if (guessed) setEditDistrict(guessed)
-                    }} 
-                    placeholder="e.g. Blk 7 Lot 34 Grand Acacia Grove Subd. Brgy Banay-Banay, Cabuyao City Laguna" 
-                    className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Landmarks / Directions</label>
-                    <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
-                      placeholder="e.g. Landmark details" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>District</label>
-                    <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
-                      placeholder="e.g. District 1" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 3: Aircon Unit Details */}
-              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(139,92,246,0.12)' }}>
-                    <Package className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
-                  </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#8B5CF6' }}>Aircon Unit Details</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Brand</label>
-                    <input type="text" value={editBrand} onChange={e => setEditBrand(e.target.value)}
-                      placeholder="e.g. Midea" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Capacity</label>
-                    <input type="text" value={editCapacity} onChange={e => setEditCapacity(e.target.value)}
-                      placeholder="e.g. 1.5HP" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>SKU</label>
-                    <input type="text" value={editSku} onChange={e => setEditSku(e.target.value)}
-                      placeholder="e.g. 47980" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Serial Number</label>
-                    <input type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)}
-                      placeholder="e.g. 54122000ZAMB3230730794" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Control # / SI Voucher</label>
-                    <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
-                      placeholder="e.g. SI830343" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Type</label>
-                    <input type="text" value={editServiceType} onChange={e => {
-                      const val = e.target.value
-                      const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
-                      const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
-                      let mappedSvc = val
-                      if (isInstall) {
-                        mappedSvc = 'S/I'
-                        setEditCommitType('FREE FIRST 10 FEET')
-                      } else if (isSurvey) {
-                        mappedSvc = 'SURVEY'
-                      }
-                      setEditServiceType(mappedSvc)
-                    }}
-                      placeholder="e.g. Installation" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Commit Type / Promo</label>
-                    <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
-                      placeholder="e.g. Free Installation" className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  {editImages && (
-                    <div className="md:col-span-2 rounded-xl p-4 flex items-center justify-between border mt-2" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
-                          <FileText className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold" style={{ color: textPrimary }}>Scanned Voucher Document Attached</p>
-                          <p className="text-[10px]" style={{ color: textMuted }}>File: {editImages.split('/').pop()}</p>
-                        </div>
-                      </div>
-                      <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
-                         target="_blank" rel="noreferrer"
-                         className="px-4 py-2 bg-[#10B981]/10 hover:bg-[#10B981]/25 text-[#10B981] rounded-xl text-xs font-bold transition-all">
-                        View Document
-                      </a>
+                  {/* Block 2: Destination & Address */}
+                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 pb-1 border-b" style={{ borderColor: border }}>
+                      Destination & Address
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Section 4: Scheduling & Assignment */}
-              <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)' }}>
-                    <Calendar className="w-3.5 h-3.5" style={{ color: '#F59E0B' }} />
-                  </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#F59E0B' }}>Scheduling & Assignment</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Status</label>
-                    <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
-                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                      <option value="PENDING">Not Assigned (Pending)</option>
-                      <option value="ASSIGNED">Scheduled (Assigned)</option>
-                      <option value="ON_THE_WAY">On the Way</option>
-                      <option value="IN_PROGRESS">In Progress</option>
-                      <option value="COMPLETED">Installed (Completed)</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
-                  </div>
-                  {selectedTicket && getTicketCategory(selectedTicket) === 'Installation' && (
-                    <label className="flex items-center gap-3 rounded-xl border px-3 py-3 cursor-pointer"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                      <input type="checkbox" checked={editWarrantyRegistrationCompleted}
-                        onChange={e => setEditWarrantyRegistrationCompleted(e.target.checked)}
-                        className="w-4 h-4 accent-[#10B981]" />
-                      <span className="flex flex-col">
-                        <span className="text-xs font-black" style={{ color: textPrimary }}>Warranty registration completed</span>
-                        <span className="text-[10px]" style={{ color: textMuted }}>Required before payroll can close installation tickets.</span>
-                      </span>
-                    </label>
-                  )}
-                  {updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
-                    <div>
-                      <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Branch Zone</label>
-                      <select value={assignBranchId}
-                        onChange={e => setAssignBranchId(e.target.value)}
-                        className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                        <option value="">Select Branch...</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Relayed Date by Store</label>
-                    <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
-                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Preferred Date by Customer</label>
-                    <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
-                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                  </div>
-                  {assignBranchId && updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
-                    <div className="md:col-span-2">
-                      <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
-                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                        className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Remarks / Update Notes</label>
-                  <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={3}
-                    placeholder="e.g. Free Installation..." className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-            {/* Sticky Footer */}
-            <div className="shrink-0 px-8 py-4 flex items-center justify-between gap-4" style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
-              {isAdmin ? (
-                <button type="button" onClick={() => handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)}
-                  disabled={actionSaving}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all disabled:opacity-50 hover:bg-red-500 hover:text-white hover:border-red-500"
-                  style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}>
-                  <Trash2 className="w-3.5 h-3.5" /> Delete Ticket
-                </button>
-              ) : <div />}
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                  className="px-6 py-2.5 border rounded-xl text-xs font-bold transition-colors"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  Cancel
-                </button>
-                <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
-                  className="px-10 py-2.5 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md"
-                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                  {actionSaving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-          </div>
-        </div>
-      )}
-
-
-      {/* Full-Page Create Ticket */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: pageBg }}>
-          <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(16,185,129,0.12)" }}>
-                  <User className="w-5 h-5 text-[#10B981]" />
-                </div>
-                <div>
-                  <h2 className="font-black text-base leading-none" style={{ color: textPrimary }}>Create Client Ticket</h2>
-                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fill in client details to schedule a service appointment</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setIsAddModalOpen(false)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02]"
-                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}>
-                <X className="w-4 h-4" /> Cancel
-              </button>
-            </div>
-          </div>
-          <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 flex overflow-hidden">
-              {/* Form Panel - Centered & Full Width */}
-              <div className="flex-1 overflow-y-auto px-6 py-8 max-w-5xl mx-auto w-full">
-                <div className="flex flex-col gap-6">
-                  
-                  {/* AI Extraction Success Banner */}
-                  {addForm.images && (
-                    <div className="rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)',
-                        borderColor: 'rgba(16, 185, 129, 0.25)',
-                        backdropFilter: 'blur(10px)'
-                      }}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}>
-                          <CheckCircle2 className="w-5 h-5 text-[#10B981] animate-bounce" />
-                        </div>
-                        <div>
-                          <h3 className="font-black text-sm text-[#10B981]">Gemini AI Parser Active</h3>
-                          <p className="text-xs" style={{ color: textMuted }}>
-                            Client details were successfully extracted from the uploaded voucher. Please review and verify the highlighted fields below.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
-                          target="_blank" rel="noreferrer"
-                          className="px-4 py-2 border rounded-xl text-xs font-bold transition-all hover:scale-[1.02] shadow-sm flex items-center gap-1.5"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                          <FileText className="w-3.5 h-3.5" /> View Original Doc
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Section 1: Client Info */}
-                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(16,185,129,0.12)" }}><User className="w-3.5 h-3.5 text-[#10B981]" /></div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Client Information</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
                       <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Customer Name *</span>
-                          {isFieldExtracted(addForm.customerName) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={addForm.customerName}
-                          onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))}
-                          placeholder="e.g. Juan Dela Cruz"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.customerName) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.customerName) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.customerName) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Contact Number</span>
-                          {isFieldExtracted(addForm.contactPhone) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.contactPhone}
-                          onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
-                          placeholder="e.g. 0917 123 4567"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.contactPhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.contactPhone) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.contactPhone) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Alternate Contact</span>
-                          {isFieldExtracted(addForm.alternatePhone) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.alternatePhone}
-                          onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))}
-                          placeholder="e.g. Email or Phone number"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.alternatePhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.alternatePhone) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.alternatePhone) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Store / Vendor Source</span>
-                          {isFieldExtracted(addForm.sourceVendor) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                         <select
-                          value={
-                            (addForm.sourceVendor || '').toLowerCase().includes('robinsons')
-                              ? 'Robinsons'
-                              : (addForm.sourceVendor || '').toLowerCase().includes('abenson')
-                              ? 'Abenson'
-                              : 'Direct'
-                          }
-                          onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.sourceVendor) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.sourceVendor) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.sourceVendor) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        >
-                          <option value="Robinsons" style={{ color: "#000" }}>Robinsons</option>
-                          <option value="Abenson" style={{ color: "#000" }}>Abenson</option>
-                          <option value="Direct" style={{ color: "#000" }}>Direct Store</option>
-                        </select>
-                        {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
-                          <div className="mt-3">
-                            <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>
-                              {(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson'
-                                  ? ''
-                                  : addForm.sourceVendor
-                              }
-                              onChange={e => {
-                                const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
-                                setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
-                              }}
-                              placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
-                              className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section 2: Location */}
-                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(59,130,246,0.12)" }}><MapPin className="w-3.5 h-3.5" style={{ color: "#3B82F6" }} /></div>
-                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#3B82F6" }}>Destination & Address</p>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                        <span>Full Address / Destination *</span>
-                        {isFieldExtracted(addForm.locationRaw) && (
-                          <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                            ✓ Auto-extracted
-                          </span>
-                        )}
-                      </label>
-                      <textarea
-                        required
-                        value={addForm.locationRaw}
-                        onChange={e => {
-                          const val = e.target.value
-                          setAddForm(prev => {
-                            const guessed = guessDistrict(val)
-                            return {
-                              ...prev,
-                              locationRaw: val,
-                              district: guessed || prev.district
-                            }
-                          })
-                        }}
-                        placeholder="e.g. Blk 7 Lot 34 Grand Acacia Grove Subd. Brgy Banay-Banay, Cabuyao City Laguna"
-                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none transition-all duration-200"
-                        style={{
-                          backgroundColor: isFieldExtracted(addForm.locationRaw) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                          borderColor: isFieldExtracted(addForm.locationRaw) ? '#10B981' : inputBorder,
-                          boxShadow: isFieldExtracted(addForm.locationRaw) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                          color: textPrimary
-                        }}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Landmarks / Directions</span>
-                          {isFieldExtracted(addForm.landmarks) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.landmarks}
-                          onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))}
-                          placeholder="e.g. Landmark details"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.landmarks) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.landmarks) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.landmarks) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>District / Zone</span>
-                          {isFieldExtracted(addForm.district) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-assigned
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.district}
-                          onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))}
-                          placeholder="e.g. District 1"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.district) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.district) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.district) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section 3: Aircon Unit Details */}
-                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(139,92,246,0.12)" }}><Package className="w-3.5 h-3.5" style={{ color: "#8B5CF6" }} /></div>
-                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Aircon Unit Details</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Brand</span>
-                          {isFieldExtracted(addForm.brand) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.brand}
-                          onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))}
-                          placeholder="e.g. Midea"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.brand) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.brand) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.brand) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Capacity</span>
-                          {isFieldExtracted(addForm.capacity) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.capacity}
-                          onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))}
-                          placeholder="e.g. 1.5HP"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.capacity) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.capacity) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.capacity) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>SKU</span>
-                          {isFieldExtracted(addForm.sku) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.sku}
-                          onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))}
-                          placeholder="e.g. 47980"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.sku) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.sku) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.sku) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Serial Number</span>
-                          {isFieldExtracted(addForm.serialNumber) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.serialNumber}
-                          onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))}
-                          placeholder="e.g. 54122000ZAMB3230730794"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.serialNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.serialNumber) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.serialNumber) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Control # / SI Voucher</span>
-                          {isFieldExtracted(addForm.controlNumber) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.controlNumber}
-                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
-                          placeholder="e.g. SI830343"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.controlNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.controlNumber) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.controlNumber) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Service Type</span>
-                          {isFieldExtracted(addForm.serviceType) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.serviceType}
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Full Address / Destination *</label>
+                        <textarea value={editLocation} rows={2}
                           onChange={e => {
                             const val = e.target.value
-                            setAddForm(prev => {
-                              let mappedSvc = val
-                              const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
-                              const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
-                              if (isInstall) {
-                                mappedSvc = 'S/I'
-                              } else if (isSurvey) {
-                                mappedSvc = 'SURVEY'
-                              }
-                              return {
-                                ...prev,
-                                serviceType: mappedSvc,
-                                title: `${mappedSvc} service`,
-                                commitType: isInstall ? 'FREE FIRST 10 FEET' : prev.commitType
-                              }
-                            })
-                          }}
-                          placeholder="e.g. Installation"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.serviceType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.serviceType) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.serviceType) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
+                            setEditLocation(val)
+                            const guessed = guessDistrict(val)
+                            if (guessed) setEditDistrict(guessed)
+                          }} 
+                          placeholder="e.g. Address details" 
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                       </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                          <span>Commit Type / Promo</span>
-                          {isFieldExtracted(addForm.commitType) && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                              ✓ Auto-extracted
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          type="text"
-                          value={addForm.commitType}
-                          onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))}
-                          placeholder="e.g. Free Installation"
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all duration-200"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.commitType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.commitType) ? '#10B981' : inputBorder,
-                            boxShadow: isFieldExtracted(addForm.commitType) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                            color: textPrimary
-                          }}
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Landmarks / Directions</label>
+                          <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
+                            placeholder="e.g. Landmarks" className={compactInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>District</label>
+                          <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
+                            placeholder="e.g. District 1" className={compactInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </div>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Section 4: Scheduling & Assignment */}
-                  <div className="rounded-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2 pb-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: "rgba(245,158,11,0.12)" }}><Calendar className="w-3.5 h-3.5" style={{ color: "#F59E0B" }} /></div>
-                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#F59E0B" }}>Scheduling & Assignment</p>
+                {/* Right Column: Unit Details & Scheduling */}
+                <div className="space-y-4">
+                  {/* Block 3: Unit Details */}
+                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-purple-500 pb-1 border-b" style={{ borderColor: border }}>
+                      Aircon Unit Details
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div>
-                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Service Status</label>
-                        <select value={addForm.status} onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold"
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
+                        <input type="text" value={editBrand} onChange={e => setEditBrand(e.target.value)}
+                          placeholder="e.g. Brand" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
+                        <input type="text" value={editCapacity} onChange={e => setEditCapacity(e.target.value)}
+                          placeholder="e.g. Capacity" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
+                        <input type="text" value={editSku} onChange={e => setEditSku(e.target.value)}
+                          placeholder="SKU" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial Number</label>
+                        <input type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)}
+                          placeholder="Serial #" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control # / SI Voucher</label>
+                        <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
+                          placeholder="Control #" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Type</label>
+                        <input type="text" value={editServiceType} onChange={e => {
+                          const val = e.target.value
+                          const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
+                          const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
+                          let mappedSvc = val
+                          if (isInstall) {
+                            mappedSvc = 'S/I'
+                            setEditCommitType('FREE FIRST 10 FEET')
+                          } else if (isSurvey) {
+                            mappedSvc = 'SURVEY'
+                          }
+                          setEditServiceType(mappedSvc)
+                        }}
+                          placeholder="e.g. S/I" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit Type / Promo</label>
+                        <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
+                          placeholder="e.g. Commit info" className={compactInput}
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                    </div>
+                    {/* Document Attachment view */}
+                    {editImages && (
+                      <div className="rounded-lg p-2 flex items-center justify-between border mt-1" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-emerald-500 shrink-0" />
+                          <div className="text-[10px]">
+                            <p className="font-bold" style={{ color: textPrimary }}>Attached Voucher</p>
+                            <p className="truncate max-w-[120px]" style={{ color: textMuted }}>{editImages.split('/').pop()}</p>
+                          </div>
+                        </div>
+                        <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
+                           target="_blank" rel="noreferrer"
+                           className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 rounded text-[9px] font-bold transition-all">
+                          View
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Block 4: Scheduling & Assignment */}
+                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 pb-1 border-b" style={{ borderColor: border }}>
+                      Scheduling & Assignment
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Status</label>
+                        <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
+                          className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                           <option value="PENDING">Not Assigned (Pending)</option>
                           <option value="ASSIGNED">Scheduled (Assigned)</option>
@@ -2637,11 +2064,23 @@ export default function ClientMasterlist() {
                           <option value="CANCELLED">Cancelled</option>
                         </select>
                       </div>
-                      {addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                      {selectedTicket && getTicketCategory(selectedTicket) === 'Installation' && (
+                        <label className="flex items-center gap-1.5 rounded-lg border px-2 py-1 cursor-pointer select-none"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                          <input type="checkbox" checked={editWarrantyRegistrationCompleted}
+                            onChange={e => setEditWarrantyRegistrationCompleted(e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#10B981]" />
+                          <span className="flex flex-col">
+                            <span className="text-[9px] font-bold" style={{ color: textPrimary }}>Warranty Done</span>
+                          </span>
+                        </label>
+                      )}
+                      {(updateStatus !== 'PENDING' || (selectedTicket && getTicketCategory(selectedTicket) === 'Collection')) && updateStatus !== 'CANCELLED' && (
                         <div>
-                          <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Branch Zone Assignment</label>
-                          <select value={addForm.branchId} onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
-                            className="w-full border rounded-xl px-3 py-3 text-sm outline-none font-bold animate-fade-in"
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone</label>
+                          <select value={assignBranchId}
+                            onChange={e => setAssignBranchId(e.target.value)}
+                            className={compactInput}
                             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                             <option value="">Select Branch...</option>
                             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -2649,65 +2088,518 @@ export default function ClientMasterlist() {
                         </div>
                       )}
                       <div>
-                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Relayed Date by Store</label>
-                        <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))}
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed Date</label>
+                        <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
+                          className={compactInput}
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Preferred Date by Customer</label>
-                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))}
-                          className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Preferred Date</label>
+                        <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
+                          className={compactInput}
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                       </div>
-                      {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
-                        <div className="md:col-span-2">
-                          <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
-                          <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
-                            className="w-full border rounded-xl px-3 py-3 text-sm outline-none"
+                      {assignBranchId && (updateStatus !== 'PENDING' || (selectedTicket && getTicketCategory(selectedTicket) === 'Collection')) && updateStatus !== 'CANCELLED' && (
+                        <div className="col-span-2">
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
+                          <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                            className={compactInput}
                             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                         </div>
                       )}
                     </div>
                     <div>
-                      <label className="text-[10px] font-black uppercase flex items-center justify-between mb-1.5" style={{ color: textMuted }}>
-                        <span>Remarks / Special Instructions</span>
-                        {isFieldExtracted(addForm.description) && (
-                          <span className="text-[8px] font-black uppercase tracking-wider text-[#10B981] bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                            ✓ Auto-extracted
-                          </span>
-                        )}
-                      </label>
-                      <textarea
-                        value={addForm.description}
-                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                        rows={3}
-                        placeholder="e.g. Free Installation..."
-                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none resize-none transition-all duration-200"
-                        style={{
-                          backgroundColor: isFieldExtracted(addForm.description) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                          borderColor: isFieldExtracted(addForm.description) ? '#10B981' : inputBorder,
-                          boxShadow: isFieldExtracted(addForm.description) ? '0 0 0 2px rgba(16,185,129,0.1)' : 'none',
-                          color: textPrimary
-                        }}
-                      />
+                      <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks / Update Notes</label>
+                      <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={2}
+                        placeholder="Remarks..." className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: cardBg }}>
+              {isAdmin ? (
+                <button type="button" onClick={() => handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)}
+                  disabled={actionSaving}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 border transition-all disabled:opacity-50 hover:bg-red-500 hover:text-white hover:border-red-500"
+                  style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Ticket
+                </button>
+              ) : <div />}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setIsActionDrawerOpen(false)}
+                  className="px-4 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
+                  className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                  {actionSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* Centered Create Ticket Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
+            style={{ backgroundColor: cardBg, borderColor: border }}>
+            {/* Header */}
+            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-b" style={{ backgroundColor: cardBg, borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Create Client Ticket</h2>
+                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fill in details to schedule a service appointment</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsAddModalOpen(false)}
+                className="p-1.5 rounded-lg border text-slate-400 hover:text-slate-600 transition-colors"
+                style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            {/* Form */}
+            <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {/* AI Banner */}
+                {addForm.images && (
+                  <div className="rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 border"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04) 0%, rgba(59, 130, 246, 0.04) 100%)',
+                      borderColor: 'rgba(16, 185, 129, 0.2)'
+                    }}>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <div className="text-[11px]">
+                        <span className="font-bold text-emerald-600 mr-1">Gemini AI Parser Active:</span>
+                        <span style={{ color: textMuted }}>Extracted client details. Please review fields below.</span>
+                      </div>
+                    </div>
+                    <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
+                      target="_blank" rel="noreferrer"
+                      className="px-2.5 py-1 border rounded-lg text-[10px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 flex items-center gap-1"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                      <FileText className="w-3 h-3" /> View Doc
+                    </a>
+                  </div>
+                )}
+
+                {/* Grid Container */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Left Column: Client & Address */}
+                  <div className="space-y-4">
+                    {/* Block 1: Client Info */}
+                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 pb-1 border-b" style={{ borderColor: border }}>
+                        Client Information
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            Customer Name *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={addForm.customerName}
+                            onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))}
+                            placeholder="e.g. Juan Dela Cruz"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.customerName) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.customerName) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            Contact Number
+                          </label>
+                          <input
+                            type="text"
+                            value={addForm.contactPhone}
+                            onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
+                            placeholder="e.g. 0917 123 4567"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.contactPhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.contactPhone) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            Alternate Contact
+                          </label>
+                          <input
+                            type="text"
+                            value={addForm.alternatePhone}
+                            onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))}
+                            placeholder="Email or Phone"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.alternatePhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.alternatePhone) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            Store / Vendor Source
+                          </label>
+                          <select
+                            value={
+                              (addForm.sourceVendor || '').toLowerCase().includes('robinsons')
+                                ? 'Robinsons'
+                                : (addForm.sourceVendor || '').toLowerCase().includes('abenson')
+                                ? 'Abenson'
+                                : 'Direct'
+                            }
+                            onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.sourceVendor) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.sourceVendor) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          >
+                            <option value="Robinsons" style={{ color: "#000" }}>Robinsons</option>
+                            <option value="Abenson" style={{ color: "#000" }}>Abenson</option>
+                            <option value="Direct" style={{ color: "#000" }}>Direct Store</option>
+                          </select>
+                        </div>
+                      </div>
+                      
+                      {/* Optional vendor branch input */}
+                      {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
+                        <div className="mt-1">
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            {(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson'
+                                ? ''
+                                : addForm.sourceVendor
+                            }
+                            onChange={e => {
+                              const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
+                              setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
+                            }}
+                            placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
+                            className={compactInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Block 2: Destination & Address */}
+                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 pb-1 border-b" style={{ borderColor: border }}>
+                        Destination & Address
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                            Full Address / Destination *
+                          </label>
+                          <textarea
+                            required
+                            value={addForm.locationRaw}
+                            onChange={e => {
+                              const val = e.target.value
+                              setAddForm(prev => {
+                                const guessed = guessDistrict(val)
+                                return {
+                                  ...prev,
+                                  locationRaw: val,
+                                  district: guessed || prev.district
+                                }
+                              })
+                            }}
+                            placeholder="Address details..."
+                            className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.locationRaw) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.locationRaw) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                            rows={2}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                              Landmarks / Directions
+                            </label>
+                            <input
+                              type="text"
+                              value={addForm.landmarks}
+                              onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))}
+                              placeholder="e.g. Near church"
+                              className={compactInput}
+                              style={{
+                                backgroundColor: isFieldExtracted(addForm.landmarks) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                                borderColor: isFieldExtracted(addForm.landmarks) ? '#10B981' : inputBorder,
+                                color: textPrimary
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
+                              District / Zone
+                            </label>
+                            <input
+                              type="text"
+                              value={addForm.district}
+                              onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))}
+                              placeholder="e.g. District 1"
+                              className={compactInput}
+                              style={{
+                                backgroundColor: isFieldExtracted(addForm.district) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                                borderColor: isFieldExtracted(addForm.district) ? '#10B981' : inputBorder,
+                                color: textPrimary
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Right Column: Unit Details & Scheduling */}
+                  <div className="space-y-4">
+                    {/* Block 3: Unit Details */}
+                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-purple-500 pb-1 border-b" style={{ borderColor: border }}>
+                        Aircon Unit Details
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
+                          <input
+                            type="text"
+                            value={addForm.brand}
+                            onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))}
+                            placeholder="e.g. Midea"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.brand) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.brand) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
+                          <input
+                            type="text"
+                            value={addForm.capacity}
+                            onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))}
+                            placeholder="e.g. 1.5HP"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.capacity) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.capacity) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
+                          <input
+                            type="text"
+                            value={addForm.sku}
+                            onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))}
+                            placeholder="SKU"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.sku) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.sku) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial Number</label>
+                          <input
+                            type="text"
+                            value={addForm.serialNumber}
+                            onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))}
+                            placeholder="Serial #"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.serialNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.serialNumber) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control # / SI Voucher</label>
+                          <input
+                            type="text"
+                            value={addForm.controlNumber}
+                            onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
+                            placeholder="Control #"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.controlNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.controlNumber) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Type</label>
+                          <input
+                            type="text"
+                            value={addForm.serviceType}
+                            onChange={e => {
+                              const val = e.target.value
+                              setAddForm(prev => {
+                                let mappedSvc = val
+                                const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
+                                const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
+                                if (isInstall) {
+                                  mappedSvc = 'S/I'
+                                } else if (isSurvey) {
+                                  mappedSvc = 'SURVEY'
+                                }
+                                return {
+                                  ...prev,
+                                  serviceType: mappedSvc,
+                                  title: `${mappedSvc} service`,
+                                  commitType: isInstall ? 'FREE FIRST 10 FEET' : prev.commitType
+                                }
+                              })
+                            }}
+                            placeholder="e.g. S/I"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.serviceType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.serviceType) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit Type / Promo</label>
+                          <input
+                            type="text"
+                            value={addForm.commitType}
+                            onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))}
+                            placeholder="e.g. Promo details"
+                            className={compactInput}
+                            style={{
+                              backgroundColor: isFieldExtracted(addForm.commitType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                              borderColor: isFieldExtracted(addForm.commitType) ? '#10B981' : inputBorder,
+                              color: textPrimary
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Block 4: Scheduling & Assignment */}
+                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 pb-1 border-b" style={{ borderColor: border }}>
+                        Scheduling & Assignment
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Status</label>
+                          <select value={addForm.status} onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
+                            className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                            <option value="PENDING">Not Assigned (Pending)</option>
+                            <option value="ASSIGNED">Scheduled (Assigned)</option>
+                            <option value="ON_THE_WAY">On the Way</option>
+                            <option value="IN_PROGRESS">In Progress</option>
+                            <option value="COMPLETED">Installed (Completed)</option>
+                            <option value="CANCELLED">Cancelled</option>
+                          </select>
+                        </div>
+                        {addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                          <div>
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone Assignment</label>
+                            <select value={addForm.branchId} onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
+                              className={compactInput}
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                              <option value="">Select Branch...</option>
+                              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed Date</label>
+                          <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))}
+                            className={compactInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Preferred Date</label>
+                          <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))}
+                            className={compactInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </div>
+                        {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                          <div className="col-span-2">
+                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
+                            <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                              className={compactInput}
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks / Special Instructions</label>
+                        <textarea
+                          value={addForm.description}
+                          onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                          rows={2}
+                          placeholder="e.g. Call customer before dispatch..."
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                          style={{
+                            backgroundColor: isFieldExtracted(addForm.description) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+                            borderColor: isFieldExtracted(addForm.description) ? '#10B981' : inputBorder,
+                            color: textPrimary
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-            </div>
-            {/* Sticky Footer - Restored */}
-            <div className="shrink-0 px-8 py-4 flex items-center justify-between gap-4" style={{ borderTop: `1px solid ${border}`, backgroundColor: cardBg }}>
-              <button type="button" onClick={() => setIsAddModalOpen(false)} className="flex items-center gap-2 px-6 py-2.5 border rounded-xl text-sm font-bold transition-all hover:scale-[1.02]" style={{ borderColor: inputBorder, color: textMuted }}>
-                ← Back to Masterlist
-              </button>
-              <button type="submit" disabled={formSubmitting} className="px-10 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-lg hover:scale-[1.01]" style={{ background: "linear-gradient(135deg, #10B981, #059669)" }}>
-                {formSubmitting ? "Creating..." : "+ Create Client Ticket"}
-              </button>
-            </div>
-          </form>
+              {/* Footer */}
+              <div className="shrink-0 px-5 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: cardBg }}>
+                <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={formSubmitting} className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: "linear-gradient(135deg, #10B981, #059669)" }}>
+                  {formSubmitting ? "Creating..." : "+ Create Ticket"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
