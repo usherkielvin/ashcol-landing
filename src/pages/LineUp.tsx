@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
-  ChevronDown, Camera, Copy, Save, Check, Maximize2,
+  ChevronDown, Camera, Copy, Save, Check, Maximize2, ArrowLeft,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -2564,14 +2564,26 @@ export default function LineUp() {
                   {branchName || 'Selected branch'} · {englishLabel(date)}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowcaseOpen(false)}
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowcaseOpen(false)}
+                  className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold"
+                  style={{ backgroundColor: currentTheme.accent, border: `1px solid ${currentTheme.accentDark}`, color: '#ffffff' }}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowcaseOpen(false)}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  aria-label="Close showcase"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
