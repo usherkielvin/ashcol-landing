@@ -1340,9 +1340,9 @@ export default function ClientMasterlist() {
   const getTicketCategory = (ticket: Ticket) => {
     const raw = `${ticket.serviceType || ''} ${ticket.title || ''}`.toLowerCase()
     if (raw.includes('collection') || raw.includes('collect')) return 'Collection'
-    if (raw.includes('survey')) return 'Survey'
-    if (raw.includes('service') && !raw.includes('s/i')) return 'Service'
     if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Installation'
+    if (raw.includes('survey')) return 'Survey'
+    if (raw.includes('service') || raw.includes('clean')) return 'Service'
     return ticket.serviceType || 'Service'
   }
 
@@ -2151,10 +2151,12 @@ export default function ClientMasterlist() {
       {isAddModalOpen && (() => {
         const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Collection'
-          : /service/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Service'
+          : /install|s\/i|\bsi\b/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Installation'
           : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Survey'
+          : /service|clean/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Service'
           : 'Installation'
         const canAssignBranch = addForm.status !== 'CANCELLED' && (addForm.status !== 'PENDING' || addCategory === 'Collection')
         const fieldStyle = (value?: string) => ({
