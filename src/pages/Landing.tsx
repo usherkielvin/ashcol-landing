@@ -3,12 +3,11 @@ import {
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
   Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone, Bot
+  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { PUBLIC_BRANCHES } from '../data/branches'
 import { getPortalUrl } from '../utils/portalUrl'
-import PublicAIChatBot from '../components/PublicAIChatBot'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -404,7 +403,6 @@ function FranchiseBranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Landing() {
-  const [publicAiOpen, setPublicAiOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('hero')
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -525,36 +523,14 @@ export default function Landing() {
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Public Ashcol AI (Vercel /api/chat — no backend) */}
-            <button
-              type="button"
-              onClick={() => setPublicAiOpen(true)}
-              className="hidden sm:flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg transition-all hover:opacity-90 active:scale-95"
-              style={{ color: t.accent, backgroundColor: t.accentBg }}
-              title="Chat with ASHCOL AI"
-            >
-              <span className="flex items-center justify-center w-6 h-6 rounded-full" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)' }}>
-                <Bot className="w-3.5 h-3.5" />
-              </span>
-              AI
-            </button>
 
             {/* Login link */}
             <a
               href={getPortalUrl('/login')}
-              className="hidden sm:flex items-center text-sm font-semibold px-3 py-2 rounded-lg transition-all"
-              style={{ color: t.textMuted }}
-            >
-              Login
-            </a>
-
-            {/* Book a Service CTA */}
-            <a
-              href={getPortalUrl('/create-account')}
-              className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-lg transition-all glow-green"
+              className="hidden sm:flex items-center justify-center px-4 py-2 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
               style={{ backgroundColor: t.accent }}
             >
-              Book a Service
+              Login
             </a>
 
             {/* Mobile hamburger */}
@@ -581,34 +557,13 @@ export default function Landing() {
                 {label}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false)
-                setPublicAiOpen(true)
-              }}
-              className="flex items-center gap-2.5 text-left text-sm font-bold py-2.5 rounded-lg px-3 -mx-2 transition-all active:scale-[0.98]"
-              style={{ color: t.accent, backgroundColor: t.accentBg }}
-            >
-              <span className="flex items-center justify-center w-7 h-7 rounded-full" style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)' }}>
-                <Bot className="w-4 h-4 shrink-0" />
-              </span>
-              ASHCOL AI — chat now
-            </button>
             <div className="flex gap-2 mt-1">
               <a
                 href={getPortalUrl('/login')}
-                className="flex-1 flex items-center justify-center py-2.5 text-sm font-semibold rounded-lg border transition-all"
-                style={{ color: t.text, borderColor: t.border }}
-              >
-                Login
-              </a>
-              <a
-                href={getPortalUrl('/create-account')}
-                className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all"
+                className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green"
                 style={{ backgroundColor: t.accent }}
               >
-                Book a Service
+                Login
               </a>
             </div>
           </div>
@@ -645,9 +600,9 @@ export default function Landing() {
           <p className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: t.textFaint }}>How it works</p>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { num: '1', label: 'Sign Up',        sub: 'Create your free account' },
-              { num: '2', label: 'Book a Service', sub: 'Pick a date & AC service' },
-              { num: '3', label: 'We Come to You', sub: 'Our team handles the rest' },
+              { num: '1', label: 'Login',        sub: 'Open the service portal' },
+              { num: '2', label: 'Coordinate',   sub: 'Manage your requests' },
+              { num: '3', label: 'Track Updates', sub: 'Follow team progress' },
             ].map((step, i) => (
               <div key={i} className="flex flex-col items-center text-center rounded-xl px-2 py-3 sm:px-4 sm:py-4 gap-2" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.accentBg, border: `1px solid ${t.accent}40` }}>
@@ -665,10 +620,10 @@ export default function Landing() {
         {/* CTA — below steps */}
         <div className="relative w-full max-w-lg">
           <a
-            href={getPortalUrl('/create-account')}
+            href={getPortalUrl('/login')}
             className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
           >
-            Book a Service Now
+            Login to Portal
           </a>
 
         </div>
@@ -834,7 +789,7 @@ export default function Landing() {
           {/* Right: Feature pills */}
           <div className="w-full lg:flex-1 grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-sm">
             {[
-              { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation in seconds' },
+              { icon: <Calendar className="w-4 h-4" />, title: 'Portal Access', desc: 'Open your workspace and view service activity' },
               { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
               { icon: <Bell className="w-4 h-4" />, title: 'Get Notified', desc: 'Alerts when a technician is assigned or en route' },
             ].map((feat, i) => (
@@ -1288,7 +1243,7 @@ export default function Landing() {
         <div className="absolute inset-0 orb-green opacity-30 pointer-events-none" />
         <img src={logoImg} alt="ASHCOL" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
         <h2 className="relative text-[clamp(1.4rem,4vw,2.5rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
-          Ready to stay cool?<br />Book a service today.
+          Ready to stay cool?<br />Access your portal.
         </h2>
         <p className="relative max-w-md text-[14px] md:text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
           Residential or commercial — our team is ready to help, 7 days a week.
@@ -1296,10 +1251,10 @@ export default function Landing() {
         <div className="relative w-full max-w-lg mx-auto">
           <div className="flex flex-row justify-center gap-2 sm:gap-3 w-full">
             <a
-              href={getPortalUrl('/create-account')}
+              href={getPortalUrl('/login')}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[180px]"
             >
-              Request a Service
+              Login to Portal
             </a>
             <a
               href="mailto:headoffice@ashcol.com.ph"
@@ -1347,18 +1302,6 @@ export default function Landing() {
           <div className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
             <a href={getPortalUrl('/login')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Login</a>
-            <a href={getPortalUrl('/create-account')} className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Create Account</a>
-            <button
-              type="button"
-              onClick={() => setPublicAiOpen(true)}
-              className="text-[13px] transition-colors hover:text-[#10B981] flex items-center gap-2 text-left py-1"
-              style={{ color: t.textFaint }}
-            >
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#10B981]/20">
-                <Bot className="w-3 h-3 text-[#10B981]" />
-              </span>
-              ASHCOL AI
-            </button>
           </div>
         </div>
 
@@ -1367,19 +1310,6 @@ export default function Landing() {
         </div>
       </footer>
 
-      <PublicAIChatBot isOpen={publicAiOpen} onClose={() => setPublicAiOpen(false)} isDark={isDark} />
-
-      {!publicAiOpen && (
-        <button
-          type="button"
-          onClick={() => setPublicAiOpen(true)}
-          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[70] p-3.5 sm:p-4 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center bg-gradient-to-r from-[#10B981] to-[#059669] text-white"
-          aria-label="Open ASHCOL AI chat"
-          title="Chat with ASHCOL AI"
-        >
-          <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
-        </button>
-      )}
     </div>
   )
 }
