@@ -875,7 +875,7 @@ export default function ClientMasterlist() {
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
-          branchId: (addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
+          branchId: ((addForm.status !== 'PENDING' || /collect/i.test(`${addForm.serviceType} ${addForm.title}`)) && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
         })
       })
 
@@ -2148,9 +2148,30 @@ export default function ClientMasterlist() {
 
 
       {/* Centered Create Ticket Modal */}
-      {isAddModalOpen && (
+      {isAddModalOpen && (() => {
+        const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Collection'
+          : /service/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Service'
+          : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Survey'
+          : 'Installation'
+        const canAssignBranch = addForm.status !== 'CANCELLED' && (addForm.status !== 'PENDING' || addCategory === 'Collection')
+        const fieldStyle = (value?: string) => ({
+          backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+          borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
+          color: textPrimary
+        })
+        const categoryOptions = [
+          { label: 'Installation', value: 'Installation', title: 'Installation service' },
+          { label: 'Service', value: 'Service', title: 'Service ticket' },
+          { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
+          { label: 'Collection', value: 'Collection', title: 'Collection ticket' }
+        ]
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
+          <div className="flex flex-col w-full max-w-5xl max-h-[92vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
             style={{ backgroundColor: cardBg, borderColor: border }}>
             {/* Header */}
             <div className="shrink-0 px-5 py-3 flex items-center justify-between border-b" style={{ backgroundColor: cardBg, borderColor: border }}>
@@ -2159,8 +2180,8 @@ export default function ClientMasterlist() {
                   <User className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Create Client Ticket</h2>
-                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fill in details to schedule a service appointment</p>
+                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Encode Ticket</h2>
+                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fast manual entry for relay monitoring</p>
                 </div>
               </div>
               <button type="button" onClick={() => setIsAddModalOpen(false)}
@@ -2172,420 +2193,222 @@ export default function ClientMasterlist() {
             
             {/* Form */}
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                {/* AI Banner */}
-                {addForm.images && (
-                  <div className="rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 border"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04) 0%, rgba(59, 130, 246, 0.04) 100%)',
-                      borderColor: 'rgba(16, 185, 129, 0.2)'
-                    }}>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <div className="text-[11px]">
-                        <span className="font-bold text-emerald-600 mr-1">Gemini AI Parser Active:</span>
-                        <span style={{ color: textMuted }}>Extracted client details. Please review fields below.</span>
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[310px_1fr] gap-4">
+                  <aside className="rounded-lg border p-3 space-y-3" style={{ borderColor: border, backgroundColor: inputBg }}>
+                    {addForm.images && (
+                      <div className="rounded-lg border p-2.5 flex items-center justify-between gap-2" style={{ borderColor: 'rgba(16, 185, 129, 0.25)', backgroundColor: isLight ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.08)' }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                          <span className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>AI extracted fields</span>
+                        </div>
+                        <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
+                          target="_blank" rel="noreferrer"
+                          className="px-2 py-1 border rounded-md text-[10px] font-bold shrink-0 flex items-center gap-1"
+                          style={{ borderColor: inputBorder, color: textMuted }}>
+                          <FileText className="w-3 h-3" /> View
+                        </a>
                       </div>
-                    </div>
-                    <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
-                      target="_blank" rel="noreferrer"
-                      className="px-2.5 py-1 border rounded-lg text-[10px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 flex items-center gap-1"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                      <FileText className="w-3 h-3" /> View Doc
-                    </a>
-                  </div>
-                )}
+                    )}
 
-                {/* Grid Container */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Left Column: Client & Address */}
-                  <div className="space-y-4">
-                    {/* Block 1: Client Info */}
-                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 pb-1 border-b" style={{ borderColor: border }}>
-                        Client Information
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            Customer Name *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={addForm.customerName}
-                            onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))}
-                            placeholder="e.g. Juan Dela Cruz"
-                            className={compactInput}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase block mb-1.5" style={{ color: textMuted }}>Category</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {categoryOptions.map(option => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setAddForm(prev => ({
+                              ...prev,
+                              serviceType: option.value,
+                              title: option.title,
+                              status: option.value === 'Collection' ? 'PENDING' : prev.status,
+                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType
+                            }))}
+                            className="h-8 rounded-md border text-[10px] font-bold transition-all"
                             style={{
-                              backgroundColor: isFieldExtracted(addForm.customerName) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.customerName) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            Contact Number
-                          </label>
-                          <input
-                            type="text"
-                            value={addForm.contactPhone}
-                            onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
-                            placeholder="e.g. 0917 123 4567"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.contactPhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.contactPhone) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            Alternate Contact
-                          </label>
-                          <input
-                            type="text"
-                            value={addForm.alternatePhone}
-                            onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))}
-                            placeholder="Email or Phone"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.alternatePhone) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.alternatePhone) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            Store / Vendor Source
-                          </label>
-                          <select
-                            value={
-                              (addForm.sourceVendor || '').toLowerCase().includes('robinsons')
-                                ? 'Robinsons'
-                                : (addForm.sourceVendor || '').toLowerCase().includes('abenson')
-                                ? 'Abenson'
-                                : 'Direct'
-                            }
-                            onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.sourceVendor) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.sourceVendor) ? '#10B981' : inputBorder,
-                              color: textPrimary
+                              borderColor: addCategory === option.value ? '#10B981' : inputBorder,
+                              backgroundColor: addCategory === option.value ? (isLight ? '#ECFDF5' : 'rgba(16,185,129,0.12)') : cardBg,
+                              color: addCategory === option.value ? '#059669' : textMuted
                             }}
                           >
-                            <option value="Robinsons" style={{ color: "#000" }}>Robinsons</option>
-                            <option value="Abenson" style={{ color: "#000" }}>Abenson</option>
-                            <option value="Direct" style={{ color: "#000" }}>Direct Store</option>
-                          </select>
-                        </div>
-                      </div>
-                      
-                      {/* Optional vendor branch input */}
-                      {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
-                        <div className="mt-1">
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            {(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
-                          </label>
-                          <input
-                            type="text"
-                            value={
-                              addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson'
-                                ? ''
-                                : addForm.sourceVendor
-                            }
-                            onChange={e => {
-                              const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
-                              setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
-                            }}
-                            placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
-                            className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Block 2: Destination & Address */}
-                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 pb-1 border-b" style={{ borderColor: border }}>
-                        Destination & Address
-                      </div>
-                      <div className="space-y-2">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                            Full Address / Destination *
-                          </label>
-                          <textarea
-                            required
-                            value={addForm.locationRaw}
-                            onChange={e => {
-                              const val = e.target.value
-                              setAddForm(prev => {
-                                const guessed = guessDistrict(val)
-                                return {
-                                  ...prev,
-                                  locationRaw: val,
-                                  district: guessed || prev.district
-                                }
-                              })
-                            }}
-                            placeholder="Address details..."
-                            className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.locationRaw) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.locationRaw) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                            rows={2}
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          <div>
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                              Landmarks / Directions
-                            </label>
-                            <input
-                              type="text"
-                              value={addForm.landmarks}
-                              onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))}
-                              placeholder="e.g. Near church"
-                              className={compactInput}
-                              style={{
-                                backgroundColor: isFieldExtracted(addForm.landmarks) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                                borderColor: isFieldExtracted(addForm.landmarks) ? '#10B981' : inputBorder,
-                                color: textPrimary
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                              District / Zone
-                            </label>
-                            <input
-                              type="text"
-                              value={addForm.district}
-                              onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))}
-                              placeholder="e.g. District 1"
-                              className={compactInput}
-                              style={{
-                                backgroundColor: isFieldExtracted(addForm.district) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                                borderColor: isFieldExtracted(addForm.district) ? '#10B981' : inputBorder,
-                                color: textPrimary
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Unit Details & Scheduling */}
-                  <div className="space-y-4">
-                    {/* Block 3: Unit Details */}
-                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-purple-500 pb-1 border-b" style={{ borderColor: border }}>
-                        Aircon Unit Details
-                      </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
-                          <input
-                            type="text"
-                            value={addForm.brand}
-                            onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))}
-                            placeholder="e.g. Midea"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.brand) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.brand) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
-                          <input
-                            type="text"
-                            value={addForm.capacity}
-                            onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))}
-                            placeholder="e.g. 1.5HP"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.capacity) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.capacity) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
-                          <input
-                            type="text"
-                            value={addForm.sku}
-                            onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))}
-                            placeholder="SKU"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.sku) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.sku) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial Number</label>
-                          <input
-                            type="text"
-                            value={addForm.serialNumber}
-                            onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))}
-                            placeholder="Serial #"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.serialNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.serialNumber) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control # / SI Voucher</label>
-                          <input
-                            type="text"
-                            value={addForm.controlNumber}
-                            onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
-                            placeholder="Control #"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.controlNumber) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.controlNumber) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Type</label>
-                          <input
-                            type="text"
-                            value={addForm.serviceType}
-                            onChange={e => {
-                              const val = e.target.value
-                              setAddForm(prev => {
-                                let mappedSvc = val
-                                const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
-                                const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
-                                if (isInstall) {
-                                  mappedSvc = 'S/I'
-                                } else if (isSurvey) {
-                                  mappedSvc = 'SURVEY'
-                                }
-                                return {
-                                  ...prev,
-                                  serviceType: mappedSvc,
-                                  title: `${mappedSvc} service`,
-                                  commitType: isInstall ? 'FREE FIRST 10 FEET' : prev.commitType
-                                }
-                              })
-                            }}
-                            placeholder="e.g. S/I"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.serviceType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.serviceType) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit Type / Promo</label>
-                          <input
-                            type="text"
-                            value={addForm.commitType}
-                            onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))}
-                            placeholder="e.g. Promo details"
-                            className={compactInput}
-                            style={{
-                              backgroundColor: isFieldExtracted(addForm.commitType) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                              borderColor: isFieldExtracted(addForm.commitType) ? '#10B981' : inputBorder,
-                              color: textPrimary
-                            }}
-                          />
-                        </div>
+                            {option.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Block 4: Scheduling & Assignment */}
-                    <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 pb-1 border-b" style={{ borderColor: border }}>
-                        Scheduling & Assignment
-                      </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Status</label>
-                          <select value={addForm.status} onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                            className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                            <option value="PENDING">Not Assigned (Pending)</option>
-                            <option value="ASSIGNED">Scheduled (Assigned)</option>
-                            <option value="ON_THE_WAY">On the Way</option>
-                            <option value="IN_PROGRESS">In Progress</option>
-                            <option value="COMPLETED">Installed (Completed)</option>
-                            <option value="CANCELLED">Cancelled</option>
-                          </select>
-                        </div>
-                        {addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
-                          <div>
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone Assignment</label>
-                            <select value={addForm.branchId} onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
-                              className={compactInput}
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                              <option value="">Select Branch...</option>
-                              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                            </select>
-                          </div>
-                        )}
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed Date</label>
-                          <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))}
-                            className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Preferred Date</label>
-                          <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))}
-                            className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </div>
-                        {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
-                          <div className="col-span-2">
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
-                            <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
-                              className={compactInput}
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                          </div>
-                        )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store</label>
+                        <select
+                          value={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : (addForm.sourceVendor || '').toLowerCase().includes('abenson') ? 'Abenson' : 'Direct'}
+                          onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
+                          className={compactInput}
+                          style={fieldStyle(addForm.sourceVendor)}
+                        >
+                          <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
+                          <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
+                          <option value="Direct" style={{ color: '#000' }}>Direct</option>
+                        </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks / Special Instructions</label>
-                        <textarea
-                          value={addForm.description}
-                          onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                          rows={2}
-                          placeholder="e.g. Call customer before dispatch..."
-                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                          style={{
-                            backgroundColor: isFieldExtracted(addForm.description) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
-                            borderColor: isFieldExtracted(addForm.description) ? '#10B981' : inputBorder,
-                            color: textPrimary
-                          }}
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No</label>
+                        <input
+                          type="text"
+                          value={addForm.controlNumber}
+                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
+                          placeholder="Transaction no."
+                          className={`${compactInput} whitespace-nowrap`}
+                          style={fieldStyle(addForm.controlNumber)}
                         />
                       </div>
                     </div>
-                  </div>
+
+                    {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store Branch</label>
+                        <input
+                          type="text"
+                          value={addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson' ? '' : addForm.sourceVendor}
+                          onChange={e => {
+                            const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
+                            setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
+                          }}
+                          placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons branch' : 'Abenson branch'}
+                          className={compactInput}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Status</label>
+                      <select
+                        value={addForm.status}
+                        onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
+                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="PENDING">Pending</option>
+                        <option value="ASSIGNED">Assigned</option>
+                        <option value="ON_THE_WAY">On the Way</option>
+                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="CANCELLED">Cancelled</option>
+                      </select>
+                    </div>
+
+                    {canAssignBranch && (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Queue</label>
+                        <select
+                          value={addForm.branchId}
+                          onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
+                          className={compactInput}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        >
+                          <option value="">Select Branch...</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed</label>
+                        <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Request</label>
+                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                    </div>
+
+                    {addForm.branchId && addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED' && (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Schedule</label>
+                        <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
+                      </div>
+                    )}
+                  </aside>
+
+                  <main className="rounded-lg border p-3 space-y-3" style={{ borderColor: border }}>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                      <div className="md:col-span-2">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Customer Name *</label>
+                        <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Customer name" className={compactInput} style={fieldStyle(addForm.customerName)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Phone</label>
+                        <input type="text" value={addForm.contactPhone} onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))} placeholder="Contact number" className={compactInput} style={fieldStyle(addForm.contactPhone)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Alt Contact</label>
+                        <input type="text" value={addForm.alternatePhone} onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))} placeholder="Email or phone" className={compactInput} style={fieldStyle(addForm.alternatePhone)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>District</label>
+                        <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area / district" className={compactInput} style={fieldStyle(addForm.district)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Landmark</label>
+                        <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={compactInput} style={fieldStyle(addForm.landmarks)} />
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Address *</label>
+                        <textarea
+                          required
+                          value={addForm.locationRaw}
+                          onChange={e => {
+                            const val = e.target.value
+                            setAddForm(prev => {
+                              const guessed = guessDistrict(val)
+                              return { ...prev, locationRaw: val, district: guessed || prev.district }
+                            })
+                          }}
+                          placeholder="Full destination address"
+                          rows={3}
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                          style={fieldStyle(addForm.locationRaw)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t" style={{ borderColor: border }}>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
+                        <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={compactInput} style={fieldStyle(addForm.brand)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
+                        <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5HP" className={compactInput} style={fieldStyle(addForm.capacity)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
+                        <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={compactInput} style={fieldStyle(addForm.sku)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial No</label>
+                        <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={compactInput} style={fieldStyle(addForm.serialNumber)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit / Promo</label>
+                        <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / amount / promo" className={compactInput} style={fieldStyle(addForm.commitType)} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks</label>
+                        <input
+                          type="text"
+                          value={addForm.description}
+                          onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                          placeholder="Dispatch notes"
+                          className={compactInput}
+                          style={fieldStyle(addForm.description)}
+                        />
+                      </div>
+                    </div>
+                  </main>
                 </div>
               </div>
 
@@ -2601,7 +2424,8 @@ export default function ClientMasterlist() {
             </form>
           </div>
         </div>
-      )}
+        )
+      })()}
 
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}
