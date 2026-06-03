@@ -36,7 +36,7 @@ export default function AuditFinanceExpenses() {
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
-  const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee'
+  const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')

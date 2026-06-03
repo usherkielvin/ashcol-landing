@@ -31,6 +31,7 @@ const sumArr = (arr: string[]) => arr.reduce((a, b) => a + num(b), 0)
 
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
+  cleaned = cleaned.replace(/^ASHCOL\s*[-|:]?\s*/i, '').trim()
   if (currentBranchName) {
     const cleanBranch = currentBranchName.toUpperCase().replace('ASHCOL', '').trim()
     if (cleanBranch) {
@@ -60,6 +61,11 @@ const cleanInstallerName = (name: string, currentBranchName?: string) => {
           cleaned = newCleaned
           break
         }
+      }
+
+      const normalizedCleaned = cleaned.toUpperCase().replace(/^ASHCOL\s+/, '').trim()
+      if (normalizedCleaned === cleanBranch || prefixes.includes(normalizedCleaned)) {
+        return ''
       }
     }
   }
@@ -117,7 +123,7 @@ export default function DailySalesForm() {
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
 
   const role = (user?.role || '').toLowerCase()
-  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee'
+  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee' || role === 'oic'
   const isAdmin = role === 'admin'
   const isBranchRestricted = !isAdmin && !!user?.branchId
 
@@ -333,15 +339,6 @@ export default function DailySalesForm() {
         const uniqueNames = Array.from(namesSet).sort()
         setTechSuggestions(uniqueNames)
 
-        // Only pre-fill Section I if it contains exactly one row and that row is completely blank
-        setCashTx(current => {
-          const isBlank = current.length === 1 && !current[0].name && !current[0].amount
-          if (isBlank && uniqueNames.length > 0) {
-            return uniqueNames.map(name => ({ id: uid(), name, amount: '' }))
-          }
-          return current
-        })
-
       } catch (err) {
         console.error('Error pre-filling data:', err)
       }
@@ -502,13 +499,13 @@ export default function DailySalesForm() {
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
     } else if (data.totalOnlineCollection) {
-      setOnlineTx([{ id: uid(), installer: 'Scanned Online', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
+      setOnlineTx([{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
     } else {
       setOnlineTx([mkOnl()])
     }
 
     if (data.forCollection) {
-      setForColl([{ id: uid(), installer: 'Scanned For Collection', customer: '', amount: String(data.forCollection) }])
+      setForColl([{ id: uid(), installer: '', customer: '', amount: String(data.forCollection) }])
     } else {
       setForColl([mkColl()])
     }

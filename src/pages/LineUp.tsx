@@ -95,7 +95,7 @@ export default function LineUp() {
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const role      = (user?.role || '').toLowerCase()
-  const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee'
+  const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
   const [date, setDate]         = useState(tomorrowStr)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])

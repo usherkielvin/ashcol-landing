@@ -158,10 +158,10 @@ export default function DailyServiceReport() {
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
   const isAllBranchUser = isAdmin || isManager
-  const isBranchScoped = role === 'staff' || role === 'employee'
+  const isBranchScoped = role === 'staff' || role === 'employee' || role === 'oic'
   const canImport = isAllBranchUser || isBranchScoped
   const canDelete = isAdmin || isManager
-  const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee'
+  const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 
   const [rows, setRows] = useState<ServiceRow[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])

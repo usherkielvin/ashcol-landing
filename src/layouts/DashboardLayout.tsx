@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, Receipt,
+  PanelLeftOpen, Receipt, Layers,
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -92,34 +92,35 @@ export default function DashboardLayout() {
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
 
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
-    { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee'
+  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const isSalesUser = (role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
+  const isSalesUser = (role === 'oic') || ((role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
     (user?.name || '').toUpperCase().includes('SALES') ||
     (user?.branchId || '').endsWith('-sales') ||
     (user?.email || '').toLowerCase().includes('sales') ||
     (user?.jobTitle || '').toUpperCase().includes('SALES')
-  )
+  ))
 
   const navLinks = isSalesUser
-    ? allLinks.filter(link => ['Relay Monitoring', 'Performance', 'Field Schedule', 'Service Report', 'Transactions', 'Directory'].includes(link.name))
+    ? allLinks.filter(link => ['Performance', 'Field Schedule', 'Service Report', 'Transactions', 'Purchase Monitor'].includes(link.name))
     : isAuthorizedRole
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
-      : allLinks.filter(link => link.name === 'Relay Monitoring' || link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Transactions' || link.name === 'Directory')
+      : allLinks.filter(link => link.name === 'Performance' || link.name === 'Field Schedule' || link.name === 'Service Report' || link.name === 'Transactions' || link.name === 'Purchase Monitor')
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
