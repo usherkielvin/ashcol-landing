@@ -928,8 +928,9 @@ export default function ClientMasterlist() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const payload: Record<string, any> = {}
+      const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
 
-      if (updateStatus === 'PENDING' || updateStatus === 'CANCELLED') {
+      if ((updateStatus === 'PENDING' && !keepPendingAssignment) || updateStatus === 'CANCELLED') {
         payload.branchId = ""
         payload.assignedTo = ""
         payload.status = updateStatus
@@ -1358,51 +1359,7 @@ export default function ClientMasterlist() {
     return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
   }
 
-  const relaySummary = useMemo(() => {
-    const grouped = new Map<string, {
-      branch: string
-      store: string
-      total: number
-      pending: number
-      assigned: number
-      scheduled: number
-      installed: number
-      cancelled: number
-      latestUpdate: string
-    }>()
 
-    filtered.forEach(ticket => {
-      const branch = resolveBranch(ticket.branchId)?.name || 'No Branch'
-      const store = getStoreStyle(ticket.sourceVendor).label
-      const key = `${branch}__${store}`
-      const status = getRelayStatusLabel(ticket).toUpperCase()
-      const current = grouped.get(key) || {
-        branch,
-        store,
-        total: 0,
-        pending: 0,
-        assigned: 0,
-        scheduled: 0,
-        installed: 0,
-        cancelled: 0,
-        latestUpdate: ''
-      }
-
-      current.total += 1
-      if (status === 'PENDING') current.pending += 1
-      else if (status === 'ASSIGNED' || status === 'IN PROGRESS' || status === 'ON THE WAY') current.assigned += 1
-      else if (status === 'SCHEDULED') current.scheduled += 1
-      else if (status === 'INSTALLED') current.installed += 1
-      else if (status === 'CANCELLED') current.cancelled += 1
-
-      if (!current.latestUpdate || new Date(ticket.updatedAt || ticket.createdAt) > new Date(current.latestUpdate)) {
-        current.latestUpdate = ticket.updatedAt || ticket.createdAt
-      }
-      grouped.set(key, current)
-    })
-
-    return Array.from(grouped.values()).sort((a, b) => a.branch.localeCompare(b.branch) || a.store.localeCompare(b.store))
-  }, [filtered, branches])
 
 
 
@@ -2108,6 +2065,18 @@ export default function ClientMasterlist() {
                       <option value="CANCELLED">Cancelled</option>
                     </select>
                   </div>
+                  {selectedTicket && getTicketCategory(selectedTicket) === 'Installation' && (
+                    <label className="flex items-center gap-3 rounded-xl border px-3 py-3 cursor-pointer"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                      <input type="checkbox" checked={editWarrantyRegistrationCompleted}
+                        onChange={e => setEditWarrantyRegistrationCompleted(e.target.checked)}
+                        className="w-4 h-4 accent-[#10B981]" />
+                      <span className="flex flex-col">
+                        <span className="text-xs font-black" style={{ color: textPrimary }}>Warranty registration completed</span>
+                        <span className="text-[10px]" style={{ color: textMuted }}>Required before payroll can close installation tickets.</span>
+                      </span>
+                    </label>
+                  )}
                   {updateStatus !== 'PENDING' && updateStatus !== 'CANCELLED' && (
                     <div>
                       <label className="text-[10px] font-black uppercase block mb-1.5" style={{ color: textMuted }}>Branch Zone</label>

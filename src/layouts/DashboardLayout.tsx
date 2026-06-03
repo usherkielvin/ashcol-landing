@@ -7,7 +7,7 @@ import {
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, Receipt, Scan,
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
-  BarChart2, Boxes
+  BarChart2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole } from '../utils/api'
