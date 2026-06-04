@@ -1413,12 +1413,13 @@ export default function LineUp() {
 
   // ── Desktop th helper ─────────────────────────────────────────────────────
 
-  const thOrig = (label: string, wide?: boolean) => (
+  const thOrig = (label: string, _wide?: boolean) => (
     <th style={{
-      border: `1px solid ${border}`, padding: '12px 16px', fontSize: '11px', fontWeight: 800,
+      border: `1px solid ${border}`, padding: '8px 12px', fontSize: '10px', fontWeight: 800,
       textTransform: 'uppercase' as const, letterSpacing: '0.05em', textAlign: 'center' as const,
       backgroundColor: isLight ? '#f8fafc' : '#0F172A', color: textMuted,
-      whiteSpace: wide ? undefined : 'nowrap',
+      whiteSpace: 'normal',
+      minWidth: label.includes('TIME') ? '110px' : undefined,
     }}>{label}</th>
   )
 
@@ -1512,31 +1513,33 @@ export default function LineUp() {
 
    <div className="md:hidden flex flex-col gap-4 pb-28">
      {/* Dynamic Branch Chips selector for Mobile */}
-     <div className="no-print flex flex-col gap-2 px-1">
-       <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
-       <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1">
-         {branches.map(b => {
-           const isSelected = b.id === branchId
-           const bThemeKey = getBranchThemeKey(b.name)
-           const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
-           return (
-             <button
-               key={b.id}
-               type="button"
-               onClick={() => setBranchId(b.id)}
-               className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap"
-               style={{
-                 backgroundColor: isSelected ? bTheme.accent : cardBg,
-                 color: isSelected ? '#FFFFFF' : textMuted,
-                 border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
-               }}
-             >
-               {b.name}
-             </button>
-           )
-         })}
+     {role === 'admin' && (
+       <div className="no-print flex flex-col gap-2 px-1">
+         <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
+         <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1">
+           {branches.map(b => {
+             const isSelected = b.id === branchId
+             const bThemeKey = getBranchThemeKey(b.name)
+             const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
+             return (
+               <button
+                 key={b.id}
+                 type="button"
+                 onClick={() => setBranchId(b.id)}
+                 className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap"
+                 style={{
+                   backgroundColor: isSelected ? bTheme.accent : cardBg,
+                   color: isSelected ? '#FFFFFF' : textMuted,
+                   border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
+                 }}
+               >
+                 {b.name}
+               </button>
+             )
+           })}
+         </div>
        </div>
-     </div>
+     )}
 
      {/* Mobile Header */}
      <div className="rounded-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
@@ -1854,49 +1857,51 @@ export default function LineUp() {
       <div className="hidden md:flex flex-col gap-6 pb-8">
 
         {/* Dynamic Branch Chips selector */}
-        <div className="no-print flex flex-col gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
-          <div className="flex flex-wrap gap-2">
-            {branches.map(b => {
-              const isSelected = b.id === branchId
-              const bThemeKey = getBranchThemeKey(b.name)
-              const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => setBranchId(b.id)}
-                  className="px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm"
-                  style={{
-                    backgroundColor: isSelected ? bTheme.accent : cardBg,
-                    color: isSelected ? '#FFFFFF' : textMuted,
-                    border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
-                    boxShadow: isSelected ? `0 4px 10px ${bTheme.accent}30` : 'none',
-                  }}
-                >
-                  {b.name}
-                </button>
-              )
-            })}
+        {role === 'admin' && (
+          <div className="no-print flex flex-col gap-1.5">
+            <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
+            <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-2 scroll-smooth max-w-full">
+              {branches.map(b => {
+                const isSelected = b.id === branchId
+                const bThemeKey = getBranchThemeKey(b.name)
+                const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setBranchId(b.id)}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap shrink-0"
+                    style={{
+                      backgroundColor: isSelected ? bTheme.accent : cardBg,
+                      color: isSelected ? '#FFFFFF' : textMuted,
+                      border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
+                      boxShadow: isSelected ? `0 4px 10px ${bTheme.accent}30` : 'none',
+                    }}
+                  >
+                    {b.name}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Top Control Bar */}
-        <div className="rounded-2xl p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4"
+        <div className="rounded-xl p-4 lg:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div>
-            <p className="text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: currentTheme.accent }}>Scheduling</p>
-            <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
-            <p className="text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
+            <p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: currentTheme.accent }}>Scheduling</p>
+            <h2 className="text-lg md:text-xl lg:text-2xl font-black tracking-tight mb-0.5" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
+            <p className="text-xs md:text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
+          <div className="flex items-center gap-1.5 shrink-0 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
             {/* Branch dropdown (fallback / legacy) */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
               {role === 'admin' ? (
                 <>
                   <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                    className="rounded-xl pl-8 pr-7 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
+                    className="rounded-lg pl-8 pr-7 py-1.5 text-xs font-bold appearance-none outline-none cursor-pointer"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                     {branches.length === 0 && <option value="">Loading branches…</option>}
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -1904,7 +1909,7 @@ export default function LineUp() {
                   <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
                 </>
               ) : (
-                <span className="rounded-xl pl-8 pr-4 py-2 text-xs font-bold"
+                <span className="rounded-lg pl-8 pr-4 py-1.5 text-xs font-bold"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                   {branchName || 'Loading…'}
                 </span>
@@ -1913,7 +1918,7 @@ export default function LineUp() {
 
             {/* Date */}
             <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
               <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
               <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
@@ -1921,11 +1926,11 @@ export default function LineUp() {
             </div>
 
             {/* View Switcher */}
-            <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
               <button
                 type="button"
                 onClick={() => setShowcaseOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all"
                 style={{
                   backgroundColor: !showcaseOpen ? cardBg : 'transparent',
                   color: !showcaseOpen ? currentTheme.accent : textMuted,
@@ -1937,7 +1942,7 @@ export default function LineUp() {
               <button
                 type="button"
                 onClick={() => setShowcaseOpen(true)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all"
                 style={{
                   backgroundColor: showcaseOpen ? cardBg : 'transparent',
                   color: showcaseOpen ? currentTheme.accent : textMuted,
@@ -1956,7 +1961,7 @@ export default function LineUp() {
                   <div className="relative" ref={importMenuRef}>
                     <button type="button"
                       onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                      className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg font-bold text-xs border transition-all hover:scale-105"
                       style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                       <Upload className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
                       Import
@@ -2004,7 +2009,7 @@ export default function LineUp() {
                 <div className="relative" ref={exportMenuRef}>
                   <button type="button"
                     onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-xs border transition-all hover:scale-105"
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg font-bold text-xs border transition-all hover:scale-105"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                     <Download className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
                     Export
@@ -2076,7 +2081,7 @@ export default function LineUp() {
                 {/* Load Template */}
                 {canEdit && (
                   <button type="button" onClick={handleLoadDefaultTemplate}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all hover:scale-105"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-all hover:scale-105"
                     style={{
                       color: currentTheme.accent,
                       border: `1px solid ${currentTheme.accent}30`,
@@ -2089,7 +2094,7 @@ export default function LineUp() {
                 {/* Clear Schedule */}
                 {canEdit && rows.length > 0 && (
                   <button type="button" onClick={handleClearAllRows}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
                     <Trash2 className="w-4 h-4" /> Clear Schedule
                   </button>
                 )}
@@ -2097,7 +2102,7 @@ export default function LineUp() {
                 {/* Add Row */}
                 {canEdit && (
                   <button type="button" onClick={handleAddRow}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white transition-all hover:scale-105"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs text-white transition-all hover:scale-105"
                     style={{
                       background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
                       boxShadow: `0 4px 12px ${currentTheme.accent}20`,
@@ -2128,7 +2133,7 @@ export default function LineUp() {
             <div
               style={{
                 background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
-                padding: '18px 24px 16px',
+                padding: '12px 18px 10px',
                 textAlign: 'center',
               }}
             >
@@ -2136,7 +2141,7 @@ export default function LineUp() {
                 style={{
                   color: '#ffffff',
                   fontWeight: 950,
-                  fontSize: 'clamp(24px, 3vw, 42px)',
+                  fontSize: 'clamp(18px, 2.2vw, 32px)',
                   lineHeight: 1.05,
                   textTransform: 'uppercase',
                 }}
@@ -2149,7 +2154,7 @@ export default function LineUp() {
             <div
               style={{
                 backgroundColor: '#020617',
-                padding: '10px 20px',
+                padding: '6px 12px',
                 textAlign: 'center',
               }}
             >
@@ -2157,7 +2162,7 @@ export default function LineUp() {
                 style={{
                   color: '#ffffff',
                   fontWeight: 900,
-                  fontSize: 'clamp(13px, 1.3vw, 20px)',
+                  fontSize: 'clamp(11px, 1vw, 15px)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
                 }}
@@ -2320,15 +2325,15 @@ export default function LineUp() {
             )}
 
             {/* Team specific accent background title bar */}
-            <div style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`, padding: '16px 20px', textAlign: 'center' }}>
-              <div style={{ color: '#fff', fontWeight: 950, fontSize: '20px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            <div style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`, padding: '10px 16px', textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontWeight: 950, fontSize: '16px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
                 TEAM {branchName ? branchName.toUpperCase() : '—'} LINE UP
               </div>
             </div>
             
             {/* Near black date bar */}
-            <div style={{ backgroundColor: '#020617', padding: '8px 20px', textAlign: 'center' }}>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: '13px', letterSpacing: '0.08em' }}>{englishLabel(date)}</div>
+            <div style={{ backgroundColor: '#020617', padding: '6px 16px', textAlign: 'center' }}>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: '11px', letterSpacing: '0.08em' }}>{englishLabel(date)}</div>
             </div>
 
             {/* Table */}
