@@ -949,7 +949,7 @@ export default function DailySalesForm() {
         auditLine: selectedAuditLine,
         reportDate,
         receivedBy,
-        trNo,
+        trNo: trNo.trim() || trNoExample,
         branchName,
         cohPreviousDay: parseFloat(cashOnHand) || 0,
         fundFromHo: parseFloat(fundFromHo) || 0,
