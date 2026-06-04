@@ -308,7 +308,7 @@ export default function DashboardLayout() {
                 <div className="mx-3 my-1" style={{ borderTop: `1px solid ${border}` }} />
 
                 <button
-                  onClick={() => { setProfileOpen(false); logout() }}
+                  onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }) }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
                   style={{ color: textMuted }}
                   onMouseEnter={e => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = '#EF4444' }}

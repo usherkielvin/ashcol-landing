@@ -51,13 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // logout only clears storage and state — navigation is handled by callers
+  // via React Router navigate('/login', { replace: true }) for instant SPA navigation
   const logout = () => {
     setUser(null)
     sessionStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem('ashcol-token')
     localStorage.removeItem('ashcol-token')
-    localStorage.removeItem(SESSION_KEY) // Clean up old local storage just in case
-    window.location.href = '/login'
+    localStorage.removeItem(SESSION_KEY)
   }
 
   return (

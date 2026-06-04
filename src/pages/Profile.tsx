@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth, getInitials } from '../contexts/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield,
@@ -23,6 +24,7 @@ type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'u
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
   const { theme } = useTheme()
+  const navigate = useNavigate()
   const isLight = theme === 'light'
   const isManager = user?.role?.toLowerCase() === 'manager'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -274,6 +276,7 @@ export default function Profile() {
       const res = await fetch(`${apiUrl}/user/account`, { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to delete account.')
       logout()
+      navigate('/login', { replace: true })
     } catch (err: any) {
       setDeleteErr(err.message || 'Could not delete account.')
       setDeleteLoading(false)
