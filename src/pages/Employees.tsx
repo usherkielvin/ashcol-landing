@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
@@ -25,16 +25,6 @@ interface Employee {
 interface BranchOption { id: string; name: string }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const ROLE_OPTIONS = [
-  { role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',  label: 'Technician' },
-  { role: 'EMPLOYEE', jobTitle: 'HELPER',       label: 'Helper' },
-  { role: 'EMPLOYEE', jobTitle: 'DRIVER',       label: 'Driver' },
-  { role: 'EMPLOYEE', jobTitle: 'COORDINATOR',  label: 'Coordinator' },
-  { role: 'MANAGER',  jobTitle: '',             label: 'Office In Charge' },
-  { role: 'ADMIN',    jobTitle: '',             label: 'Manager (Admin)' },
-]
-
-const roleKey = (role: string, jobTitle: string) => `${role.toUpperCase()}|${(jobTitle || '').toUpperCase()}`
 
 const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
@@ -110,7 +100,6 @@ export default function Employees() {
     name: '', email: '', branchId: '',
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
   })
-  const [showCreatePass] = useState(false)
   const [createSaving, setCreateSaving] = useState(false)
 
   const token = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
