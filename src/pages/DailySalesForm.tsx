@@ -589,10 +589,12 @@ export default function DailySalesForm() {
       }
       
       const dateParts = reportDate.split('-')
+      const year = dateParts[0] || '2026'
+      const yearShort = year.length >= 4 ? year.substring(2) : year
       const month = dateParts[1] || '01'
       const day = dateParts[2] || '01'
       
-      setTrNo(`${prefix || 'TR'}-${month}${day}`)
+      setTrNo(`${prefix || 'TR'}-${yearShort}${month}${day}`)
     }
   }, [branchName, reportDate, selectedAuditLine])
 
