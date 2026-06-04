@@ -29,6 +29,7 @@ export default function AuditFinanceExpenses() {
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
+  const rowHover = isLight ? '#f8fafc' : '#0f1e36'
   const accent = '#10B981'
   const danger = '#EF4444'
 
