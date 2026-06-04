@@ -4,7 +4,8 @@ import {
   AlertTriangle, X, ChevronRight, FileText, Eye, Download,
   ArrowUp, ArrowDown,
   Minimize2, Maximize2, MoreVertical,
-  HelpCircle, Loader2
+  HelpCircle, Loader2,
+  Trash2, ClipboardList, Upload, Check
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
@@ -159,6 +160,16 @@ export default function DailyAuditReport() {
   const [compactView, setCompactView] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
+
+  interface ConfirmModalState {
+    title: string
+    message: string
+    confirmText?: string
+    cancelText?: string
+    type?: 'danger' | 'warning' | 'info'
+    onConfirm: () => void
+  }
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
   const desktopDateRef = useRef<HTMLInputElement>(null)
   const desktopRangeFromRef = useRef<HTMLInputElement>(null)
   const desktopRangeToRef = useRef<HTMLInputElement>(null)
@@ -169,30 +180,34 @@ export default function DailyAuditReport() {
     input.focus()
   }
 
-  const handleClearRow = async (row: AuditRow) => {
+  const handleClearRow = (row: AuditRow) => {
     if (!row.id) return
-    const confirmed = window.confirm(
-      `Are you sure you want to clear all data for ${row.branchName} on this date?\n\nThis will permanently delete the report.`
-    )
-    if (!confirmed) return
-    let clearing = false; void clearing
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ id: row.id })
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?${params.toString()}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setSelectedRow(null)
-        fetchAudit()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || `Clear failed (HTTP ${res.status})`)
+    setConfirmModal({
+      title: 'Clear DTR Record',
+      message: `Are you sure you want to clear all data for ${row.branchName} on this date?\n\nThis will permanently delete the report.`,
+      confirmText: 'Clear',
+      cancelText: 'Cancel',
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const params = new URLSearchParams({ id: row.id! })
+          const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?${params.toString()}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          if (res.ok) {
+            setSelectedRow(null)
+            fetchAudit()
+          } else {
+            const err = await res.json().catch(() => ({}))
+            alert(err.error || `Clear failed (HTTP ${res.status})`)
+          }
+        } catch {
+          alert('Failed to clear row data')
+        }
       }
-    } catch {
-      alert('Failed to clear row data')
-    }
+    })
   }
 
 
@@ -246,42 +261,49 @@ export default function DailyAuditReport() {
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
-  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) { e.target.value = ''; return }
+    const inputElement = e.target
     const targetDate = viewMode === 'single' ? date : rangeFrom
     const prettyDate = viewMode === 'single'
       ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
       : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const confirmed = window.confirm(
-      `Import "${file.name}" into ${prettyDate}?\n\n` +
-      `The backend will look for a sheet matching this date and save the data under that day. Existing reports for ${prettyDate} will be REPLACED.`
-    )
-    if (!confirmed) { e.target.value = ''; return }
-    setImporting(true)
-    const formData = new FormData()
-    formData.append('file', file)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(targetDate)}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
-      })
-      if (res.ok) {
-        const result = await res.json()
-        if (!result?.count) {
-          alert(`Import finished but no report rows were saved. Please check that the Excel sheet matches ${prettyDate} and contains branch rows.`)
-          return
-        }
-        const importedDate = (result?.date as string) || targetDate
-        alert(`${result.message || 'Import successful!'}${result?.sheet ? ` (from sheet "${result.sheet}")` : ''}`)
-        if (viewMode === 'single') { if (importedDate !== date) setDate(importedDate); else fetchAudit() }
-        else { if (importedDate !== rangeFrom) { setRangeFrom(importedDate); setRangeTo(importedDate) } else fetchAudit() }
-      } else {
-        const error = await res.json().catch(() => ({}))
-        alert(error.error || `Import failed (HTTP ${res.status})`)
+
+    setConfirmModal({
+      title: 'Import DTR Performance',
+      message: `Import "${file.name}" into ${prettyDate}?\n\nThe backend will look for a sheet matching this date and save the data under that day. Existing reports for ${prettyDate} will be REPLACED.`,
+      confirmText: 'Import',
+      cancelText: 'Cancel',
+      type: 'warning',
+      onConfirm: async () => {
+        setImporting(true)
+        const formData = new FormData()
+        formData.append('file', file)
+        try {
+          const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const res = await fetch(`${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(targetDate)}`, {
+            method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
+          })
+          if (res.ok) {
+            const result = await res.json()
+            if (!result?.count) {
+              alert(`Import finished but no report rows were saved. Please check that the Excel sheet matches ${prettyDate} and contains branch rows.`)
+              return
+            }
+            const importedDate = (result?.date as string) || targetDate
+            alert(`${result.message || 'Import successful!'}${result?.sheet ? ` (from sheet "${result.sheet}")` : ''}`)
+            if (viewMode === 'single') { if (importedDate !== date) setDate(importedDate); else fetchAudit() }
+            else { if (importedDate !== rangeFrom) { setRangeFrom(importedDate); setRangeTo(importedDate) } else fetchAudit() }
+          } else {
+            const error = await res.json().catch(() => ({}))
+            alert(error.error || `Import failed (HTTP ${res.status})`)
+          }
+        } catch { alert('Network error during import') }
+        finally { setImporting(false); inputElement.value = '' }
       }
-    } catch { alert('Network error during import') }
-    finally { setImporting(false); e.target.value = '' }
+    })
+    e.target.value = ''
   }
 
   const fetchRowExpenses = async (row: AuditRow) => {
@@ -1576,6 +1598,85 @@ export default function DailyAuditReport() {
                 })()}
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <div
+          className="fixed inset-0 z-[11000] flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setConfirmModal(null)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl flex flex-col gap-0 overflow-hidden"
+            style={{
+              backgroundColor: isLight ? '#ffffff' : '#1E293B',
+              border: `1px solid ${
+                confirmModal.type === 'danger'  ? 'rgba(239,68,68,0.25)'
+                : confirmModal.type === 'warning' ? 'rgba(245,158,11,0.25)'
+                : 'rgba(59,130,246,0.25)'
+              }`,
+              width: '100%',
+              maxWidth: '380px',
+              margin: '0 20px',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Accent bar */}
+            <div style={{
+              height: '3px',
+              background: confirmModal.type === 'danger'  ? 'linear-gradient(90deg, #EF4444, #F87171)'
+                        : confirmModal.type === 'warning' ? 'linear-gradient(90deg, #F59E0B, #FCD34D)'
+                        : 'linear-gradient(90deg, #3B82F6, #60A5FA)',
+            }} />
+            {/* Body */}
+            <div className="px-6 py-5 flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                  style={{
+                    backgroundColor: confirmModal.type === 'danger'  ? 'rgba(239,68,68,0.1)'
+                                   : confirmModal.type === 'warning' ? 'rgba(245,158,11,0.1)'
+                                   : 'rgba(59,130,246,0.1)',
+                  }}
+                >
+                  {confirmModal.type === 'danger'  && <Trash2 className="w-4 h-4" style={{ color: '#EF4444' }} />}
+                  {confirmModal.type === 'warning' && <ClipboardList className="w-4 h-4" style={{ color: '#F59E0B' }} />}
+                  {confirmModal.type === 'info'    && <Upload className="w-4 h-4" style={{ color: '#3B82F6' }} />}
+                  {!confirmModal.type             && <Check className="w-4 h-4" style={{ color: '#10B981' }} />}
+                </div>
+                <div className="flex flex-col gap-1 flex-1">
+                  <p className="text-sm font-black" style={{ color: textPrimary }}>{confirmModal.title}</p>
+                  <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{confirmModal.message}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1 justify-end">
+                <button
+                  onClick={() => setConfirmModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-colors hover:opacity-80"
+                  style={{
+                    backgroundColor: isLight ? '#F1F5F9' : '#0F172A',
+                    color: textMuted,
+                    border: `1px solid ${border}`,
+                  }}
+                >
+                  {confirmModal.cancelText ?? 'Cancel'}
+                </button>
+                <button
+                  onClick={() => { confirmModal.onConfirm(); setConfirmModal(null) }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95"
+                  style={{
+                    background: confirmModal.type === 'danger'  ? 'linear-gradient(135deg, #EF4444, #DC2626)'
+                              : confirmModal.type === 'warning' ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                              : 'linear-gradient(135deg, #3B82F6, #2563EB)',
+                  }}
+                >
+                  {confirmModal.confirmText ?? 'Confirm'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

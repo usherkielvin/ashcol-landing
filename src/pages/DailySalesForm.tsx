@@ -204,7 +204,6 @@ export default function DailySalesForm() {
   const initialAuditLine = normalizedAssignedBranch.auditLine
   const initialBranchName = normalizedAssignedBranch.branchName
 
-  // ── Form State ───────────────────────────────────────────────────
   const [reportId, setReportId] = useState<string | null>(null)
   const [reportDate, setReportDate] = useState(today)
   const [receivedBy, setReceivedBy] = useState(user?.name || '')
@@ -213,7 +212,8 @@ export default function DailySalesForm() {
   const [error, setError]           = useState<string | null>(null)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
-  const isFormDisabled = !canSubmit || reviewMode
+  const canEditOrSubmit = !reportId ? canSubmit : isAdmin
+  const isFormDisabled = !canEditOrSubmit || reviewMode
 
   const [scanning, setScanning]     = useState(false)
   const [scanError, setScanError]   = useState<string | null>(null)
@@ -903,9 +903,8 @@ export default function DailySalesForm() {
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
   // ── Submit handler ───────────────────────────────────────────────
-
   const handleDtrSubmit = async () => {
-    if (!canSubmit) return
+    if (!canEditOrSubmit) return
     if (!reviewMode) {
       setReviewStartedAt(new Date())
       setReviewMode(true)
@@ -992,7 +991,7 @@ export default function DailySalesForm() {
   }
 
   const handleClearForm = () => {
-    if (!canSubmit) return
+    if (!canEditOrSubmit) return
     const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
     if (!ok) return
     clearForm(true)
@@ -1088,6 +1087,15 @@ export default function DailySalesForm() {
         </div>
       )}
 
+      {!!reportId && !isAdmin && (
+        <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">
+          <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
+          <p className="text-sm text-amber-600 dark:text-amber-400">
+            <strong>Uploaded Report:</strong> This report has been submitted and is final. Editing is disabled.
+          </p>
+        </div>
+      )}
+
       {/* ── Metadata Header ─────────────────────────────────────────── */}
       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -1127,7 +1135,7 @@ export default function DailySalesForm() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch</label>
-            {canSubmit ? (
+            {canEditOrSubmit ? (
               <select
                 id="branch-select"
                 value={`${selectedBranchId}-${selectedAuditLine || ''}`}
@@ -1165,7 +1173,7 @@ export default function DailySalesForm() {
       </div>
 
       {/* ── DTR Scanner Actions ──────────────────────────────────────── */}
-      {canSubmit && !reviewMode && (
+      {canEditOrSubmit && !reviewMode && (
         <div className="rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
@@ -1537,13 +1545,13 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Company</th>
+                    <th className={tableTh}>RA No.</th>
                     <th className={tableTh}>Brand</th>
-                    <th className={tableTh + ' w-20'}>HP</th>
-                    <th className={tableTh + ' text-right w-28'}>Rate Amount</th>
-                    <th className={tableTh + ' text-center w-24'}>No. of Unit</th>
-                    <th className={tableTh + ' text-right w-28'}>Total Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                    <th className={tableTh + ' w-16'}>HP</th>
+                    <th className={tableTh + ' text-right w-24'}>Rate</th>
+                    <th className={tableTh + ' text-center w-16'}>Units</th>
+                    <th className={tableTh + ' text-right w-24'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-8'}></th>}
                   </tr>
                 </thead>
                 <tbody>
