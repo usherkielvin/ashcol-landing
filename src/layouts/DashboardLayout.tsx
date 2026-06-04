@@ -9,9 +9,8 @@ import {
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole } from '../utils/api'
+import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
 import { useNotifications } from '../contexts/NotificationContext'
-import { getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/workspaceAccess'
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 

@@ -5,9 +5,8 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
-import { resolveImageUrl } from '../utils/api'
+import { getPortalHomePath, resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
-import { getPortalHomePath } from '../utils/workspaceAccess'
 
 export default function Login() {
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()

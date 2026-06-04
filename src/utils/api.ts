@@ -15,8 +15,60 @@ export function resolveImageUrl(path: string | null | undefined): string {
 export function formatRole(role?: string): string {
   if (!role) return ''
   const r = role.toUpperCase()
-  if (r === 'MANAGER') return 'OFFICER IN CHARGE'
+  if (r === 'MANAGER') return 'OFFICE IN CHARGE'
   if (r === 'ADMIN') return 'MANAGER'
-  if (r === 'OIC') return 'OFFICER IN CHARGE'
+  if (r === 'OIC') return 'OFFICE IN CHARGE'
   return r
+}
+
+type PortalUserLike = {
+  role?: string | null
+  branchId?: string | null
+  jobTitle?: string | null
+}
+
+const normalizeUserValue = (value?: string | null) => (value || '').trim().toLowerCase()
+
+export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
+  if (!user) return false
+  const role = normalizeUserValue(user.role)
+  const jobTitle = normalizeUserValue(user.jobTitle)
+  return role === 'oic'
+    || jobTitle === 'coordinator'
+    || jobTitle.includes('coor')
+    || jobTitle === 'office in charge'
+    || jobTitle === 'officer in charge'
+    || jobTitle === 'oic'
+}
+
+export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
+  if (!user) return false
+  if (isCoordinatorOrOicUser(user)) return true
+  const branchId = normalizeUserValue(user.branchId)
+  const jobTitle = normalizeUserValue(user.jobTitle)
+
+  return branchId.endsWith('-sales')
+    || branchId === 'br-taguig-sales'
+    || jobTitle.includes('sales')
+}
+
+export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
+  if (!user) return false
+  if (isCoordinatorOrOicUser(user)) return false
+  const branchId = normalizeUserValue(user.branchId)
+  const jobTitle = normalizeUserValue(user.jobTitle)
+
+  return branchId.endsWith('-services')
+    || branchId.endsWith('-service')
+    || branchId === 'br-taguig-services'
+    || branchId === 'br-taguig-service'
+    || jobTitle.includes('service')
+}
+
+export function getPortalHomePath(user?: PortalUserLike | null) {
+  const role = normalizeUserValue(user?.role)
+  if (role === 'admin') return '/audit-report'
+  if (isSalesWorkspaceUser(user)) return '/daily-report'
+  if (isServiceWorkspaceUser(user)) return '/service-report'
+  return '/daily-report'
 }

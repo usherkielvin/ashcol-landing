@@ -22,7 +22,7 @@ const JOB_TYPE_OPTIONS = [
   { value: 'EMPLOYEE|HELPER', label: 'HELPER' },
   { value: 'EMPLOYEE|DRIVER', label: 'DRIVER' },
   { value: 'EMPLOYEE|COORDINATOR', label: 'COORDINATOR' },
-  { value: 'MANAGER|', label: 'OFFICER IN CHARGE' },
+  { value: 'MANAGER|', label: 'OFFICE IN CHARGE' },
   { value: 'ADMIN|', label: 'MANAGER' },
 ]
 
@@ -734,7 +734,7 @@ export default function Employees() {
                 <option value="HELPER">HELPER</option>
                 <option value="DRIVER">DRIVER</option>
                 <option value="COORDINATOR">COORDINATOR</option>
-                <option value="MANAGER">OFFICER IN CHARGE</option>
+                <option value="MANAGER">OFFICE IN CHARGE</option>
                 {isAdmin && <option value="ADMIN">MANAGER</option>}
               </select>
             </div>

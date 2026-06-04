@@ -22,7 +22,7 @@ import PurchaseMonitor from './pages/PurchaseMonitor'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
-import { getPortalHomePath } from './utils/workspaceAccess'
+import { getPortalHomePath } from './utils/api'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
