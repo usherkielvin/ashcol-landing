@@ -297,13 +297,13 @@ export default function LineUp() {
       const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) return
       const data = await res.json()
-      const list = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
-      const hasExplicitTaguigSales = list.some(b => {
+      const list: { id: string; name: string }[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
+      const hasExplicitTaguigSales = list.some((b: { id: string; name: string }) => {
         const id = b.id.toUpperCase()
         const name = b.name.toUpperCase()
         return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
       })
-      const hasExplicitTaguigServices = list.some(b => {
+      const hasExplicitTaguigServices = list.some((b: { id: string; name: string }) => {
         const id = b.id.toUpperCase()
         const name = b.name.toUpperCase()
         return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')

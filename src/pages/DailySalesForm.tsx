@@ -205,13 +205,13 @@ export default function DailySalesForm() {
         })
         if (res.ok) {
           const data = await res.json()
-          const list = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
-          const hasExplicitTaguigSales = list.some(b => {
+          const list: { id: string; name: string }[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
+          const hasExplicitTaguigSales = list.some((b: { id: string; name: string }) => {
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
             return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
           })
-          const hasExplicitTaguigServices = list.some(b => {
+          const hasExplicitTaguigServices = list.some((b: { id: string; name: string }) => {
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
             return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
@@ -440,7 +440,7 @@ export default function DailySalesForm() {
 
       // Populate rebates (total represented as single row)
       if (data.rebatesForCollection != null && data.rebatesForCollection > 0) {
-        setRebates([{ id: uid(), company: 'Rebates', amount: String(data.rebatesForCollection), units: '1', total: String(data.rebatesForCollection) }])
+        setRebates([{ id: uid(), company: 'Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection), units: '1', total: String(data.rebatesForCollection) }])
       } else {
         setRebates([mkReb()])
       }
@@ -720,13 +720,15 @@ export default function DailySalesForm() {
         return {
           id: uid(),
           company: (scanned.company || '').trim(),
+          raNumber: '',
+          hp: '',
           amount: sAmount,
           units: sUnits,
           total: String(num(sAmount) * num(sUnits))
         }
       }))
     } else if (data.rebatesForCollection) {
-      setRebates([{ id: uid(), company: 'Scanned Rebates', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
+      setRebates([{ id: uid(), company: 'Scanned Rebates', raNumber: '', hp: '', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
     } else {
       setRebates([mkReb()])
     }
