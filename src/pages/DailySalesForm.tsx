@@ -250,6 +250,7 @@ export default function DailySalesForm() {
             const name = b.name.toUpperCase()
             return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
           })
+
           const newList: { id: string; name: string; auditLine?: string }[] = []
           for (const b of list) {
             const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
@@ -260,14 +261,18 @@ export default function DailySalesForm() {
               newList.push({ id: b.id, name: cleanName })
             }
           }
-          newList.sort((a, b) => a.name.localeCompare(b.name))
-          setBranchesList(newList)
-          if (newList.length > 0) {
-            const exists = newList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
+          let finalList = newList
+          if (isBranchRestricted && user?.branchId) {
+            finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(user.branchId + '-') || b.id.startsWith(`${user.branchId}-`))
+          }
+          finalList.sort((a, b) => a.name.localeCompare(b.name))
+          setBranchesList(finalList)
+          if (finalList.length > 0) {
+            const exists = finalList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
             if (!exists) {
-              setSelectedBranchId(newList[0].id)
-              setSelectedAuditLine(newList[0].auditLine || null)
-              setBranch(newList[0].name)
+              setSelectedBranchId(finalList[0].id)
+              setSelectedAuditLine(finalList[0].auditLine || null)
+              setBranch(finalList[0].name)
             }
           }
         }
@@ -1544,7 +1549,7 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>RA No.</th>
+                    <th className={tableTh}>Company</th>
                     <th className={tableTh}>Brand</th>
                     <th className={tableTh + ' w-16'}>HP</th>
                     <th className={tableTh + ' text-right w-24'}>Rate</th>
