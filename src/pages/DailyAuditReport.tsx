@@ -1437,30 +1437,23 @@ export default function DailyAuditReport() {
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
                               <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
-                                <th className="px-3 py-2">Brand / Company</th>
-                                <th className="px-3 py-2">RA Number</th>
+                                <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
-                                <th className="px-3 py-2 text-right">Amount Each</th>
-                                <th className="px-3 py-2 text-center">Units</th>
-                                <th className="px-3 py-2 text-right">Total</th>
+                                <th className="px-3 py-2 text-right">Rate Amount</th>
+                                <th className="px-3 py-2 text-center">No. of Unit</th>
+                                <th className="px-3 py-2 text-right">Total Amount</th>
                               </tr>
                             </thead>
                             <tbody>
                               {rebateItems.map((item: any, i: number) => {
                                 const desc = item.description || ''
                                 const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
-                                const raNumber = parts[1] || '—'
                                 const hp = parts[2] || '—'
                                 const amt = item.amount || 0
                                 const qty = item.units || 0
                                 return (
                                   <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < rebateItems.length - 1 ? `1px solid ${border}` : 'none' }}>
                                     <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>{item.company || '—'}</td>
-                                    <td className="px-3 py-2">
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                        {raNumber}
-                                      </span>
-                                    </td>
                                     <td className="px-3 py-2">
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
                                         {hp}
@@ -1486,18 +1479,16 @@ export default function DailyAuditReport() {
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
                               <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
-                                <th className="px-3 py-2">Brand / Company</th>
-                                <th className="px-3 py-2">RA Number</th>
+                                <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
-                                <th className="px-3 py-2 text-right">Amount Each</th>
-                                <th className="px-3 py-2 text-center">Units</th>
-                                <th className="px-3 py-2 text-right">Total</th>
+                                <th className="px-3 py-2 text-right">Rate Amount</th>
+                                <th className="px-3 py-2 text-center">No. of Unit</th>
+                                <th className="px-3 py-2 text-right">Total Amount</th>
                               </tr>
                             </thead>
                             <tbody>
                               <tr className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors">
                                 <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>Rebates (Total)</td>
-                                <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
                                 <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
                                 <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: textPrimary }}>₱{peso(selectedRow.rebatesForCollection)}</td>
                                 <td className="px-3 py-2 text-center font-bold tabular-nums" style={{ color: textPrimary }}>1</td>

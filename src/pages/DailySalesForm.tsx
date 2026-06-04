@@ -1505,17 +1505,18 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* VIII. Estimate Rebates for Collection */}
+          {/* VIII. Rebates for Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Rebates for Collection" total={totalRebates} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Company</th>
-                    <th className={tableTh + ' text-right w-24'}>Amount</th>
-                    <th className={tableTh + ' text-center w-16'}>Units</th>
-                    <th className={tableTh + ' text-right w-24'}>Total</th>
+                    <th className={tableTh}>Brand</th>
+                    <th className={tableTh + ' w-20'}>HP</th>
+                    <th className={tableTh + ' text-right w-28'}>Rate Amount</th>
+                    <th className={tableTh + ' text-center w-24'}>No. of Unit</th>
+                    <th className={tableTh + ' text-right w-28'}>Total Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
@@ -1525,8 +1526,13 @@ export default function DailySalesForm() {
                     return (
                       <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                         <td className={tableTd}>
-                          <input type="text" placeholder="Company" value={row.company}
+                          <input type="text" placeholder="MIDEA" value={row.company}
                             onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                            className={flushInput} disabled={isFormDisabled} />
+                        </td>
+                        <td className={tableTd}>
+                          <input type="text" placeholder="1.5HP" value={row.hp}
+                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
                             className={flushInput} disabled={isFormDisabled} />
                         </td>
                         <td className={tableTd}>
@@ -1535,7 +1541,7 @@ export default function DailySalesForm() {
                             className={flushInputNumber} disabled={isFormDisabled} />
                         </td>
                         <td className={tableTd}>
-                          <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0" value={row.units} min="0"
+                          <NumericFormat thousandSeparator="," decimalScale={0} fixedDecimalScale={false} allowNegative={false} placeholder="0" value={row.units} min="0"
                             onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, units: values.value } : r))}
                             className="w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-center transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200" disabled={isFormDisabled} />
                         </td>
