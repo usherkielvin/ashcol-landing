@@ -90,7 +90,7 @@ export default function DashboardLayout() {
   }, [])
 
   const allLinks = [
-    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
+    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -113,7 +113,7 @@ export default function DashboardLayout() {
 
   const navLinks = role === 'admin'
       ? allLinks.filter(link => {
-          if (!link.roles) return true // visible to everyone (Overview, Tickets)
+          if (!link.roles) return true
           return link.roles.includes(role)
         })
       : isSalesUser

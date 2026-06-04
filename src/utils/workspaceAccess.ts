@@ -45,7 +45,6 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
 export function getPortalHomePath(user?: PortalUserLike | null) {
   const role = norm(user?.role)
   if (role === 'admin') return '/audit-report'
-  if (role === 'manager') return '/dashboard-home'
   if (isSalesWorkspaceUser(user)) return '/daily-report'
   if (isServiceWorkspaceUser(user)) return '/service-report'
   return '/daily-report'
