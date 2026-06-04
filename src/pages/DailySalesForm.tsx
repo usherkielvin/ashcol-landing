@@ -219,6 +219,7 @@ export default function DailySalesForm() {
   const [scanError, setScanError]   = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const ignoreNextCohFetch = useRef(false)
+  const hasScannedTrNo = useRef(false)
 
   const [trNo, setTrNo]         = useState('')
   const [branchName, setBranch] = useState(initialBranchName)
@@ -628,6 +629,10 @@ export default function DailySalesForm() {
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
     if (reportId) return
+    if (hasScannedTrNo.current) {
+      hasScannedTrNo.current = false
+      return
+    }
     if (branchName && reportDate) {
       const prefix = getTrNoPrefix(branchName, selectedAuditLine)
       setTrNo(`${prefix}-${getTrNoDateCode(reportDate)}`)
@@ -686,6 +691,8 @@ export default function DailySalesForm() {
       // Simulate realistic scan result
       setTimeout(() => {
         applyScannedData({
+          date: '2026-06-01',
+          trNo: 'ASHDAS-00019',
           totalCashCollection: 27049,
           cashReturns: 3040,
           fundFromHo: 111286,
@@ -718,6 +725,13 @@ export default function DailySalesForm() {
         setBranch(data.branchName)
         activeBranchName = data.branchName
       }
+    }
+
+    if (data.trNo) {
+      setTrNo(data.trNo)
+      hasScannedTrNo.current = true
+    } else {
+      hasScannedTrNo.current = false
     }
 
     if (data.cohPreviousDay != null || data.fundFromHo != null) {
