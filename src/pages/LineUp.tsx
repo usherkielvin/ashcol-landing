@@ -1904,14 +1904,14 @@ export default function LineUp() {
         )}
 
         {/* Top Control Bar */}
-        <div className="rounded-xl p-4 lg:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4"
+        <div className="rounded-xl p-4 lg:p-5 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: currentTheme.accent }}>Scheduling</p>
-            <h2 className="text-lg md:text-xl lg:text-2xl font-black tracking-tight mb-0.5" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
+            <h2 className="text-lg md:text-xl font-black tracking-tight mb-0.5 whitespace-nowrap" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
             <p className="text-xs md:text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 w-full lg:w-auto justify-start lg:justify-end flex-wrap">
+          <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end flex-wrap">
             {/* Branch dropdown (fallback / legacy) */}
             <div style={{ position: 'relative' }} className="flex items-center">
               <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
