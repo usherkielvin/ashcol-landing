@@ -857,8 +857,6 @@ export default function DailySalesForm() {
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
-    } else if (data.totalExpenses) {
-      setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
     } else {
       setExpReceipt([mkExp()])
     }

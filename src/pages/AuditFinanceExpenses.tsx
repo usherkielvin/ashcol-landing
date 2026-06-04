@@ -458,11 +458,11 @@ export default function AuditFinanceExpenses() {
 
     if (q) {
       rows = rows.filter((e) =>
-        e.company.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q) ||
-        e.receiptNo.toLowerCase().includes(q) ||
-        e.incurredBy.toLowerCase().includes(q) ||
-        e.date.toLowerCase().includes(q)
+        (e.company || '').toLowerCase().includes(q) ||
+        (e.description || '').toLowerCase().includes(q) ||
+        (e.receiptNo || '').toLowerCase().includes(q) ||
+        (e.incurredBy || '').toLowerCase().includes(q) ||
+        (e.date || '').toLowerCase().includes(q)
       )
     }
 
@@ -615,10 +615,10 @@ export default function AuditFinanceExpenses() {
       ? { ...editing, branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
       : { id: createExpenseId(), branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), inputBy: user?.jobTitle ? `${user?.name || user?.email} - ${user.jobTitle}` : `${user?.name || user?.email || 'STAFF'} - ${(user?.role || 'USER').toUpperCase()}`, createdAt: now, updatedAt: now }
 
-    const normalizedReceiptNo = form.receiptNo.trim().toUpperCase()
+    const normalizedReceiptNo = (form.receiptNo || '').trim().toUpperCase()
     if (normalizedReceiptNo) {
       const duplicate = expenses.find(
-        (e) => e.receiptNo.trim().toUpperCase() === normalizedReceiptNo && e.id !== (editing?.id || '')
+        (e) => (e.receiptNo || '').trim().toUpperCase() === normalizedReceiptNo && e.id !== (editing?.id || '')
       )
       if (duplicate) {
         setDuplicateModal({
@@ -1082,6 +1082,7 @@ export default function AuditFinanceExpenses() {
                       const selectedId = e.target.value
                       setForm((f) => ({ ...f, branchId: selectedId }))
                     }}
+                    disabled={isBranchScopedUser && !!user?.branchId}
                     className="w-full rounded-lg pl-7 pr-7 py-1.5 text-xs appearance-none outline-none cursor-pointer font-medium"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
                   >
