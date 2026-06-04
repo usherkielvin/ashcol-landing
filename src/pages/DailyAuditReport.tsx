@@ -4,7 +4,7 @@ import {
   AlertTriangle, X, ChevronRight, FileText, Eye, Download,
   ArrowUp, ArrowDown,
   Minimize2, Maximize2, MoreVertical,
-  CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Loader2
+  HelpCircle, Loader2
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
@@ -1382,28 +1382,23 @@ export default function DailyAuditReport() {
                 </div>
               </div>
 
-              {/* Redesigned Rebate Summary */}
-              <div className="px-6 py-5 flex flex-col gap-4.5" style={{ borderBottom: `1px solid ${border}` }}>
-                <div className="flex items-center gap-1.5 pb-1 border-b" style={{ borderColor: border }}>
-                  <FileText className="w-4 h-4 text-emerald-500" />
+              {/* Rebate Summary */}
+              <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
                   <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Rebate Summary</span>
+                  <span className="text-[11px] font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(selectedRow.rebatesForCollection)}</span>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { label: 'Rebates Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, icon: <Receipt className="w-4 h-4 text-emerald-500" />, bg: 'rgba(16,185,129,0.04)', border: 'rgba(16,185,129,0.12)', text: '#10B981' },
-                    { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), icon: <CheckCircle2 className="w-4 h-4 text-blue-500" />, bg: 'rgba(59,130,246,0.04)', border: 'rgba(59,130,246,0.12)', text: '#3B82F6' },
-                    { label: 'Cancelled', value: String(selectedRow.totalCancelled), icon: <XCircle className="w-4 h-4 text-red-500" />, bg: 'rgba(239,68,68,0.04)', border: 'rgba(239,68,68,0.12)', text: '#EF4444' },
-                    { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), icon: <Gift className="w-4 h-4 text-amber-500" />, bg: 'rgba(245,158,11,0.04)', border: 'rgba(245,158,11,0.12)', text: '#F59E0B' },
+                    { label: 'Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
+                    { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), color: textPrimary },
+                    { label: 'Cancelled', value: String(selectedRow.totalCancelled), color: textPrimary },
+                    { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), color: textPrimary },
                   ].map((item) => (
-                    <div key={item.label} className="rounded-xl border p-3 flex items-center justify-between transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ borderColor: item.border, backgroundColor: item.bg }}>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
-                        <span className="text-sm font-black tracking-tight" style={{ color: item.text }}>{item.value}</span>
-                      </div>
-                      <div className="p-1.5 rounded-lg bg-white dark:bg-slate-900 shadow-xs border border-slate-100 dark:border-slate-800">
-                        {item.icon}
-                      </div>
+                    <div key={item.label} className="rounded-lg px-3 py-2" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                      <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
+                      <div className="mt-0.5 text-xs font-black tabular-nums" style={{ color: item.color }}>{item.value}</div>
                     </div>
                   ))}
                 </div>
@@ -1437,6 +1432,7 @@ export default function DailyAuditReport() {
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
                               <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
+                                <th className="px-3 py-2">Company</th>
                                 <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
                                 <th className="px-3 py-2 text-right">Rate Amount</th>
@@ -1448,11 +1444,13 @@ export default function DailyAuditReport() {
                               {rebateItems.map((item: any, i: number) => {
                                 const desc = item.description || ''
                                 const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
+                                const company = parts[1] || '—'
                                 const hp = parts[2] || '—'
                                 const amt = item.amount || 0
                                 const qty = item.units || 0
                                 return (
                                   <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < rebateItems.length - 1 ? `1px solid ${border}` : 'none' }}>
+                                    <td className="px-3 py-2 font-semibold" style={{ color: textPrimary }}>{company}</td>
                                     <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>{item.company || '—'}</td>
                                     <td className="px-3 py-2">
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
@@ -1479,6 +1477,7 @@ export default function DailyAuditReport() {
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
                               <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
+                                <th className="px-3 py-2">Company</th>
                                 <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
                                 <th className="px-3 py-2 text-right">Rate Amount</th>
@@ -1488,6 +1487,7 @@ export default function DailyAuditReport() {
                             </thead>
                             <tbody>
                               <tr className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors">
+                                <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
                                 <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>Rebates (Total)</td>
                                 <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
                                 <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: textPrimary }}>₱{peso(selectedRow.rebatesForCollection)}</td>

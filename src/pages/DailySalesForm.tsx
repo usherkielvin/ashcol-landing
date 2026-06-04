@@ -276,30 +276,30 @@ export default function DailySalesForm() {
     return () => clearTimeout(t)
   }, [reviewMode])
 
-  // I. Cash Transactions
+  // Cash Transactions
   const [cashTx, setCashTx]     = useState<CashTxRow[]>([mkCash()])
-  // II. Cash Returns
+  // Cash Returns
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
-  // III. Fund Transfer from HO
+  // Fund Transfer from HO
   const [cashOnHand, setCashOnHand]     = useState('')
   const [fundFromHo, setFundFromHo]     = useState('')
-  // IV. Online Transactions
+  // Online Transactions
   const [onlineTx, setOnlineTx]         = useState<OnlineTxRow[]>([mkOnl()])
-  // V. Check Remits
+  // Check Remits
   const [checkRem, setCheckRem]         = useState<CheckRow[]>([mkChk()])
-  // VI. Parts Sales / Unit Sales
+  // Parts Sales / Unit Sales
   const [partsSales, setPartsSales]     = useState<PartsSaleRow[]>([mkPart()])
-  // VII. For Collection
+  // For Collection
   const [forColl, setForColl]           = useState<ForCollRow[]>([mkColl()])
-  // VIII. Estimate Rebates
+  // Rebates
   const [rebates, setRebates]           = useState<RebateRow[]>([mkReb()])
-  // IX. Parts Order / Units Order
+  // Parts Order / Units Order
   const [orders, setOrders]             = useState<OrderRow[]>([mkOrd()])
-  // X. Expenses with Receipts
+  // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
-  // XI. Expenses for Purchase
+  // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
-  // XIII. Unit Summary
+  // Unit summary
   const [scheduledUnits, setScheduledUnits]     = useState('')
   const [installedUnits, setInstalledUnits]     = useState('')
   const [cancelledUnits, setCancelledUnits]     = useState('')
@@ -977,12 +977,9 @@ export default function DailySalesForm() {
   const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
   const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
 
-  const SectionHeader = ({ label, total }: { label: string; total?: number }) => (
+  const SectionHeader = ({ label }: { label: string; total?: number }) => (
     <div className="px-3 py-2 flex items-center gap-2 bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
       <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">{label}</span>
-      {total !== undefined && (
-        <span className="ml-auto text-xs font-bold text-emerald-600 dark:text-emerald-400">{php(total)}</span>
-      )}
     </div>
   )
 
@@ -1184,7 +1181,7 @@ export default function DailySalesForm() {
         {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-4">
 
-          {/* I. Cash Transactions */}
+          {/* Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Transactions" total={totalCashCollection} />
             <div className="p-2">
@@ -1223,7 +1220,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* II. Cash Returns */}
+          {/* Cash Returns */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Returns" total={totalCashReturns} />
             <div className="p-2">
@@ -1262,7 +1259,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* III. Fund Transfer from HO */}
+          {/* Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Fund Transfer from HO" />
             <div className="p-2">
@@ -1311,7 +1308,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* IV. Online Transactions */}
+          {/* Online Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Online Transactions" total={totalOnline} />
             <div className="p-2">
@@ -1361,7 +1358,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* V. Check Remits */}
+          {/* Check Remits */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Check Remits" total={totalCheck} />
             <div className="p-2">
@@ -1411,7 +1408,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* VI. Parts Sales / Unit Sales */}
+          {/* Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} />
             <div className="p-2">
@@ -1461,7 +1458,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* VII. For Collection */}
+          {/* For Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="For Collection" total={totalForColl} />
             <div className="p-2">
@@ -1505,13 +1502,14 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* VIII. Rebates for Collection */}
+          {/* Rebates for Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Rebates for Collection" total={totalRebates} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
+                    <th className={tableTh}>Company</th>
                     <th className={tableTh}>Brand</th>
                     <th className={tableTh + ' w-20'}>HP</th>
                     <th className={tableTh + ' text-right w-28'}>Rate Amount</th>
@@ -1525,6 +1523,11 @@ export default function DailySalesForm() {
                     const calc = num(row.amount) * num(row.units)
                     return (
                       <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                        <td className={tableTd}>
+                          <input type="text" placeholder="ROBINSONS" value={row.raNumber}
+                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                            className={flushInput} disabled={isFormDisabled} />
+                        </td>
                         <td className={tableTd}>
                           <input type="text" placeholder="MIDEA" value={row.company}
                             onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
@@ -1567,7 +1570,7 @@ export default function DailySalesForm() {
         {/* ── RIGHT COLUMN ── */}
         <div className="flex flex-col gap-4">
 
-          {/* IX. Parts Order / Units Order */}
+          {/* Parts Order / Units Order */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Parts Order / Units Order" total={totalOrders} />
             <div className="p-2">
@@ -1611,7 +1614,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* X. Expenses with Receipts */}
+          {/* Expenses with Receipts */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} />
             <div className="p-2">
@@ -1655,7 +1658,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* XI. Expenses for Purchase */}
+          {/* Expenses for Purchase */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Expenses for Purchase" total={totalExpPurch} />
             <div className="p-2">
@@ -1699,7 +1702,7 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* XIII. Unit Summary */}
+          {/* Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Unit Summary" />
             <div className="p-3">
@@ -1739,26 +1742,26 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* XII–XIV. Summary */}
+          {/* Final Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Final Summary" />
             <div className="p-3">
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>
                   <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">XII. Grand Total Expenses</td>
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
                     <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">XIV. Total Fund Received</td>
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Total Fund Received</td>
                     <td className="px-3 py-2 text-right font-bold text-cyan-600 dark:text-cyan-400">{php(totalFundReceived)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">XIV. Grand Total Expenses</td>
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
                     <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
                   </tr>
                   <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
-                    <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200 font-bold text-sm">XIV. Total Cash on Hand / Deposit</td>
+                    <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200 font-bold text-sm">Total Cash on Hand / Deposit</td>
                     <td className="px-3 py-2.5 text-right text-base text-emerald-600 dark:text-emerald-400 font-black">
                       {php(totalCashOnHand)}
                     </td>
