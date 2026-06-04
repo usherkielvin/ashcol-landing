@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, Receipt, ChevronRight, FileText, Eye, Download,
-  ArrowUp, ArrowDown, Trophy,
+  AlertTriangle, X, ChevronRight, FileText, Eye, Download,
+  ArrowUp, ArrowDown,
   Minimize2, Maximize2, MoreVertical,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
@@ -1263,23 +1263,18 @@ export default function DailyAuditReport() {
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-2.5">
-                <FileText className="w-5 h-5 text-emerald-500" />
-                <div>
-                  <h4 className="font-black text-base" style={{ color: textPrimary }}>
-                    {selectedRow.branchName}
-                  </h4>
-                  <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                    {viewMode === 'single'
-                      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                      : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
-                  </p>
-                </div>
+              <div>
+                <h4 className="font-black text-base" style={{ color: textPrimary }}>{selectedRow.branchName}</h4>
+                <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
+                  {viewMode === 'single'
+                    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && selectedRow.id && (
                   <button type="button" onClick={() => handleClearRow(selectedRow)}
-                    className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
                     style={{ border: 'none' }}>
                     Clear Row
                   </button>
@@ -1290,285 +1285,222 @@ export default function DailyAuditReport() {
                       ? `/daily-report?id=${selectedRow.id}`
                       : `/daily-report?branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
                     }
-                    className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
                   >
                     {selectedRow.id ? 'Edit DTR' : 'Create DTR'}
                   </a>
                 )}
                 <button onClick={() => setSelectedRow(null)}
-                  className="p-2 rounded-xl transition-colors hover:bg-red-500/10 hover:text-red-400" style={{ color: textMuted }}>
-                  <X className="w-5 h-5" />
+                  className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+            <div className="flex-1 overflow-y-auto">
 
-              {/* Combined simple status banner */}
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-bold pb-4 border-b" style={{ borderColor: border }}>
-                <span className="flex items-center gap-1.5">
+              {/* Status strip */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-6 py-3 text-xs" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
+                <span className="flex items-center gap-1.5 font-bold">
                   <span style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
+                    display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+                    backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B'
+                      : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
                   }} />
-                  <span style={{
-                    color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981'),
-                    fontWeight: 800
-                  }}>
-                    {selectedRow.remarks === 'PENDING'
-                      ? 'PENDING'
+                  <span style={{ color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981') }}>
+                    {selectedRow.remarks === 'PENDING' ? 'PENDING'
                       : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
-                        ? 'NO TRANSACTION'
-                        : selectedRow.status}
+                        ? 'NO TRANSACTION' : selectedRow.status}
                   </span>
                 </span>
                 {selectedRow.timeUploaded && (
-                  <span style={{ color: textMuted }}>
-                    Time: <span style={{ color: textPrimary }}>{selectedRow.timeUploaded}</span>
-                  </span>
+                  <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
                 )}
                 {rowExpenses?.receivedBy && (
-                  <span style={{ color: textMuted }}>
-                    Submitted by: <span style={{ color: textPrimary }}>{rowExpenses.receivedBy}</span>
-                  </span>
+                  <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{rowExpenses.receivedBy}</span></span>
                 )}
               </div>
 
-              {/* Main metrics grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* 1. Sales & Quota */}
-                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
-                    <BarChart2 className="w-4 h-4 text-blue-500" />
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Sales Summary</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <span style={{ color: textMuted }}>Gross Sales:</span>
-                    <span className="font-bold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.grossSales)}</span>
-                    <span style={{ color: textMuted }}>Target Quota:</span>
-                    <span className="font-bold text-right" style={{ color: '#8B5CF6' }}>₱{peso(selectedRow.targetDailyQuota)}</span>
-                    <span style={{ color: textMuted }}>Difference:</span>
-                    <span className="font-bold text-right" style={{ color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444' }}>
-                      {selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱{peso(selectedRow.difference)}
-                    </span>
-                    <span style={{ color: textMuted }}>Remarks:</span>
-                    <span className="font-bold text-right" style={{
-                      color: selectedRow.remarks === 'ABOVE QUOTA'
-                        ? '#10B981'
-                        : selectedRow.remarks === 'PENDING'
-                          ? '#F59E0B'
-                          : isNoTransactionRemarks(selectedRow.remarks)
-                            ? textMuted
-                            : '#EF4444'
-                    }}>
-                      {formatRemarksLabel(selectedRow.remarks, false)}
-                    </span>
-                  </div>
-                </div>
+              {/* Main metrics — 3 flat columns, no icon headers, no inner boxes */}
+              <div className="grid grid-cols-1 md:grid-cols-3" style={{ borderBottom: `1px solid ${border}` }}>
 
-                {/* 2. Cash Flow */}
-                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
-                    <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Cash Flow</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <span style={{ color: textMuted }}>COH Prev Day:</span>
-                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.cohPreviousDay)}</span>
-                    <span style={{ color: textMuted }}>Fund from HO:</span>
-                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.fundFromHo)}</span>
-                    <span style={{ color: textMuted }}>Cash Returns:</span>
-                    <span className="font-semibold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.cashReturns)}</span>
-                    <span className="font-bold" style={{ color: textPrimary }}>Total COH/CFD:</span>
-                    <span className="font-bold text-right" style={{ color: textPrimary }}>₱{peso(selectedRow.totalCohCfd)}</span>
-                  </div>
-                </div>
-
-                {/* 3. Collections */}
-                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
-                    <Receipt className="w-4 h-4 text-purple-500" />
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Collections</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <span style={{ color: textMuted }}>Cash Collection:</span>
-                    <span className="font-bold text-right" style={{ color: '#10B981' }}>₱{peso(selectedRow.totalCashCollection)}</span>
-                    <span style={{ color: textMuted }}>Online Collection:</span>
-                    <span className="font-bold text-right" style={{ color: '#3B82F6' }}>₱{peso(selectedRow.totalOnlineCollection)}</span>
-                    <span style={{ color: textMuted }}>For Collection:</span>
-                    <span className="font-bold text-right" style={{ color: '#F59E0B' }}>₱{peso(selectedRow.forCollection)}</span>
-                    <span style={{ color: textMuted }}>Rebates:</span>
-                    <span className="font-semibold text-right" style={{ color: textMuted }}>₱{peso(selectedRow.rebatesForCollection)}</span>
-                  </div>
-                </div>
-
-                {/* 4. Operations */}
-                <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
-                    <Trophy className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Operations</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <span style={{ color: textMuted }}>Units Installed/Serviced:</span>
-                    <span className="font-bold text-right" style={{ color: textPrimary }}>{selectedRow.totalUnitsInstalledServiced}</span>
-                    <span style={{ color: textMuted }}>Cancelled:</span>
-                    <span className="font-bold text-right" style={{ color: selectedRow.totalCancelled > 0 ? '#EF4444' : textMuted }}>{selectedRow.totalCancelled}</span>
-                    <span style={{ color: textMuted }}>Free Install:</span>
-                    <span className="font-semibold text-right" style={{ color: textMuted }}>{selectedRow.totalUnitsFreeInstall}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
-                  <FileText className="w-4 h-4 text-emerald-500" />
-                  <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Rebate Summary</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, accent: '#10B981' },
-                    { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), accent: '#3B82F6' },
-                    { label: 'Cancelled', value: String(selectedRow.totalCancelled), accent: '#EF4444' },
-                    { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), accent: '#F59E0B' },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-lg border px-3 py-3 flex flex-col gap-1" style={{ borderColor: border, backgroundColor: cardBg }}>
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
-                      <span className="text-sm font-black" style={{ color: item.accent }}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-                {(() => {
-                  const rebateItems = (rowExpenses?.items || []).filter(
-                    (item: any) => item.type === 'REBATE'
-                  )
-                  if (rebateItems.length > 0) {
-                    return (
-                      <div className="mt-3 pt-3 border-t" style={{ borderColor: border }}>
-                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates</span>
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr style={{ borderBottom: `1px solid ${border}` }}>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Brand/Company</th>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>RA Number</th>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>HP</th>
-                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount Each</th>
-                              <th className="pb-1 text-center text-[10px] font-bold uppercase" style={{ color: textMuted }}>Units</th>
-                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rebateItems.map((item, i) => {
-                              const desc = item.description || ''
-                              const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
-                              const raNumber = parts[1] || '—'
-                              const hp = parts[2] || '—'
-                              const amt = item.amount || 0
-                              const qty = item.units || 0
-                              return (
-                                <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                                  <td className="py-1.5 font-bold" style={{ color: textPrimary }}>{item.company || '—'}</td>
-                                  <td className="py-1.5" style={{ color: textPrimary }}>{raNumber}</td>
-                                  <td className="py-1.5" style={{ color: textPrimary }}>{hp}</td>
-                                  <td className="py-1.5 text-right font-semibold" style={{ color: textPrimary }}>₱{peso(amt)}</td>
-                                  <td className="py-1.5 text-center font-semibold" style={{ color: textPrimary }}>{qty}</td>
-                                  <td className="py-1.5 text-right font-black text-emerald-600">₱{peso(amt * qty)}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                {/* Sales Summary */}
+                <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Sales Summary</p>
+                  <div className="flex flex-col gap-2.5">
+                    {[
+                      { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary },
+                      { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: '#8B5CF6' },
+                      { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444' },
+                      { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444' },
+                    ].map(r => (
+                      <div key={r.label} className="flex items-center justify-between gap-3">
+                        <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
+                        <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
                       </div>
-                    )
-                  }
-                  return null
-                })()}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cash Flow */}
+                <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Cash Flow</p>
+                  <div className="flex flex-col gap-2.5">
+                    {[
+                      { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, bold: false },
+                      { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo)}`, bold: false },
+                      { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, bold: false },
+                      { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, bold: true },
+                    ].map(r => (
+                      <div key={r.label} className="flex items-center justify-between gap-3">
+                        <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
+                        <span className={`text-xs tabular-nums ${r.bold ? 'font-black' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Collections */}
+                <div className="px-6 py-5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Collections</p>
+                  <div className="flex flex-col gap-2.5">
+                    {[
+                      { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, color: '#10B981' },
+                      { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: '#3B82F6' },
+                      { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: '#F59E0B' },
+                      { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: textMuted },
+                    ].map(r => (
+                      <div key={r.label} className="flex items-center justify-between gap-3">
+                        <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
+                        <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* 5. Expense Breakdown details */}
-              <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
-                <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: border }}>
-                  <div className="flex items-center gap-1.5">
-                    <Receipt className="w-4 h-4 text-red-500" />
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Expenses Breakdown (₱{peso(selectedRow.totalExpenses)})
-                    </span>
+              {/* Operations — slim 4-cell strip */}
+              <div className="grid grid-cols-2 md:grid-cols-4" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
+                {[
+                  { label: 'Installed / Serviced', value: String(selectedRow.totalUnitsInstalledServiced), color: textPrimary },
+                  { label: 'Cancelled', value: String(selectedRow.totalCancelled), color: selectedRow.totalCancelled > 0 ? '#EF4444' : textMuted },
+                  { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), color: textMuted },
+                  { label: 'Rebates Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
+                ].map((item, idx, arr) => (
+                  <div key={item.label} className="px-6 py-3 flex flex-col gap-0.5" style={{ borderRight: idx < arr.length - 1 ? `1px solid ${border}` : undefined }}>
+                    <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
+                    <span className="text-sm font-black tabular-nums" style={{ color: item.color }}>{item.value}</span>
                   </div>
+                ))}
+              </div>
+
+              {/* Rebate line items (if any) */}
+              {(() => {
+                const rebateItems = (rowExpenses?.items || []).filter((item: any) => item.type === 'REBATE')
+                if (rebateItems.length === 0) return null
+                return (
+                  <div className="px-6 py-5" style={{ borderBottom: `1px solid ${border}` }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Detailed Rebates</p>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${border}` }}>
+                          {['Brand / Company', 'RA Number', 'HP', 'Amt Each', 'Units', 'Total'].map((h, i) => (
+                            <th key={h} className={`pb-2 text-[10px] font-bold uppercase ${i >= 3 ? (i === 4 ? 'text-center' : 'text-right') : 'text-left'}`} style={{ color: textMuted }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rebateItems.map((item: any, i: number) => {
+                          const desc = item.description || ''
+                          const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
+                          const raNumber = parts[1] || '—'
+                          const hp = parts[2] || '—'
+                          const amt = item.amount || 0
+                          const qty = item.units || 0
+                          return (
+                            <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                              <td className="py-2 font-semibold" style={{ color: textPrimary }}>{item.company || '—'}</td>
+                              <td className="py-2" style={{ color: textPrimary }}>{raNumber}</td>
+                              <td className="py-2" style={{ color: textPrimary }}>{hp}</td>
+                              <td className="py-2 text-right" style={{ color: textPrimary }}>₱{peso(amt)}</td>
+                              <td className="py-2 text-center" style={{ color: textPrimary }}>{qty}</td>
+                              <td className="py-2 text-right font-black" style={{ color: '#10B981' }}>₱{peso(amt * qty)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })()}
+
+              {/* Expenses Breakdown */}
+              <div className="px-6 py-5">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Expenses Breakdown</p>
+                  <span className="text-xs font-black" style={{ color: '#EF4444' }}>₱{peso(selectedRow.totalExpenses)}</span>
                 </div>
 
                 {rowExpensesLoading ? (
-                  <div className="flex flex-col gap-2 py-4">
-                    <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
-                    <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
+                  <div className="flex flex-col gap-2">
+                    <div className="h-5 rounded animate-pulse" style={{ backgroundColor: border }} />
+                    <div className="h-5 rounded animate-pulse" style={{ backgroundColor: border }} />
+                    <div className="h-5 rounded animate-pulse w-3/4" style={{ backgroundColor: border }} />
                   </div>
-                ) : !rowExpenses ? (
-                  <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
-                ) : (
-                  <div className="flex flex-col gap-5 text-xs">
-                    {(() => {
-                      const filteredItems = rowExpenses.items.filter(
-                        (item: any) => item.type === 'EXPENSE' || item.type === 'PURCHASE'
-                      )
-                      if (filteredItems.length === 0) {
-                        return <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
-                      }
-                      return (
-                        <div>
-                          <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Summary Breakdown</span>
-                          <table className="w-full">
-                            <thead>
-                              <tr style={{ borderBottom: `1px solid ${border}` }}>
-                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
-                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
-                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Receipt</th>
-                                <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredItems.map((item, i) => {
-                                const tc = item.type === 'EXPENSE' ? '#EF4444' : '#F59E0B'
-                                return (
-                                  <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                                    <td className="py-1.5 pr-2">
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>
-                                        {item.type.replace('_',' ')}
-                                      </span>
-                                    </td>
-                                    <td className="py-1.5" style={{ color: textPrimary }}>{item.description}</td>
-                                    <td className="py-1.5 px-2">
-                                      {item.type === 'PURCHASE' ? (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                          backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                          color: item.receiptReturned ? '#10B981' : '#F59E0B'
-                                        }}>
-                                          {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
-                                        </span>
-                                      ) : (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                          backgroundColor: 'rgba(16,185,129,0.12)',
-                                          color: '#10B981'
-                                        }}>
-                                          UPLOADED
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-1.5 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )
-                    })()}
-
-                  </div>
-                )}
+                ) : (() => {
+                  const filteredItems = (rowExpenses?.items || []).filter(
+                    (item: any) => item.type === 'EXPENSE' || item.type === 'PURCHASE'
+                  )
+                  if (filteredItems.length === 0) {
+                    return <p className="text-xs py-4 text-center" style={{ color: textMuted }}>No detailed expenses recorded.</p>
+                  }
+                  return (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${border}` }}>
+                          <th className="pb-2 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
+                          <th className="pb-2 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
+                          <th className="pb-2 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Receipt</th>
+                          <th className="pb-2 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredItems.map((item: any, i: number) => {
+                          const tc = item.type === 'EXPENSE' ? '#EF4444' : '#F59E0B'
+                          return (
+                            <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                              <td className="py-2 pr-3">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>
+                                  {item.type.replace('_', ' ')}
+                                </span>
+                              </td>
+                              <td className="py-2" style={{ color: textPrimary }}>{item.description}</td>
+                              <td className="py-2 px-2">
+                                {item.type === 'PURCHASE' ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                    backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                    color: item.receiptReturned ? '#10B981' : '#F59E0B'
+                                  }}>
+                                    {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
+                                    UPLOADED
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )
+                })()}
               </div>
+
             </div>
           </div>
         </div>

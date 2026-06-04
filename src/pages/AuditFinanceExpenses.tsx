@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, ListFilter, LayoutList, Table2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -789,14 +789,16 @@ export default function AuditFinanceExpenses() {
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-4 p-4 md:p-6 pb-12">
 
       {/* ── HEADER ── */}
-      <div className="rounded-2xl p-5 md:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: '0 2px 16px rgba(0,0,0,0.08)' }}>
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="rounded-xl p-2" style={{ backgroundColor: `${accent}22` }}><Receipt size={20} style={{ color: accent }} /></div>
-            <h1 className="text-xl md:text-2xl font-bold" style={{ color: textPrimary }}>Expense Records</h1>
+      <div className="rounded-xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.06)' : '0 12px 32px rgba(0,0,0,0.24)' }}>
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="rounded-lg p-2.5 shrink-0" style={{ backgroundColor: `${accent}14`, border: `1px solid ${accent}2f` }}>
+            <ClipboardList size={22} style={{ color: accent }} />
           </div>
-          <p className="text-sm" style={{ color: textMuted }}>Encode and track daily branch expense records. Import from Excel or add manually.</p>
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-black leading-tight" style={{ color: textPrimary }}>Expense Records</h1>
+            <p className="text-sm mt-1" style={{ color: textMuted }}>Encode and track daily branch expense records.</p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -808,7 +810,7 @@ export default function AuditFinanceExpenses() {
                 setEditing(null); setForm({ ...emptyForm(branchId), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
               }
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-200"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white shadow transition-all duration-200"
             style={{ backgroundColor: showForm ? '#EF4444' : accent, minWidth: 140, justifyContent: 'center' }}
           >
             {showForm
@@ -817,7 +819,7 @@ export default function AuditFinanceExpenses() {
             }
           </button>
           <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
             <Upload size={16} />{importing ? 'Importing…' : 'Import Excel'}
           </button>
@@ -826,16 +828,20 @@ export default function AuditFinanceExpenses() {
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row gap-2 items-center"
+      <div className="rounded-xl px-4 py-3 flex flex-col md:flex-row gap-2 items-center"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="hidden md:flex items-center gap-2 shrink-0 pr-1">
+          <ListFilter size={16} style={{ color: accent }} />
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textMuted }}>Filters</span>
+        </div>
         {/* Branch selector */}
-        <div style={{ position: 'relative' }} className="w-full md:w-64 shrink-0">
+        <div style={{ position: 'relative' }} className="w-full md:w-72 shrink-0">
           <Building2 size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
           <select
             value={branchId}
             onChange={(e) => setBranchId(e.target.value)}
             disabled={isBranchScopedUser && !!user?.branchId}
-            className="w-full rounded-lg pl-8 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer"
+            className="w-full rounded-lg pl-8 pr-7 py-2.5 text-sm appearance-none outline-none cursor-pointer"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
           >
             {branches.length === 0
@@ -849,11 +855,12 @@ export default function AuditFinanceExpenses() {
 
         {/* Month selector */}
         {branchId && (
-          <div style={{ position: 'relative' }} className="w-full md:w-36 shrink-0">
+          <div style={{ position: 'relative' }} className="w-full md:w-40 shrink-0">
+            <CalendarDays size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
-              className="w-full rounded-lg pl-3 pr-7 py-2 text-sm appearance-none outline-none cursor-pointer font-semibold"
+              className="w-full rounded-lg pl-8 pr-7 py-2.5 text-sm appearance-none outline-none cursor-pointer font-semibold"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
             >
               <option value="All">All Months</option>
@@ -873,7 +880,7 @@ export default function AuditFinanceExpenses() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search company, description, date, receipt no…"
-            className="w-full rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
+            className="w-full rounded-lg pl-8 pr-3 py-2.5 text-sm outline-none"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
           />
           {search && (
@@ -888,9 +895,9 @@ export default function AuditFinanceExpenses() {
           <>
             <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
             <div className="flex items-center gap-3 shrink-0 md:ml-auto">
-              <div className="text-right">
-                <div className="text-xs font-medium" style={{ color: textMuted }}>{filtered.length} records</div>
-                <div className="text-sm font-bold" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</div>
+              <div className="rounded-lg px-3 py-2 text-right" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <div className="text-[11px] font-semibold" style={{ color: textMuted }}>{filtered.length} records</div>
+                <div className="text-sm font-black" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</div>
               </div>
             </div>
           </>
@@ -1215,22 +1222,34 @@ export default function AuditFinanceExpenses() {
 
       {/* ── RECEIPT TABLE / DAILY LOG ── */}
       {branchId && (
-        <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-            <h2 className="font-bold" style={{ color: textPrimary }}>
-              {branchName} — Expense Records {search ? `(filtered)` : ''}
-            </h2>
-            <div className="flex items-center gap-2">
+        <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="min-w-0">
+              <h2 className="text-sm font-black truncate" style={{ color: textPrimary }}>
+                {branchName}
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: textMuted }}>
+                {filterMonth === 'All' ? 'All months' : filterMonth}{search ? ' · Filtered' : ''} · ₱{peso(totalFiltered)}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg p-1" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                <button type="button" onClick={() => setViewAll(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  style={{ backgroundColor: !viewAll ? cardBg : 'transparent', color: !viewAll ? accent : textMuted }}>
+                  <LayoutList size={14} /> Daily
+                </button>
+                <button type="button" onClick={() => setViewAll(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  style={{ backgroundColor: viewAll ? cardBg : 'transparent', color: viewAll ? accent : textMuted }}>
+                  <Table2 size={14} /> Table
+                </button>
+              </div>
               <button type="button" onClick={handleExportExcel}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
                 style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Export filtered expense records to Excel">
                 <Download size={14} /> Export
-              </button>
-              <button type="button" onClick={() => setViewAll((v) => !v)}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: accent }}>
-                {viewAll ? 'Daily view' : 'Table view'}
               </button>
             </div>
           </div>
@@ -1322,18 +1341,20 @@ export default function AuditFinanceExpenses() {
                   <div key={date}>
                     <div className="flex items-center justify-between px-5 py-3"
                       style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                      <span className="font-bold text-sm" style={{ color: textPrimary }}>{date}</span>
+                      <span className="font-black text-sm" style={{ color: textPrimary }}>{date}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-xs" style={{ color: textMuted }}>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
                         <span className="font-bold text-sm" style={{ color: accent }}>₱{peso(dayTotal)}</span>
                       </div>
                     </div>
                     {rows.map((row) => (
-                      <div key={row.id} className="flex items-center justify-between px-5 py-3 text-sm"
+                      <div key={row.id} className="flex items-center justify-between px-5 py-3 text-sm transition-colors"
                         onContextMenu={(e) => openDetails(row, e)}
                         onDoubleClick={() => openDetails(row)}
                         title="Right-click to view details"
-                        style={{ borderTop: `1px solid ${border}`, cursor: 'context-menu' }}>
+                        style={{ borderTop: `1px solid ${border}`, cursor: 'context-menu' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHover }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}>
                         <div className="flex flex-col min-w-0">
                           <span className="font-semibold truncate" style={{ color: textPrimary }}>{row.description || row.company}</span>
                           <span className="text-xs truncate" style={{ color: textMuted }}>
