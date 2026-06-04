@@ -334,12 +334,27 @@ export default function AuditFinanceExpenses() {
           } else {
             setBranchId(finalList[0].id)
           }
-        } else if (!branchId) {
-          setBranchId(finalList[0].id)
+        } else {
+          const storedGlobal = localStorage.getItem('ashcol-global-branch-id')
+          if (storedGlobal && finalList.some(b => b.id === storedGlobal)) {
+            setBranchId(storedGlobal)
+          } else {
+            setBranchId(prev => {
+              if (prev && finalList.some(b => b.id === prev)) {
+                return prev
+              }
+              const fallbackId = finalList[0].id
+              if (isAdmin && !storedGlobal) {
+                localStorage.setItem('ashcol-global-branch-id', fallbackId)
+                window.dispatchEvent(new Event('ashcol-global-branch-change'))
+              }
+              return fallbackId
+            })
+          }
         }
       }
     } catch (e) { console.error(e) }
-  }, [isBranchScopedUser, user?.branchId, branchId])
+  }, [isBranchScopedUser, user?.branchId, isAdmin])
 
   const reload = useCallback(async () => {
     try {
@@ -549,11 +564,11 @@ export default function AuditFinanceExpenses() {
     }
     if (editing) {
       // Updating an existing receipt — close the form
-      setShowForm(false); setEditing(null); setForm(emptyForm(branchId)); setDateRaw(formatTodayReceiptDate()); setDateError('')
+      setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
       setScanPreview(null); setScannedFields(new Set()); setScanError('')
     } else {
       // New receipt saved — keep form open, clear fields (including date) for next entry
-      setForm({ ...emptyForm(branchId), date: '' }); setDateRaw(''); setDateError('')
+      setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError('')
       setScanPreview(null); setScannedFields(new Set()); setScanError('')
       // Focus the first field for quick next entry
       setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
@@ -882,39 +897,34 @@ export default function AuditFinanceExpenses() {
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-4 p-4 md:p-6 pb-12">
 
       {/* ── HEADER ── */}
-      <div className="rounded-xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.06)' : '0 12px 32px rgba(0,0,0,0.24)' }}>
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="rounded-lg p-2.5 shrink-0" style={{ backgroundColor: `${accent}14`, border: `1px solid ${accent}2f` }}>
-            <ClipboardList size={22} style={{ color: accent }} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl md:text-2xl font-black leading-tight" style={{ color: textPrimary }}>Expense Records</h1>
-            <p className="text-sm mt-1" style={{ color: textMuted }}>Encode and track daily branch expense records.</p>
-          </div>
+      <div className="rounded-xl px-4 py-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3"
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.2)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
+          <h1 className="text-base md:text-lg font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => {
               if (showForm) {
                 setShowForm(false); setEditing(null)
               } else {
-                setEditing(null); setForm({ ...emptyForm(branchId), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
               }
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white shadow transition-all duration-200"
-            style={{ backgroundColor: showForm ? '#EF4444' : accent, minWidth: 140, justifyContent: 'center' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
+            style={{ backgroundColor: showForm ? '#EF4444' : accent }}
           >
             {showForm
-              ? <><X size={16} /> Close Form</>
-              : <><Plus size={16} /> Add Record</>
+              ? <><X size={14} /> Close Form</>
+              : <><Plus size={14} /> Add Record</>
             }
           </button>
           <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Upload size={16} />{importing ? 'Importing…' : 'Import Excel'}
+            <Upload size={14} />{importing ? 'Importing…' : 'Import Excel'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
         </div>

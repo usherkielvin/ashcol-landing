@@ -1507,6 +1507,23 @@ export default function LineUp() {
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
       <input ref={scanFileRef}  type="file" accept="image/*"    className="hidden" onChange={handleScanFile} />
 
+      {showcaseOpen && createPortal(
+        <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+            <strong>Showcase Mode:</strong> Click "Exit Showcase" to return to edit mode.
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowcaseOpen(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black text-white transition-all bg-red-600 hover:bg-red-700 shadow-sm shrink-0 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            Exit Showcase
+          </button>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
+
       {/* ═══════════════════════════════════════════════════════
           MOBILE VIEW  — cards + 3-dot menu  (hidden on md+)
           ═══════════════════════════════════════════════════════ */}
