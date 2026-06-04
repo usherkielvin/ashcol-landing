@@ -215,6 +215,21 @@ export default function DailySalesForm() {
     : 'DAS-260604'
 
   useEffect(() => {
+    if (user && !reportId) {
+      if (user.name && !receivedBy) {
+        setReceivedBy(user.name)
+      }
+      const emailLower = (user.email || '').toLowerCase()
+      const norm = normalizeTransactionBranch(user.branchId, emailLower)
+      if (norm.branchId) {
+        setSelectedBranchId(norm.branchId)
+        setSelectedAuditLine(norm.auditLine)
+        setBranch(norm.branchName)
+      }
+    }
+  }, [user, reportId, receivedBy])
+
+  useEffect(() => {
     if (!canSubmit) return
     const loadBranchesList = async () => {
       try {
