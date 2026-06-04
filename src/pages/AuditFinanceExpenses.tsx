@@ -184,8 +184,14 @@ export default function AuditFinanceExpenses() {
       if (e.branchId === branchId) return true
       if (branchId.endsWith('-sales')) {
         const baseId = branchId.slice(0, -6)
-        if (e.branchId === baseId) return true
-        if (e.branchName.toUpperCase() === 'ASHCOL TAGUIG' || e.branchName.toUpperCase() === 'TAGUIG') return true
+        if (e.branchId === baseId || e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-sales' || e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') return true
+        const nameUpper = e.branchName.toUpperCase()
+        if (nameUpper === 'ASHCOL TAGUIG' || nameUpper === 'TAGUIG' || nameUpper.includes('TAGUIG SALES') || nameUpper.includes('TAGUIG - SALES')) return true
+      }
+      if (branchId.endsWith('-services')) {
+        if (e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services') return true
+        const nameUpper = e.branchName.toUpperCase()
+        if (nameUpper.includes('TAGUIG') && (nameUpper.includes('SERVICE') || nameUpper.includes('SERVICES'))) return true
       }
       return false
     })
