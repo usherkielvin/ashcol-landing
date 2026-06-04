@@ -90,7 +90,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
 
   if (lower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || lower.startsWith('br-taguig') || lower.includes('taguig')) {
     return {
-      branchId: 'BR-TAGUIG-SALES',
+      branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
     }
@@ -263,7 +263,17 @@ export default function DailySalesForm() {
           }
           let finalList = newList
           if (isBranchRestricted && user?.branchId) {
-            finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(user.branchId + '-') || b.id.startsWith(`${user.branchId}-`))
+            const normBranch = normalizeTransactionBranch(user.branchId, user.email)
+            finalList = newList.filter(b => {
+              // Match by real base ID or virtual suffixed ID
+              const baseId = normBranch.branchId.replace(/-(sales|services)$/i, '')
+              if (b.id !== baseId && b.id !== normBranch.branchId) return false
+              // For Taguig: only show the correct SALES or SERVICES entry
+              if (normBranch.auditLine && b.auditLine) {
+                return b.auditLine === normBranch.auditLine
+              }
+              return true
+            })
           }
           finalList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(finalList)
