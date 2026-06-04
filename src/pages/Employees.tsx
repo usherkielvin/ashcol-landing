@@ -231,7 +231,15 @@ export default function Employees() {
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form)
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          branchId: form.branchId,
+          role: form.role,
+          jobTitle: form.jobTitle,
+          ...(form.newPassword.trim() ? { password: form.newPassword.trim() } : {}),
+        })
       })
       if (!res.ok) {
         const d = await res.json().catch(()=>({}))
