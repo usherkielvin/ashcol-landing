@@ -16,7 +16,7 @@ export function formatRole(role?: string): string {
   if (!role) return ''
   const r = role.toUpperCase()
   if (r === 'MANAGER') return 'OFFICE IN CHARGE'
-  if (r === 'ADMIN') return 'MANAGER'
+  if (r === 'ADMIN') return 'ADMIN'
   if (r === 'OIC') return 'OFFICE IN CHARGE'
   return r
 }
