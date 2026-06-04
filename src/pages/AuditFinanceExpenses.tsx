@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, ListFilter, LayoutList, Table2 } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, LayoutList, Table2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -897,13 +897,13 @@ export default function AuditFinanceExpenses() {
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-4 p-4 md:p-6 pb-12">
 
       {/* ── HEADER ── */}
-      <div className="rounded-xl px-4 py-3 flex flex-col sm:flex-row justify-between sm:items-center gap-3"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.05)' : '0 1px 3px rgba(0,0,0,0.2)' }}>
+      <div className="rounded-xl px-4 py-2.5 flex flex-row items-center justify-between gap-3"
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center gap-2 min-w-0">
           <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
-          <h1 className="text-base md:text-lg font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
+          <h1 className="text-sm md:text-base font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -913,33 +913,29 @@ export default function AuditFinanceExpenses() {
                 setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
               }
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
             style={{ backgroundColor: showForm ? '#EF4444' : accent }}
           >
             {showForm
-              ? <><X size={14} /> Close Form</>
-              : <><Plus size={14} /> Add Record</>
+              ? <><X size={13} /> Close</>
+              : <><Plus size={13} /> Add Record</>
             }
           </button>
           <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Upload size={14} />{importing ? 'Importing…' : 'Import Excel'}
+            <Upload size={13} />{importing ? 'Importing…' : 'Import'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
         </div>
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="rounded-xl px-4 py-3 flex flex-col md:flex-row gap-2 items-center"
+      <div className="rounded-xl px-4 py-2.5 flex flex-wrap items-center gap-2"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="hidden md:flex items-center gap-2 shrink-0 pr-1">
-          <ListFilter size={16} style={{ color: accent }} />
-          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textMuted }}>Filters</span>
-        </div>
         {/* Branch selector */}
-        <div style={{ position: 'relative' }} className="w-full md:w-72 shrink-0">
-          <Building2 size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+        <div style={{ position: 'relative' }} className="w-full sm:w-64">
+          <Building2 size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
           <select
             value={branchId}
             onChange={(e) => {
@@ -951,7 +947,7 @@ export default function AuditFinanceExpenses() {
               }
             }}
             disabled={isBranchScopedUser && !!user?.branchId}
-            className="w-full rounded-lg pl-8 pr-7 py-2.5 text-sm appearance-none outline-none cursor-pointer"
+            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-pointer font-medium"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
           >
             {branches.length === 0
@@ -960,57 +956,51 @@ export default function AuditFinanceExpenses() {
             }
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-          <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+          <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
         </div>
 
         {/* Month selector */}
         {branchId && (
-          <div style={{ position: 'relative' }} className="w-full md:w-40 shrink-0">
-            <CalendarDays size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+          <div style={{ position: 'relative' }} className="w-full sm:w-36">
+            <CalendarDays size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
-              className="w-full rounded-lg pl-8 pr-7 py-2.5 text-sm appearance-none outline-none cursor-pointer font-semibold"
+              className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-pointer font-bold"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
             >
               <option value="All">All Months</option>
               {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
-            <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+            <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
           </div>
         )}
 
-        {/* Divider */}
-        <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
-
         {/* Search */}
-        <div style={{ position: 'relative' }} className="flex-1 w-full">
-          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+        <div style={{ position: 'relative' }} className="flex-1 min-w-[200px] w-full">
+          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search company, description, date, receipt no…"
-            className="w-full rounded-lg pl-8 pr-3 py-2.5 text-sm outline-none"
+            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs outline-none"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
           />
           {search && (
-            <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
-              <X size={13} />
+            <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
+              <X size={12} />
             </button>
           )}
         </div>
 
         {/* Summary — right magnet */}
         {branchId && (
-          <>
-            <div className="hidden md:block w-px self-stretch" style={{ backgroundColor: border }} />
-            <div className="flex items-center gap-3 shrink-0 md:ml-auto">
-              <div className="rounded-lg px-3 py-2 text-right" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                <div className="text-[11px] font-semibold" style={{ color: textMuted }}>{filtered.length} records</div>
-                <div className="text-sm font-black" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</div>
-              </div>
-            </div>
-          </>
+          <div className="flex items-center gap-2 sm:ml-auto shrink-0 bg-black/5 dark:bg-white/5 rounded-lg px-2.5 py-1.5 border"
+            style={{ borderColor: border }}>
+            <span className="text-[10px] font-semibold tracking-tight" style={{ color: textMuted }}>{filtered.length} records</span>
+            <div className="w-px h-3" style={{ backgroundColor: border }} />
+            <span className="text-xs font-black" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</span>
+          </div>
         )}
       </div>
 
@@ -1333,33 +1323,30 @@ export default function AuditFinanceExpenses() {
       {/* ── RECEIPT TABLE / DAILY LOG ── */}
       {branchId && (
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
             <div className="min-w-0">
-              <h2 className="text-sm font-black truncate" style={{ color: textPrimary }}>
-                {branchName}
+              <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
+                {branchName} <span className="font-normal" style={{ color: textMuted }}>({filterMonth === 'All' ? 'All months' : filterMonth})</span>
               </h2>
-              <p className="text-xs mt-0.5" style={{ color: textMuted }}>
-                {filterMonth === 'All' ? 'All months' : filterMonth}{search ? ' · Filtered' : ''} · ₱{peso(totalFiltered)}
-              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex rounded-lg p-1" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex rounded-lg p-0.5" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
                 <button type="button" onClick={() => setViewAll(false)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors"
                   style={{ backgroundColor: !viewAll ? cardBg : 'transparent', color: !viewAll ? accent : textMuted }}>
-                  <LayoutList size={14} /> Daily
+                  <LayoutList size={12} /> Daily
                 </button>
                 <button type="button" onClick={() => setViewAll(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors"
                   style={{ backgroundColor: viewAll ? cardBg : 'transparent', color: viewAll ? accent : textMuted }}>
-                  <Table2 size={14} /> Table
+                  <Table2 size={12} /> Table
                 </button>
               </div>
               <button type="button" onClick={handleExportExcel}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors"
                 style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Export filtered expense records to Excel">
-                <Download size={14} /> Export
+                <Download size={12} /> Export
               </button>
             </div>
           </div>
