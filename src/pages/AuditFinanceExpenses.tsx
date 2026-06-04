@@ -64,6 +64,7 @@ export default function AuditFinanceExpenses() {
   const [scanError, setScanError] = useState('')
   const [savingReceipt, setSavingReceipt] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
+  const [branchEmployees, setBranchEmployees] = useState<string[]>([])
 
   // Dynamic categories state
   const [categories, setCategories] = useState<AuditExpenseCategoryDetail[]>([])
@@ -233,10 +234,15 @@ export default function AuditFinanceExpenses() {
   const suggestions = useMemo(() => {
     const companies = [...new Set(branchExpenses.map((e) => e.company).filter(Boolean))].sort()
     const descs = [...new Set(branchExpenses.map((e) => e.description).filter(Boolean))].sort()
-    const people = [...new Set(branchExpenses.map((e) => e.incurredBy).filter(Boolean))].sort()
+    
+    const peopleSet = new Set<string>()
+    branchExpenses.map((e) => e.incurredBy).filter(Boolean).forEach(p => peopleSet.add(p.toUpperCase().trim()))
+    branchEmployees.forEach(name => peopleSet.add(name))
+    const people = Array.from(peopleSet).sort()
+    
     const sources = [...new Set(branchExpenses.map((e) => e.sourceOfFunds).filter(Boolean))].sort()
     return { companies, descs, people, sources }
-  }, [branchExpenses])
+  }, [branchExpenses, branchEmployees])
 
   const latestDateStr = useMemo(() => {
     let maxTime = 0
@@ -346,6 +352,33 @@ export default function AuditFinanceExpenses() {
 
   useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
   useEffect(() => { void reload() }, [reload])
+
+  useEffect(() => {
+    if (!branchId) return
+    const fetchEmployees = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const list = data?.data || []
+          const names = list
+            .filter((emp: any) => {
+              const empBranch = emp.branchId ? emp.branchId.replace(/-(sales|services)$/i, '') : ''
+              const cleanBranchId = branchId.replace(/-(sales|services)$/i, '')
+              return empBranch === cleanBranchId && emp.isActive !== false && emp.name?.trim()
+            })
+            .map((emp: any) => emp.name.toUpperCase().trim())
+          setBranchEmployees(names)
+        }
+      } catch (err) {
+        console.error('Error fetching employees for suggestions:', err)
+      }
+    }
+    void fetchEmployees()
+  }, [branchId])
 
   useEffect(() => {
     if (showForm) {
