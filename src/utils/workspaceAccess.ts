@@ -13,6 +13,7 @@ export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
   return role === 'oic'
     || jobTitle.includes('coor')
     || jobTitle.includes('coordinator')
+    || jobTitle.includes('office in charge')
     || jobTitle === 'oic'
 }
 

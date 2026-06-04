@@ -149,7 +149,7 @@ export default function DailyAuditReport() {
   }, [rangeTo])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
-  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[] } | null>(null)
+  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; receivedBy?: string } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
@@ -194,7 +194,12 @@ export default function DailyAuditReport() {
 
 
   const role = (user?.role || '').toLowerCase()
-  const isSalesCoordinator = role === 'employee' && (user?.jobTitle === 'Sales Coordinator' || user?.jobTitle === 'COORDINATOR')
+  const jobTitleLower = (user?.jobTitle || '').trim().toLowerCase()
+  const isSalesCoordinator = role === 'employee' && (
+    jobTitleLower === 'sales coordinator'
+    || jobTitleLower === 'coordinator'
+    || jobTitleLower.includes('coor')
+  )
   const isManagerOrStaff = role === 'manager' || role === 'staff' || isSalesCoordinator || role === 'admin' || role === 'oic'
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
@@ -283,22 +288,34 @@ export default function DailyAuditReport() {
     const isoFormat = dObj.toISOString().split('T')[0]
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({
-        branchId: row.branchId,
-        branchName,
-        date: isoFormat,
-      })
-      if (row.auditLine) params.set('auditLine', row.auditLine)
-      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        setRowExpenses({ items: await res.json() })
+      let items = []
+      let receivedBy = ''
+      if (row.id) {
+        const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${row.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          items = data.items || []
+          receivedBy = data.receivedBy || ''
+        }
       } else {
-        setRowExpenses({ items: [] })
+        const params = new URLSearchParams({
+          branchId: row.branchId,
+          branchName,
+          date: isoFormat,
+        })
+        if (row.auditLine) params.set('auditLine', row.auditLine)
+        const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          items = await res.json()
+        }
       }
+      setRowExpenses({ items, receivedBy })
     } catch {
-      setRowExpenses({ items: [] })
+      setRowExpenses({ items: [], receivedBy: '' })
     } finally {
       setRowExpensesLoading(false)
     }
@@ -308,28 +325,7 @@ export default function DailyAuditReport() {
   //   setHiddenBranches(prev => prev.includes(branchName) ? prev.filter(b => b !== branchName) : [...prev, branchName])
   // }
 
-  const canViewPerformanceRow = (row: AuditRow) => {
-    if (isAdmin || !user?.branchId) return true
-    const assigned = user.branchId.toLowerCase().trim()
-    const rowBranch = row.branchId.toLowerCase().trim()
-    const rowName = row.branchName.toLowerCase().trim()
-    const assignedBase = assigned.replace(/-(sales|services)$/i, '')
-
-    if (rowBranch === assigned) return true
-    if (assigned === 'br-taguig-services' || assigned === 'br-taguig-service') {
-      return rowBranch === assigned || (rowName.includes('taguig') && rowName.includes('service'))
-    }
-    if (assigned === 'br-taguig-sales') {
-      return rowBranch === assigned || (rowName.includes('taguig') && rowName.includes('sales'))
-    }
-    if (assigned.endsWith('-services')) {
-      return rowBranch === assignedBase && row.auditLine === 'TAGUIG_SERVICE'
-    }
-    if (assigned.endsWith('-sales')) {
-      return rowBranch === assignedBase && (!row.auditLine || row.auditLine === 'TAGUIG_SALES')
-    }
-    return rowBranch === assigned
-  }
+  const canViewPerformanceRow = (_row: AuditRow) => true
 
   let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName) && canViewPerformanceRow(r))
 
@@ -1308,21 +1304,19 @@ export default function DailyAuditReport() {
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
 
-              {/* Top status info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>
-                   <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
-                   <span style={{
-                    alignSelf: 'start',
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    ...(selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED'
-                      ? { backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }
-                      : selectedRow.remarks === 'PENDING'
-                        ? { backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B' }
-                        : { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' })
+              {/* Combined simple status banner */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-bold pb-4 border-b" style={{ borderColor: border }}>
+                <span className="flex items-center gap-1.5">
+                  <span style={{
+                    display: 'inline-block',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
+                  }} />
+                  <span style={{
+                    color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981'),
+                    fontWeight: 800
                   }}>
                     {selectedRow.remarks === 'PENDING'
                       ? 'PENDING'
@@ -1330,13 +1324,17 @@ export default function DailyAuditReport() {
                         ? 'NO TRANSACTION'
                         : selectedRow.status}
                   </span>
-                </div>
-                <div className="rounded-xl p-3 border flex flex-col gap-1" style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Time Uploaded</span>
-                  <span className="text-xs font-bold" style={{ color: textPrimary }}>
-                    {selectedRow.timeUploaded || 'N/A'}
+                </span>
+                {selectedRow.timeUploaded && (
+                  <span style={{ color: textMuted }}>
+                    Time: <span style={{ color: textPrimary }}>{selectedRow.timeUploaded}</span>
                   </span>
-                </div>
+                )}
+                {rowExpenses?.receivedBy && (
+                  <span style={{ color: textMuted }}>
+                    Submitted by: <span style={{ color: textPrimary }}>{rowExpenses.receivedBy}</span>
+                  </span>
+                )}
               </div>
 
               {/* Main metrics grid */}
@@ -1442,6 +1440,51 @@ export default function DailyAuditReport() {
                     </div>
                   ))}
                 </div>
+                {(() => {
+                  const rebateItems = (rowExpenses?.items || []).filter(
+                    (item: any) => item.type === 'REBATE'
+                  )
+                  if (rebateItems.length > 0) {
+                    return (
+                      <div className="mt-3 pt-3 border-t" style={{ borderColor: border }}>
+                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates</span>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${border}` }}>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Brand/Company</th>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>RA Number</th>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>HP</th>
+                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount Each</th>
+                              <th className="pb-1 text-center text-[10px] font-bold uppercase" style={{ color: textMuted }}>Units</th>
+                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rebateItems.map((item, i) => {
+                              const desc = item.description || ''
+                              const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
+                              const raNumber = parts[1] || '—'
+                              const hp = parts[2] || '—'
+                              const amt = item.amount || 0
+                              const qty = item.units || 0
+                              return (
+                                <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                                  <td className="py-1.5 font-bold" style={{ color: textPrimary }}>{item.company || '—'}</td>
+                                  <td className="py-1.5" style={{ color: textPrimary }}>{raNumber}</td>
+                                  <td className="py-1.5" style={{ color: textPrimary }}>{hp}</td>
+                                  <td className="py-1.5 text-right font-semibold" style={{ color: textPrimary }}>₱{peso(amt)}</td>
+                                  <td className="py-1.5 text-center font-semibold" style={{ color: textPrimary }}>{qty}</td>
+                                  <td className="py-1.5 text-right font-black text-emerald-600">₱{peso(amt * qty)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  }
+                  return null
+                })()}
               </div>
 
               {/* 5. Expense Breakdown details */}

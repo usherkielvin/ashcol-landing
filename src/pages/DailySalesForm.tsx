@@ -452,12 +452,41 @@ export default function DailySalesForm() {
       setReceivedBy(data.receivedBy || '')
       setTrNo(data.trNo || '')
 
-      // Populate rebates (total represented as single row)
-      if (data.rebatesForCollection != null && data.rebatesForCollection > 0) {
-        setRebates([{ id: uid(), company: 'Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection), units: '1', total: String(data.rebatesForCollection) }])
-      } else {
-        setRebates([mkReb()])
+      // Populate rebates
+      const rebatesList: RebateRow[] = []
+      if (data.items && Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          if (item.type === 'REBATE') {
+            const desc = item.description || ''
+            const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
+            const raNumber = parts[1] || ''
+            const hp = parts[2] || ''
+            const amt = item.amount != null ? String(item.amount) : ''
+            const units = item.units != null ? String(item.units) : '1'
+            rebatesList.push({
+              id: uid(),
+              company: item.company || '',
+              raNumber,
+              hp,
+              amount: amt,
+              units,
+              total: String(num(amt) * num(units))
+            })
+          }
+        })
       }
+      if (rebatesList.length === 0 && data.rebatesForCollection != null && data.rebatesForCollection > 0) {
+        rebatesList.push({
+          id: uid(),
+          company: 'Rebates',
+          raNumber: '',
+          hp: '',
+          amount: String(data.rebatesForCollection),
+          units: '1',
+          total: String(data.rebatesForCollection)
+        })
+      }
+      setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
 
       // Populate units
       setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '')
@@ -890,6 +919,13 @@ export default function DailySalesForm() {
         })),
         ...orders.filter(r => r.customer || r.amount).map(r => ({
           type: 'PURCHASE', description: `ORDER|${r.customer}|${r.description}`, amount: parseFloat(r.amount) || 0
+        })),
+        ...rebates.filter(r => r.company || r.amount).map(r => ({
+          type: 'REBATE',
+          company: r.company,
+          units: parseInt(r.units) || 1,
+          amount: parseFloat(r.amount) || 0,
+          description: `REBATE|${r.raNumber}|${r.hp}`
         })),
       ]
 
