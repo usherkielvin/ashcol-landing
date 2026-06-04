@@ -85,43 +85,27 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   const raw = branchId || ''
   const lower = raw.toLowerCase()
   const emailLower = (email || '').toLowerCase()
-  if (lower === 'br-taguig-services' || lower === 'br-taguig-service') {
-    return {
-      branchId: raw,
-      auditLine: 'TAGUIG_SERVICE',
-      branchName: 'TAGUIG SERVICES',
-    }
-  }
-  if (lower === 'br-taguig-sales') {
-    return {
-      branchId: raw,
-      auditLine: 'TAGUIG_SALES',
-      branchName: 'TAGUIG SALES',
-    }
-  }
-  if (lower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || lower.startsWith('br-taguig')) {
-    const isServices = emailLower.includes('service')
+
+  const isServices = lower.endsWith('-services') || lower.endsWith('-service') || emailLower.includes('service')
+
+  if (lower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || lower.startsWith('br-taguig') || lower.includes('taguig')) {
     return {
       branchId: 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
     }
   }
-  if (/-services$/i.test(raw)) {
-    return {
-      branchId: raw.replace(/-services$/i, ''),
-      auditLine: 'TAGUIG_SERVICE',
-      branchName: 'TAGUIG SERVICES',
-    }
+
+  let baseName = raw.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
+  if (!baseName) {
+    baseName = 'BRANCH'
   }
-  if (/-sales$/i.test(raw)) {
-    return {
-      branchId: raw.replace(/-sales$/i, ''),
-      auditLine: 'TAGUIG_SALES',
-      branchName: 'TAGUIG SALES',
-    }
+
+  return {
+    branchId: raw.replace(/-(sales|services|service)$/i, ''),
+    auditLine: isServices ? `${baseName}_SERVICE` : `${baseName}_SALES`,
+    branchName: isServices ? `${baseName} SERVICES` : `${baseName} SALES`,
   }
-  return { branchId: raw, auditLine: null as string | null, branchName: '' }
 }
 
 const mkCash = (): CashTxRow   => ({ id: uid(), name: '', amount: '' })
