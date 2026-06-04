@@ -1427,7 +1427,7 @@ export default function DailyAuditReport() {
                   if (rebateItems.length > 0) {
                     return (
                       <div className="mt-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates Breakdown</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Rebates</span>
                         <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
@@ -1435,9 +1435,9 @@ export default function DailyAuditReport() {
                                 <th className="px-3 py-2">Company</th>
                                 <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
-                                <th className="px-3 py-2 text-right">Rate Amount</th>
-                                <th className="px-3 py-2 text-center">No. of Unit</th>
-                                <th className="px-3 py-2 text-right">Total Amount</th>
+                                <th className="px-3 py-2 text-right">Rate</th>
+                                <th className="px-3 py-2 text-center">Unit</th>
+                                <th className="px-3 py-2 text-right">Amount</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1472,7 +1472,7 @@ export default function DailyAuditReport() {
                   if (selectedRow.rebatesForCollection > 0) {
                     return (
                       <div className="mt-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates Breakdown</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Rebates</span>
                         <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
                           <table className="w-full text-xs text-left border-collapse">
                             <thead>
@@ -1480,9 +1480,9 @@ export default function DailyAuditReport() {
                                 <th className="px-3 py-2">Company</th>
                                 <th className="px-3 py-2">Brand</th>
                                 <th className="px-3 py-2">HP</th>
-                                <th className="px-3 py-2 text-right">Rate Amount</th>
-                                <th className="px-3 py-2 text-center">No. of Unit</th>
-                                <th className="px-3 py-2 text-right">Total Amount</th>
+                                <th className="px-3 py-2 text-right">Rate</th>
+                                <th className="px-3 py-2 text-center">Unit</th>
+                                <th className="px-3 py-2 text-right">Amount</th>
                               </tr>
                             </thead>
                             <tbody>
