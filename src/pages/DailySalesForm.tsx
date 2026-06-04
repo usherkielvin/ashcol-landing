@@ -146,20 +146,37 @@ const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
     }
     return 'TGL'
   }
-  if (clean.includes('DASMA') || clean.includes('DASMARI')) return 'DAS'
-  if (clean.includes('CALAUAN')) return 'CAL'
-  if (clean.includes('CANDELARIA')) return 'CAN'
-  if (clean.includes('VALENZUELA')) return 'VAL'
-  if (clean.includes('RODRIGUEZ') || clean.includes('RIZAL')) return 'RIZ'
-  if (clean.includes('PAMPANGA')) return 'PAM'
-  if (clean.includes('BULACAN')) return 'BUL'
-  if (clean.includes('GENTRI') || clean.includes('GENERAL TRIAS')) return 'GEN'
-  if (clean.includes('STA ROSA') || clean.includes('SANTA ROSA')) return 'STR'
-  if (clean.includes('BATANGAS')) return 'BAT'
-  if (clean.includes('LAGUNA')) return 'LAG'
+  const branchCodes: Array<[string[], string]> = [
+    [['DASMA', 'DASMARI', 'DASMARINAS'], 'DAS'],
+    [['CALAUAN'], 'CAL'],
+    [['CANDELARIA'], 'CAN'],
+    [['VALENZUELA'], 'VAL'],
+    [['RODRIGUEZ', 'RIZAL'], 'RIZ'],
+    [['PAMPANGA'], 'PAM'],
+    [['BULACAN'], 'BUL'],
+    [['GENTRI', 'GEN TRI', 'GENERAL TRIAS'], 'GEN'],
+    [['SILANG'], 'SIL'],
+    [['STA ROSA', 'SANTA ROSA', 'TAGAYTAY'], 'STR'],
+    [['BATANGAS'], 'BAT'],
+    [['LAGUNA'], 'LAG'],
+    [['HEAD OFFICE', 'MAIN OFFICE'], 'HOF'],
+  ]
+
+  for (const [matches, code] of branchCodes) {
+    if (matches.some(match => clean.includes(match))) return code
+  }
 
   const words = clean.split(/\s+/).filter(Boolean)
-  return words.map(w => w[0]).join('').slice(0, 3) || 'DTR'
+  return words.map(w => w[0]).join('').slice(0, 3).padEnd(3, 'X') || 'DTR'
+}
+
+const getTrNoDateCode = (date: string) => {
+  const dateParts = date.split('-')
+  const year = dateParts[0] || '2026'
+  const yearShort = year.length >= 4 ? year.substring(2) : year
+  const month = dateParts[1] || '01'
+  const day = dateParts[2] || '01'
+  return `${yearShort}${month}${day}`
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -208,6 +225,9 @@ export default function DailySalesForm() {
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId)
   const [selectedAuditLine, setSelectedAuditLine] = useState<string | null>(initialAuditLine)
   const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string }[]>([])
+  const trNoExample = branchName && reportDate
+    ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
+    : 'DAS-260604'
 
   useEffect(() => {
     if (!canSubmit) return
@@ -610,13 +630,7 @@ export default function DailySalesForm() {
     if (reportId) return
     if (branchName && reportDate) {
       const prefix = getTrNoPrefix(branchName, selectedAuditLine)
-      const dateParts = reportDate.split('-')
-      const year = dateParts[0] || '2026'
-      const yearShort = year.length >= 4 ? year.substring(2) : year
-      const month = dateParts[1] || '01'
-      const day = dateParts[2] || '01'
-      
-      setTrNo(`${prefix}-${yearShort}${month}${day}`)
+      setTrNo(`${prefix}-${getTrNoDateCode(reportDate)}`)
     }
   }, [branchName, reportDate, selectedAuditLine])
 
@@ -1091,7 +1105,7 @@ export default function DailySalesForm() {
             <input
               id="tr-no-input"
               type="text"
-              placeholder="e.g. HO-0002"
+              placeholder={`e.g. ${trNoExample}`}
               value={trNo}
               readOnly={true}
               className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
