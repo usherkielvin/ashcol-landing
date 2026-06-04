@@ -298,13 +298,23 @@ export default function LineUp() {
       if (!res.ok) return
       const data = await res.json()
       const list = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
+      const hasExplicitTaguigSales = list.some(b => {
+        const id = b.id.toUpperCase()
+        const name = b.name.toUpperCase()
+        return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
+      })
+      const hasExplicitTaguigServices = list.some(b => {
+        const id = b.id.toUpperCase()
+        const name = b.name.toUpperCase()
+        return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
+      })
       
       const newList: { id: string; name: string }[] = []
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
         if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-          newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
-          newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
+          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
+          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
         } else {
           newList.push({ id: b.id, name: cleanName })
         }

@@ -244,13 +244,23 @@ export default function DailyServiceReport() {
       if (!res.ok) return
       const data = await res.json()
       const list = ((data?.data || data || []) as { id: string; name: string }[])
+      const hasExplicitTaguigSales = list.some(b => {
+        const id = b.id.toUpperCase()
+        const name = b.name.toUpperCase()
+        return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
+      })
+      const hasExplicitTaguigServices = list.some(b => {
+        const id = b.id.toUpperCase()
+        const name = b.name.toUpperCase()
+        return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
+      })
       
       const newList: BranchOption[] = []
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
-          newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
-          newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
+          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
+          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
         } else {
           newList.push({ id: b.id, name: cleanName })
         }
