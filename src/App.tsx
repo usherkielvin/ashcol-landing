@@ -22,10 +22,9 @@ import PurchaseMonitor from './pages/PurchaseMonitor'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { getPortalHomePath } from './utils/workspaceAccess'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
-
-const getPortalHomePath = (role?: string) => (role || '').toLowerCase() === 'admin' ? '/audit-report' : '/daily-report'
 
 // Helper component to handle the root path ("/") based on the domain
 function RootRouter() {
@@ -40,7 +39,7 @@ function RootRouter() {
   
   if (isPortalSubdomain) {
     if (user) {
-      return <Navigate to={getPortalHomePath(user.role)} replace />
+      return <Navigate to={getPortalHomePath(user)} replace />
     }
     return <Navigate to="/login" replace />
   }
@@ -52,7 +51,7 @@ function RootRouter() {
 function DashboardRedirect() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  return <Navigate to={getPortalHomePath(user.role)} replace />
+  return <Navigate to={getPortalHomePath(user)} replace />
 }
 
 export default function App() {

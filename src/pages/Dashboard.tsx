@@ -141,7 +141,7 @@ export default function Dashboard() {
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
-  const isEmployee = role === 'employee'
+  const isEmployee = role === 'employee' || role === 'oic'
   const isAdminOrManager = role === 'admin' || role === 'manager'
 
   const [statsData, setStatsData] = useState<Record<string, number> | null>(null)
@@ -200,7 +200,7 @@ export default function Dashboard() {
       setLoading(true)
       try {
         const statsEp = isAdminOrManager ? '/dashboard/stats' : '/tickets/stats'
-        const ticketEp = isCustomer ? '/tickets/my' : isEmployee ? '/tickets/assigned' : '/tickets'
+        const ticketEp = isCustomer ? '/tickets/my' : isEmployee ? '/tickets' : '/tickets'
 
         const promises = [
           fetch(`${apiUrl}${statsEp}`, { headers }),

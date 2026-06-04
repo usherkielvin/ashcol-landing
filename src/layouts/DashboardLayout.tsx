@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole } from '../utils/api'
 import { useNotifications } from '../contexts/NotificationContext'
+import { getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/workspaceAccess'
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 
@@ -105,24 +106,23 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const nonAdminWorkspaceLinks = ['Field Schedule', 'Service Report', 'Expense Records', 'Transactions', 'Performance']
-  const isSalesUser = (role === 'oic') || ((role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
-    (user?.name || '').toUpperCase().includes('SALES') ||
-    (user?.branchId || '').endsWith('-sales') ||
-    (user?.email || '').toLowerCase().includes('sales') ||
-    (user?.jobTitle || '').toUpperCase().includes('SALES')
-  ))
+  const salesWorkspaceLinks = ['Transactions', 'Performance', 'Expense Records']
+  const serviceWorkspaceLinks = ['Field Schedule', 'Service Report', 'Expense Records']
+  const isSalesUser = isSalesWorkspaceUser(user)
+  const isServiceUser = isServiceWorkspaceUser(user)
 
-  const navLinks = isSalesUser
-    ? allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
-    : role === 'admin'
+  const navLinks = role === 'admin'
       ? allLinks.filter(link => {
           if (!link.roles) return true // visible to everyone (Overview, Tickets)
           return link.roles.includes(role)
         })
+      : isSalesUser
+        ? allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
+        : isServiceUser
+          ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
       : isAuthorizedRole
-        ? allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
-        : allLinks.filter(link => nonAdminWorkspaceLinks.includes(link.name))
+        ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+        : allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
@@ -133,10 +133,10 @@ export default function DashboardLayout() {
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
-      const fallback = role === 'admin' ? navLinks[0].path : '/daily-report'
+      const fallback = role === 'admin' ? navLinks[0].path : getPortalHomePath(user)
       navigate(fallback, { replace: true })
     }
-  }, [location.pathname, navLinks, user, navigate])
+  }, [location.pathname, navLinks, role, user, navigate])
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'

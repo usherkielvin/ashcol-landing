@@ -18,21 +18,22 @@ interface Employee {
 }
 
 const JOB_TYPE_OPTIONS = [
-  { value: 'EMPLOYEE|Technician', label: 'Technician' },
-  { value: 'EMPLOYEE|Helper', label: 'Helper' },
-  { value: 'EMPLOYEE|Driver', label: 'Driver' },
-  { value: 'EMPLOYEE|Coordinator', label: 'Coordinator' },
-  { value: 'EMPLOYEE|Sales Coordinator', label: 'Sales Coordinator' },
-  { value: 'EMPLOYEE|Payroll', label: 'Payroll' },
-  { value: 'EMPLOYEE|Inventory', label: 'Inventory' },
-  { value: 'MANAGER|', label: 'OIC / Officer in Charge' },
-  { value: 'ADMIN|', label: 'Manager' },
+  { value: 'EMPLOYEE|TECHNICIAN', label: 'TECHNICIAN' },
+  { value: 'EMPLOYEE|HELPER', label: 'HELPER' },
+  { value: 'EMPLOYEE|DRIVER', label: 'DRIVER' },
+  { value: 'EMPLOYEE|COORDINATOR', label: 'COORDINATOR' },
+  { value: 'MANAGER|', label: 'OFFICER IN CHARGE' },
+  { value: 'ADMIN|', label: 'MANAGER' },
 ]
 
 const memberTypeValue = (member: Employee) => {
   const role = (member.role || 'EMPLOYEE').toUpperCase()
   if (role === 'MANAGER' || role === 'ADMIN') return `${role}|`
-  return `EMPLOYEE|${member.jobTitle || 'Technician'}`
+  const title = (member.jobTitle || 'TECHNICIAN').toUpperCase()
+  if (title === 'SALES COORDINATOR' || title === 'PAYROLL' || title === 'INVENTORY' || title === 'COORDINATOR') {
+    return 'EMPLOYEE|COORDINATOR'
+  }
+  return `EMPLOYEE|${title}`
 }
 
 export default function Employees() {
@@ -90,11 +91,11 @@ export default function Employees() {
   }, [activeDropdown])
   const [editing, setEditing] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState<Employee | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'Technician' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', email: '', branchId: '', role: 'Technician' })
+  const [createForm, setCreateForm] = useState({ name: '', email: '', branchId: '', role: 'TECHNICIAN' })
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [createSaving, setCreateSaving] = useState(false)
   /** Shown once after successful create — technician can log in with this password (also emailed when SMTP is configured). */
@@ -226,13 +227,20 @@ export default function Employees() {
 
   const openEdit = (emp: Employee) => {
     setEditing(emp)
+    const upperJobTitle = (emp.jobTitle || '').toUpperCase()
+    let mappedJobTitle = upperJobTitle
+    if (upperJobTitle === 'SALES COORDINATOR' || upperJobTitle === 'PAYROLL' || upperJobTitle === 'INVENTORY' || upperJobTitle === 'COORDINATOR') {
+      mappedJobTitle = 'COORDINATOR'
+    } else if (!mappedJobTitle && (emp.role || '').toUpperCase() === 'EMPLOYEE') {
+      mappedJobTitle = 'TECHNICIAN'
+    }
     setForm({
       name: emp.name,
       email: emp.email,
       phone: emp.phone || '',
       branchId: emp.branchId || '',
       role: (emp.role || 'EMPLOYEE').toUpperCase(),
-      jobTitle: emp.jobTitle || ((emp.role || '').toUpperCase() === 'EMPLOYEE' ? 'Technician' : ''),
+      jobTitle: mappedJobTitle,
     })
     setErr('')
   }
@@ -322,7 +330,7 @@ export default function Employees() {
         setNewTechCreds({ email: u.email, password: temp })
       }
       setShowCreate(false)
-      setCreateForm({ name: '', email: '', branchId: '', role: 'Technician' })
+      setCreateForm({ name: '', email: '', branchId: '', role: 'TECHNICIAN' })
       fetchEmployees()
     } catch {
       setErr('Network error.')
@@ -390,7 +398,7 @@ export default function Employees() {
         {(isManager || isAdmin) && (
           <button
             type="button"
-            onClick={() => { setShowCreate(true); setErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'Technician' }) }}
+            onClick={() => { setShowCreate(true); setErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'TECHNICIAN' }) }}
             className="flex items-center gap-2 bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0"
           >
             <Plus className="w-4 h-4" /> Add member
@@ -722,15 +730,12 @@ export default function Employees() {
                 className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#10B981] transition-all"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
               >
-                <option value="Technician">Technician</option>
-                <option value="Helper">Helper</option>
-                <option value="Driver">Driver</option>
-                <option value="Coordinator">Coordinator</option>
-                <option value="Sales Coordinator">Sales Coordinator</option>
-                <option value="Payroll">Payroll</option>
-                <option value="Inventory">Inventory</option>
-                <option value="MANAGER">OIC / Officer in Charge</option>
-                {isAdmin && <option value="ADMIN">Manager</option>}
+                <option value="TECHNICIAN">TECHNICIAN</option>
+                <option value="HELPER">HELPER</option>
+                <option value="DRIVER">DRIVER</option>
+                <option value="COORDINATOR">COORDINATOR</option>
+                <option value="MANAGER">OFFICER IN CHARGE</option>
+                {isAdmin && <option value="ADMIN">MANAGER</option>}
               </select>
             </div>
             <div className="flex gap-3 pt-2">

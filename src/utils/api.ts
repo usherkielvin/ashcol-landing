@@ -15,7 +15,8 @@ export function resolveImageUrl(path: string | null | undefined): string {
 export function formatRole(role?: string): string {
   if (!role) return ''
   const r = role.toUpperCase()
-  if (r === 'MANAGER') return 'OIC / Officer in Charge'
-  if (r === 'ADMIN') return 'Admin'
-  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()
+  if (r === 'MANAGER') return 'OFFICER IN CHARGE'
+  if (r === 'ADMIN') return 'MANAGER'
+  if (r === 'OIC') return 'OFFICER IN CHARGE'
+  return r
 }

@@ -7,6 +7,7 @@ import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
+import { getPortalHomePath } from '../utils/workspaceAccess'
 
 export default function Login() {
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
@@ -21,8 +22,6 @@ export default function Login() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
-  const getLandingPath = (role?: string) => (role || '').toLowerCase() === 'admin' ? '/audit-report' : '/daily-report'
-
   // Pre-fill remembered email on mount
   useEffect(() => {
     const saved = localStorage.getItem('ashcol-remembered-email')
@@ -35,7 +34,7 @@ export default function Login() {
   }, [prefillEmail, prefillPassword])
   useEffect(() => {
     if (user) {
-      navigate(getLandingPath(user.role), { replace: true })
+      navigate(getPortalHomePath(user), { replace: true })
     }
   }, [user, navigate])
 
@@ -104,7 +103,7 @@ export default function Login() {
         jobTitle: appUser.jobTitle ?? null,
       })
 
-      navigate(getLandingPath(appUser.role))
+      navigate(getPortalHomePath(appUser))
     } catch (err: any) {
       console.error('Login Error:', err)
       setError(err.message || 'Failed to login. Please check your credentials.')
@@ -171,7 +170,7 @@ export default function Login() {
           branchId: appUser.branchId ?? null,
           jobTitle: appUser.jobTitle ?? null,
         })
-        navigate(getLandingPath(appUser.role))
+        navigate(getPortalHomePath(appUser))
       } catch (err: any) {
         console.error('Google Auth Error:', err)
         setError(err.message || 'Google login failed. Please try again.')
