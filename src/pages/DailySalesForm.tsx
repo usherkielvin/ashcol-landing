@@ -15,7 +15,7 @@ interface OnlineTxRow  { id: string; installer: string; customer: string; bank: 
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
 interface ForCollRow   { id: string; installer: string; customer: string; amount: string }
-interface RebateRow    { id: string; company: string; amount: string; units: string; total: string }
+interface RebateRow    { id: string; company: string; raNumber: string; hp: string; amount: string; units: string; total: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string }
 
@@ -116,7 +116,7 @@ const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', ban
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '' })
-const mkReb  = (): RebateRow   => ({ id: uid(), company: '', amount: '', units: '', total: '' })
+const mkReb  = (): RebateRow   => ({ id: uid(), company: '', raNumber: '', hp: '', amount: '', units: '', total: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '' })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '' })
 
@@ -437,26 +437,6 @@ export default function DailySalesForm() {
       setReportDate(data.reportDate)
       setReceivedBy(data.receivedBy || '')
       setTrNo(data.trNo || '')
-      setSelectedBranchId(data.branchId)
-      setSelectedAuditLine(data.auditLine || null)
-      if (data.branchName) setBranch(data.branchName)
-
-      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
-      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
-
-      // Populate cash returns (total represented as single row)
-      if (data.cashReturns != null && data.cashReturns > 0) {
-        setCashRet([{ id: uid(), name: '', amount: String(data.cashReturns) }])
-      } else {
-        setCashRet([mkRet()])
-      }
-
-      // Populate for collection (total represented as single row)
-      if (data.forCollection != null && data.forCollection > 0) {
-        setForColl([{ id: uid(), installer: '', customer: '', amount: String(data.forCollection) }])
-      } else {
-        setForColl([mkColl()])
-      }
 
       // Populate rebates (total represented as single row)
       if (data.rebatesForCollection != null && data.rebatesForCollection > 0) {

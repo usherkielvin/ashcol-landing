@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, BarChart2, TrendingUp, TrendingDown, Receipt, Trophy, Loader2 } from 'lucide-react'
+import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
@@ -403,15 +403,19 @@ export default function Branches() {
         }
       }
 
-      const hasExplicitTaguigSales = apiBranches.some(api => {
+      const hasExplicitTaguigSales = apiBranches.some((api: { id?: string; name?: string }) => {
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
-        return apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT' || (cleanName.includes('TAGUIG') && cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES')
+        const explicitId = apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT'
+        const explicitName = cleanName.includes('TAGUIG') && cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'
+        return explicitId || explicitName
       })
-      const hasExplicitTaguigServices = apiBranches.some(api => {
+      const hasExplicitTaguigServices = apiBranches.some((api: { id?: string; name?: string }) => {
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
-        return apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('TAGUIG') && cleanName.includes('SERVICE')
+        const explicitId = apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE'
+        const explicitName = cleanName.includes('TAGUIG') && cleanName.includes('SERVICE')
+        return explicitId || explicitName
       })
 
       for (const api of apiBranches) {
@@ -1029,8 +1033,8 @@ export default function Branches() {
                       </div>
 
                     </div>
-                  )()
-                }
+                  )
+                })()}
               </div>
 
               {/* ── BRANCH INFO + PERSONNEL — 2-col ── */}

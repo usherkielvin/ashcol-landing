@@ -1472,6 +1472,13 @@ export default function DailyAuditReport() {
                                       }}>
                                         {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
                                       </span>
+                                    ) : item.type === 'EXPENSE' ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                        backgroundColor: 'rgba(16,185,129,0.12)',
+                                        color: '#10B981'
+                                      }}>
+                                        UPLOADED
+                                      </span>
                                     ) : (
                                       <span style={{ color: textMuted }}>-</span>
                                     )}
