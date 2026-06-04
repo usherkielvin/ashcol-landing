@@ -191,7 +191,7 @@ export default function Tickets() {
   const isCustomer = user?.role?.toLowerCase() === 'customer'
   const isAdmin    = user?.role?.toLowerCase() === 'admin'
   const isManager  = user?.role?.toLowerCase() === 'manager'
-  const isEmployee = user?.role?.toLowerCase() === 'employee'
+  const isEmployee = user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic'
 
   useEffect(() => {
     if ((!isManager && !isAdmin) || !user) {
@@ -237,9 +237,9 @@ export default function Tickets() {
 
       let endpoint = '/tickets'
       if (user?.role?.toLowerCase() === 'customer')  endpoint = '/tickets/my'
-      if (user?.role?.toLowerCase() === 'employee') endpoint = '/tickets/assigned'
+      if (user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic') endpoint = '/tickets'
 
-      const pageSize = user?.role?.toLowerCase() === 'employee' ? 100 : 50
+      const pageSize = (user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic') ? 100 : 50
       const res  = await fetch(`${apiUrl}${endpoint}?page=0&size=${pageSize}`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to fetch')
 

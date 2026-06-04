@@ -120,6 +120,34 @@ const mkReb  = (): RebateRow   => ({ id: uid(), company: '', amount: '', units: 
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '' })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '' })
 
+const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
+  const clean = branchName.toUpperCase()
+    .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '')
+    .replace(/[^A-Z0-9\s]/g, '')
+    .trim()
+
+  if (clean.includes('TAGUIG')) {
+    if (auditLine === 'TAGUIG_SERVICE' || clean.includes('SERVICE') || clean.includes('SERVICES')) {
+      return 'TGS'
+    }
+    return 'TGL'
+  }
+  if (clean.includes('DASMA') || clean.includes('DASMARI')) return 'DAS'
+  if (clean.includes('CALAUAN')) return 'CAL'
+  if (clean.includes('CANDELARIA')) return 'CAN'
+  if (clean.includes('VALENZUELA')) return 'VAL'
+  if (clean.includes('RODRIGUEZ') || clean.includes('RIZAL')) return 'RIZ'
+  if (clean.includes('PAMPANGA')) return 'PAM'
+  if (clean.includes('BULACAN')) return 'BUL'
+  if (clean.includes('GENTRI') || clean.includes('GENERAL TRIAS')) return 'GEN'
+  if (clean.includes('STA ROSA') || clean.includes('SANTA ROSA')) return 'STR'
+  if (clean.includes('BATANGAS')) return 'BAT'
+  if (clean.includes('LAGUNA')) return 'LAG'
+
+  const words = clean.split(/\s+/).filter(Boolean)
+  return words.map(w => w[0]).join('').slice(0, 3) || 'DTR'
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DailySalesForm() {
@@ -548,53 +576,14 @@ export default function DailySalesForm() {
   useEffect(() => {
     if (reportId) return
     if (branchName && reportDate) {
-      const clean = branchName.toUpperCase()
-        .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '') // remove ASHCOL prefix and dashes
-        .replace(/[^A-Z0-9\s]/g, '') // remove special characters
-        .trim()
-
-      let prefix = ''
-      
-      if (clean.includes('TAGUIG')) {
-        if (selectedAuditLine === 'TAGUIG_SERVICE' || clean.includes('SERVICE') || clean.includes('SERVICES')) {
-          prefix = 'TSE'
-        } else {
-          prefix = 'TSA'
-        }
-      } else if (clean.includes('DASMA') || clean.includes('DASMARI')) {
-        prefix = 'D'
-      } else if (clean.includes('CALAUAN')) {
-        prefix = 'CL'
-      } else if (clean.includes('CANDELARIA')) {
-        prefix = 'CN'
-      } else if (clean.includes('VALENZUELA')) {
-        prefix = 'V'
-      } else if (clean.includes('RODRIGUEZ') || clean.includes('RIZAL')) {
-        prefix = 'R'
-      } else if (clean.includes('PAMPANGA')) {
-        prefix = 'P'
-      } else if (clean.includes('BULACAN')) {
-        prefix = 'B'
-      } else if (clean.includes('GENTRI') || clean.includes('GENERAL TRIAS')) {
-        prefix = 'GT'
-      } else if (clean.includes('STA ROSA') || clean.includes('SANTA ROSA')) {
-        prefix = 'SR'
-      } else if (clean.includes('BATANGAS')) {
-        prefix = 'BT'
-      } else if (clean.includes('LAGUNA')) {
-        prefix = 'L'
-      } else {
-        const words = clean.split(/\s+/)
-        prefix = words.map(w => w[0]).join('')
-      }
-      
+      const prefix = getTrNoPrefix(branchName, selectedAuditLine)
       const dateParts = reportDate.split('-')
       const year = dateParts[0] || '2026'
       const yearShort = year.length >= 4 ? year.substring(2) : year
       const month = dateParts[1] || '01'
       const day = dateParts[2] || '01'
       
-      setTrNo(`${prefix || 'TR'}-${yearShort}${month}${day}`)
+      setTrNo(`${prefix}-${yearShort}${month}${day}`)
     }
   }, [branchName, reportDate, selectedAuditLine])
 
@@ -1155,7 +1144,7 @@ export default function DailySalesForm() {
 
           {/* I. Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="I. Cash Transactions" total={totalCashCollection} />
+            <SectionHeader label="Cash Transactions" total={totalCashCollection} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1194,7 +1183,7 @@ export default function DailySalesForm() {
 
           {/* II. Cash Returns */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="II. Cash Returns (Change from Purchases)" total={totalCashReturns} />
+            <SectionHeader label="Cash Returns" total={totalCashReturns} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1233,7 +1222,7 @@ export default function DailySalesForm() {
 
           {/* III. Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="III. Fund Transfer from HO" />
+            <SectionHeader label="Fund Transfer from HO" />
             <div className="p-2">
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>
@@ -1282,7 +1271,7 @@ export default function DailySalesForm() {
 
           {/* IV. Online Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="IV. Online Transactions" total={totalOnline} />
+            <SectionHeader label="Online Transactions" total={totalOnline} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1332,7 +1321,7 @@ export default function DailySalesForm() {
 
           {/* V. Check Remits */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="V. Check Remits" total={totalCheck} />
+            <SectionHeader label="Check Remits" total={totalCheck} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1382,7 +1371,7 @@ export default function DailySalesForm() {
 
           {/* VI. Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="VI. Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} />
+            <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1432,7 +1421,7 @@ export default function DailySalesForm() {
 
           {/* VII. For Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="VII. For Collection" total={totalForColl} />
+            <SectionHeader label="For Collection" total={totalForColl} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1476,7 +1465,7 @@ export default function DailySalesForm() {
 
           {/* VIII. Estimate Rebates for Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="VIII. Estimate Rebates for Collection (Gross Amount)" total={totalRebates} />
+            <SectionHeader label="Rebates for Collection" total={totalRebates} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1532,7 +1521,7 @@ export default function DailySalesForm() {
 
           {/* IX. Parts Order / Units Order */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="IX. Parts Order / Units Order" total={totalOrders} />
+            <SectionHeader label="Parts Order / Units Order" total={totalOrders} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1576,7 +1565,7 @@ export default function DailySalesForm() {
 
           {/* X. Expenses with Receipts */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="X. Expenses with Receipts (Reimbursements)" total={totalExpReceipt} />
+            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1620,7 +1609,7 @@ export default function DailySalesForm() {
 
           {/* XI. Expenses for Purchase */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="XI. Expenses for Purchase" total={totalExpPurch} />
+            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1664,7 +1653,7 @@ export default function DailySalesForm() {
 
           {/* XIII. Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="XIII. Unit Summary" />
+            <SectionHeader label="Unit Summary" />
             <div className="p-3">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -1704,7 +1693,7 @@ export default function DailySalesForm() {
 
           {/* XII–XIV. Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="XII–XIV. Summary" />
+            <SectionHeader label="Final Summary" />
             <div className="p-3">
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>

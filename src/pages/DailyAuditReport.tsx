@@ -194,7 +194,7 @@ export default function DailyAuditReport() {
 
 
   const role = (user?.role || '').toLowerCase()
-  const isSalesCoordinator = role === 'employee' && user?.jobTitle === 'Sales Coordinator'
+  const isSalesCoordinator = role === 'employee' && (user?.jobTitle === 'Sales Coordinator' || user?.jobTitle === 'COORDINATOR')
   const isManagerOrStaff = role === 'manager' || role === 'staff' || isSalesCoordinator || role === 'admin' || role === 'oic'
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
@@ -1398,6 +1398,26 @@ export default function DailyAuditReport() {
                     <span style={{ color: textMuted }}>Free Install:</span>
                     <span className="font-semibold text-right" style={{ color: textMuted }}>{selectedRow.totalUnitsFreeInstall}</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
+                <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                  <FileText className="w-4 h-4 text-emerald-500" />
+                  <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Rebate Summary</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, accent: '#10B981' },
+                    { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), accent: '#3B82F6' },
+                    { label: 'Cancelled', value: String(selectedRow.totalCancelled), accent: '#EF4444' },
+                    { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), accent: '#F59E0B' },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-lg border px-3 py-3 flex flex-col gap-1" style={{ borderColor: border, backgroundColor: cardBg }}>
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
+                      <span className="text-sm font-black" style={{ color: item.accent }}>{item.value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 

@@ -144,7 +144,7 @@ const isTaguigBranchId = (id?: string | null) =>
 const isSalesCoordinator = (employee: any) => {
   const title = (employee?.jobTitle || '').toLowerCase()
   const role = (employee?.role || '').toLowerCase()
-  return title.includes('sales coordinator') || role.includes('sales coordinator')
+  return title.includes('sales coordinator') || role.includes('sales coordinator') || title.includes('coordinator')
 }
 
 const initialsFor = (name?: string) => {
