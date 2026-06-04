@@ -112,11 +112,21 @@ export default function Employees() {
       const data = await res.json()
       const list: { id: string; name: string }[] = data?.data || []
       const result: BranchOption[] = []
+      const seenTaguig = { sales: false, services: false }
       for (const b of list) {
         const clean = b.name.replace(/^ashcol\s+/i, '').trim().toUpperCase()
         if (clean === 'TAGUIG') {
-          result.push({ id: `${b.id}-sales`,    name: 'TAGUIG - SALES' })
-          result.push({ id: `${b.id}-services`,  name: 'TAGUIG - SERVICES' })
+          // Main Taguig branch → split into two virtual entries once
+          if (!seenTaguig.sales) {
+            result.push({ id: `${b.id}-sales`,   name: 'TAGUIG - SALES' })
+            seenTaguig.sales = true
+          }
+          if (!seenTaguig.services) {
+            result.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
+            seenTaguig.services = true
+          }
+        } else if (clean.startsWith('TAGUIG')) {
+          // A separate Taguig-named branch (e.g. TAGUIG SERVICE DEPT) — skip, already covered above
         } else {
           result.push({ id: b.id, name: clean })
         }
