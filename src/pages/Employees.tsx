@@ -91,7 +91,7 @@ export default function Employees() {
   }, [activeDropdown])
   const [editing, setEditing] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState<Employee | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN', newPassword: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -263,6 +263,7 @@ export default function Employees() {
       branchId: emp.branchId || '',
       role: (emp.role || 'EMPLOYEE').toUpperCase(),
       jobTitle: mappedJobTitle,
+      newPassword: '',
     })
     setErr('')
   }
