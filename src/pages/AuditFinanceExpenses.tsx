@@ -181,18 +181,50 @@ export default function AuditFinanceExpenses() {
 
   const branchExpenses = useMemo(() => {
     return expenses.filter((e) => {
-      if (e.branchId === branchId) return true
-      if (branchId.endsWith('-sales')) {
-        const baseId = branchId.slice(0, -6)
-        if (e.branchId === baseId || e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-sales' || e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') return true
-        const nameUpper = e.branchName.toUpperCase()
-        if (nameUpper === 'ASHCOL TAGUIG' || nameUpper === 'TAGUIG' || nameUpper.includes('TAGUIG SALES') || nameUpper.includes('TAGUIG - SALES')) return true
+      if (!e.branchId) return false
+      
+      const eBidLower = e.branchId.toLowerCase().trim()
+      const selBidLower = branchId.toLowerCase().trim()
+      
+      // Exact match
+      if (eBidLower === selBidLower) return true
+      
+      // If we are filtering for a "-sales" branch
+      if (selBidLower.endsWith('-sales')) {
+        const baseSel = selBidLower.replace(/-sales$/, '')
+        const baseE = eBidLower.replace(/-(sales|services|service)$/, '')
+        
+        const isExpenseService = eBidLower.endsWith('-services') || eBidLower.endsWith('-service') || 
+                                 (e.branchName && (e.branchName.toLowerCase().includes('service') || e.branchName.toLowerCase().includes('services')))
+                                 
+        if ((baseE === baseSel || (baseSel.includes('taguig') && baseE.includes('taguig'))) && !isExpenseService) return true
+        
+        // Legacy Taguig Sales IDs
+        if (baseSel.includes('taguig')) {
+          if (eBidLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-sales' || eBidLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') return true
+          const nameUpper = (e.branchName || '').toUpperCase()
+          if ((nameUpper === 'ASHCOL TAGUIG' || nameUpper === 'TAGUIG' || nameUpper.includes('TAGUIG SALES')) && !isExpenseService) return true
+        }
       }
-      if (branchId.endsWith('-services')) {
-        if (e.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services') return true
-        const nameUpper = e.branchName.toUpperCase()
-        if (nameUpper.includes('TAGUIG') && (nameUpper.includes('SERVICE') || nameUpper.includes('SERVICES'))) return true
+      
+      // If we are filtering for a "-services" branch
+      if (selBidLower.endsWith('-services') || selBidLower.endsWith('-service')) {
+        const baseSel = selBidLower.replace(/-(services|service)$/, '')
+        const baseE = eBidLower.replace(/-(sales|services|service)$/, '')
+        
+        const isExpenseService = eBidLower.endsWith('-services') || eBidLower.endsWith('-service') || 
+                                 (e.branchName && (e.branchName.toLowerCase().includes('service') || e.branchName.toLowerCase().includes('services')))
+                                 
+        if ((baseE === baseSel || (baseSel.includes('taguig') && baseE.includes('taguig'))) && isExpenseService) return true
+        
+        // Legacy Taguig Services IDs
+        if (baseSel.includes('taguig')) {
+          if (eBidLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services') return true
+          const nameUpper = (e.branchName || '').toUpperCase()
+          if (nameUpper.includes('TAGUIG') && (nameUpper.includes('SERVICE') || nameUpper.includes('SERVICES'))) return true
+        }
       }
+      
       return false
     })
   }, [expenses, branchId])
@@ -282,7 +314,15 @@ export default function AuditFinanceExpenses() {
 
       if (finalList.length > 0) {
         if (isBranchScopedUser && user?.branchId) {
-          const matched = finalList.find(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+          const emailLower = (user?.email || '').toLowerCase()
+          const isServicesUser = emailLower.includes('service')
+          let matched = null
+          if (isServicesUser) {
+            matched = finalList.find(b => b.id === `${user.branchId}-services` || b.id === 'BR-TAGUIG-SALES-services')
+          }
+          if (!matched) {
+            matched = finalList.find(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+          }
           if (matched) {
             setBranchId(matched.id)
           } else {
