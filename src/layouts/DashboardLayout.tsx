@@ -90,13 +90,97 @@ export default function DashboardLayout() {
 
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
+  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
+} from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, formatRole } from '../utils/api'
+import { useNotifications } from '../contexts/NotificationContext'
+// import AIChatBot from '../components/AIChatBot'
+import logoImg from '../assets/ash-logo.jpg'
+
+const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
+  if (!branchId && !branchName) return null
+  const id = (branchId || '').toUpperCase()
+  const name = (branchName || '').trim()
+
+  if (id === 'BR-TAGUIG-SALES') return 'ASHCOL TAGUIG SALES'
+  if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE') return 'ASHCOL TAGUIG SERVICES'
+  if (id.endsWith('-SALES')) return `${name || 'ASHCOL TAGUIG'} SALES`.replace(/\s+SALES\s+SALES$/i, ' SALES')
+  if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return `${name || 'ASHCOL TAGUIG'} SERVICES`.replace(/\s+SERVICES\s+SERVICES$/i, ' SERVICES')
+  if (name) return name
+  return branchId || null
+}
+
+export default function DashboardLayout() {
+  const [sidebarOpen, setSidebarOpen]         = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [profileOpen, setProfileOpen]           = useState(false)
+  const [notifOpen, setNotifOpen]               = useState(false)
+  const [navPicBroken, setNavPicBroken]         = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { theme, toggleTheme } = useTheme()
+  const { user, logout } = useAuth()
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
+  const isLight = theme === 'light'
+  const [branchLabel, setBranchLabel] = useState<string | null>(null)
+
+  // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNavPicBroken(false)
+  }, [user?.picture])
+
+  useEffect(() => {
+    if (!user?.branchId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBranchLabel(null)
+      return
+    }
+    const load = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        const branchId = user.branchId || ''
+        const baseBranchId = branchId.replace(/-sales$|-services$/i, '')
+        const b = list.find((x: { id: string }) => x.id === branchId)
+          || list.find((x: { id: string }) => x.id === baseBranchId)
+          || list.find((x: { name?: string }) => {
+            const name = (x.name || '').toUpperCase()
+            return branchId.toUpperCase().startsWith('BR-TAGUIG') && name.includes('TAGUIG')
+          })
+        setBranchLabel(normalizeBranchDisplayName(branchId, b?.name))
+      } catch {
+        setBranchLabel(normalizeBranchDisplayName(user?.branchId, null))
+      }
+    }
+    load()
+  }, [user?.branchId])
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const allLinks = [
+    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
 
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
-    { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -106,12 +190,10 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const nonAdminWorkspaceLinks = ['Field Schedule', 'Service Report', 'Transactions', 'Performance']
+  const nonAdminWorkspaceLinks = ['Field Schedule', 'Service Report', 'Expense Records', 'Transactions', 'Performance']
   const isSalesUser = (role === 'oic') || ((role === 'manager' || role === 'staff' || (role === 'employee' && user?.jobTitle === 'Sales Coordinator')) && (
     (user?.name || '').toUpperCase().includes('SALES') ||
     (user?.branchId || '').endsWith('-sales') ||
-    (user?.email || '').toLowerCase().includes('sales') ||
-    (user?.jobTitle || '').toUpperCase().includes('SALES')
   ))
 
   const navLinks = isSalesUser

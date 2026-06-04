@@ -9,8 +9,6 @@ import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
-import { loadAuditExpenses } from '../utils/auditExpenseStorage'
-import type { AuditExpense } from '../types/auditExpense'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +45,8 @@ interface DrilldownItem {
   type: string
   description: string
   amount: number
+  receiptReturned?: boolean
+  receiptStatus?: 'PENDING' | 'UPLOADED' | string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export default function DailyAuditReport() {
   }, [rangeTo])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
-  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; auditExpenses: AuditExpense[] } | null>(null)
+  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[] } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
@@ -278,17 +278,9 @@ export default function DailyAuditReport() {
 
   const fetchRowExpenses = async (row: AuditRow) => {
     setRowExpensesLoading(true)
-    const allExpenses = await loadAuditExpenses()
     const branchName = (row.logicalBranchName ?? row.branchName).trim()
     const dObj = viewMode === 'single' ? new Date(date + 'T00:00:00') : new Date(rangeFrom + 'T00:00:00')
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-    const format1 = `${dObj.getDate()}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}`
-    const format2 = `${String(dObj.getDate()).padStart(2, '0')}-${months[dObj.getMonth()]}-${String(dObj.getFullYear()).slice(-2)}`
     const isoFormat = dObj.toISOString().split('T')[0]
-    const matchedExpenses = allExpenses.filter(e =>
-      e.branchName.toLowerCase() === branchName.toLowerCase() &&
-      (e.date === format1 || e.date === format2 || e.date === isoFormat)
-    )
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({
@@ -301,12 +293,12 @@ export default function DailyAuditReport() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
-        setRowExpenses({ items: await res.json(), auditExpenses: matchedExpenses })
+        setRowExpenses({ items: await res.json() })
       } else {
-        setRowExpenses({ items: [], auditExpenses: matchedExpenses })
+        setRowExpenses({ items: [] })
       }
     } catch {
-      setRowExpenses({ items: [], auditExpenses: matchedExpenses })
+      setRowExpenses({ items: [] })
     } finally {
       setRowExpensesLoading(false)
     }
@@ -1425,7 +1417,7 @@ export default function DailyAuditReport() {
                     <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
                     <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
                   </div>
-                ) : !rowExpenses || (rowExpenses.items.length === 0 && rowExpenses.auditExpenses.length === 0) ? (
+                ) : !rowExpenses || rowExpenses.items.length === 0 ? (
                   <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
                 ) : (
                   <div className="flex flex-col gap-5 text-xs">
@@ -1437,6 +1429,7 @@ export default function DailyAuditReport() {
                             <tr style={{ borderBottom: `1px solid ${border}` }}>
                               <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
                               <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
+                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Receipt</th>
                               <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
                             </tr>
                           </thead>
@@ -1451,6 +1444,18 @@ export default function DailyAuditReport() {
                                     </span>
                                   </td>
                                   <td className="py-1.5" style={{ color: textPrimary }}>{item.description}</td>
+                                  <td className="py-1.5 px-2">
+                                    {item.type === 'PURCHASE' ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                        backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                        color: item.receiptReturned ? '#10B981' : '#F59E0B'
+                                      }}>
+                                        {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: textMuted }}>-</span>
+                                    )}
+                                  </td>
                                   <td className="py-1.5 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
                                 </tr>
                               )
@@ -1460,33 +1465,6 @@ export default function DailyAuditReport() {
                       </div>
                     )}
 
-                    {rowExpenses.auditExpenses.length > 0 && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: '#10B981' }}>Detailed Audit Expenses (Excel format)</span>
-                        <div className="overflow-x-auto border rounded-lg" style={{ borderColor: border }}>
-                          <table className="w-full min-w-[500px]">
-                            <thead>
-                              <tr style={{ backgroundColor: 'rgba(16,185,129,0.1)' }}>
-                                {['Date', 'Incurred By', 'Description', 'Amount', 'Category'].map(h => (
-                                  <th key={h} className="text-left px-2 py-1 text-[9px] font-bold uppercase" style={{ color: textMuted }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rowExpenses.auditExpenses.map((row, i) => (
-                                <tr key={i} style={{ borderTop: `1px solid ${border}` }}>
-                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.date}</td>
-                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.incurredBy}</td>
-                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.description}</td>
-                                  <td className="px-2 py-1.5 font-bold text-red-500">₱{peso(row.amount)}</td>
-                                  <td className="px-2 py-1.5" style={{ color: textPrimary }}>{row.expenseCategory}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
