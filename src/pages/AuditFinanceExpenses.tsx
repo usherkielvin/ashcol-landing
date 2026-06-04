@@ -354,6 +354,19 @@ export default function AuditFinanceExpenses() {
   useEffect(() => { void reload() }, [reload])
 
   useEffect(() => {
+    if (!isAdmin) return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        setBranchId(gId)
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [isAdmin])
+
+  useEffect(() => {
     if (!branchId) return
     const fetchEmployees = async () => {
       try {
@@ -919,7 +932,14 @@ export default function AuditFinanceExpenses() {
           <Building2 size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
           <select
             value={branchId}
-            onChange={(e) => setBranchId(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value
+              setBranchId(val)
+              if (isAdmin) {
+                localStorage.setItem('ashcol-global-branch-id', val)
+                window.dispatchEvent(new Event('ashcol-global-branch-change'))
+              }
+            }}
             disabled={isBranchScopedUser && !!user?.branchId}
             className="w-full rounded-lg pl-8 pr-7 py-2.5 text-sm appearance-none outline-none cursor-pointer"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}

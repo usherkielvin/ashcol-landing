@@ -285,6 +285,19 @@ export default function DailyServiceReport() {
     }
   }, [isAllBranchUser, isBranchScoped, user?.branchId, branchFilter, branches])
 
+  useEffect(() => {
+    if (!isAdmin) return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        setBranchFilter(gId)
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [isAdmin])
+
   const fetchRows = useCallback(async () => {
     setLoading(true)
     try {
@@ -602,7 +615,14 @@ export default function DailyServiceReport() {
               <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
               <select
                 value={branchFilter}
-                onChange={e => setBranchFilter(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value
+                  setBranchFilter(val)
+                  if (isAdmin) {
+                    localStorage.setItem('ashcol-global-branch-id', val)
+                    window.dispatchEvent(new Event('ashcol-global-branch-change'))
+                  }
+                }}
                 className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-1"
                 style={{
                   color: textPrimary,

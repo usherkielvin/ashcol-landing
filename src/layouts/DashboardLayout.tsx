@@ -6,7 +6,8 @@ import {
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, Receipt, Layers,
-  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin
+  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
+  Building2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
@@ -27,6 +28,8 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
   return branchId || null
 }
 
+interface BranchOption { id: string; name: string }
+
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -43,6 +46,83 @@ export default function DashboardLayout() {
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
+  const isAdmin = user?.role?.toLowerCase() === 'admin'
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
+  const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    const loadAdminBranches = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        
+        const hasExplicitTaguigSales = list.some((b: any) => {
+          const id = b.id.toUpperCase()
+          const name = b.name.toUpperCase()
+          return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
+        })
+        const hasExplicitTaguigServices = list.some((b: any) => {
+          const id = b.id.toUpperCase()
+          const name = b.name.toUpperCase()
+          return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
+        })
+
+        const newList: BranchOption[] = []
+        for (const b of list) {
+          const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+          if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
+            if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
+            if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
+          } else {
+            newList.push({ id: b.id, name: cleanName })
+          }
+        }
+        newList.sort((a, b) => a.name.localeCompare(b.name))
+        setAdminBranches(newList)
+        
+        // Initialize default global branch if not set yet
+        const stored = localStorage.getItem('ashcol-global-branch-id')
+        if (!stored && newList.length > 0) {
+          localStorage.setItem('ashcol-global-branch-id', newList[0].id)
+          setGlobalBranchId(newList[0].id)
+          window.dispatchEvent(new Event('ashcol-global-branch-change'))
+        }
+      } catch (err) {
+        console.error('Error loading admin branches:', err)
+      }
+    }
+    loadAdminBranches()
+  }, [isAdmin])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    const syncLabel = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      setGlobalBranchId(gId)
+      if (gId && adminBranches.length > 0) {
+        const found = adminBranches.find(b => b.id === gId)
+        if (found) {
+          setBranchLabel(found.name)
+        }
+      } else {
+        setBranchLabel(null)
+      }
+    }
+    syncLabel()
+    window.addEventListener('ashcol-global-branch-change', syncLabel)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncLabel)
+  }, [isAdmin, adminBranches])
+
+  const handleGlobalBranchChange = (val: string) => {
+    localStorage.setItem('ashcol-global-branch-id', val)
+    setGlobalBranchId(val)
+    window.dispatchEvent(new Event('ashcol-global-branch-change'))
+  }
+
   // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -50,9 +130,11 @@ export default function DashboardLayout() {
   }, [user?.picture])
 
   useEffect(() => {
-    if (!user?.branchId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setBranchLabel(null)
+    if (isAdmin || !user?.branchId) {
+      if (!isAdmin) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setBranchLabel(null)
+      }
       return
     }
     const load = async () => {
@@ -76,7 +158,7 @@ export default function DashboardLayout() {
       }
     }
     load()
-  }, [user?.branchId])
+  }, [user?.branchId, isAdmin])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -404,22 +486,45 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2 shrink-0">
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-              className="p-2.5 rounded-xl transition-all hover:scale-105"
-              style={{
-                color: textMuted,
-                backgroundColor: hoverBg,
-                border: `1px solid ${inputBorder}`,
-              }}
-            >
-              {isLight
-                ? <Moon className="w-4 h-4" />
-                : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />
-              }
-            </button>
+              {isAdmin && adminBranches.length > 0 && (
+                <div className="relative flex items-center">
+                  <Building2 className="absolute left-3 w-4 h-4 pointer-events-none animate-pulse-subtle" style={{ color: textMuted }} />
+                  <select
+                    value={globalBranchId || ''}
+                    onChange={(e) => handleGlobalBranchChange(e.target.value)}
+                    className="pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all hover:scale-[1.02]"
+                    style={{
+                      color: textPrimary,
+                      backgroundColor: hoverBg,
+                      border: `1px solid ${inputBorder}`,
+                    }}
+                  >
+                    {adminBranches.map((b) => (
+                      <option key={b.id} value={b.id} style={{ backgroundColor: sidebarBg, color: textPrimary }}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 w-3.5 h-3.5 pointer-events-none opacity-60" style={{ color: textMuted }} />
+                </div>
+              )}
+
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleTheme}
+                title={isLight ? 'Switch to Dark' : 'Switch to Light'}
+                className="p-2.5 rounded-xl transition-all hover:scale-105"
+                style={{
+                  color: textMuted,
+                  backgroundColor: hoverBg,
+                  border: `1px solid ${inputBorder}`,
+                }}
+              >
+                {isLight
+                  ? <Moon className="w-4 h-4" />
+                  : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />
+                }
+              </button>
 
             {/* Notifications */}
             <div ref={notifRef} className="relative">

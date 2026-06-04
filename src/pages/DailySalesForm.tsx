@@ -284,6 +284,38 @@ export default function DailySalesForm() {
   }, [canSubmit, selectedBranchId, selectedAuditLine])
 
   useEffect(() => {
+    if (!isAdmin) return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (!gId) return
+      
+      if (gId === 'BR-TAGUIG-SALES-sales') {
+        setSelectedBranchId('BR-TAGUIG-SALES')
+        setSelectedAuditLine('TAGUIG_SALES')
+        setBranch('TAGUIG SALES')
+      } else if (gId === 'BR-TAGUIG-SALES-services') {
+        setSelectedBranchId('BR-TAGUIG-SALES')
+        setSelectedAuditLine('TAGUIG_SERVICE')
+        setBranch('TAGUIG SERVICES')
+      } else {
+        setSelectedBranchId(gId)
+        setSelectedAuditLine(null)
+        const found = branchesList.find(b => b.id === gId)
+        if (found) {
+          setBranch(found.name)
+        } else {
+          const baseName = gId.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
+          setBranch(baseName || 'BRANCH')
+        }
+      }
+    }
+
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [isAdmin, branchesList])
+
+  useEffect(() => {
     if (!reviewMode) return
     const scrollToTop = () => {
       const mainEl = document.querySelector('main')
@@ -1155,6 +1187,19 @@ export default function DailySalesForm() {
                     setSelectedBranchId(found.id)
                     setSelectedAuditLine(found.auditLine || null)
                     setBranch(found.name)
+                    
+                    if (isAdmin) {
+                      let gId = found.id
+                      if (found.id === 'BR-TAGUIG-SALES') {
+                        if (found.auditLine === 'TAGUIG_SERVICE') {
+                          gId = 'BR-TAGUIG-SALES-services'
+                        } else {
+                          gId = 'BR-TAGUIG-SALES-sales'
+                        }
+                      }
+                      localStorage.setItem('ashcol-global-branch-id', gId)
+                      window.dispatchEvent(new Event('ashcol-global-branch-change'))
+                    }
                   }
                 }}
                 className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 ${
