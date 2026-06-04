@@ -223,7 +223,7 @@ export default function DailySalesForm() {
           const hasExplicitTaguigSales = list.some((b: { id: string; name: string }) => {
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
-            return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
+            return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
           })
           const hasExplicitTaguigServices = list.some((b: { id: string; name: string }) => {
             const id = b.id.toUpperCase()

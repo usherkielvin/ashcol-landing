@@ -247,7 +247,7 @@ export default function DailyServiceReport() {
       const hasExplicitTaguigSales = list.some(b => {
         const id = b.id.toUpperCase()
         const name = b.name.toUpperCase()
-        return id === 'BR-TAGUIG-SALES' || name.includes('TAGUIG') && name.includes('SALES')
+        return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
       })
       const hasExplicitTaguigServices = list.some(b => {
         const id = b.id.toUpperCase()
