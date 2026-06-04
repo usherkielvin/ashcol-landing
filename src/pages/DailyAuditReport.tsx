@@ -308,7 +308,30 @@ export default function DailyAuditReport() {
   //   setHiddenBranches(prev => prev.includes(branchName) ? prev.filter(b => b !== branchName) : [...prev, branchName])
   // }
 
-  let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName))
+  const canViewPerformanceRow = (row: AuditRow) => {
+    if (isAdmin || !user?.branchId) return true
+    const assigned = user.branchId.toLowerCase().trim()
+    const rowBranch = row.branchId.toLowerCase().trim()
+    const rowName = row.branchName.toLowerCase().trim()
+    const assignedBase = assigned.replace(/-(sales|services)$/i, '')
+
+    if (rowBranch === assigned) return true
+    if (assigned === 'br-taguig-services' || assigned === 'br-taguig-service') {
+      return rowBranch === assigned || (rowName.includes('taguig') && rowName.includes('service'))
+    }
+    if (assigned === 'br-taguig-sales') {
+      return rowBranch === assigned || (rowName.includes('taguig') && rowName.includes('sales'))
+    }
+    if (assigned.endsWith('-services')) {
+      return rowBranch === assignedBase && row.auditLine === 'TAGUIG_SERVICE'
+    }
+    if (assigned.endsWith('-sales')) {
+      return rowBranch === assignedBase && (!row.auditLine || row.auditLine === 'TAGUIG_SALES')
+    }
+    return rowBranch === assigned
+  }
+
+  let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName) && canViewPerformanceRow(r))
 
   const logicalBranchCount = useMemo(
     () => new Set(rows.map(r => (r.logicalBranchName ?? r.branchName).trim())).size,
@@ -1236,7 +1259,7 @@ export default function DailyAuditReport() {
           onClick={() => setSelectedRow(null)}
         >
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-2xl flex flex-col"
+            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl flex flex-col"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
             onClick={e => e.stopPropagation()}
           >
@@ -1317,7 +1340,7 @@ export default function DailyAuditReport() {
               </div>
 
               {/* Main metrics grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* 1. Sales & Quota */}
                 <div className="rounded-xl p-4 border flex flex-col gap-3" style={{ backgroundColor: inputBg, borderColor: border }}>
                   <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
@@ -1437,60 +1460,66 @@ export default function DailyAuditReport() {
                     <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
                     <div className="h-6 rounded animate-pulse" style={{ backgroundColor: border }} />
                   </div>
-                ) : !rowExpenses || rowExpenses.items.length === 0 ? (
+                ) : !rowExpenses ? (
                   <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
                 ) : (
                   <div className="flex flex-col gap-5 text-xs">
-                    {rowExpenses.items.length > 0 && (
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Summary Breakdown</span>
-                        <table className="w-full">
-                          <thead>
-                            <tr style={{ borderBottom: `1px solid ${border}` }}>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
-                              <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Receipt</th>
-                              <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rowExpenses.items.map((item, i) => {
-                              const tc = item.type === 'EXPENSE' ? '#EF4444' : item.type === 'PURCHASE' ? '#F59E0B' : item.type === 'CASH_SALE' ? '#10B981' : '#3B82F6'
-                              return (
-                                <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                                  <td className="py-1.5 pr-2">
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>
-                                      {item.type.replace('_',' ')}
-                                    </span>
-                                  </td>
-                                  <td className="py-1.5" style={{ color: textPrimary }}>{item.description}</td>
-                                  <td className="py-1.5 px-2">
-                                    {item.type === 'PURCHASE' ? (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                        backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                        color: item.receiptReturned ? '#10B981' : '#F59E0B'
-                                      }}>
-                                        {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
+                    {(() => {
+                      const filteredItems = rowExpenses.items.filter(
+                        (item: any) => item.type === 'EXPENSE' || item.type === 'PURCHASE'
+                      )
+                      if (filteredItems.length === 0) {
+                        return <p className="text-xs text-center py-4" style={{ color: textMuted }}>No detailed expenses recorded for this row.</p>
+                      }
+                      return (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Summary Breakdown</span>
+                          <table className="w-full">
+                            <thead>
+                              <tr style={{ borderBottom: `1px solid ${border}` }}>
+                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Type</th>
+                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Description</th>
+                                <th className="pb-1 text-left text-[10px] font-bold uppercase" style={{ color: textMuted }}>Receipt</th>
+                                <th className="pb-1 text-right text-[10px] font-bold uppercase" style={{ color: textMuted }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredItems.map((item, i) => {
+                                const tc = item.type === 'EXPENSE' ? '#EF4444' : '#F59E0B'
+                                return (
+                                  <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
+                                    <td className="py-1.5 pr-2">
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: `${tc}18`, color: tc }}>
+                                        {item.type.replace('_',' ')}
                                       </span>
-                                    ) : item.type === 'EXPENSE' ? (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                        backgroundColor: 'rgba(16,185,129,0.12)',
-                                        color: '#10B981'
-                                      }}>
-                                        UPLOADED
-                                      </span>
-                                    ) : (
-                                      <span style={{ color: textMuted }}>-</span>
-                                    )}
-                                  </td>
-                                  <td className="py-1.5 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                                    </td>
+                                    <td className="py-1.5" style={{ color: textPrimary }}>{item.description}</td>
+                                    <td className="py-1.5 px-2">
+                                      {item.type === 'PURCHASE' ? (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                          backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                          color: item.receiptReturned ? '#10B981' : '#F59E0B'
+                                        }}>
+                                          {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                          backgroundColor: 'rgba(16,185,129,0.12)',
+                                          color: '#10B981'
+                                        }}>
+                                          UPLOADED
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-1.5 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    })()}
 
                   </div>
                 )}
