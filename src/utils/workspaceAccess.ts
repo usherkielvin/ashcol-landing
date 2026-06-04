@@ -6,8 +6,19 @@ type PortalUserLike = {
 
 const norm = (value?: string | null) => (value || '').trim().toLowerCase()
 
+export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
+  if (!user) return false
+  const role = norm(user.role)
+  const jobTitle = norm(user.jobTitle)
+  return role === 'oic'
+    || jobTitle.includes('coor')
+    || jobTitle.includes('coordinator')
+    || jobTitle === 'oic'
+}
+
 export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isCoordinatorOrOicUser(user)) return true
   const branchId = norm(user.branchId)
   const jobTitle = norm(user.jobTitle)
 
@@ -20,6 +31,7 @@ export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
 
 export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isCoordinatorOrOicUser(user)) return false
   const branchId = norm(user.branchId)
   const jobTitle = norm(user.jobTitle)
 

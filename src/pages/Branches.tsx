@@ -1,8 +1,40 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, BarChart2, TrendingUp, TrendingDown, Receipt, Trophy, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
+import { API_BASE_URL } from '../utils/api'
+
+interface AuditRow {
+  id?: string | null
+  branchId: string
+  branchName: string
+  auditLine?: string | null
+  status: string
+  grossSales: number
+  targetDailyQuota: number
+  difference: number
+  remarks: string
+  cohPreviousDay: number
+  fundFromHo: number
+  cashReturns: number
+  totalCohCfd: number
+  totalCashCollection: number
+  totalOnlineCollection: number
+  totalExpenses: number
+  forCollection: number
+  rebatesForCollection: number
+  totalUnitsInstalledServiced: number
+  totalCancelled: number
+  totalUnitsFreeInstall: number
+  timeUploaded: string | null
+}
+
+const peso = (v: number | null | undefined) =>
+  (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+const isNoTransaction = (r: string) =>
+  r === 'NO SCHED' || r === 'NO TRANSACTION' || r === 'NO RECORD' || r === 'NO REPORT'
 
 interface Branch {
   id?: string
@@ -180,6 +212,10 @@ export default function Branches() {
   })
   const [saving, setSaving] = useState(false)
 
+  // Performance data for the selected branch
+  const [branchPerfData, setBranchPerfData] = useState<AuditRow | null>(null)
+  const [branchPerfLoading, setBranchPerfLoading] = useState(false)
+
   const isRoleAdmin = user?.role?.toLowerCase() === 'admin'
 
   // ── Colour tokens ──────────────────────────────────────────────
@@ -189,8 +225,49 @@ export default function Branches() {
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#ffffff' : '#0F1A2E'
 
-  const badgeOicBg  = isLight ? '#ECFDF5' : '#064E3B'
-  const badgeOicText = isLight ? '#047857' : '#34D399'
+  const fetchBranchPerformance = useCallback(async (branch: Branch) => {
+    setBranchPerfData(null)
+    setBranchPerfLoading(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const today = new Date().toISOString().split('T')[0]
+      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${today}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const rows: AuditRow[] = await res.json()
+        // Find matching row for this branch
+        const branchIdLower = (branch.id || '').toLowerCase()
+        const branchNameLower = branch.name.toLowerCase()
+        // Try exact branchId match first
+        let match = rows.find(r => r.branchId?.toLowerCase() === branchIdLower)
+        // Fallback: match on name
+        if (!match) {
+          match = rows.find(r => {
+            const rn = r.branchName.toLowerCase()
+            return rn === branchNameLower ||
+              rn.includes(branchNameLower.replace('ashcol ', '').trim()) ||
+              branchNameLower.includes(rn.replace('ashcol ', '').trim())
+          })
+        }
+        // Special Taguig: match by audit line / name substring
+        if (!match && branchIdLower.includes('taguig')) {
+          const isSales = branchIdLower.includes('sales') || branchNameLower.includes('sales')
+          match = rows.find(r => {
+            const rn = r.branchName.toLowerCase()
+            if (isSales) return rn.includes('taguig') && !rn.includes('service')
+            return rn.includes('taguig') && (rn.includes('service') || r.auditLine?.includes('SERVICE'))
+          })
+        }
+        setBranchPerfData(match || null)
+      }
+    } catch (e) {
+      console.error('Failed to fetch branch performance', e)
+      setBranchPerfData(null)
+    } finally {
+      setBranchPerfLoading(false)
+    }
+  }, [])
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -742,7 +819,7 @@ export default function Branches() {
                 <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/30 dark:bg-slate-900/5 flex justify-between items-center gap-4 shrink-0">
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => setSelectedBranch(branch)}
+                      onClick={() => { setSelectedBranch(branch); fetchBranchPerformance(branch) }}
                       className="px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
                       style={{ color: textMuted, borderColor: border }}
                     >
@@ -776,113 +853,315 @@ export default function Branches() {
         </div>
       )}
 
-      {/* ── View Details Modal ───────────────────────────── */}
+      {/* ── View Details Modal (Enhanced with Performance Data) ── */}
       {selectedBranch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div 
-            className="w-full max-w-lg rounded-2xl border overflow-hidden shadow-xl"
-            style={{ backgroundColor: cardBg, borderColor: border }}
+          <div
+            className="w-full max-w-2xl rounded-2xl border overflow-hidden shadow-2xl flex flex-col"
+            style={{ backgroundColor: cardBg, borderColor: selectedBranch.color || border, borderWidth: '1.5px', maxHeight: '92vh' }}
           >
-            <div className="p-5 flex justify-between items-start border-b" style={{ borderColor: border }}>
-              <div>
-                <h3 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>{selectedBranch.name}</h3>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-0.5">{getConciseLocationTag(selectedBranch)}</p>
+            {/* Modal Header */}
+            <div className="px-6 py-4 flex items-start justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-black text-sm text-white"
+                  style={{ backgroundColor: selectedBranch.color || '#10B981' }}
+                >
+                  {initialsFor(selectedBranch.name)}
+                </div>
+                <div>
+                  <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>{selectedBranch.name}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{getConciseLocationTag(selectedBranch)}</span>
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border"
+                      style={{
+                        backgroundColor: selectedBranch.isActive ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                        color: selectedBranch.isActive ? '#10B981' : '#EF4444',
+                        borderColor: selectedBranch.isActive ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'
+                      }}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${selectedBranch.isActive ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
+                      {selectedBranch.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <button 
-                onClick={() => setSelectedBranch(null)} 
-                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              <button
+                onClick={() => setSelectedBranch(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
                 style={{ color: textMuted }}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 flex flex-col gap-5 overflow-y-auto max-h-[70vh]">
-              {/* Branch Contact Details */}
-              <div className="flex flex-col gap-2.5">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Branch Details</h4>
-                <div className="flex items-start gap-2.5 text-xs">
-                  <MapPin className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-                  <span style={{ color: textPrimary }}>{selectedBranch.address}</span>
-                </div>
-                {selectedBranch.phone && (
-                  <div className="flex items-center gap-2.5 text-xs">
-                    <Phone className="w-4 h-4 text-[#10B981] shrink-0" />
-                    <span style={{ color: textPrimary }}>{selectedBranch.phone}</span>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+
+              {/* ── Today's Performance Section ──────────────── */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <BarChart2 className="w-4 h-4" style={{ color: selectedBranch.color || '#10B981' }} />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Today's Performance</span>
                   </div>
-                )}
-                {selectedBranch.email && (
-                  <div className="flex items-center gap-2.5 text-xs">
-                    <Mail className="w-4 h-4 text-[#10B981] shrink-0" />
-                    <span style={{ color: textPrimary }}>{selectedBranch.email}</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${selectedBranch.color || '#10B981'}14`, color: selectedBranch.color || '#10B981' }}>
+                    {new Date().toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+
+                {branchPerfLoading ? (
+                  <div className="rounded-2xl border p-6 flex items-center justify-center gap-2" style={{ backgroundColor: inputBg, borderColor: border }}>
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: textMuted }} />
+                    <span className="text-xs" style={{ color: textMuted }}>Fetching today's data...</span>
+                  </div>
+                ) : !branchPerfData ? (
+                  <div className="rounded-2xl border p-5 text-center" style={{ backgroundColor: inputBg, borderColor: border }}>
+                    <BarChart2 className="w-8 h-8 mx-auto mb-2 opacity-20" style={{ color: textMuted }} />
+                    <p className="text-xs font-semibold" style={{ color: textMuted }}>No performance record for today</p>
+                    <p className="text-[10px] mt-1" style={{ color: textMuted }}>Data will appear once the daily report is submitted.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {/* Status Banner */}
+                    {(() => {
+                      const isAbove = branchPerfData.remarks === 'ABOVE QUOTA' || branchPerfData.difference > 0
+                      const isPending = branchPerfData.remarks === 'PENDING'
+                      const isNoTrans = isNoTransaction(branchPerfData.remarks)
+                      const bannerColor = isPending ? '#F59E0B' : isAbove ? '#10B981' : isNoTrans ? '#94A3B8' : '#EF4444'
+                      const bannerLabel = isPending ? 'PENDING' : isAbove ? 'ABOVE QUOTA' : isNoTrans ? 'NO TRANSACTION' : 'BELOW QUOTA'
+                      const BannerIcon = isAbove ? TrendingUp : isPending ? BarChart2 : TrendingDown
+                      return (
+                        <div
+                          className="rounded-xl px-4 py-3 flex items-center justify-between"
+                          style={{ backgroundColor: `${bannerColor}12`, border: `1px solid ${bannerColor}30` }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <BannerIcon className="w-4 h-4" style={{ color: bannerColor }} />
+                            <span className="text-xs font-black uppercase tracking-wider" style={{ color: bannerColor }}>{bannerLabel}</span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] font-semibold" style={{ color: textMuted }}>Difference</div>
+                            <div className="text-sm font-black" style={{ color: bannerColor }}>
+                              {isAbove ? '+' : ''}₱{peso(branchPerfData.difference)}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-2 gap-3">
+
+                      {/* Sales & Quota */}
+                      <div className="rounded-xl p-3.5 border flex flex-col gap-2.5" style={{ backgroundColor: inputBg, borderColor: border }}>
+                        <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                          <BarChart2 className="w-3.5 h-3.5 text-blue-500" />
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Sales</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Gross Sales</span>
+                            <span className="font-bold" style={{ color: textPrimary }}>₱{peso(branchPerfData.grossSales)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Target Quota</span>
+                            <span className="font-bold" style={{ color: '#8B5CF6' }}>₱{peso(branchPerfData.targetDailyQuota)}</span>
+                          </div>
+                          {branchPerfData.totalExpenses > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span style={{ color: textMuted }}>Total Expenses</span>
+                              <span className="font-semibold" style={{ color: '#EF4444' }}>₱{peso(branchPerfData.totalExpenses)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Cash Flow */}
+                      <div className="rounded-xl p-3.5 border flex flex-col gap-2.5" style={{ backgroundColor: inputBg, borderColor: border }}>
+                        <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Cash Flow</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>COH Prev Day</span>
+                            <span className="font-semibold" style={{ color: textPrimary }}>₱{peso(branchPerfData.cohPreviousDay)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Fund from HO</span>
+                            <span className="font-semibold" style={{ color: textPrimary }}>₱{peso(branchPerfData.fundFromHo)}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-t pt-1" style={{ borderColor: border }}>
+                            <span className="font-bold" style={{ color: textPrimary }}>Total COH/CFD</span>
+                            <span className="font-bold" style={{ color: textPrimary }}>₱{peso(branchPerfData.totalCohCfd)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Collections */}
+                      <div className="rounded-xl p-3.5 border flex flex-col gap-2.5" style={{ backgroundColor: inputBg, borderColor: border }}>
+                        <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                          <Receipt className="w-3.5 h-3.5 text-purple-500" />
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Collections</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Cash</span>
+                            <span className="font-bold" style={{ color: '#10B981' }}>₱{peso(branchPerfData.totalCashCollection)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Online</span>
+                            <span className="font-bold" style={{ color: '#3B82F6' }}>₱{peso(branchPerfData.totalOnlineCollection)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>For Collection</span>
+                            <span className="font-semibold" style={{ color: '#F59E0B' }}>₱{peso(branchPerfData.forCollection)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Operations */}
+                      <div className="rounded-xl p-3.5 border flex flex-col gap-2.5" style={{ backgroundColor: inputBg, borderColor: border }}>
+                        <div className="flex items-center gap-1.5 border-b pb-1.5" style={{ borderColor: border }}>
+                          <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Operations</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Units Inst./Serv.</span>
+                            <span className="font-bold" style={{ color: textPrimary }}>{branchPerfData.totalUnitsInstalledServiced}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Cancelled</span>
+                            <span className="font-semibold" style={{ color: branchPerfData.totalCancelled > 0 ? '#EF4444' : textMuted }}>{branchPerfData.totalCancelled}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span style={{ color: textMuted }}>Free Install</span>
+                            <span className="font-semibold" style={{ color: textMuted }}>{branchPerfData.totalUnitsFreeInstall}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rebates Summary Banner */}
+                    {branchPerfData.rebatesForCollection > 0 && (
+                      <div
+                        className="rounded-xl px-4 py-3 flex items-center justify-between"
+                        style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)' }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Receipt className="w-4 h-4 text-amber-500" />
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#F59E0B' }}>Rebates For Collection</div>
+                            <div className="text-[10px]" style={{ color: textMuted }}>Pending rebate collection for this branch</div>
+                          </div>
+                        </div>
+                        <span className="text-base font-black" style={{ color: '#F59E0B' }}>₱{peso(branchPerfData.rebatesForCollection)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Personnel Lists */}
-              <div className="border-t pt-4 flex flex-col gap-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assigned Personnel</h4>
-                
-                {/* OIC */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">Officer In Charge (OIC)</span>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded text-xs font-semibold" style={{ backgroundColor: badgeOicBg, color: badgeOicText }}>
-                      {selectedBranch.oic}
-                    </span>
+              {/* ── Branch Contact Info ───────────────────────── */}
+              <div className="flex flex-col gap-2.5 border-t pt-4" style={{ borderColor: border }}>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Branch Contact</span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                    <span style={{ color: textPrimary }}>{selectedBranch.address || 'No address registered'}</span>
                   </div>
+                  {selectedBranch.phone && (
+                    <div className="flex items-center gap-2.5 text-xs">
+                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span style={{ color: textPrimary }}>{selectedBranch.phone}</span>
+                    </div>
+                  )}
+                  {selectedBranch.email && (
+                    <div className="flex items-center gap-2.5 text-xs">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span style={{ color: textPrimary }}>{selectedBranch.email}</span>
+                    </div>
+                  )}
+                  {selectedBranch.mapUrl && (
+                    <a
+                      href={selectedBranch.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs font-semibold hover:underline"
+                      style={{ color: selectedBranch.color || '#10B981' }}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      View on Maps
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Assigned Personnel ────────────────────────── */}
+              <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: border }}>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assigned Personnel</span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* OIC */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Officer In Charge</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-emerald-500/10 flex items-center justify-center text-[9px] font-black" style={{ color: '#10B981' }}>
+                        {initialsFor(selectedBranch.oic)}
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedBranch.oic || 'Unassigned'}</span>
+                    </div>
+                  </div>
+
+                  {selectedBranch.salesCoordinator && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Sales Coordinator</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-amber-500/10 flex items-center justify-center text-[9px] font-black text-amber-500">
+                          {initialsFor(selectedBranch.salesCoordinator)}
+                        </div>
+                        <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedBranch.salesCoordinator}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {selectedBranch.salesCoordinator && (
+                {/* Drivers */}
+                {selectedBranch.drivers.length > 0 && (
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-400">Sales Coordinator</span>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded text-xs font-semibold bg-amber-100/80 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/20">
-                        {selectedBranch.salesCoordinator}
-                      </span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Drivers ({selectedBranch.drivers.length})</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedBranch.drivers.map(d => (
+                        <span key={d} className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-blue-100/80 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">{d}</span>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Drivers */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">Drivers ({selectedBranch.drivers.length})</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedBranch.drivers.length > 0 ? (
-                      selectedBranch.drivers.map(d => (
-                        <span key={d} className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100/80 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/20">
-                          {d}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs italic" style={{ color: textMuted }}>None assigned</span>
-                    )}
+                {/* Installers */}
+                {selectedBranch.installers.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Installers & Technicians ({selectedBranch.installers.length})</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedBranch.installers.map(i => (
+                        <span key={i} className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-indigo-100/80 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">{i}</span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-
-                {/* Installers / Technicians */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">Installers & Technicians ({selectedBranch.installers.length})</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedBranch.installers.length > 0 ? (
-                      selectedBranch.installers.map(i => (
-                        <span key={i} className="px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100/80 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/20">
-                          {i}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs italic" style={{ color: textMuted }}>None assigned</span>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
+
             </div>
 
-            <div className="px-5 py-4 border-t flex justify-end gap-2 shrink-0 bg-slate-50/50 dark:bg-slate-900/10" style={{ borderColor: border }}>
-              <button 
+            {/* Footer */}
+            <div className="px-6 py-4 border-t flex justify-end gap-2.5 shrink-0 bg-slate-50/30 dark:bg-slate-900/10" style={{ borderColor: border }}>
+              <button
                 onClick={() => setSelectedBranch(null)}
-                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all shrink-0 animate-scale-in"
-                style={{ backgroundColor: '#10B981' }}
+                className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all"
+                style={{ backgroundColor: selectedBranch.color || '#10B981' }}
               >
                 Close
               </button>
