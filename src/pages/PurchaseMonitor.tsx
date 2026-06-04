@@ -194,13 +194,18 @@ export default function PurchaseMonitor() {
     // Branch filter
     if (branchId) {
       const cleanBranchId = branchId.replace(/-(sales|services)$/, '')
-      list = list.filter(p => p.branchId === cleanBranchId)
+      // Match exact branchId OR literal stored suffix (e.g. BR-TAGUIG-SALES stored in DB)
+      list = list.filter(p =>
+        p.branchId === cleanBranchId ||
+        p.branchId === branchId ||
+        p.branchId.startsWith(cleanBranchId + '-')
+      )
       
       // Taguig department separation
       if (branchId.endsWith('-sales')) {
-        list = list.filter(p => p.auditLine === 'TAGUIG_SALES' || !p.auditLine)
+        list = list.filter(p => p.auditLine === 'TAGUIG_SALES' || !p.auditLine || p.branchId.toUpperCase().includes('SALES'))
       } else if (branchId.endsWith('-services')) {
-        list = list.filter(p => p.auditLine === 'TAGUIG_SERVICE')
+        list = list.filter(p => p.auditLine === 'TAGUIG_SERVICE' || p.branchId.toUpperCase().includes('SERVICE'))
       }
     }
 
