@@ -47,6 +47,8 @@ interface DrilldownItem {
   amount: number
   receiptReturned?: boolean
   receiptStatus?: 'PENDING' | 'UPLOADED' | string
+  company?: string
+  units?: number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
