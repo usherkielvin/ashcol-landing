@@ -123,7 +123,16 @@ export default function Employees() {
         if (resBranch.ok) {
           const dataBranch = await resBranch.json()
           const branches = dataBranch?.data || []
-          branches.forEach((b: any) => { if (b.id) branchMap[b.id] = b.name })
+          branches.forEach((b: any) => {
+            if (!b.id) return
+            const clean = (b.name || b.id).replace(/^ashcol\s+/i, '').trim().toUpperCase()
+            branchMap[b.id] = clean
+            // Also map virtual suffixed IDs so assigned users display correctly
+            if (clean === 'TAGUIG') {
+              branchMap[`${b.id}-sales`]    = 'TAGUIG - SALES'
+              branchMap[`${b.id}-services`] = 'TAGUIG - SERVICES'
+            }
+          })
         }
       } catch { /* silent */ }
 
@@ -156,8 +165,21 @@ export default function Employees() {
         const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
         if (!res.ok) return
         const data = await res.json()
-        const list = data?.data || []
-        setBranches(list.map((b: { id: string; name: string }) => ({ id: b.id, name: b.name || b.id })))
+        const list: { id: string; name: string }[] = data?.data || []
+
+        const result: { id: string; name: string }[] = []
+        for (const b of list) {
+          const clean = b.name.replace(/^ashcol\s+/i, '').trim().toUpperCase()
+          if (clean === 'TAGUIG') {
+            // Split Taguig into two assignable virtual branches
+            result.push({ id: `${b.id}-sales`,    name: 'TAGUIG - SALES' })
+            result.push({ id: `${b.id}-services`,  name: 'TAGUIG - SERVICES' })
+          } else {
+            result.push({ id: b.id, name: clean })
+          }
+        }
+        result.sort((a, b) => a.name.localeCompare(b.name))
+        setBranches(result)
       } catch {
         /* ignore */
       }
