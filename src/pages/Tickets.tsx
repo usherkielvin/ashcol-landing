@@ -46,6 +46,8 @@ interface Ticket {
   dealer?: string
   district?: string
   installerName?: string
+  controlNumber?: string
+  control_number?: string
 }
 
 // ── Column → ticket field mapping ─────────────────────────────────────────────
@@ -179,6 +181,18 @@ function fmtPhone(raw: string): string {
     else break
   }
   return nums.slice(0, 2).map(n => n.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')).join(' / ')
+}
+
+function getBranchDisplayName(id: string | null): string {
+  if (!id) return 'All branches'
+  const upper = id.toUpperCase()
+  if (upper === 'BR-TAGUIG-SALES-SALES' || upper === 'BR-TAGUIG-SALES') {
+    return 'TAGUIG SALES'
+  }
+  if (upper === 'BR-TAGUIG-SALES-SERVICES' || upper === 'BR-TAGUIG-SERVICES' || upper === 'BR-TAGUIG-SERVICE') {
+    return 'TAGUIG SERVICES'
+  }
+  return id.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').replace(/-/g, ' ').toUpperCase()
 }
 
 const ACTIVE = ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
@@ -336,13 +350,24 @@ export default function Tickets() {
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
     let list = tickets.filter(t => ACTIVE.includes(t.status.toUpperCase()))
-    if (isAdmin && globalBranchId)
-      list = list.filter(t => { const b = t.branchId || t.branch_id || ''; return !b || b === globalBranchId })
-    if (dateFilter)
+    if (isAdmin && globalBranchId) {
       list = list.filter(t => {
-        const d = (t.preferredDate || t.preferred_date || t.createdAt || t.created_at || '').split('T')[0]
-        return d === dateFilter
+        const b = (t.branchId || t.branch_id || '').toUpperCase()
+        if (!b) return true
+        const g = (globalBranchId || '').toUpperCase()
+        const cleanB = b.replace(/-(SALES|SERVICES)$/, '')
+        const cleanG = g.replace(/-(SALES|SERVICES)$/, '')
+        return cleanB === cleanG
       })
+    }
+    if (dateFilter) {
+      list = list.filter(t => {
+        const dateStr = t.preferredDate || t.preferred_date || t.createdAt || t.created_at
+        if (!dateStr) return false
+        const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
+        return parsedDate === dateFilter
+      })
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       list = list.filter(t =>
@@ -401,12 +426,26 @@ export default function Tickets() {
 
   // ── Save current cell ─────────────────────────────────────────────────────
   const saveCell = useCallback(async (rowId: string, col: string, value: string, silent = false) => {
+    console.log(`[saveCell] ENTER - rowId: ${rowId}, col: ${col}, value: "${value}", active editingCell:`, editingCell);
+
+    // Safety: ignore the save call if we are no longer editing this specific cell
+    // (prevents double-save race conditions, e.g., Enter key followed by native input unmount blur)
+    if (!editingCell || editingCell.rowId !== rowId || editingCell.col !== col) {
+      console.log(`[saveCell] BYPASSED - editingCell does not match active cell. Active:`, editingCell, `Requested:`, { rowId, col });
+      return
+    }
+
     const field = COL_FIELD[col]
     if (!field) { setEditingCell(null); return }
     const current = tickets.find(t => t.id === rowId)
-    if (!current) { setEditingCell(null); return }
+    if (!current) {
+      console.log(`[saveCell] ERROR - Ticket not found in state: ${rowId}`);
+      setEditingCell(null);
+      return
+    }
 
     if (col === 'UPDATE' && value.toLowerCase().includes('installed')) {
+      console.log(`[saveCell] INTERCEPTED "installed" for rowId: ${rowId}`);
       setCompletionPrompt({
         ticket: current,
         value,
@@ -490,7 +529,7 @@ export default function Tickets() {
       await fetchTickets()
       if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
     } finally { setSaving(false) }
-  }, [token, fetchTickets])
+  }, [token, fetchTickets, tickets, editingCell])
 
   // ── Cancel editing ────────────────────────────────────────────────────────
   const cancelEdit = () => { setEditingCell(null); setCellValue('') }
@@ -732,12 +771,17 @@ export default function Tickets() {
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold"
                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder, color: textMuted }}>
               <Building2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{globalBranchId || 'All branches'}</span>
+              <span>{getBranchDisplayName(globalBranchId)}</span>
             </div>
           )}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
             <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+            {dateFilter && (
+              <span className="uppercase tracking-wider text-[9px] font-black opacity-60 border-r pr-1.5" style={{ borderColor: border }}>
+                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
+              </span>
+            )}
             <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
                    className="bg-transparent outline-none cursor-pointer font-bold"
                    style={{ color: textPrimary }} />
@@ -1190,27 +1234,27 @@ export default function Tickets() {
             const d = new Date()
             const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-            // 1. Post to Daily Service Report
-            const serviceReportPayload = {
-              branchId: t.branchId || localStorage.getItem('ashcol-global-branch-id') || '',
-              reportDate: todayStr,
-              customerName: custName,
-              customerAddress: formatAddress(t.location),
-              customerPhone: getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-              district: parseDistrict(t.location, t.district),
-              serviceType: getF(t, 'serviceType', 'service_type') || 'INSTALLATION',
-              statusCode: 'I',
-              commitTerms: getF(t, 'commitTerms', 'description') || t.description || '',
-              dealer: getF(t, 'dealer'),
-              unitBrandModel: parseBrand(t),
-              technicianName: getF(t, 'assignedEmployeeName', 'assigned_employee_name'),
-              amountCharged: parseFloat(cp.amount) || 0,
-              paymentStatus: cp.modeOfPayment,
-              jobStatus: 'COMPLETED',
-              remarks: cp.value || 'Installed',
-              note: t.note || '',
-              controlNumber: t.controlNumber || ''
-            }
+             // 1. Post to Daily Service Report
+             const serviceReportPayload = {
+               branchId: (t.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
+               reportDate: todayStr,
+               customerName: custName,
+               customerAddress: formatAddress(t.location),
+               customerPhone: getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+               district: parseDistrict(t.location, t.district),
+               serviceType: cp.modeOfPayment === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+               statusCode: 'I',
+               commitTerms: getF(t, 'commitTerms', 'description') || t.description || '',
+               dealer: getF(t, 'dealer'),
+               unitBrandModel: parseBrand(t),
+               technicianName: getF(t, 'assignedEmployeeName', 'assigned_employee_name'),
+               amountCharged: parseFloat(cp.amount) || 0,
+               paymentStatus: cp.modeOfPayment,
+               jobStatus: 'COMPLETED',
+               remarks: cp.value || 'Installed',
+               note: t.note || '',
+               controlNumber: t.controlNumber || ''
+             }
 
             const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
               method: 'POST',
@@ -1266,16 +1310,24 @@ export default function Tickets() {
                 </label>
                 <select
                   value={cp.modeOfPayment}
-                  onChange={e => setCompletionPrompt(prev => prev ? { ...prev, modeOfPayment: e.target.value } : null)}
+                  onChange={e => {
+                    const nextMode = e.target.value
+                    setCompletionPrompt(prev => {
+                      if (!prev) return null
+                      const nextAmount = nextMode === 'FREE' || nextMode === 'FREE INSTALL' ? '0' : prev.amount
+                      return { ...prev, modeOfPayment: nextMode, amount: nextAmount }
+                    })
+                  }}
                   className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                   <option value="CASH">CASH</option>
                   <option value="BANK TRANSFER">BANK TRANSFER</option>
                   <option value="GCASH">GCASH</option>
                   <option value="CHEQUE">CHEQUE</option>
+                  <option value="FREE INSTALL">FREE INSTALL</option>
                 </select>
               </div>
-
+ 
               {/* Amount charged */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
@@ -1284,11 +1336,13 @@ export default function Tickets() {
                 <input
                   type="number"
                   step="0.01"
+                  min="0"
                   required
                   placeholder="0.00"
                   value={cp.amount}
+                  disabled={cp.modeOfPayment === 'FREE' || cp.modeOfPayment === 'FREE INSTALL'}
                   onChange={e => setCompletionPrompt(prev => prev ? { ...prev, amount: e.target.value } : null)}
-                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold"
+                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold disabled:opacity-60"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
               </div>
