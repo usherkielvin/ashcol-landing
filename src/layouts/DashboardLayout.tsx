@@ -187,8 +187,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Field Schedule', 'Service Report', 'Transactions', 'Performance', 'Expense Records']
-  const serviceWorkspaceLinks = ['Field Schedule', 'Service Report', 'Transactions', 'Performance', 'Expense Records']
+  const salesWorkspaceLinks = ['Tickets', 'Field Schedule', 'Service Report', 'Transactions', 'Performance', 'Expense Records']
+  const serviceWorkspaceLinks = ['Tickets', 'Field Schedule', 'Service Report', 'Transactions', 'Performance', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 

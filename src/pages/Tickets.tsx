@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2, CheckCircle, Clock, XCircle, FileText, X, ArrowRight, RefreshCw, ChevronLeft, Circle, MoreVertical, Check, Mail, Phone, Navigation } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
+  Eye, Phone, Mail, MapPin, User, Wrench, Clock
+} from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import DateRangeFilter, { type DateRange, buildDateRange, isInDateRange } from '../components/DateRangeFilter'
-import FleetMap from '../components/FleetMap'
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface Ticket {
   id: string
   title: string
-  description: string
+  description?: string
   serviceType?: string
   service_type?: string
   customerName?: string
@@ -34,1339 +36,1284 @@ interface Ticket {
   assignedTo?: string
   assigned_employee_name?: string
   assignedEmployeeName?: string
-  customerPersonalEmail?: string
-  customer_personal_email?: string
+  branchId?: string
+  branch_id?: string
+  remarks?: string
+  remarksUpdate?: string
+  note?: string
+  commitTerms?: string
+  amountCharged?: number
+  dealer?: string
+  district?: string
+  installerName?: string
 }
 
+// ── Column → ticket field mapping ─────────────────────────────────────────────
+const COL_FIELD: Record<string, keyof Ticket> = {
+  "CUSTOMER'S NAME": 'customerName',
+  'DESTINATION':     'location',
+  'DISTRICT':        'district',
+  'CONTACT NO.':     'contactPhone',
+  'BRAND':           'unitType',
+  'DLR':             'dealer',
+  'STATUS':          'status',
+  'COMMIT':          'commitTerms',
+  'INSTALLER':       'assignedEmployeeName',
+  'NOTE':            'note',
+  'SERVICE':         'serviceType',
+  'UPDATE':          'remarks',
+}
+
+const EDITABLE_COLS = [
+  "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR',
+  'STATUS', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
+]
+
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function formatLocation(loc: any): string {
-  if (!loc) return '—'
+function formatAddress(loc: any): string {
+  if (!loc) return ''
   if (typeof loc === 'string') {
     const s = loc.trim()
-    if (!s) return '—'
-    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+    if (!s) return ''
+    if (s.startsWith('{') || s.startsWith('[')) {
       try {
         const p: any = JSON.parse(s)
         const addr = (p?.address ?? '').trim()
         const region = (p?.region ?? '').trim()
-        if (addr && region && !addr.toLowerCase().includes(region.toLowerCase())) return `${addr}, ${region}`
-        return addr || region || s
+        return addr && region && !addr.toLowerCase().includes(region.toLowerCase())
+          ? `${addr}, ${region}` : addr || region || s
       } catch { /* fall through */ }
     }
-    if (/lat|lng|long|latitude|longitude/i.test(s)) return '—'
+    if (/lat|lng|long|latitude|longitude/i.test(s)) return ''
     return s
   }
   const addr = (loc.address ?? '').trim()
   const region = (loc.region ?? '').trim()
-  if (addr && region && !addr.toLowerCase().includes(region.toLowerCase())) return `${addr}, ${region}`
-  return addr || region || '—'
+  return addr && region && !addr.toLowerCase().includes(region.toLowerCase())
+    ? `${addr}, ${region}` : addr || region || ''
 }
 
-function stripEmbeddedAcDetails(desc: string | undefined | null): string {
-  const text = (desc || '').trim()
-  if (!text) return '—'
-  const marker = '\n\nAC Details - '
-  const idx = text.indexOf(marker)
-  return idx === -1 ? text : (text.slice(0, idx).trim() || '—')
-}
-
-function parseAcDetails(ticket: Ticket): any[] {
-  const raw = ticket.acDetails || ticket.ac_details
-  if (!raw || typeof raw !== 'string') return []
-  try {
-    const p = JSON.parse(raw)
-    return Array.isArray(p) ? p : []
-  } catch { return [] }
-}
-
-function getTicketField(ticket: Ticket, ...keys: string[]): string {
-  for (const k of keys) {
-    const v = (ticket as any)[k]
-    if (v && typeof v === 'string' && v.trim()) return v.trim()
+function parseDistrict(loc: any, explicit?: string): string {
+  if (explicit) return explicit
+  if (!loc) return ''
+  if (typeof loc === 'string') {
+    try { const p: any = JSON.parse(loc); return p?.district || p?.city || '' } catch { return '' }
   }
-  return '—'
+  return (loc?.district || loc?.city || '').trim()
 }
 
-/** PH-style numbers for tel: links */
-function telHref(raw: string): string | null {
-  const d = raw.replace(/\D/g, '')
-  if (d.length < 8) return null
-  if (d.startsWith('63')) return `tel:+${d}`
-  if (d.startsWith('0')) return `tel:+63${d.slice(1)}`
-  return `tel:+${d}`
+function parseBrand(ticket: Ticket): string {
+  if (ticket.unitType || ticket.unit_type) return ticket.unitType || ticket.unit_type || ''
+  const raw = ticket.acDetails || ticket.ac_details
+  if (raw) {
+    try {
+      const arr = JSON.parse(raw)
+      const a = Array.isArray(arr) ? arr : [arr]
+      const brands: string[] = []
+      for (const u of a) {
+        ;(Array.isArray(u?.details) ? u.details : []).forEach((d: any) => { if (d?.brand) brands.push(d.brand) })
+        if (u?.brand) brands.push(u.brand)
+      }
+      if (brands.length) return brands.join(', ')
+      for (const u of a) { if (u?.unitType) return u.unitType }
+    } catch { /* fall through */ }
+  }
+  return ticket.unitType || ticket.unit_type || ''
 }
 
-function shortId(id: string) {
-  return `ASH${(id || '').replace(/-/g, '').slice(-6).toUpperCase()}`
+function parseAcMeta(ticket: Ticket): any {
+  const raw = ticket.acDetails || ticket.ac_details
+  if (!raw || typeof raw !== 'string') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+function mergeAcMeta(ticket: Ticket, updates: Record<string, any>) {
+  const parsed = parseAcMeta(ticket)
+  if (Array.isArray(parsed)) {
+    const next = parsed.length ? [...parsed] : [{}]
+    next[0] = { ...(next[0] || {}), ...updates }
+    return JSON.stringify(next)
+  }
+  return JSON.stringify({ ...(parsed || {}), ...updates })
 }
 
+function getF(ticket: Ticket, ...keys: (keyof Ticket)[]): string {
+  for (const k of keys) {
+    const v = ticket[k]
+    if (v != null && typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return ''
+}
+
+function statusCode(s: string) {
+  return { PENDING: 'P', ASSIGNED: 'A', ON_THE_WAY: 'OTW', IN_PROGRESS: 'IP', COMPLETED: 'C', CANCELLED: 'X' }[s.toUpperCase()] || s.slice(0, 3)
+}
+
+function statusColor(s: string, light: boolean) {
+  switch (s.toUpperCase()) {
+    case 'PENDING':     return { text: '#FB923C', bg: light ? '#fff7ed' : 'rgba(251,146,60,0.13)',  b: 'rgba(251,146,60,0.4)' }
+    case 'ASSIGNED':    return { text: '#3B82F6', bg: light ? '#eff6ff' : 'rgba(59,130,246,0.13)',  b: 'rgba(59,130,246,0.4)'  }
+    case 'ON_THE_WAY':  return { text: '#06B6D4', bg: light ? '#ecfeff' : 'rgba(6,182,212,0.13)',   b: 'rgba(6,182,212,0.4)'   }
+    case 'IN_PROGRESS': return { text: '#10B981', bg: light ? '#f0fdf4' : 'rgba(16,185,129,0.13)',  b: 'rgba(16,185,129,0.4)'  }
+    case 'CANCELLED':   return { text: '#EF4444', bg: light ? '#fef2f2' : 'rgba(239,68,68,0.10)',   b: 'rgba(239,68,68,0.35)'  }
+    default:            return { text: '#94A3B8', bg: 'transparent',                                b: 'rgba(148,163,184,0.3)' }
+  }
+}
+
+function fmtPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  const nums: string[] = []
+  let rem = digits
+  while (rem.length >= 10) {
+    if (rem.startsWith('63') && rem.length >= 12)      { nums.push('0' + rem.slice(2, 12)); rem = rem.slice(12) }
+    else if (rem.startsWith('09') && rem.length >= 11) { nums.push(rem.slice(0, 11));        rem = rem.slice(11) }
+    else if (rem.startsWith('9') && rem.length >= 10)  { nums.push('0' + rem.slice(0, 10));  rem = rem.slice(10) }
+    else break
+  }
+  return nums.slice(0, 2).map(n => n.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')).join(' / ')
+}
+
+const ACTIVE = ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function Tickets() {
   const { theme } = useTheme()
-  const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const isLight = theme === 'light'
+  const { user }  = useAuth()
+  const navigate   = useNavigate()
+  const isLight    = theme === 'light'
 
-  const [activeTab, setActiveTab]         = useState(() => (searchParams.get('status') || 'all').toUpperCase())
-  const [tickets, setTickets]             = useState<Ticket[]>([])
-  const [loading, setLoading]             = useState(true)
-  const [searchQuery, setSearchQuery]     = useState('')
-  const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED_TO_ME' | 'UNASSIGNED'>('ALL')
-  const [dateRange, setDateRange] = useState<DateRange>(buildDateRange('ALL'))
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
-  const [showViewModal, setShowViewModal]   = useState(false)
-  const [updateLoading, setUpdateLoading]   = useState(false)
-  const [openMenuId, setOpenMenuId]         = useState<string | null>(null)
-  const [editingDesc, setEditingDesc]       = useState(false)
-  const [descDraft, setDescDraft]           = useState('')
-  const [descSaving, setDescSaving]         = useState(false)
-  const [menuPosition, setMenuPosition]     = useState<{ top: number; left: number } | null>(null)
-  const [branchTechs, setBranchTechs]       = useState<{ id: string; name: string }[]>([])
-  const [assignPick, setAssignPick]         = useState('')
-  const [dispatchScores, setDispatchScores] = useState<Array<{ technicianId: string; name: string; score: number; activeTickets: number }>>([])
-  const [dispatchLoading, setDispatchLoading] = useState(false)
-  const [dispatchError, setDispatchError] = useState<string | null>(null)
-  const statusParam = (searchParams.get('status') || 'all').toUpperCase()
-  const ticketIdParam = searchParams.get('id')
+  const role      = (user?.role || '').toLowerCase()
+  const isCustomer = role === 'customer'
+  const isAdmin    = role === 'admin'
+  const isManager  = role === 'manager'
+  const isEmployee = ['employee', 'oic', 'staff'].includes(role)
+  const canEdit    = isAdmin || isManager || isEmployee
 
-  const setStatusFilter = (statusKey: string) => {
-    const next = statusKey.toUpperCase()
-    setActiveTab(next)
-    const params = new URLSearchParams(searchParams)
-    if (next === 'ALL') params.delete('status')
-    else params.set('status', next)
-    const q = params.toString()
-    navigate(q ? `/tickets?${q}` : '/tickets', { replace: true })
-  }
-
-  const getEffectiveDate = (t: Ticket): Date | null => {
-    const raw = t.preferredDate || t.preferred_date || t.createdAt || t.created_at
-    if (!raw) return null
-    const d = new Date(raw)
-    return Number.isNaN(d.getTime()) ? null : d
-  }
-
-  const getAllowedStatusTransitions = (ticket: Ticket) => {
-    const current = ticket.status.toUpperCase()
-    if (isEmployee) {
-      switch (current) {
-        case 'ASSIGNED': return ['ON_THE_WAY']
-        case 'ON_THE_WAY': return ['IN_PROGRESS']
-        case 'IN_PROGRESS': return ['COMPLETED']
-        default: return []
-      }
-    }
-    if (isManager || isAdmin) {
-      const map: Record<string, string[]> = {
-        PENDING: ['ASSIGNED', 'CANCELLED'],
-        ASSIGNED: ['ON_THE_WAY', 'CANCELLED'],
-        ON_THE_WAY: ['IN_PROGRESS', 'CANCELLED'],
-        IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
-      }
-      return map[current] || []
-    }
-    return []
-  }
-
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Close dropdown on outside click
+  // ── Global branch ─────────────────────────────────────────────────────────
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null)
-        setMenuPosition(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const sync = () => setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    window.addEventListener('ashcol-global-branch-change', sync)
+    return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  const isCustomer = user?.role?.toLowerCase() === 'customer'
-  const isAdmin    = user?.role?.toLowerCase() === 'admin'
-  const isManager  = user?.role?.toLowerCase() === 'manager'
-  const isEmployee = user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic'
-
-  useEffect(() => {
-    if ((!isManager && !isAdmin) || !user) {
-      setBranchTechs([])
-      return
-    }
-    const loadTechs = async () => {
-      try {
-        const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-        const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-        const res = await fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${token}` } })
-        if (!res.ok) return
-        const data = await res.json()
-        const list = data?.data || []
-        setBranchTechs(list.map((u: { id: string; name?: string; email?: string }) => ({
-          id: u.id,
-          name: u.name || u.email || u.id,
-        })))
-      } catch {
-        setBranchTechs([])
-      }
-    }
-    loadTechs()
-  }, [user, isManager, isAdmin])
-
-  // ── Color tokens ─────────────────────────────────────────────────────────
+  // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#e2e8f0' : '#141C2E'
+  const border      = isLight ? '#e2e8f0' : '#1A2740'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
-  const rowHover    = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
-  const theadBg     = isLight ? '#f8fafc' : 'rgba(15,26,46,0.5)'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
+  const theadBg     = isLight ? '#f1f5f9' : '#060C18'
+  const rowEven     = isLight ? '#ffffff' : '#0A1120'
+  const rowOdd      = isLight ? '#f9fafb' : '#0d1626'
+  const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
+  const editCellBg  = isLight ? '#fffbeb' : '#1a2800'
+  const green       = '#16A34A'
 
-  // ── Data fetching ─────────────────────────────────────────────────────────
-  const fetchTickets = async () => {
-    try {
-      setLoading(true)
-      setFetchError(null)
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+  // ── Data state ────────────────────────────────────────────────────────────
+  const [tickets, setTickets]         = useState<Ticket[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [fetchError, setFetchError]   = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [dateFilter, setDateFilter]   = useState('')
+  const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
 
-      let endpoint = '/tickets'
-      if (user?.role?.toLowerCase() === 'customer')  endpoint = '/tickets/my'
-      if (user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic') endpoint = '/tickets'
+  // ── Cell editing state ────────────────────────────────────────────────────
+  // editingCell: { rowId, col } — which cell is being edited
+  const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
+  const [cellValue, setCellValue]     = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [toast, setToast]             = useState<string | null>(null)
 
-      const pageSize = (user?.role?.toLowerCase() === 'employee' || user?.role?.toLowerCase() === 'oic') ? 100 : 50
-      const res  = await fetch(`${apiUrl}${endpoint}?page=0&size=${pageSize}`, { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) throw new Error('Failed to fetch')
+  // ── Context menu ──────────────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
+  const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
 
-      const data = await res.json()
-      const tks: Ticket[] = data?.data?.tickets || data?.tickets || []
-      setTickets(tks)
+  // ── History state ─────────────────────────────────────────────────────────
+  const [history, setHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
-      const ticketId = searchParams.get('id')
-      if (ticketId) {
-        const found = tks.find(t => t.id === ticketId)
-        if (found) {
-          setSelectedTicket(found)
-          setShowViewModal(true)
-        } else {
-          const oneRes = await fetch(`${apiUrl}/tickets/${ticketId}`, { headers: { Authorization: `Bearer ${token}` } })
-          if (oneRes.ok) {
-            const oneJson = await oneRes.json()
-            const t: Ticket = oneJson?.data || oneJson
-            if (t?.id) {
-              setSelectedTicket(t)
-              setShowViewModal(true)
-              setTickets(prev => (prev.some(x => x.id === t.id) ? prev : [t, ...prev]))
-            }
-          }
-        }
+  // ── Completion prompt state ───────────────────────────────────────────────
+  const [completionPrompt, setCompletionPrompt] = useState<{
+    ticket: Ticket
+    value: string
+    modeOfPayment: string
+    amount: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!detailTicket) {
+      setHistory([])
+      return
+    }
+    setLoadingHistory(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    fetch(`${API_URL}/tickets/${detailTicket.id}/history`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
       }
-    } catch (err) {
-      console.error('Error fetching tickets:', err)
-      setFetchError('Failed to load tickets. Please try again.')
-    } finally {
-      setLoading(false)
+    })
+      .then(res => res.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setHistory(res.data)
+        }
+      })
+      .catch(err => console.error('Error fetching history:', err))
+      .finally(() => setLoadingHistory(false))
+  }, [detailTicket])
+
+  // ── Expand cols ───────────────────────────────────────────────────────────
+  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const toggleCol = useCallback((label: string) =>
+    setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
+
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>(null)
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
+
+  // ── Column config ─────────────────────────────────────────────────────────
+  const columns = useMemo(() => {
+    const raw = [
+      { label: "CUSTOMER'S NAME", w: 160, expW: 280, sticky: true,  freeze: false },
+      { label: 'DESTINATION',     w: 200, expW: 420, sticky: true,  freeze: true  },
+      { label: 'DISTRICT',        w: 100, expW: 160, sticky: false, freeze: false },
+      { label: 'CONTACT NO.',     w: 120, expW: 180, sticky: false, freeze: false },
+      { label: 'BRAND',           w: 120, expW: 220, sticky: false, freeze: false },
+      { label: 'DLR',             w: 90,  expW: 160, sticky: false, freeze: false },
+      { label: 'STATUS',          w: 72,  expW: 110, sticky: false, freeze: false },
+      { label: 'COMMIT',          w: 140, expW: 280, sticky: false, freeze: false },
+      { label: 'INSTALLER',       w: 130, expW: 220, sticky: false, freeze: false },
+      { label: 'NOTE',            w: 150, expW: 300, sticky: false, freeze: false },
+      { label: 'SERVICE',         w: 110, expW: 180, sticky: false, freeze: false },
+      { label: 'UPDATE',          w: 170, expW: 340, sticky: false, freeze: false },
+    ]
+    let left = 0
+    return raw.map(c => {
+      const isExpanded = !!expandedCols[c.label]
+      const width = isExpanded ? c.expW : c.w
+      const l = c.sticky ? left : 0
+      if (c.sticky) left += width
+      return { ...c, isExpanded, width, left: l }
+    })
+  }, [expandedCols])
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────
+  const token = useCallback(() =>
+    localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
+
+  const fetchTickets = useCallback(async () => {
+    if (!user) return
+    setLoading(true); setFetchError(null)
+    try {
+      const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
+      const size = isAdmin ? 300 : 200
+      const res  = await fetch(`${API_URL}${ep}?page=0&size=${size}`, {
+        headers: { Authorization: `Bearer ${token()}` }
+      })
+      if (!res.ok) throw new Error('fetch failed')
+      const data = await res.json()
+      setTickets(data?.data?.tickets || data?.tickets || [])
+    } catch { setFetchError('Failed to load tickets. Check your connection.') }
+    finally  { setLoading(false) }
+  }, [user, isCustomer, isAdmin, token])
+
+  useEffect(() => { fetchTickets() }, [fetchTickets])
+  useEffect(() => { if (isAdmin) fetchTickets() }, [globalBranchId, isAdmin])
+
+  // ── Filter ────────────────────────────────────────────────────────────────
+  const visible = useMemo(() => {
+    let list = tickets.filter(t => ACTIVE.includes(t.status.toUpperCase()))
+    if (isAdmin && globalBranchId)
+      list = list.filter(t => { const b = t.branchId || t.branch_id || ''; return !b || b === globalBranchId })
+    if (dateFilter)
+      list = list.filter(t => {
+        const d = (t.preferredDate || t.preferred_date || t.createdAt || t.created_at || '').split('T')[0]
+        return d === dateFilter
+      })
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      list = list.filter(t =>
+        [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
+         t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+         t.remarks, t.note, t.id].some(v => v?.toLowerCase().includes(q))
+        || formatAddress(t.location).toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
+
+  const counts = useMemo(() => ({
+    pending:    visible.filter(t => t.status.toUpperCase() === 'PENDING').length,
+    assigned:   visible.filter(t => t.status.toUpperCase() === 'ASSIGNED').length,
+    inProgress: visible.filter(t => ['ON_THE_WAY','IN_PROGRESS'].includes(t.status.toUpperCase())).length,
+  }), [visible])
+
+  // ── Get display value for a column ────────────────────────────────────────
+  function getCellDisplay(ticket: Ticket, colLabel: string): string {
+    switch (colLabel) {
+      case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
+      case 'DESTINATION':     return formatAddress(ticket.location)
+      case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
+      case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+      case 'BRAND':           return parseBrand(ticket)
+      case 'DLR':             return getF(ticket, 'dealer', 'serviceType', 'service_type')
+      case 'STATUS':          return ticket.status
+      case 'COMMIT':          return getF(ticket, 'commitTerms', 'description')
+      case 'INSTALLER':       return getF(ticket, 'installerName', 'assignedEmployeeName', 'assigned_employee_name')
+      case 'NOTE':            return ticket.note || ''
+      case 'SERVICE':         return getF(ticket, 'serviceType', 'service_type')
+      case 'UPDATE':          return ticket.remarksUpdate || ticket.remarks || ''
+      default: return ''
     }
   }
 
-  useEffect(() => {
-    setActiveTab(statusParam || 'ALL')
-  }, [statusParam])
+  // ── Cell click → start editing ─────────────────────────────────────────────
+  const startEdit = (ticket: Ticket, col: string) => {
+    if (!canEdit || !EDITABLE_COLS.includes(col)) return
+    const val = getCellDisplay(ticket, col)
+    setEditingCell({ rowId: ticket.id, col })
+    setCellValue(val)
+    setContextMenu(null)
+  }
 
-  useEffect(() => { if (user) fetchTickets() }, [user, ticketIdParam, statusParam])
-
+  // Focus the input after entering edit mode
   useEffect(() => {
-    if (searchParams.get('refresh') === 'true') {
-      fetchTickets()
-      const params = new URLSearchParams(searchParams)
-      params.delete('refresh')
-      const q = params.toString()
-      navigate(q ? `/tickets?${q}` : '/tickets', { replace: true })
+    if (editingCell && inputRef.current) {
+      inputRef.current.focus()
+      if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
+        inputRef.current.select()
+      }
     }
-  }, [searchParams, navigate])
+  }, [editingCell])
 
-  useEffect(() => {
-    if (!selectedTicket) return
-    const currentlyAssigned = getTicketField(selectedTicket, 'assignedTo')
-    if (currentlyAssigned !== '—' && assignPick !== currentlyAssigned) {
-      setAssignPick(currentlyAssigned)
+  // ── Save current cell ─────────────────────────────────────────────────────
+  const saveCell = useCallback(async (rowId: string, col: string, value: string, silent = false) => {
+    const field = COL_FIELD[col]
+    if (!field) { setEditingCell(null); return }
+    const current = tickets.find(t => t.id === rowId)
+    if (!current) { setEditingCell(null); return }
+
+    if (col === 'UPDATE' && value.toLowerCase().includes('installed')) {
+      setCompletionPrompt({
+        ticket: current,
+        value,
+        modeOfPayment: 'CASH',
+        amount: ''
+      })
+      setEditingCell(null)
+      setCellValue('')
+      return
     }
-  }, [selectedTicket, assignPick])
 
-  const handleAssignTechnician = async () => {
-    if (!selectedTicket || !assignPick) return
-    setUpdateLoading(true)
+    const normalized = col === 'STATUS' ? value.toUpperCase() : value
+    const localPatch: Partial<Ticket> = { [field]: normalized } as Partial<Ticket>
+    const body: Record<string, any> = { [field]: normalized }
+
+    if (col === 'DESTINATION') {
+      localPatch.location = normalized
+      body.location = normalized
+      body.acDetails = mergeAcMeta(current, { destination: normalized, address: normalized })
+    } else if (col === 'DISTRICT') {
+      body.acDetails = mergeAcMeta(current, { district: normalized })
+    } else if (col === 'BRAND') {
+      localPatch.unitType = normalized
+      localPatch.acDetails = mergeAcMeta(current, { brand: normalized, unitType: normalized })
+      body.unitType = normalized
+      body.acDetails = localPatch.acDetails
+    } else if (col === 'DLR') {
+      body.dealer = normalized
+      body.sourceVendor = normalized
+      body.acDetails = mergeAcMeta(current, { dealer: normalized, dlr: normalized })
+    } else if (col === 'COMMIT') {
+      body.commitTerms = normalized
+      body.description = normalized
+    } else if (col === 'INSTALLER') {
+      localPatch.installerName = normalized
+      localPatch.assignedEmployeeName = normalized
+      body.installerName = normalized
+      body.assignedEmployeeName = normalized
+      body.acDetails = mergeAcMeta(current, { installerName: normalized, negotiator: normalized })
+    } else if (col === 'NOTE') {
+      body.note = normalized
+      body.description = normalized
+    } else if (col === 'UPDATE') {
+      localPatch.remarksUpdate = normalized
+      localPatch.remarks = normalized
+      body.remarksUpdate = normalized
+      body.remarks = normalized
+      body.acDetails = mergeAcMeta(current, { update: normalized, remarksUpdate: normalized })
+    } else if (col === 'SERVICE') {
+      body.serviceType = normalized
+    } else if (col === "CUSTOMER'S NAME") {
+      body.customerName = normalized
+    } else if (col === 'CONTACT NO.') {
+      body.contactPhone = normalized
+    }
+
+    // Optimistic UI update immediately
+    setTickets(prev => prev.map(t => {
+      if (t.id !== rowId) return t
+      return { ...t, ...localPatch }
+    }))
+    setEditingCell(null)
+    setCellValue('')
+
+    setSaving(true)
     try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const pending = selectedTicket.status.toUpperCase() === 'PENDING'
-      const body: Record<string, string> = { assignedTo: assignPick }
-      if (pending) body.status = 'ASSIGNED'
-      const res = await fetch(`${apiUrl}/tickets/${selectedTicket.id}`, {
+      const res = await fetch(`${API_URL}/tickets/${rowId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('assign failed')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const payload = await res.json()
       const updated = payload?.data || payload
-      const merged = { ...selectedTicket, ...updated, status: updated?.status || selectedTicket.status }
-      setSelectedTicket(merged)
-      setTickets(prev => prev.map(t => t.id === selectedTicket.id ? merged : t))
-      setAssignPick('')
-    } catch {
-      alert('Could not assign technician.')
-    } finally {
-      setUpdateLoading(false)
-    }
-  }
-
-  const handleUpdateStatus = async (ticketId: string, newStatus: string) => {
-    const prevTickets = tickets
-    const prevSelected = selectedTicket
-    const normalized = newStatus.toUpperCase()
-    setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, status: normalized } : t)))
-    if (selectedTicket?.id === ticketId) setSelectedTicket({ ...selectedTicket, status: normalized })
-    setUpdateLoading(true)
-    try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const res    = await fetch(`${apiUrl}/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: newStatus })
-      })
-      if (!res.ok) throw new Error('Failed to update ticket')
-      const payload = await res.json()
-      const updated = payload?.data || payload
-      setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, ...updated, status: updated?.status || normalized } : t)))
-      if (selectedTicket?.id === ticketId) {
-        setSelectedTicket({ ...selectedTicket, ...updated, status: updated?.status || normalized })
+      if (updated && updated.id) {
+        setTickets(prev => prev.map(t => t.id === rowId ? { ...t, ...updated, ...localPatch } : t))
       }
-    } catch {
-      setTickets(prevTickets)
-      setSelectedTicket(prevSelected)
-      alert('Could not update ticket status.')
-    } finally {
-      setUpdateLoading(false)
-    }
-  }
-
-  const handleSaveDesc = async () => {
-    if (!selectedTicket) return
-    setDescSaving(true)
-    try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const res    = await fetch(`${apiUrl}/tickets/${selectedTicket.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ description: descDraft })
-      })
-      if (!res.ok) throw new Error('Failed to update')
-      const updated = { ...selectedTicket, description: descDraft }
-      setSelectedTicket(updated)
-      setTickets(prev => prev.map(t => t.id === selectedTicket.id ? updated : t))
-      setEditingDesc(false)
-    } catch {
-      alert('Could not save description.')
-    } finally {
-      setDescSaving(false)
-    }
-  }
-
-  const handleDeleteTicket = async (ticketId: string) => {
-    if (!confirm('Are you sure you want to delete this ticket?')) return
-    try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const res    = await fetch(`${apiUrl}/tickets/${ticketId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Failed to delete')
-      setTickets(prev => prev.filter(t => t.id !== ticketId))
-      setShowViewModal(false)
-    } catch {
-      alert('Could not delete ticket.')
-    }
-  }
-
-  const handleLoadDispatchScores = async () => {
-    if (!selectedTicket) return
-    setDispatchLoading(true)
-    setDispatchError(null)
-    try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const res = await fetch(`${apiUrl}/dispatch/scores/${selectedTicket.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error('Failed to load scores')
-      const payload = await res.json()
-      const rows = (payload?.data || payload || []) as Array<{ technicianId: string; name: string; score: number; activeTickets: number }>
-      setDispatchScores(rows)
-    } catch (e) {
-      console.error(e)
-      setDispatchError('Could not load AI dispatch scores.')
-    } finally {
-      setDispatchLoading(false)
-    }
-  }
-
-  const handleAutoAssignBest = async () => {
-    if (!selectedTicket) return
-    setDispatchLoading(true)
-    setDispatchError(null)
-    try {
-      const token  = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const res = await fetch(`${apiUrl}/dispatch/auto-assign/${selectedTicket.id}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error('Auto-assign failed')
+      if (!silent) showToast('Saved ✓')
+    } catch (e: any) {
+      // Revert optimistic update on failure
       await fetchTickets()
-      const oneRes = await fetch(`${apiUrl}/tickets/${selectedTicket.id}`, { headers: { Authorization: `Bearer ${token}` } })
-      if (oneRes.ok) {
-        const oneJson = await oneRes.json()
-        const t: Ticket = oneJson?.data || oneJson
-        if (t?.id) setSelectedTicket(t)
-      }
-    } catch (e) {
-      console.error(e)
-      setDispatchError('Auto-assign failed. Check threshold/candidate readiness.')
-    } finally {
-      setDispatchLoading(false)
+      if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
+    } finally { setSaving(false) }
+  }, [token, fetchTickets])
+
+  // ── Cancel editing ────────────────────────────────────────────────────────
+  const cancelEdit = () => { setEditingCell(null); setCellValue('') }
+
+  // ── Get next/prev editable cell in the visible list ───────────────────────
+  function getAdjacentCell(rowId: string, col: string, dir: 'next' | 'prev' | 'down' | 'up') {
+    const rowIdx = visible.findIndex(t => t.id === rowId)
+    const colIdx = EDITABLE_COLS.indexOf(col)
+    if (rowIdx === -1 || colIdx === -1) return null
+
+    if (dir === 'next') {
+      const nextCol = colIdx + 1
+      if (nextCol < EDITABLE_COLS.length) return { rowId, col: EDITABLE_COLS[nextCol] }
+      const nextRow = rowIdx + 1
+      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col: EDITABLE_COLS[0] }
+    }
+    if (dir === 'prev') {
+      const prevCol = colIdx - 1
+      if (prevCol >= 0) return { rowId, col: EDITABLE_COLS[prevCol] }
+      const prevRow = rowIdx - 1
+      if (prevRow >= 0) return { rowId: visible[prevRow].id, col: EDITABLE_COLS[EDITABLE_COLS.length - 1] }
+    }
+    if (dir === 'down') {
+      const nextRow = rowIdx + 1
+      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col }
+    }
+    if (dir === 'up') {
+      const prevRow = rowIdx - 1
+      if (prevRow >= 0) return { rowId: visible[prevRow].id, col }
+    }
+    return null
+  }
+
+  // ── Keyboard handler for editing ──────────────────────────────────────────
+  const handleKeyDown = (e: React.KeyboardEvent, rowId: string, col: string) => {
+    const multiline = ['COMMIT', 'NOTE', 'DESTINATION'].includes(col)
+
+    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return }
+
+    if (e.key === 'Enter' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'down')
+      saveCell(rowId, col, cellValue, true).then(() => {
+        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
+      })
+      return
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const dir = e.shiftKey ? 'prev' : 'next'
+      const next = getAdjacentCell(rowId, col, dir)
+      saveCell(rowId, col, cellValue, true).then(() => {
+        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
+      })
+      return
+    }
+
+    if (e.key === 'ArrowDown' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'down')
+      saveCell(rowId, col, cellValue, true).then(() => {
+        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
+      })
+      return
+    }
+
+    if (e.key === 'ArrowUp' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'up')
+      saveCell(rowId, col, cellValue, true).then(() => {
+        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
+      })
+      return
     }
   }
 
-  // ── Status helpers ────────────────────────────────────────────────────────
-  const getStatusStyle = (status: string) => {
-    switch (status.toUpperCase()) {
-      case 'PENDING':
-        return { label: 'Pending', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', borderC: 'rgba(251,146,60,0.3)', icon: Clock }
-      case 'ASSIGNED':
-        return { label: 'Assigned', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', borderC: 'rgba(59,130,246,0.3)', icon: ArrowRight }
-      case 'ON_THE_WAY':
-        return { label: 'On the way', color: '#06B6D4', bg: 'rgba(6,182,212,0.12)', borderC: 'rgba(6,182,212,0.3)', icon: Navigation }
-      case 'IN_PROGRESS':
-        return { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.12)', borderC: 'rgba(16,185,129,0.3)', icon: RefreshCw }
-      case 'COMPLETED':
-        return { label: 'Completed', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', borderC: 'rgba(59,130,246,0.3)', icon: CheckCircle }
-      case 'CANCELLED':
-        return { label: 'Cancelled', color: '#EF4444', bg: 'rgba(239,68,68,0.12)', borderC: 'rgba(239,68,68,0.3)', icon: XCircle }
-      default:
-        return { label: status, color: textMuted, bg: isLight ? '#f8fafc' : '#0F1A2E', borderC: border, icon: Circle }
-    }
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async (ticketId: string) => {
+    if (!confirm('Delete this ticket?')) return
+    setContextMenu(null)
+    try {
+      const res = await fetch(`${API_URL}/tickets/${ticketId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token()}` }
+      })
+      if (!res.ok) throw new Error('Failed')
+      setTickets(p => p.filter(t => t.id !== ticketId))
+      showToast('Deleted')
+    } catch { alert('Could not delete.') }
   }
 
-  // ── Filter tabs (simplified) ─────────────────────────────────────────────────
+  // ── Render cell content ───────────────────────────────────────────────────
+  function renderCell(ticket: Ticket, col: (typeof columns)[0]) {
+    const { label } = col
+    const isThisEditing = editingCell?.rowId === ticket.id && editingCell?.col === label
+    const isEditable    = EDITABLE_COLS.includes(label)
 
-  const filteredTickets = tickets.filter(t => {
-    const s = t.status.toUpperCase()
-    if (activeTab !== 'ALL') {
-      if (activeTab === 'IN_PROGRESS') {
-        if (s !== 'IN_PROGRESS' && s !== 'ON_THE_WAY') return false
-      } else if (s !== activeTab) {
-        return false
+    // ── EDITING STATE ──
+    if (isThisEditing) {
+      const inputClass = 'w-full text-xs rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-green-500 font-medium'
+      const inputSt    = { backgroundColor: editCellBg, border: `1.5px solid ${green}`, color: textPrimary }
+
+      if (label === 'STATUS') {
+        return (
+          <select
+            ref={el => { inputRef.current = el }}
+            value={cellValue}
+            onChange={e => setCellValue(e.target.value)}
+            onBlur={() => saveCell(ticket.id, label, cellValue)}
+            onKeyDown={e => handleKeyDown(e as any, ticket.id, label)}
+            className={inputClass} style={inputSt}>
+            {STATUS_OPTS.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+          </select>
+        )
       }
-    }
-    if (!isCustomer) {
-      const assignee = getTicketField(t, 'assignedTo')
-      const assigneeName = getTicketField(t, 'assignedEmployeeName', 'assigned_employee_name').toLowerCase()
-      const meName = (user?.name || '').trim().toLowerCase()
-      const meEmail = (user?.email || '').trim().toLowerCase()
-      if (assignmentFilter === 'ASSIGNED_TO_ME') {
-        if (isEmployee) {
-          // Employee view already comes from /tickets/assigned; keep these visible.
-          if (assignee === '—' && assigneeName === '—') return false
-        } else {
-          const nameHit = !!meName && (assigneeName === meName || assigneeName.includes(meName))
-          const emailHit = !!meEmail && (assigneeName === meEmail || assigneeName.includes(meEmail))
-          const idHit = !!meEmail && assignee.toLowerCase() === meEmail
-          if (!nameHit && !emailHit && !idHit) return false
-        }
+
+      const multiline = ['COMMIT', 'NOTE'].includes(label)
+      if (multiline) {
+        return (
+          <textarea
+            ref={el => { inputRef.current = el as any }}
+            value={cellValue}
+            onChange={e => setCellValue(e.target.value)}
+            onBlur={() => saveCell(ticket.id, label, cellValue)}
+            onKeyDown={e => handleKeyDown(e as any, ticket.id, label)}
+            rows={3}
+            className={`${inputClass} resize-none`}
+            style={inputSt} />
+        )
       }
-      if (assignmentFilter === 'UNASSIGNED' && assignee !== '—') return false
+
+      return (
+        <input
+          ref={el => { inputRef.current = el }}
+          type={label === 'CONTACT NO.' ? 'tel' : 'text'}
+          value={cellValue}
+          onChange={e => setCellValue(e.target.value)}
+          onBlur={() => saveCell(ticket.id, label, cellValue)}
+          onKeyDown={e => handleKeyDown(e, ticket.id, label)}
+          className={inputClass} style={inputSt} />
+      )
     }
-    if (dateRange.preset !== 'ALL') {
-      const d = getEffectiveDate(t)
-      if (!isInDateRange(d, dateRange)) return false
+
+    // ── DISPLAY STATE ──
+    const val = getCellDisplay(ticket, label)
+    const truncStyle: React.CSSProperties = col.isExpanded
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.5 }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
+
+    const editHint: React.CSSProperties = isEditable && canEdit
+      ? { cursor: 'text' } : {}
+
+    if (label === 'STATUS') {
+      const sc = statusColor(val, isLight)
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase inline-block"
+              style={{ color: sc.text, backgroundColor: sc.bg, border: `1px solid ${sc.b}` }}>
+          {statusCode(val)}
+        </span>
+      )
     }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      return t.title.toLowerCase().includes(q)
-          || t.id.toLowerCase().includes(q)
-          || shortId(t.id).toLowerCase().includes(q)
-          || (t.customerName ?? '').toLowerCase().includes(q)
-          || (t.customer_name ?? '').toLowerCase().includes(q)
-          || (t.customerEmail ?? '').toLowerCase().includes(q)
-          || (t.customer_email ?? '').toLowerCase().includes(q)
-          || (t.email ?? '').toLowerCase().includes(q)
-          || (t.serviceType ?? '').toLowerCase().includes(q)
-          || (t.service_type ?? '').toLowerCase().includes(q)
-          || (t.assignedEmployeeName ?? '').toLowerCase().includes(q)
-          || (t.assigned_employee_name ?? '').toLowerCase().includes(q)
+
+    if (label === 'SERVICE') {
+      const isInstall = val.toUpperCase().includes('INSTALL')
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase block text-center"
+              style={{
+                backgroundColor: isInstall ? 'rgba(16,185,129,0.10)' : 'rgba(6,182,212,0.10)',
+                color: isInstall ? (isLight ? '#059669' : '#34D399') : (isLight ? '#0891B2' : '#22D3EE'),
+                border: `1px solid ${isInstall ? 'rgba(16,185,129,0.25)' : 'rgba(6,182,212,0.25)'}`,
+              }}>
+          {val || '—'}
+        </span>
+      )
     }
-    return true
-  })
+
+    if (label === 'CONTACT NO.') {
+      const formatted = val ? fmtPhone(val) || val : ''
+      return (
+        <a href={val ? `tel:${val.replace(/\D/g,'').replace(/^0/,'+63')}` : '#'}
+           style={{ color: '#10B981', ...truncStyle, ...editHint }}
+           onClick={e => { if (canEdit) { e.preventDefault(); startEdit(ticket, label) } }}
+           title={val}>
+          {formatted}
+        </a>
+      )
+    }
+
+    if (label === 'NOTE') {
+      return (
+        <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400, ...editHint }}
+              title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
+          {val || ''}
+        </span>
+      )
+    }
+
+    if (label === 'UPDATE') {
+      return (
+        <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400, ...editHint }}
+              title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
+          {val || ''}
+        </span>
+      )
+    }
+
+    if (label === "CUSTOMER'S NAME") {
+      return (
+        <span style={{ ...truncStyle, fontWeight: 600, ...editHint }} title={val}>{val}</span>
+      )
+    }
+
+    return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 pb-8" onClick={() => { setContextMenu(null); if (!saving) cancelEdit() }}>
 
-      {/* ── Page Header ───────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight mb-1" style={{ color: textPrimary }}>Service Tickets</h2>
-          <p className="text-sm" style={{ color: textMuted }}>
-            {loading
-              ? 'Loading…'
-              : isEmployee
-                ? `${tickets.length} job${tickets.length !== 1 ? 's' : ''} assigned to you — open one for customer contact details`
-                : isManager
-                  ? `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} for your branch (customers near your area)`
-                  : `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} total`}
-          </p>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl transition-all"
+             style={{ backgroundColor: green }}>
+          {saving ? '⏳ Saving…' : toast}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Search */}
-          <div
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-            className="flex items-center border rounded-xl px-3 py-2.5 w-48 sm:w-56 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
-          >
-            <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search tickets…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ color: textPrimary }}
-              className="bg-transparent border-none text-sm focus:outline-none w-full placeholder-slate-400"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} style={{ color: textMuted }} className="ml-1 hover:text-red-400 transition-colors shrink-0">
-                <X className="w-4 h-4" />
+      )}
+      {saving && !toast && (
+        <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl"
+             style={{ backgroundColor: '#6366F1' }}>
+          ⏳ Saving…
+        </div>
+      )}
+
+      {/* ── Header bar ── */}
+      <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm"
+           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="flex flex-wrap items-center gap-3">
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold"
+                 style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder, color: textMuted }}>
+              <Building2 className="w-3.5 h-3.5 shrink-0" />
+              <span>{globalBranchId || 'All branches'}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+                   className="bg-transparent outline-none cursor-pointer font-bold"
+                   style={{ color: textPrimary }} />
+            {dateFilter && (
+              <button onClick={e => { e.stopPropagation(); setDateFilter('') }} style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          <button
-            onClick={fetchTickets}
-            title="Refresh"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-            className="flex items-center gap-2 border px-4 py-2.5 rounded-xl font-bold text-sm hover:text-[#10B981] hover:border-[#10B981] transition-all"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+            <input type="text" placeholder="Search..." value={searchQuery}
+                   onChange={e => setSearchQuery(e.target.value)}
+                   className="bg-transparent outline-none text-xs flex-1 font-medium"
+                   style={{ color: textPrimary }}
+                   onClick={e => e.stopPropagation()} />
+            {searchQuery && (
+              <button onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           {isCustomer && (
-            <button
-              onClick={() => navigate('/tickets/create')}
-              className="flex items-center gap-2 bg-[#10B981] hover:bg-[#059669] text-white px-4 py-2.5 rounded-xl font-bold text-sm transition-all"
-            >
-              <Plus className="w-4 h-4" /> New Ticket
+            <button onClick={() => navigate('/tickets/create')}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm"
+                    style={{ backgroundColor: green }}>
+              <Plus className="w-3.5 h-3.5" /> New Ticket
             </button>
           )}
         </div>
       </div>
-      {fetchError && tickets.length > 0 && (
-        <div
-          className="px-3 py-2 rounded-lg text-xs font-semibold border flex items-center justify-between gap-2"
-          style={{ color: '#F59E0B', backgroundColor: isLight ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.35)' }}
-        >
-          <span>{fetchError} Showing last loaded tickets.</span>
-          <button onClick={fetchTickets} className="px-2 py-1 rounded text-[11px] font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
+
+      {/* Stats bar */}
+      {!loading && tickets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
+             style={{ backgroundColor: cardBg, borderColor: border }}>
+          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
+          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>Pending</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(251,146,60,0.15)', color: '#FB923C' }}>{counts.pending}</span>
+          </div>
+          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>Assigned</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.assigned}</span>
+          </div>
+          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>In Progress</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.inProgress}</span>
+          </div>
         </div>
       )}
 
-      {/* ── Filter Tabs ── */}
-      <div className="flex p-1 rounded-xl border w-full md:w-fit" style={{ backgroundColor: cardBg, borderColor: border }}>
-        {[
-          { key: 'ALL', label: 'All', color: 'slate' },
-          { key: 'PENDING', label: 'Pending', color: 'amber' },
-          ...(!isCustomer ? [{ key: 'ASSIGNED', label: 'Assigned', color: 'blue' }] as const : []),
-          { key: 'ON_THE_WAY', label: 'OTW', color: 'cyan' },
-          { key: 'IN_PROGRESS', label: 'In Progress', color: 'emerald' },
-          { key: 'COMPLETED', label: 'Completed', color: 'blue' },
-          { key: 'CANCELLED', label: 'Cancelled', color: 'slate' }
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setStatusFilter(t.key)}
-            className={`flex-1 md:flex-none px-4 sm:px-5 py-2 rounded-lg text-xs font-black transition-all duration-200 uppercase tracking-widest ${
-              activeTab === t.key 
-                ? t.color === 'emerald' ? 'bg-emerald-500 text-white shadow-md' : t.color === 'amber' ? 'bg-amber-500 text-white shadow-md' : t.color === 'blue' ? 'bg-blue-500 text-white shadow-md' : t.color === 'cyan' ? 'bg-cyan-500 text-white shadow-md' : 'bg-slate-600 text-white shadow-md'
-                : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {!isCustomer && (
-          <select
-            value={assignmentFilter}
-            onChange={e => setAssignmentFilter(e.target.value as 'ALL' | 'ASSIGNED_TO_ME' | 'UNASSIGNED')}
-            className="px-3 py-2 rounded-lg border text-xs font-semibold"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-          >
-            <option value="ALL">All assignments</option>
-            <option value="ASSIGNED_TO_ME">Assigned to me</option>
-            <option value="UNASSIGNED">Unassigned</option>
-          </select>
-        )}
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
-      </div>
-
-      {/* ── Main Card ─────────────────────────────────────────── */}
-      <div className="relative">
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="border rounded-2xl flex flex-col overflow-hidden shadow-sm">
-
-        {/* ── Mobile card list (< md) ───────────────────────────── */}
-        <div className="md:hidden flex flex-col">
-          {loading ? (
-            <div className="p-10 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</div>
-          ) : fetchError && tickets.length === 0 ? (
-            <div className="p-10 flex flex-col items-center justify-center gap-2">
-              <FileText className="w-12 h-12 opacity-20" style={{ color: textMuted }} />
-              <h3 className="text-base font-bold" style={{ color: textPrimary }}>Could not load tickets</h3>
-              <p className="text-sm" style={{ color: textMuted }}>{fetchError}</p>
-              <button onClick={fetchTickets} className="mt-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
-            </div>
-          ) : filteredTickets.length === 0 ? (
-            <div className="p-10 flex flex-col items-center justify-center gap-2">
-              <FileText className="w-12 h-12 opacity-20" style={{ color: textMuted }} />
-              <h3 className="text-base font-bold" style={{ color: textPrimary }}>{tickets.length === 0 ? 'No tickets yet' : 'No tickets found'}</h3>
-              <p className="text-sm" style={{ color: textMuted }}>
-                {tickets.length === 0 ? 'No records are available for this view yet.' : 'Try adjusting your search or filter.'}
-              </p>
-            </div>
-          ) : filteredTickets.map((ticket, idx) => {
-            const st = getStatusStyle(ticket.status)
-            const StatusIcon = st.icon
-            return (
-              <div
-                key={ticket.id}
-                style={{ borderColor: border }}
-                className={`flex items-center gap-3 px-4 py-4 cursor-pointer active:opacity-70 transition-opacity${idx < filteredTickets.length - 1 ? ' border-b' : ''}`}
-                onClick={() => { setSelectedTicket(ticket); setShowViewModal(true) }}
-              >
-                {/* Icon */}
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${st.color}18`, color: st.color }}>
-                  <FileText className="w-5 h-5" />
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-sm truncate" style={{ color: textPrimary }}>{ticket.title}</div>
-                  <div className="text-xs mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: textMuted }}>
-                    <span className="font-mono font-semibold">{shortId(ticket.id)}</span>
-                    <span>·</span>
-                    {!isCustomer && <><span>{ticket.customerName || 'Unknown'}</span><span>·</span></>}
-                    <span>{formatDate(ticket.createdAt || ticket.created_at)}</span>
-                  </div>
-                  {isEmployee && (ticket.contactPhone || ticket.contact_phone) && (
-                    <div className="text-[11px] mt-1 flex items-center gap-1 font-semibold" style={{ color: '#10B981' }}>
-                      <Phone className="w-3 h-3 shrink-0" />
-                      <span>{ticket.contactPhone || ticket.contact_phone}</span>
-                    </div>
-                  )}
-                  <div className="text-[11px] mt-1 opacity-80 truncate max-w-[200px]" style={{ color: textMuted }}>
-                    {formatLocation(ticket.location)}
-                  </div>
-                </div>
-
-                {/* Status badge */}
-                <div
-                  style={{ color: st.color, backgroundColor: st.bg, borderColor: st.borderC }}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-full border shrink-0"
-                >
-                  <StatusIcon className="w-3 h-3" />
-                  <span className="hidden xs:inline">{st.label}</span>
-                </div>
-
-                <ArrowRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              </div>
-            )
-          })}
+      {/* Error */}
+      {fetchError && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-semibold"
+             style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.3)' }}>
+          <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
+          <button onClick={fetchTickets} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
         </div>
+      )}
 
-        {/* ── Desktop table (>= md) ── */}
-        <div className="hidden md:block">
-          <table className="w-full text-left table-fixed">
-            <thead>
-              <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-[10px] uppercase tracking-[0.1em] font-black">
-                <th style={{ borderColor: border, width: isCustomer ? '18%' : '20%' }} className="px-6 py-3 border-b">Ticket</th>
-                {isCustomer && <th style={{ borderColor: border, width: '14%' }} className="px-4 py-3 border-b">Service</th>}
-                {!isCustomer && <th style={{ borderColor: border, width: '14%' }} className="px-4 py-3 border-b">Customer</th>}
-                <th style={{ borderColor: border, width: '28%' }} className="px-4 py-3 border-b">Address</th>
-                <th style={{ borderColor: border, width: isCustomer ? '15%' : '12%' }} className="px-4 py-3 border-b">Date</th>
-                <th style={{ borderColor: border, width: isCustomer ? '16%' : '13%' }} className="px-4 py-3 border-b">Status</th>
-                <th style={{ borderColor: border, width: '5%' }} className="px-4 py-3 border-b">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: textMuted }}>Loading tickets…</td></tr>
-              ) : fetchError && tickets.length === 0 ? (
-                <tr><td colSpan={6} className="py-16 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-                    <p className="text-sm font-semibold" style={{ color: textPrimary }}>Could not load tickets</p>
-                    <button onClick={fetchTickets} className="mt-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669]">Retry</button>
-                  </div>
-                </td></tr>
-              ) : filteredTickets.length === 0 ? (
-                <tr><td colSpan={6} className="py-16 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <FileText className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-                    <p className="text-sm font-semibold" style={{ color: textPrimary }}>{tickets.length === 0 ? 'No tickets yet' : 'No tickets found'}</p>
-                    <p className="text-xs" style={{ color: textMuted }}>
-                      {tickets.length === 0 ? 'No records are available for this view yet.' : 'Try adjusting your search or filter.'}
-                    </p>
-                  </div>
-                </td></tr>
-              ) : filteredTickets.map(ticket => {
-                const st = getStatusStyle(ticket.status)
-                const StatusIcon = st.icon
-                const isMenuOpen = openMenuId === ticket.id
-                return (
-                  <tr
-                    key={ticket.id}
-                    style={{ borderBottom: `1px solid ${border}` }}
-                    className="transition-colors cursor-pointer"
-                    onClick={() => { setSelectedTicket(ticket); setShowViewModal(true) }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}
-                  >
-                    {/* Ticket */}
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-sm font-mono" style={{ color: textPrimary }}>{shortId(ticket.id)}</div>
-                      <div className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{ticket.title}</div>
-                    </td>
-                    {isCustomer && (
-                      <td className="px-4 py-4">
-                        <span className="text-sm" style={{ color: textPrimary }}>{getTicketField(ticket, 'serviceType', 'service_type')}</span>
-                      </td>
-                    )}
-                    {/* Customer */}
-                    {!isCustomer && (
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <span className="text-sm truncate font-semibold" style={{ color: textPrimary }}>{ticket.customerName || ticket.customer_name || '—'}</span>
-                          {getTicketField(ticket, 'customerEmail', 'customer_email', 'email') !== '—' && (
-                            <span className="text-[11px] truncate opacity-80" style={{ color: textMuted }}>{getTicketField(ticket, 'customerEmail', 'customer_email', 'email')}</span>
-                          )}
-                          {isEmployee && getTicketField(ticket, 'contactPhone', 'contact_phone') !== '—' && (
-                            <span className="text-[11px] truncate flex items-center gap-1 font-semibold" style={{ color: '#10B981' }}>
-                              <Phone className="w-3 h-3 shrink-0" />
-                              {getTicketField(ticket, 'contactPhone', 'contact_phone')}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                    {/* Address */}
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: textMuted }}>
-                         <span className="truncate">{formatLocation(ticket.location)}</span>
-                      </div>
-                    </td>
-                    {/* Date */}
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-xs" style={{ color: textMuted }}>{formatDate(ticket.createdAt || ticket.created_at)}</span>
-                    </td>
-                    {/* Status */}
-                    <td className="px-4 py-4">
-                      <div style={{ color: st.color, backgroundColor: st.bg, borderColor: st.borderC }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-full border whitespace-nowrap">
-                        <StatusIcon className="w-3 h-3" />{st.label}
-                      </div>
-                    </td>
-                    {/* 3-dot menu */}
-                    <td className="px-4 py-4 text-right" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect()
-                          setMenuPosition({
-                            top: rect.bottom + window.scrollY + 4,
-                            left: rect.right + window.scrollX - 176 // 176px = w-44 width
-                          })
-                          setOpenMenuId(isMenuOpen ? null : ticket.id)
-                        }}
-                        className="p-2 rounded-lg transition-colors hover:bg-opacity-80"
-                        style={{ color: textMuted }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = rowHover}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── Popup Menu (rendered outside table) ─────────────────── */}
-      {openMenuId && menuPosition && (() => {
-        const ticket = tickets.find(t => t.id === openMenuId)
-        if (!ticket) return null
-        
-        return (
-          <div 
-            ref={menuRef}
-            className="fixed w-44 rounded-lg shadow-2xl z-[100] overflow-hidden"
-            style={{ 
-              backgroundColor: cardBg, 
-              border: `1px solid ${border}`,
-              boxShadow: isLight 
-                ? '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' 
-                : '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
-              top: `${menuPosition.top}px`,
-              left: `${menuPosition.left}px`
-            }}
-          >
-            <button 
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
-              style={{ color: textPrimary }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(16,185,129,0.1)'
-                ;(e.currentTarget as HTMLElement).style.color = '#10B981'
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = ''
-                ;(e.currentTarget as HTMLElement).style.color = textPrimary
-              }}
-              onClick={() => { 
-                setSelectedTicket(ticket)
-                setShowViewModal(true)
-                setOpenMenuId(null)
-                setMenuPosition(null)
-              }}
-            >
-              <FileText className="w-4 h-4 shrink-0" /> 
-              <span>View Details</span>
-            </button>
-            {isAdmin && (
-              <button 
-                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
-                style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.1)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = ''
-                }}
-                onClick={() => { 
-                  setOpenMenuId(null)
-                  setMenuPosition(null)
-                  handleDeleteTicket(ticket.id)
-                }}
-              >
-                <Trash2 className="w-4 h-4 shrink-0" /> 
-                <span>Delete</span>
-              </button>
-            )}
-            {isCustomer && ticket.status.toUpperCase() === 'PENDING' && (
-              <button 
-                type="button"
-                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-semibold text-left transition-all"
-                style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.1)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = ''
-                }}
-                onClick={() => { 
-                  setOpenMenuId(null)
-                  setMenuPosition(null)
-                  handleDeleteTicket(ticket.id)
-                }}
-              >
-                <XCircle className="w-4 h-4 shrink-0" /> 
-                <span>Cancel ticket</span>
-              </button>
+      {/* ── Table card ── */}
+      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+           onClick={e => e.stopPropagation()}>
+        {loading ? (
+          <div className="flex flex-col gap-2 p-5">
+            {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+            <p className="text-sm font-semibold" style={{ color: textMuted }}>
+              {tickets.length === 0 ? 'No active tickets' : 'No tickets match filters'}
+            </p>
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
             )}
           </div>
-        )
-      })()}
+        ) : (
+          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+                <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
+                  <th style={{
+                    padding: '9px 8px', color: textMuted, fontWeight: 700, fontSize: '10px',
+                    letterSpacing: '0.07em', whiteSpace: 'nowrap', borderRight: `1px solid ${border}`,
+                    position: 'sticky', left: 0, zIndex: 15, backgroundColor: theadBg, width: 36, textAlign: 'center'
+                  }}>#</th>
+                  {columns.map(col => (
+                    <th key={col.label}
+                        onClick={() => toggleCol(col.label)}
+                        style={{
+                          padding: '9px 10px',
+                          color: col.isExpanded ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          fontWeight: 700, whiteSpace: 'nowrap',
+                          borderRight: col.freeze ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}` : `1px solid ${border}`,
+                          fontSize: '10px', letterSpacing: '0.08em',
+                          width: col.width, minWidth: col.width, maxWidth: col.width,
+                          backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
+                          ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 15 } : {}),
+                          ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
+                        }}>
+                      <div className="flex items-center justify-between gap-1">
+                        <span>{col.label}</span>
+                        <span className="opacity-40 text-[9px]">{col.isExpanded ? '◀' : '▶'}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((ticket, idx) => {
+                  const isHovered = hoveredRow === ticket.id
+                  const baseBg   = idx % 2 === 0 ? rowEven : rowOdd
+                  const bg       = isHovered ? rowHover : baseBg
+                  return (
+                    <tr key={ticket.id}
+                        style={{ borderBottom: `1px solid ${border}` }}
+                        onMouseEnter={() => setHoveredRow(ticket.id)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                        onContextMenu={e => {
+                          e.preventDefault()
+                          if (canEdit || isAdmin) setContextMenu({ x: e.clientX, y: e.clientY, ticket })
+                        }}>
 
-      {/* ── Detail Screen ─────────────────────────────────────── */}
-      {showViewModal && selectedTicket && (() => {
-        const st        = getStatusStyle(selectedTicket.status)
-        const isPending = selectedTicket.status.toUpperCase() === 'PENDING'
-        const canChange = !isCustomer
-        const acDetails = parseAcDetails(selectedTicket)
-        const techName = getTicketField(selectedTicket, 'assignedEmployeeName', 'assigned_employee_name')
-        const custName = getTicketField(selectedTicket, 'customerName', 'customer_name')
-        const emailWork = getTicketField(selectedTicket, 'customerEmail', 'customer_email', 'email')
-        const emailPersonal = getTicketField(selectedTicket, 'customerPersonalEmail', 'customer_personal_email')
-        const phoneVal = getTicketField(selectedTicket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-        const addrVal = formatLocation(selectedTicket.location)
-        const phoneLink = phoneVal !== '—' ? telHref(phoneVal) : null
+                      {/* Row # */}
+                      <td style={{
+                        padding: '7px 8px', width: 36, minWidth: 36, maxWidth: 36,
+                        textAlign: 'center', fontWeight: 700, fontSize: '10px',
+                        color: textMuted, borderRight: `1px solid ${border}`,
+                        position: 'sticky', left: 0, zIndex: 5,
+                        backgroundColor: bg,
+                        borderBottom: `1px solid ${border}`,
+                      }}>
+                        {idx + 1}
+                      </td>
 
-        const infoRows = [
-          ...(isCustomer
-            ? [
-                { label: 'Customer', value: custName },
-                { label: 'Email', value: emailWork },
-                { label: 'Phone', value: phoneVal },
-              ]
-            : []),
-          { label: 'Address', value: addrVal },
-          { label: 'Service', value: getTicketField(selectedTicket, 'serviceType', 'service_type') },
-          { label: 'Unit Type', value: getTicketField(selectedTicket, 'unitType', 'unit_type') },
-          { label: 'Pref. Date', value: formatDate(selectedTicket.preferredDate || selectedTicket.preferred_date) },
-          { label: 'Submitted', value: formatDate(selectedTicket.createdAt || selectedTicket.created_at) },
-          ...(!isCustomer && techName && techName !== '—' ? [{ label: 'Technician', value: techName }] : []),
-        ].filter(r => r.value && r.value !== '—')
+                      {/* Data cells */}
+                      {columns.map((col) => {
+                        const isThisEditing = editingCell?.rowId === ticket.id && editingCell?.col === col.label
+                        const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
+                        return (
+                          <td key={col.label}
+                              onClick={e => {
+                                e.stopPropagation()
+                                if (isEditable && !isThisEditing) startEdit(ticket, col.label)
+                              }}
+                              style={{
+                                padding: isThisEditing ? '4px 6px' : '7px 10px',
+                                color: textPrimary,
+                                fontSize: '11px', fontWeight: 500,
+                                backgroundColor: isThisEditing ? editCellBg : bg,
+                                borderRight: col.freeze
+                                  ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
+                                  : `1px solid ${border}`,
+                                borderBottom: `1px solid ${border}`,
+                                width: col.width, minWidth: col.width, maxWidth: col.width,
+                                transition: 'background-color 0.1s ease',
+                                cursor: isEditable && !isThisEditing ? 'text' : 'default',
+                                verticalAlign: 'top',
+                                ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
+                                ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
+                              }}>
+                            {renderCell(ticket, col)}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-        return (
-          <div
-            className="absolute top-0 left-0 right-0 z-10 flex flex-col rounded-2xl overflow-hidden min-h-full"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-          >
-            {/* ── Header ── */}
-            <div
-              className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 gap-3"
-              style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0F1A2E' }}
-            >
-              <button
-                onClick={() => { setShowViewModal(false); setEditingDesc(false) }}
-                className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-60 transition-opacity shrink-0"
-                style={{ color: textMuted }}
-              >
-                <ChevronLeft className="w-4 h-4" /> Back
-              </button>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-black truncate" style={{ color: textPrimary }}>
-                  {selectedTicket.title}
+      </div>
+
+      {/* ── Right-click context menu ── */}
+      {contextMenu && (
+        <div className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
+             onClick={e => e.stopPropagation()}>
+          <div className="rounded-2xl shadow-2xl overflow-hidden"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
+
+            {/* Current status label */}
+            <div className="px-4 py-2.5 flex items-center gap-2"
+                 style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+              {(() => { const sc = statusColor(contextMenu.ticket.status, isLight); return (
+                <span className="px-2 py-0.5 rounded text-[10px] font-black border"
+                      style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
+                  {statusCode(contextMenu.ticket.status)}
                 </span>
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0" style={{ color: st.color, backgroundColor: st.bg }}>
-                  {shortId(selectedTicket.id)}
-                </span>
-              </div>
-              <span
-                className="shrink-0 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wide text-white"
-                style={{ backgroundColor: st.color }}
-              >
-                {st.label}
+              ) })()}
+              <span className="text-[11px] font-bold truncate" style={{ color: textMuted }}>
+                {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0,3).join(' ')}
               </span>
             </div>
 
-            {/* ── Body ── */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            {/* View full details */}
+            <button onClick={() => { setDetailTicket(contextMenu.ticket); setContextMenu(null) }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                    style={{ color: textPrimary }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+              <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+              View Full Details
+            </button>
 
-                {/* ── Left column ── */}
-                <div className="flex flex-col gap-4">
+            {/* Edit update note */}
+            {canEdit && (
+              <button onClick={() => { startEdit(contextMenu.ticket, 'UPDATE'); setContextMenu(null) }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                      style={{ color: textPrimary }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
+                Edit Update
+              </button>
+            )}
 
-                  {isCustomer && (selectedTicket.status.toUpperCase() === 'IN_PROGRESS' || selectedTicket.status.toUpperCase() === 'ON_THE_WAY') && (getTicketField(selectedTicket, 'assignedTo') !== '—' || getTicketField(selectedTicket, 'assigned_to') !== '—' || getTicketField(selectedTicket, 'assigned_employee_id') !== '—') && (
-                    <div className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${border}`, height: '300px' }}>
-                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest flex items-center gap-2" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: '#10B981', borderBottom: `1px solid ${border}` }}>
-                        <Navigation className="w-3.5 h-3.5 shrink-0" /> Technician is on the way!
-                      </div>
-                      <div className="flex-1 relative">
-                        <FleetMap driverId={getTicketField(selectedTicket, 'assignedTo', 'assigned_to', 'assigned_employee_id')} />
-                      </div>
-                    </div>
-                  )}
+            {/* Delete — admin only */}
+            {isAdmin && (
+              <button onClick={() => handleDelete(contextMenu.ticket.id)}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                      style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.06)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-                  {!isCustomer && (
-                    <div
-                      className="rounded-xl overflow-hidden"
-                      style={{
-                        border: `1px solid rgba(16,185,129,0.45)`,
-                        backgroundColor: isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.09)',
-                      }}
-                    >
-                      <div
-                        className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
-                        style={{ borderBottom: `1px solid ${border}`, color: '#10B981' }}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 shrink-0" /> Customer contact
-                        </span>
-                        {selectedTicket.status.toUpperCase() === 'COMPLETED' && (
-                          <span className="text-[10px] font-bold normal-case tracking-normal opacity-90" style={{ color: textMuted }}>
-                            Job completed — details stay here for your records
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-4 flex flex-col gap-3">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: textMuted }}>Customer</p>
-                          <p className="text-base font-black leading-tight" style={{ color: textPrimary }}>
-                            {custName !== '—' ? custName : '—'}
-                          </p>
-                        </div>
-                        {emailWork !== '—' ? (
-                          <a
-                            href={`mailto:${emailWork}`}
-                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
-                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
-                          >
-                            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
-                            <span className="min-w-0 break-all">
-                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Account email</span>
-                              {emailWork}
-                            </span>
-                          </a>
-                        ) : emailPersonal !== '—' ? (
-                          <a
-                            href={`mailto:${emailPersonal}`}
-                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
-                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
-                          >
-                            <Mail className="w-4 h-4 shrink-0 mt-0.5" />
-                            <span className="min-w-0 break-all">
-                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Email</span>
-                              {emailPersonal}
-                            </span>
-                          </a>
-                        ) : (
-                          <p className="text-xs" style={{ color: textMuted }}>No email on file for this customer.</p>
-                        )}
-                        {emailPersonal !== '—'
-                          && emailWork !== '—'
-                          && emailPersonal.trim().toLowerCase() !== emailWork.trim().toLowerCase() && (
-                          <a
-                            href={`mailto:${emailPersonal}`}
-                            className="flex items-start gap-2.5 text-sm font-semibold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
-                            style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: textPrimary, border: `1px solid ${border}` }}
-                          >
-                            <Mail className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
-                            <span className="min-w-0 break-all">
-                              <span className="text-[10px] font-bold uppercase tracking-wide block mb-0.5" style={{ color: textMuted }}>Personal email</span>
-                              {emailPersonal}
-                            </span>
-                          </a>
-                        )}
-                        {phoneVal !== '—' ? (
-                          phoneLink ? (
-                            <a
-                              href={phoneLink}
-                              className="flex items-center gap-2.5 text-sm font-bold rounded-lg px-3 py-2 transition-colors hover:opacity-90"
-                              style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', color: '#10B981', border: `1px solid ${border}` }}
-                            >
-                              <Phone className="w-4 h-4 shrink-0" />
-                              {phoneVal}
-                            </a>
-                          ) : (
-                            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: textPrimary }}>
-                              <Phone className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                              {phoneVal}
-                            </div>
-                          )
-                        ) : (
-                          <p className="text-xs" style={{ color: textMuted }}>No phone on this ticket or customer profile.</p>
-                        )}
-                        {addrVal !== '—' && (
-                          <p className="text-xs leading-relaxed pt-1 border-t" style={{ color: textMuted, borderColor: border }}>
-                            <span className="font-bold" style={{ color: textPrimary }}>Service address · </span>
-                            {addrVal}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
+      {/* ── Full Details Modal ── */}
+      {detailTicket && (() => {
+        const t = detailTicket
+        const sc = statusColor(t.status, isLight)
+        const addr = formatAddress(t.location)
+        const district = parseDistrict(t.location, t.district)
+        const brand = parseBrand(t)
+        const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+        const installer = getF(t, 'assignedEmployeeName', 'assigned_employee_name')
+        const service = getF(t, 'serviceType', 'service_type')
+        const update = t.remarks || ''
+        const note = t.note || ''
+        const commit = getF(t, 'commitTerms', 'description')
+        const custName = getF(t, 'customerName', 'customer_name') || t.title
+        const email = getF(t, 'customerEmail', 'customer_email', 'email')
+        const preferredDate = t.preferredDate || t.preferred_date
+        const dealer = getF(t, 'dealer')
 
-                  {/* Info table */}
-                  <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                    <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                      {isCustomer ? 'Details' : 'Job details'}
-                    </div>
-                    {infoRows.map((row, i) => (
-                      <div
-                        key={row.label}
-                        className="flex items-start gap-3 px-4 py-2.5"
-                        style={{ borderBottom: i < infoRows.length - 1 ? `1px solid ${border}` : 'none' }}
-                      >
-                        <span className="text-[11px] font-bold uppercase tracking-wide w-20 shrink-0 pt-0.5" style={{ color: textMuted }}>
-                          {row.label}
-                        </span>
-                        <span className="text-sm leading-snug flex-1 font-medium" style={{ color: textPrimary }}>
-                          {row.value}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Description */}
-                  <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                    <div className="px-4 py-2.5 flex items-center justify-between text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                      <span>Description</span>
-                      {(isAdmin || isManager || (isCustomer && isPending)) && !editingDesc && (
-                        <button
-                          onClick={() => { setDescDraft(stripEmbeddedAcDetails(selectedTicket.description) === '—' ? '' : (selectedTicket.description || '')); setEditingDesc(true) }}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors hover:text-[#10B981]"
-                          style={{ color: textMuted }}
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                    {editingDesc ? (
-                      <div className="p-3 flex flex-col gap-2">
-                        <textarea
-                          value={descDraft}
-                          onChange={e => setDescDraft(e.target.value)}
-                          rows={5}
-                          className="w-full text-sm rounded-lg px-3 py-2.5 resize-none outline-none focus:ring-1 focus:ring-[#10B981] transition-all"
-                          style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', border: `1px solid ${border}`, color: textPrimary }}
-                        />
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => setEditingDesc(false)}
-                            disabled={descSaving}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
-                            style={{ borderColor: border, color: textMuted }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleSaveDesc}
-                            disabled={descSaving}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669] transition-all disabled:opacity-60"
-                          >
-                            {descSaving ? 'Saving…' : 'Save'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="px-4 py-3 text-sm leading-relaxed" style={{ color: stripEmbeddedAcDetails(selectedTicket.description) === '—' ? textMuted : textPrimary }}>
-                        {stripEmbeddedAcDetails(selectedTicket.description) !== '—' ? stripEmbeddedAcDetails(selectedTicket.description) : 'No description.'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── Right column ── */}
-                <div className="flex flex-col gap-4">
-
-                  {/* AC Configuration */}
-                  {acDetails.length > 0 && (
-                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: '#10B981', borderBottom: `1px solid ${border}` }}>
-                        AC Configuration
-                      </div>
-                      <div className="p-3 flex flex-col gap-2">
-                        {acDetails.map((unit: any, uIdx: number) => {
-                          const unitLabel = unit?.unitType || `Unit ${uIdx + 1}`
-                          const qty       = unit?.quantity || 1
-                          const rows      = Array.isArray(unit?.details) ? unit.details : []
-                          return (
-                            <div key={uIdx} className="rounded-lg p-3" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)', border: `1px solid ${border}` }}>
-                              <p className="text-xs font-black mb-2" style={{ color: textPrimary }}>{unitLabel} ×{qty}</p>
-                              {rows.map((d: any, dIdx: number) => {
-                                const chips: string[] = []
-                                if (d?.brand)      chips.push(`Brand: ${d.brand}`)
-                                if (d?.hp)         chips.push(`HP: ${d.hp}`)
-                                if (d?.technology) chips.push(`Tech: ${d.technology}`)
-                                if (d?.subtype)    chips.push(`Subtype: ${d.subtype}`)
-                                if (d?.feature && d.feature !== 'No special feature') chips.push(`Feature: ${d.feature}`)
-                                if (d?.issueType)  chips.push(`Issue: ${d.issueType}`)
-                                if (d?.refrigerant)chips.push(`Ref: ${d.refrigerant}`)
-                                if (d?.voltage)    chips.push(`Volt: ${d.voltage}`)
-                                if (d?.ageRange)   chips.push(`Age: ${d.ageRange}`)
-                                return (
-                                  <div key={dIdx} className="mb-1 last:mb-0">
-                                    {rows.length > 1 && <p className="text-[10px] font-black mb-1" style={{ color: textMuted }}>{unitLabel} #{dIdx + 1}</p>}
-                                    {chips.length ? (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {chips.map(chip => (
-                                          <span key={chip} className="px-2 py-0.5 rounded-full text-[11px] font-bold border"
-                                            style={{ color: isLight ? '#215531' : '#9FE6B3', backgroundColor: isLight ? '#ECFDF3' : 'rgba(56,180,93,0.14)', borderColor: isLight ? '#BFE7CB' : 'rgba(56,180,93,0.34)' }}>
-                                            {chip}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    ) : <p className="text-xs" style={{ color: textMuted }}>No extra details</p>}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Assign technician (branch manager) */}
-                  {(isManager || isAdmin) && branchTechs.length > 0 && (
-                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                        Assign technician
-                      </div>
-                      <div className="p-3 flex flex-col gap-2">
-                        <p className="text-[11px] leading-snug" style={{ color: textMuted }}>
-                          Tickets here are for your branch (including customers matched to your service area). Choose a technician to dispatch.
-                        </p>
-                        <select
-                          value={assignPick}
-                          onChange={e => setAssignPick(e.target.value)}
-                          disabled={updateLoading}
-                          className="w-full text-sm rounded-lg px-3 py-2.5 outline-none border"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                        >
-                          <option value="">Select technician…</option>
-                          {branchTechs.map(t => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={updateLoading || !assignPick}
-                          onClick={handleAssignTechnician}
-                          className="w-full py-2.5 rounded-lg text-xs font-bold text-white bg-[#3B82F6] hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        >
-                          {updateLoading ? 'Saving…' : 'Assign'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Dispatch scoring + auto-assign (admin/manager, pending only) */}
-                  {(isPending && (isManager || isAdmin)) && (
-                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                        AI Dispatch
-                      </div>
-                      <div className="p-3 flex flex-col gap-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={handleLoadDispatchScores}
-                            disabled={dispatchLoading}
-                            className="py-2.5 rounded-lg text-xs font-bold border transition-all"
-                            style={{ color: textPrimary, borderColor: border, backgroundColor: inputBg }}
-                          >
-                            {dispatchLoading ? 'Loading…' : 'Load AI Scores'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleAutoAssignBest}
-                            disabled={dispatchLoading}
-                            className="py-2.5 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669] disabled:opacity-60 transition-all"
-                          >
-                            Auto-Assign Best
-                          </button>
-                        </div>
-                        {dispatchError && (
-                          <p className="text-xs font-semibold" style={{ color: '#EF4444' }}>{dispatchError}</p>
-                        )}
-                        {dispatchScores.length > 0 && (
-                          <div className="rounded-lg border overflow-hidden" style={{ borderColor: border }}>
-                            {dispatchScores.slice(0, 4).map((row, i) => (
-                              <div
-                                key={row.technicianId}
-                                className="px-3 py-2.5 flex items-center justify-between text-xs"
-                                style={{ borderBottom: i < Math.min(3, dispatchScores.length - 1) ? `1px solid ${border}` : 'none' }}
-                              >
-                                <span style={{ color: textPrimary }} className="font-semibold truncate mr-3">{row.name}</span>
-                                <span style={{ color: textMuted }} className="shrink-0">
-                                  Score <span style={{ color: '#10B981' }} className="font-black">{Number(row.score).toFixed(2)}</span> · Active {row.activeTickets}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Status controls */}
-                  {canChange && (
-                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                      <div className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted, borderBottom: `1px solid ${border}` }}>
-                        Update Status
-                      </div>
-                      <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {getAllowedStatusTransitions(selectedTicket).length === 0 && (
-                          <p className="col-span-full text-xs font-medium" style={{ color: textMuted }}>
-                            No status actions available for this ticket in your role.
-                          </p>
-                        )}
-                        {getAllowedStatusTransitions(selectedTicket).map(s => {
-                          const sStyle  = getStatusStyle(s)
-                          const isActiveS = selectedTicket.status.toUpperCase() === s
-                          return (
-                            <button
-                              key={s}
-                              disabled={updateLoading}
-                              onClick={() => handleUpdateStatus(selectedTicket.id, s)}
-                              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-[12px] font-bold border transition-all"
-                              style={isActiveS
-                                ? { color: sStyle.color, backgroundColor: sStyle.bg, borderColor: sStyle.color }
-                                : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
-                              }
-                            >
-                              <span>{sStyle.label}</span>
-                              {isActiveS && <ArrowRight className="w-3 h-3 shrink-0" />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
+        const Row = ({ icon: Icon, label, val, color }: { icon: any; label: string; val: string; color?: string }) =>
+          val ? (
+            <div className="flex items-start gap-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+              <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: textMuted }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: textMuted }}>{label}</p>
+                <p className="text-xs font-semibold leading-relaxed break-words" style={{ color: color || textPrimary }}>{val}</p>
               </div>
             </div>
+          ) : null
 
-            {/* ── Footer: compact corner actions (same pattern for customers as staff) ── */}
-            <div
-              className="flex-shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-3"
-              style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
-            >
-              <div className="flex items-center min-h-[36px]">
-                {isCustomer && isPending && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTicket(selectedTicket.id)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-red-500/10"
-                    style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.35)' }}
-                  >
-                    <XCircle className="w-3.5 h-3.5 shrink-0" />
-                    Cancel
-                  </button>
-                )}
-                {!isCustomer && isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTicket(selectedTicket.id)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-red-500/10"
-                    style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.35)' }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                    Delete
-                  </button>
-                )}
+        return (
+          <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 sm:p-6"
+               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}
+               onClick={() => setDetailTicket(null)}>
+            <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden"
+                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                 onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
+                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Ticket Details</p>
+                  <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
+                        style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
+                    <Clock className="w-3 h-3" />{t.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <button onClick={() => setDetailTicket(null)}
+                        className="p-2 rounded-lg shrink-0 hover:bg-slate-500/10 transition-colors"
+                        style={{ color: textMuted }}>
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => { setShowViewModal(false); setEditingDesc(false) }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white bg-[#10B981] hover:bg-[#059669] transition-all shrink-0"
-              >
-                <Check className="w-3.5 h-3.5 shrink-0" />
-                Done
-              </button>
+
+              {/* Two Column Body */}
+              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
+                
+                {/* Left Column: Details */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-1">
+                  <Row icon={User}    label="Customer"   val={custName} />
+                  <Row icon={Phone}   label="Contact"    val={phone ? (fmtPhone(phone) || phone) : ''} />
+                  <Row icon={Mail}    label="Email"      val={email} />
+                  <Row icon={MapPin}  label="Address"    val={addr} />
+                  <Row icon={MapPin}  label="District"   val={district} />
+                  <Row icon={Wrench}  label="Service"    val={service} />
+                  <Row icon={Wrench}  label="Brand / Unit" val={brand} />
+                  <Row icon={Wrench}  label="Dealer"     val={dealer} />
+                  <Row icon={User}    label="Installer"  val={installer} />
+                  <Row icon={Clock}   label="Preferred Date" val={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''} />
+                  
+                  {commit && (
+                    <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Commit / Description</p>
+                      <p className="text-xs leading-relaxed" style={{ color: textPrimary }}>{commit}</p>
+                    </div>
+                  )}
+                  {note && (
+                    <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Note</p>
+                      <p className="text-xs leading-relaxed font-semibold" style={{ color: '#EF4444' }}>{note}</p>
+                    </div>
+                  )}
+                  {update && (
+                    <div className="py-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Update</p>
+                      <p className="text-xs leading-relaxed font-semibold" style={{ color: green }}>{update}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Update History */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
+                     style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
+                    Update History
+                  </h4>
+                  
+                  {loadingHistory ? (
+                    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2">
+                      <Clock className="w-5 h-5 animate-spin" style={{ color: textMuted }} />
+                      <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs...</span>
+                    </div>
+                  ) : (
+                    <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
+                      {(() => {
+                        const listToRender = [...history]
+                        const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
+                        
+                        if (!hasSubmission && t.createdAt) {
+                          listToRender.push({
+                            id: 'initial-sub',
+                            changeNote: 'Submitted',
+                            changedByUserName: custName,
+                            createdAt: t.createdAt,
+                            newPreferredDate: preferredDate
+                          })
+                        }
+                        
+                        listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        
+                        if (listToRender.length === 0) {
+                          return (
+                            <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
+                              No update history recorded.
+                            </div>
+                          )
+                        }
+
+                        return listToRender.map((h, idx) => {
+                          const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                            month: 'short', day: 'numeric', year: 'numeric',
+                            hour: 'numeric', minute: '2-digit', hour12: true
+                          })
+                          
+                          return (
+                            <div key={h.id || idx} className="relative">
+                              <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
+                                    style={{
+                                      borderColor: idx === 0 ? green : border,
+                                      backgroundColor: idx === 0 ? green : cardBg
+                                    }} />
+                              
+                              <div className="text-xs">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                    {h.changeNote || 'Ticket details updated'}
+                                  </span>
+                                  <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                    {dt}
+                                  </span>
+                                </div>
+                                
+                                <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                                  <p className="text-[10px] font-semibold">
+                                    By: <span className="font-bold" style={{ color: textPrimary }}>{h.changedByUserName || 'System'}</span>
+                                  </p>
+                                  {h.newStatus && h.newStatus !== h.previousStatus && (
+                                    <p className="text-[10px]">
+                                      Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                    </p>
+                                  )}
+                                  {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                    <p className="text-[10px]">
+                                      Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
+                                    </p>
+                                  )}
+                                  {h.newAssignedToName && (
+                                    <p className="text-[10px]">
+                                      Assigned: <span className="font-bold text-teal-500">{h.newAssignedToName}</span>
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
+                   style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                {canEdit && (
+                  <button onClick={() => { startEdit(t, 'UPDATE'); setDetailTicket(null) }}
+                          className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
+                          style={{ borderColor: inputBorder, color: textPrimary }}>
+                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
+                    Edit Update
+                  </button>
+                )}
+
+              </div>
             </div>
           </div>
         )
       })()}
-      </div>
+
+      {/* ── Completion Prompt Modal ── */}
+      {completionPrompt && (() => {
+        const cp = completionPrompt
+        const t = cp.ticket
+        const custName = getF(t, 'customerName', 'customer_name') || t.title
+
+        const handleSubmitCompletion = async (e: React.FormEvent) => {
+          e.preventDefault()
+          setCompletionPrompt(null)
+          setSaving(true)
+          
+          try {
+            const d = new Date()
+            const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+            // 1. Post to Daily Service Report
+            const serviceReportPayload = {
+              branchId: t.branchId || localStorage.getItem('ashcol-global-branch-id') || '',
+              reportDate: todayStr,
+              customerName: custName,
+              customerAddress: formatAddress(t.location),
+              customerPhone: getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+              district: parseDistrict(t.location, t.district),
+              serviceType: getF(t, 'serviceType', 'service_type') || 'INSTALLATION',
+              statusCode: 'I',
+              commitTerms: getF(t, 'commitTerms', 'description') || t.description || '',
+              dealer: getF(t, 'dealer'),
+              unitBrandModel: parseBrand(t),
+              technicianName: getF(t, 'assignedEmployeeName', 'assigned_employee_name'),
+              amountCharged: parseFloat(cp.amount) || 0,
+              paymentStatus: cp.modeOfPayment,
+              jobStatus: 'COMPLETED',
+              remarks: cp.value || 'Installed',
+              note: t.note || '',
+              controlNumber: t.controlNumber || ''
+            }
+
+            const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token()}`
+              },
+              body: JSON.stringify(serviceReportPayload)
+            })
+            if (!reportRes.ok) throw new Error('Failed to create Service Report')
+
+            // 2. Delete the ticket from the active list
+            const deleteRes = await fetch(`${API_URL}/tickets/${t.id}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token()}`
+              }
+            })
+            if (!deleteRes.ok) throw new Error('Failed to delete Ticket')
+
+            // 3. Remove from local list state
+            setTickets(prev => prev.filter(x => x.id !== t.id))
+            showToast('Ticket completed & moved to Service Report ✓')
+          } catch (error: any) {
+            console.error('Error completing ticket:', error)
+            alert(`Could not complete ticket: ${error.message || 'Unknown error'}`)
+          } finally {
+            setSaving(false)
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
+            <form onSubmit={handleSubmitCompletion}
+                  className="flex flex-col w-full max-w-md rounded-3xl shadow-2xl p-6 gap-4"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                  onClick={e => e.stopPropagation()}>
+              
+              <div className="flex flex-col gap-1">
+                <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
+                  Complete Ticket: {custName}
+                </h3>
+                <p className="text-[10px] font-semibold" style={{ color: textMuted }}>
+                  Enter payment details to move this ticket to the Service Report.
+                </p>
+              </div>
+
+              {/* Mode of Payment select */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                  Mode of Payment
+                </label>
+                <select
+                  value={cp.modeOfPayment}
+                  onChange={e => setCompletionPrompt(prev => prev ? { ...prev, modeOfPayment: e.target.value } : null)}
+                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                  <option value="CASH">CASH</option>
+                  <option value="BANK TRANSFER">BANK TRANSFER</option>
+                  <option value="GCASH">GCASH</option>
+                  <option value="CHEQUE">CHEQUE</option>
+                </select>
+              </div>
+
+              {/* Amount charged */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                  Amount Charged (₱)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="0.00"
+                  value={cp.amount}
+                  onChange={e => setCompletionPrompt(prev => prev ? { ...prev, amount: e.target.value } : null)}
+                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCompletionPrompt(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
+                  style={{ borderColor: inputBorder, color: textPrimary }}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
+                  style={{ backgroundColor: green }}>
+                  Confirm & Move
+                </button>
+              </div>
+
+            </form>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -75,6 +75,7 @@ export default function App() {
               <Route path="/create-ticket" element={<CreateTicket />} />
               <Route path="/schedules" element={<ClientMasterlist />} />
               <Route path="/branches" element={<Branches />} />
+              <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/profile" element={<Profile />} />
 
