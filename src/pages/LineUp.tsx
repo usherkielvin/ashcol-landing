@@ -1066,10 +1066,56 @@ export default function LineUp() {
 
   // ── Totals ───────────────────────────────────────────────────────────────
 
-  const totalUnits    = rows.reduce((acc, r) => { const m = r.remarks?.match(/\((\d+)\s*UNIT/i); return acc + (m ? parseInt(m[1]) : 0) }, 0)
-  const totalSurvey   = rows.filter(r => /SURVEY/i.test(r.remarks || '') || /SURVEY/i.test(r.route || '')).length
-  const totalBackJob  = rows.filter(r => /BACK\s*JOB/i.test(r.remarks || '')).length
-  const totalDismantle = rows.filter(r => /DISMANTLE/i.test(r.remarks || '') || /DISMANTLE/i.test(r.route || '')).length
+  const sumAllUnits = (text: string): number => {
+    const regex = /(\d+)\s*UNIT/gi
+    let match
+    let total = 0
+    while ((match = regex.exec(text)) !== null) {
+      total += parseInt(match[1], 10) || 0
+    }
+    return total
+  }
+
+  const totalUnits = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    if (!/INSTALL/i.test(remarks)) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/INSTALL/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
+
+  const totalSurvey = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    const route = r.route || ''
+    if (!/SURVEY/i.test(remarks) && !/SURVEY/i.test(route)) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/SURVEY/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
+
+  const totalBackJob = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    if (!/BACK\s*JOB/i.test(remarks)) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/BACK\s*JOB/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
+
+  const totalDismantle = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    const route = r.route || ''
+    const isServiceDismantle = /DISMANTLE/i.test(remarks) || /DISMANTLE/i.test(route) ||
+                               /CLEANING/i.test(remarks) || /CHECK\s*UP/i.test(remarks) ||
+                               /SERVICE/i.test(remarks)
+    if (!isServiceDismantle) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/DISMANTLE|CLEANING|CHECK\s*UP|SERVICE/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
 
   // ── Scan Image ───────────────────────────────────────────────────────────
 

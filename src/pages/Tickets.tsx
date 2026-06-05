@@ -321,6 +321,7 @@ export default function Tickets() {
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importRowRange, setImportRowRange] = useState('6-21')
+  const [importSourceFile, setImportSourceFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
     isOpen: boolean
@@ -344,9 +345,7 @@ export default function Tickets() {
     })
   }
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const parseImportFile = async (file: File, rowRangeValue = importRowRange) => {
     setImporting(true)
 
     try {
@@ -381,7 +380,7 @@ export default function Tickets() {
       }
 
       const headers = grid[headerIdx].map((h: any) => String(h ?? '').toUpperCase().trim())
-      const rowRange = parseExcelRowRange(importRowRange, grid.length, headerIdx + 1)
+      const rowRange = parseExcelRowRange(rowRangeValue, grid.length, headerIdx + 1)
       if (!rowRange) {
         alert('Invalid Excel row range. Use a format like 6-21, 6:21, or 6.')
         setImporting(false)
@@ -560,6 +559,16 @@ export default function Tickets() {
       alert(`Failed to parse Excel file: ${err.message || 'Unknown error'}`)
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportSourceFile(file)
+    try {
+      await parseImportFile(file)
+    } finally {
       e.target.value = ''
     }
   }
@@ -1254,19 +1263,6 @@ export default function Tickets() {
         <div className="flex flex-wrap items-center gap-2.5">
           {canEdit && (
             <>
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold shrink-0"
-                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                <span style={{ color: textMuted }}>Rows</span>
-                <input
-                  type="text"
-                  value={importRowRange}
-                  onChange={e => setImportRowRange(e.target.value)}
-                  placeholder="6-21"
-                  className="w-16 bg-transparent outline-none font-black"
-                  style={{ color: textPrimary }}
-                  onClick={e => e.stopPropagation()}
-                />
-              </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1873,7 +1869,7 @@ export default function Tickets() {
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between gap-3 shrink-0 border-b"
                  style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
                   Excel Import: {importResults.fileName}
                 </h3>
@@ -1881,11 +1877,34 @@ export default function Tickets() {
                   Review parsed updates from {importResults.rowRangeLabel} and confirm payment completion before saving.
                 </p>
               </div>
-              <button onClick={() => setImportResults(null)}
-                      className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors"
-                      style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold"
+                     style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
+                  <span style={{ color: textMuted }}>Rows</span>
+                  <input
+                    type="text"
+                    value={importRowRange}
+                    onChange={e => setImportRowRange(e.target.value)}
+                    placeholder="6-21"
+                    className="w-16 bg-transparent outline-none font-black"
+                    style={{ color: textPrimary }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={importing || !importSourceFile}
+                  onClick={() => importSourceFile && parseImportFile(importSourceFile, importRowRange)}
+                  className="px-3 py-1.5 rounded-lg border text-xs font-bold disabled:opacity-50"
+                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                >
+                  {importing ? 'Reading...' : 'Apply'}
+                </button>
+                <button onClick={() => setImportResults(null)}
+                        className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors"
+                        style={{ color: textMuted }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Body */}
