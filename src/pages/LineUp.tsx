@@ -1607,15 +1607,6 @@ export default function LineUp() {
       localStorage.setItem(W_LS_KEY, JSON.stringify(all))
     } catch {}
   }
-  const _wStatusStyle = (status: WDayStatus): React.CSSProperties => {
-    if (status==='NO SCHED')  return { backgroundColor:'#ef4444', color:'#fff' }
-    if (status==='CANCEL')    return { backgroundColor:'#60a5fa', color:'#1e293b' }
-    if (status==='ABSENT')    return { backgroundColor:'#0f172a', color:'#fff' }
-    if (status==='ON LEAVE')  return { backgroundColor:'#a855f7', color:'#fff' }
-    if (status==='DAY OFF')   return { backgroundColor:'#f97316', color:'#fff' }
-    if (status==='SURVEY')    return { backgroundColor:'#c084fc', color:'#fff' }
-    return { backgroundColor:'#10b981', color:'#fff' }
-  }
   const wStatusDot = (status: WDayStatus): string => {
     if (status==='NO SCHED')  return '#ef4444'
     if (status==='CANCEL')    return '#60a5fa'
