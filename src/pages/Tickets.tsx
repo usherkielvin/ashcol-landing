@@ -1100,16 +1100,19 @@ export default function Tickets() {
       const inputSt    = { backgroundColor: editCellBg, border: `1.5px solid ${green}`, color: textPrimary }
 
       if (label === 'STATUS') {
+        // Click cycles through STATUS_OPTS — no dropdown needed
+        const currentIdx = STATUS_OPTS.indexOf(cellValue)
+        const nextVal = STATUS_OPTS[(currentIdx + 1) % STATUS_OPTS.length]
+        const sc = statusColor(cellValue, isLight)
         return (
-          <select
-            ref={el => { inputRef.current = el }}
-            value={cellValue}
-            onChange={e => setCellValue(e.target.value)}
-            onBlur={() => saveCell(ticket.id, label, cellValue)}
-            onKeyDown={e => handleKeyDown(e as any, ticket.id, label)}
-            className={inputClass} style={inputSt}>
-            {STATUS_OPTS.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-          </select>
+          <span
+            className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase inline-block cursor-pointer select-none transition-all hover:opacity-80"
+            style={{ color: sc.text, backgroundColor: sc.bg, border: `1px solid ${sc.b}` }}
+            title={`Click to set: ${nextVal.replace(/_/g, ' ')}`}
+            onClick={e => { e.stopPropagation(); setCellValue(nextVal); saveCell(ticket.id, label, nextVal) }}
+          >
+            {cellValue.replace(/_/g, ' ')}
+          </span>
         )
       }
 
@@ -1152,9 +1155,9 @@ export default function Tickets() {
     if (label === 'STATUS') {
       const sc = statusColor(val, isLight)
       return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase inline-block"
+        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase inline-block"
               style={{ color: sc.text, backgroundColor: sc.bg, border: `1px solid ${sc.b}` }}>
-          {statusCode(val)}
+          {val ? val.replace(/_/g, ' ') : '—'}
         </span>
       )
     }
