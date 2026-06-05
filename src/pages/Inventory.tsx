@@ -119,6 +119,19 @@ export default function Inventory() {
       .catch(console.error)
   }, [user?.branchId])
 
+  useEffect(() => {
+    if (role !== 'admin') return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        setSelected(gId)
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [role])
+
   // ── Fetch stock for selected branch ─────────────────────────────
   const fetchStock = useCallback(async () => {
     if (!selectedBranch) return
@@ -194,8 +207,9 @@ export default function Inventory() {
               id="branch-selector"
               value={selectedBranch}
               onChange={e => setSelected(e.target.value)}
-              className="pl-9 pr-8 py-2.5 rounded-xl text-sm font-semibold border appearance-none cursor-pointer"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              disabled={true}
+              className="pl-9 pr-8 py-2.5 rounded-xl text-sm font-semibold border appearance-none cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder, color: textMuted }}
             >
               {branches.map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>

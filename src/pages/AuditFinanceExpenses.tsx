@@ -15,6 +15,27 @@ import * as XLSX from 'xlsx'
 
 interface BranchOption { id: string; name: string }
 const peso = (v: number) => v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const historyDateTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const time = date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const year = date.getFullYear()
+  return `${time} ${day}/${month}/${year}`
+}
+const expenseRecordHistory = (row: AuditExpense) => {
+  const stored = row.updateHistory || []
+  const fallback = []
+  if (!stored.some((entry) => entry.action === 'created') && row.createdAt) {
+    fallback.push({ action: 'created' as const, by: row.createdBy || row.inputBy || 'Unknown', at: row.createdAt })
+  }
+  if (!stored.some((entry) => entry.action === 'updated') && row.updatedAt && row.updatedAt !== row.createdAt) {
+    fallback.push({ action: 'updated' as const, by: row.updatedBy || 'Unknown', at: row.updatedAt })
+  }
+  return [...fallback, ...stored].sort((a, b) => (a.at || '').localeCompare(b.at || ''))
+}
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
 export default function AuditFinanceExpenses() {
@@ -29,10 +50,16 @@ export default function AuditFinanceExpenses() {
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
+  const neutralSurface = isLight ? '#f8f8f8' : '#101010'
+  const neutralBorder = isLight ? '#d4d4d4' : '#333333'
+  const neutralMuted = isLight ? '#6b7280' : '#a3a3a3'
   const accent = '#10B981'
   const danger = '#EF4444'
 
   const role = (user?.role || '').toLowerCase()
+  const currentUserLabel = user?.jobTitle
+    ? `${user?.name || user?.email} - ${user.jobTitle}`
+    : `${user?.name || user?.email || 'STAFF'} - ${(user?.role || 'USER').toUpperCase()}`
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
@@ -569,7 +596,14 @@ export default function AuditFinanceExpenses() {
     const updatedExpense: AuditExpense = {
       ...newExpense,
       id: existingExpense.id,
-      createdAt: existingExpense.createdAt || newExpense.createdAt
+      inputBy: existingExpense.inputBy || existingExpense.createdBy || newExpense.inputBy,
+      createdBy: existingExpense.createdBy || existingExpense.inputBy || newExpense.createdBy,
+      createdAt: existingExpense.createdAt || newExpense.createdAt,
+      updatedBy: currentUserLabel,
+      updateHistory: [
+        ...(existingExpense.updateHistory || []),
+        { action: 'updated', by: currentUserLabel, at: newExpense.updatedAt }
+      ]
     }
     setDuplicateModal(null)
     await saveExpense(updatedExpense)
@@ -600,8 +634,44 @@ export default function AuditFinanceExpenses() {
     const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || branchName
 
     const expense: AuditExpense = editing
-      ? { ...editing, branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), company: form.company.trim().toUpperCase(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), updatedAt: now }
-      : { id: createExpenseId(), branchId: targetBranchId, branchName: targetBranchName, date: form.date.trim(), incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(), company: form.company.trim().toUpperCase(), description: form.description.trim(), receiptNo: form.receiptNo.trim(), amount, expenseCategory: form.expenseCategory, sourceOfFunds: form.sourceOfFunds.trim(), inputBy: user?.jobTitle ? `${user?.name || user?.email} - ${user.jobTitle}` : `${user?.name || user?.email || 'STAFF'} - ${(user?.role || 'USER').toUpperCase()}`, createdAt: now, updatedAt: now }
+      ? {
+        ...editing,
+        branchId: targetBranchId,
+        branchName: targetBranchName,
+        date: form.date.trim(),
+        company: form.company.trim().toUpperCase(),
+        incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(),
+        description: form.description.trim(),
+        receiptNo: form.receiptNo.trim(),
+        amount,
+        expenseCategory: form.expenseCategory,
+        sourceOfFunds: form.sourceOfFunds.trim(),
+        updatedBy: currentUserLabel,
+        updatedAt: now,
+        updateHistory: [
+          ...(editing.updateHistory || []),
+          { action: 'updated', by: currentUserLabel, at: now }
+        ]
+      }
+      : {
+        id: createExpenseId(),
+        branchId: targetBranchId,
+        branchName: targetBranchName,
+        date: form.date.trim(),
+        incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(),
+        company: form.company.trim().toUpperCase(),
+        description: form.description.trim(),
+        receiptNo: form.receiptNo.trim(),
+        amount,
+        expenseCategory: form.expenseCategory,
+        sourceOfFunds: form.sourceOfFunds.trim(),
+        inputBy: currentUserLabel,
+        createdBy: currentUserLabel,
+        updatedBy: currentUserLabel,
+        createdAt: now,
+        updatedAt: now,
+        updateHistory: [{ action: 'created', by: currentUserLabel, at: now }]
+      }
 
     const normalizedReceiptNo = (form.receiptNo || '').trim().toUpperCase()
     if (normalizedReceiptNo) {
@@ -934,9 +1004,9 @@ export default function AuditFinanceExpenses() {
                 window.dispatchEvent(new Event('ashcol-global-branch-change'))
               }
             }}
-            disabled={isBranchScopedUser && !!user?.branchId}
-            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-pointer font-medium"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: branchId ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+            disabled={true}
+            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-not-allowed font-medium bg-slate-100 dark:bg-slate-900/50"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
           >
             {branches.length === 0
               ? <option value="">Loading…</option>
@@ -1062,9 +1132,9 @@ export default function AuditFinanceExpenses() {
                       const selectedId = e.target.value
                       setForm((f) => ({ ...f, branchId: selectedId }))
                     }}
-                    disabled={isBranchScopedUser && !!user?.branchId}
-                    className="w-full rounded-lg pl-7 pr-7 py-1.5 text-xs appearance-none outline-none cursor-pointer font-medium"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                    disabled={true}
+                    className="w-full rounded-lg pl-7 pr-7 py-1.5 text-xs appearance-none outline-none cursor-not-allowed font-medium bg-slate-100 dark:bg-slate-900/50"
+                    style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
                   >
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -1367,10 +1437,11 @@ export default function AuditFinanceExpenses() {
                 <tbody>
                   {filtered.map((row, i) => (
                     <tr key={row.id}
+                      onClick={() => openDetails(row)}
                       onContextMenu={(e) => openDetails(row, e)}
-                      onDoubleClick={() => openDetails(row)}
-                      title="Right-click to view details"
-                      style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'context-menu' }}>
+                      title="Click to view details"
+                      className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                      style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.date}</td>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.incurredBy}</td>
                       <td className="px-3 py-2" style={{ color: textPrimary }}>{row.description}</td>
@@ -1381,9 +1452,8 @@ export default function AuditFinanceExpenses() {
                       <td className="px-3 py-2" style={{ color: textMuted }}>{row.sourceOfFunds || '—'}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => openDetails(row)}><Receipt size={13} style={{ color: textMuted }} /></button>
-                          <button type="button" onClick={() => startEdit(row)}><Pencil size={13} style={{ color: accent }} /></button>
-                          <button type="button" onClick={() => void handleDeleteRecord(row)}><Trash2 size={13} style={{ color: danger }} /></button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(row) }}><Pencil size={13} style={{ color: textMuted }} /></button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); void handleDeleteRecord(row) }}><Trash2 size={13} style={{ color: danger }} /></button>
                         </div>
                       </td>
                     </tr>
@@ -1433,12 +1503,11 @@ export default function AuditFinanceExpenses() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
           onClick={() => setDetailRow(null)}>
-          <div className="w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl"
+            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}` }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${neutralBorder}` }}>
               <div className="flex items-center gap-2">
-                <Receipt size={18} style={{ color: accent }} />
                 <div>
                   <h3 className="font-bold" style={{ color: textPrimary }}>Expense Record Details</h3>
                   <p className="text-xs" style={{ color: textMuted }}>{detailRow.branchName} - {detailRow.date}</p>
@@ -1451,34 +1520,49 @@ export default function AuditFinanceExpenses() {
 
             <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               {[
-                ['Input by', detailRow.inputBy || 'Unknown'],
+                ['Submitted by', detailRow.inputBy || 'Unknown'],
                 ['Incurred by', detailRow.incurredBy || '-'],
                 ['Company', detailRow.company || '-'],
                 ['Receipt No.', detailRow.receiptNo || '-'],
                 ['Category', detailRow.expenseCategory || '-'],
                 ['Source', detailRow.sourceOfFunds || '-'],
-                ['Created', detailRow.createdAt ? new Date(detailRow.createdAt).toLocaleString('en-PH') : '-'],
-                ['Updated', detailRow.updatedAt ? new Date(detailRow.updatedAt).toLocaleString('en-PH') : '-'],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-xl p-3" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{label}</div>
+                <div key={label} className="rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>{label}</div>
                   <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>{value}</div>
                 </div>
               ))}
-              <div className="sm:col-span-2 rounded-xl p-3" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Description</div>
+              <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Description</div>
                 <div className="mt-1 font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '-'}</div>
               </div>
-              <div className="sm:col-span-2 rounded-xl p-3 flex items-center justify-between" style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}33` }}>
-                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount</span>
-                <span className="text-xl font-black" style={{ color: accent }}>₱{peso(detailRow.amount)}</span>
+              <div className="sm:col-span-2 rounded-lg p-3 flex items-center justify-between" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Amount</span>
+                <span className="text-xl font-black" style={{ color: textPrimary }}>{peso(detailRow.amount)}</span>
+              </div>
+              <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>History</div>
+                <div className="mt-2 flex flex-col gap-2">
+                  {expenseRecordHistory(detailRow).map((entry, idx) => (
+                    <div key={`${entry.action}-${entry.at}-${idx}`} className="flex items-start gap-2 text-xs">
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: neutralMuted }} />
+                      <span style={{ color: textPrimary }}>
+                        <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
+                        {' by '}
+                        <span className="font-semibold">{entry.by || 'Unknown'}</span>
+                        {' at '}
+                        <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${border}` }}>
+            <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${neutralBorder}` }}>
               <button type="button" onClick={() => startEdit(detailRow)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: accent }}>
+                style={{ backgroundColor: textPrimary, color: cardBg }}>
                 <Pencil size={14} /> Edit
               </button>
               <button type="button" onClick={() => void handleDeleteRecord(detailRow)}

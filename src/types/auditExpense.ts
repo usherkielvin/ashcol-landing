@@ -14,6 +14,13 @@ export interface AuditExpense {
   sourceOfFunds: string
   receiptImageUri?: string
   inputBy?: string
+  createdBy?: string
+  updatedBy?: string
+  updateHistory?: Array<{
+    action: 'created' | 'updated'
+    by: string
+    at: string
+  }>
   createdAt: string
   updatedAt: string
 }

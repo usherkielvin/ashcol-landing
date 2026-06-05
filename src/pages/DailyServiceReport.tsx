@@ -610,23 +610,20 @@ export default function DailyServiceReport() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Branch Filter */}
           {isAdmin && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-sm"
-                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-sm cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+                 style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder }}>
+              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
               <select
                 value={branchFilter}
                 onChange={e => {
                   const val = e.target.value
                   setBranchFilter(val)
-                  if (isAdmin) {
-                    localStorage.setItem('ashcol-global-branch-id', val)
-                    window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                  }
                 }}
-                className="bg-transparent outline-none text-xs font-bold cursor-pointer pr-1"
+                disabled={true}
+                className="bg-transparent outline-none text-xs font-bold cursor-not-allowed pr-1"
                 style={{
-                  color: textPrimary,
-                  backgroundColor: inputBg,
+                  color: textMuted,
+                  backgroundColor: 'transparent',
                   WebkitAppearance: 'none',
                   MozAppearance: 'none',
                   appearance: 'none',
@@ -1133,8 +1130,9 @@ export default function DailyServiceReport() {
               <Field label="Target Branch" required>
                 <select value={pendingImport.branchId}
                         onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
-                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        disabled={true}
+                        className="w-full rounded-lg px-3 py-2 text-xs font-semibold cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
                   <option value="">— Choose branch —</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
@@ -1209,8 +1207,9 @@ export default function DailyServiceReport() {
                     ) : (
                       <select value={editing.branchId || ''}
                               onChange={e => setEditing({ ...editing, branchId: e.target.value })}
-                              className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                              disabled={true}
+                              className="w-full rounded-lg px-3 py-2 text-xs font-semibold cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+                              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
                         <option value="">— Choose branch —</option>
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>

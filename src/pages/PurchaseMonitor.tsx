@@ -170,6 +170,21 @@ export default function PurchaseMonitor() {
     }
   }, [canAccess, loadPurchases])
 
+  useEffect(() => {
+    if (!isAdmin) return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        setBranchId(gId)
+      } else {
+        setBranchId('')
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [isAdmin])
+
   const handleDateBlur = (raw: string) => {
     const parsed = parseSmartDate(raw)
     if (parsed) {
@@ -550,8 +565,9 @@ export default function PurchaseMonitor() {
             <select
               value={branchId}
               onChange={(e) => setBranchId(e.target.value)}
-              className="px-3 py-2 rounded-xl text-sm font-medium w-full md:w-48 outline-none border transition-all duration-150"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              disabled={true}
+              className="px-3 py-2 rounded-xl text-sm font-medium w-full md:w-48 outline-none border transition-all duration-150 cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder, color: textMuted }}
             >
               <option value="">All Branches</option>
               {branches.map(b => (

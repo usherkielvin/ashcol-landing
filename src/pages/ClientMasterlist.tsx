@@ -552,6 +552,22 @@ export default function ClientMasterlist() {
     fetchData()
   }, [ticketScope])
 
+  useEffect(() => {
+    if (role !== 'admin') return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        const cleanBranchId = gId.replace(/-(sales|services)$/, '')
+        setBranchFilter(cleanBranchId)
+      } else {
+        setBranchFilter('ALL')
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [role])
+
   // File Upload OCR (PDF/Image)
   const handleVoucherScan = async (file: File) => {
     setScanning(true)
@@ -1385,12 +1401,13 @@ export default function ClientMasterlist() {
         <div className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2.5">
 
           {/* Branch Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder }}>
+            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
+              disabled={true}
+              className="bg-transparent outline-none text-xs font-semibold cursor-not-allowed"
+              style={{ color: textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL">All Branches</option>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, Receipt, Layers,
+  PanelLeftOpen, Layers, ClipboardList,
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
   Building2
 } from 'lucide-react'
@@ -177,7 +177,7 @@ export default function DashboardLayout() {
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
-    { name: 'Expense Records', path: '/audit-expenses',  icon: Receipt,         roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -350,10 +350,56 @@ export default function DashboardLayout() {
           )}
         </nav>
 
+        {/* ── Admin Branch Switcher (only for admin) ── */}
+        {isAdmin && adminBranches.length > 0 && (
+          <div 
+            onClick={() => { if (sidebarCollapsed) setSidebarCollapsed(false) }}
+            title={sidebarCollapsed ? "Active Branch Switcher" : undefined}
+            className={`px-4 py-3 transition-colors ${
+              sidebarCollapsed 
+                ? 'flex justify-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/40 mt-auto' 
+                : 'mt-auto'
+            }`}
+            style={{ borderTop: `1px solid ${border}` }}
+          >
+            {sidebarCollapsed ? (
+              <Building2 className="w-5 h-5 shrink-0" style={{ color: textMuted }} />
+            ) : (
+              <div className="flex flex-col gap-1.5 w-full">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Active Branch
+                </label>
+                <div className="relative flex items-center w-full">
+                  <Building2 className="absolute left-3 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
+                  <select
+                    value={globalBranchId || ''}
+                    onChange={(e) => handleGlobalBranchChange(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all"
+                    style={{
+                      color: textPrimary,
+                      backgroundColor: hoverBg,
+                      border: `1px solid ${inputBorder}`,
+                    }}
+                  >
+                    {adminBranches.map((b) => (
+                      <option key={b.id} value={b.id} style={{ backgroundColor: sidebarBg, color: textPrimary }}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 w-3.5 h-3.5 pointer-events-none opacity-60" style={{ color: textMuted }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── User Profile Bottom Section ────────────────── */}
         <div 
           ref={profileRef} 
-          className="mt-auto relative select-none"
+          className={`relative select-none ${
+            (isAdmin && adminBranches.length > 0) ? '' : 'mt-auto'
+          }`}
           style={{ borderTop: `1px solid ${border}` }}
         >
           {/* Dropdown Popup Menu (renders above/beside the profile strip) */}
@@ -486,29 +532,6 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2 shrink-0">
-              {isAdmin && adminBranches.length > 0 && (
-                <div className="relative flex items-center">
-                  <Building2 className="absolute left-3 w-4 h-4 pointer-events-none animate-pulse-subtle" style={{ color: textMuted }} />
-                  <select
-                    value={globalBranchId || ''}
-                    onChange={(e) => handleGlobalBranchChange(e.target.value)}
-                    className="pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all hover:scale-[1.02]"
-                    style={{
-                      color: textPrimary,
-                      backgroundColor: hoverBg,
-                      border: `1px solid ${inputBorder}`,
-                    }}
-                  >
-                    {adminBranches.map((b) => (
-                      <option key={b.id} value={b.id} style={{ backgroundColor: sidebarBg, color: textPrimary }}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 w-3.5 h-3.5 pointer-events-none opacity-60" style={{ color: textMuted }} />
-                </div>
-              )}
-
               {/* Theme Toggle */}
               <button
                 onClick={toggleTheme}

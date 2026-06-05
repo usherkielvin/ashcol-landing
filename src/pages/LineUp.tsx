@@ -350,6 +350,19 @@ export default function LineUp() {
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
+  useEffect(() => {
+    if (role !== 'admin') return
+    const syncFromGlobal = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      if (gId) {
+        setBranchId(gId)
+      }
+    }
+    syncFromGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
+  }, [role])
+
   const [lineupNotes, setLineupNotes] = useState('')
   const [notesRecord, setNotesRecord] = useState<LineUpRow | null>(null)
 
@@ -1536,18 +1549,16 @@ export default function LineUp() {
          <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1">
            {branches.map(b => {
              const isSelected = b.id === branchId
-             const bThemeKey = getBranchThemeKey(b.name)
-             const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
              return (
                <button
                  key={b.id}
                  type="button"
-                 onClick={() => setBranchId(b.id)}
-                 className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap"
+                 disabled={true}
+                 className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-sm whitespace-nowrap cursor-not-allowed"
                  style={{
-                   backgroundColor: isSelected ? bTheme.accent : cardBg,
-                   color: isSelected ? '#FFFFFF' : textMuted,
-                   border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
+                   backgroundColor: isSelected ? (isLight ? '#e2e8f0' : '#334155') : (isLight ? '#f1f5f9' : '#1e293b'),
+                   color: textMuted,
+                   border: `1px solid ${isLight ? '#cbd5e1' : '#475569'}`,
                  }}
                >
                  {b.name}
@@ -1880,19 +1891,16 @@ export default function LineUp() {
             <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-2 scroll-smooth max-w-full">
               {branches.map(b => {
                 const isSelected = b.id === branchId
-                const bThemeKey = getBranchThemeKey(b.name)
-                const bTheme = branchThemes[bThemeKey] || branchThemes["TAGUIG SALES"]
                 return (
                   <button
                     key={b.id}
                     type="button"
-                    onClick={() => setBranchId(b.id)}
-                    className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm whitespace-nowrap shrink-0"
+                    disabled={true}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 cursor-not-allowed"
                     style={{
-                      backgroundColor: isSelected ? bTheme.accent : cardBg,
-                      color: isSelected ? '#FFFFFF' : textMuted,
-                      border: `1px solid ${isSelected ? bTheme.accentDark : border}`,
-                      boxShadow: isSelected ? `0 4px 10px ${bTheme.accent}30` : 'none',
+                      backgroundColor: isSelected ? (isLight ? '#e2e8f0' : '#334155') : (isLight ? '#f1f5f9' : '#1e293b'),
+                      color: textMuted,
+                      border: `1px solid ${isLight ? '#cbd5e1' : '#475569'}`,
                     }}
                   >
                     {b.name}
@@ -1918,8 +1926,9 @@ export default function LineUp() {
               {role === 'admin' ? (
                 <>
                   <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                    className="rounded-lg pl-8 pr-7 py-1.5 text-xs font-bold appearance-none outline-none cursor-pointer"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                    disabled={true}
+                    className="rounded-lg pl-8 pr-7 py-1.5 text-xs font-bold appearance-none outline-none cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+                    style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
                     {branches.length === 0 && <option value="">Loading branches…</option>}
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>

@@ -1210,10 +1210,8 @@ export default function DailySalesForm() {
                     }
                   }
                 }}
-                className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 ${
-                  isFormDisabled || isBranchRestricted ? 'cursor-not-allowed text-slate-400 opacity-80' : 'cursor-pointer'
-                }`}
-                disabled={isFormDisabled || isBranchRestricted}
+                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
+                disabled={true}
               >
                 {branchesList.map(b => (
                   <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
