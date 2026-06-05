@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, LayoutList, Table2 } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -29,7 +29,6 @@ export default function AuditFinanceExpenses() {
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
-  const rowHover = isLight ? '#f8fafc' : '#0f1e36'
   const accent = '#10B981'
   const danger = '#EF4444'
 
@@ -57,7 +56,6 @@ export default function AuditFinanceExpenses() {
   const [search, setSearch] = useState('')
   const [filterMonth, setFilterMonth] = useState('All')
   const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
-  const [viewAll, setViewAll] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
@@ -489,16 +487,6 @@ export default function AuditFinanceExpenses() {
 
     return rows
   }, [branchExpenses, search, sortConfig, filterMonth])
-
-  // Group by date for daily view
-  const byDate = useMemo(() => {
-    const map: Record<string, AuditExpense[]> = {}
-    for (const e of filtered) {
-      if (!map[e.date]) map[e.date] = []
-      map[e.date].push(e)
-    }
-    return Object.entries(map).sort(([a], [b]) => dateToTime(b) - dateToTime(a))
-  }, [filtered])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
 
@@ -994,14 +982,6 @@ export default function AuditFinanceExpenses() {
         </div>
 
         {/* Summary — right magnet */}
-        {branchId && (
-          <div className="flex items-center gap-2 sm:ml-auto shrink-0 bg-black/5 dark:bg-white/5 rounded-lg px-2.5 py-1.5 border"
-            style={{ borderColor: border }}>
-            <span className="text-[10px] font-semibold tracking-tight" style={{ color: textMuted }}>{filtered.length} records</span>
-            <div className="w-px h-3" style={{ backgroundColor: border }} />
-            <span className="text-xs font-black" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</span>
-          </div>
-        )}
       </div>
 
       {/* ── ENTRY FORM ── */}
@@ -1327,22 +1307,10 @@ export default function AuditFinanceExpenses() {
           <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
             <div className="min-w-0">
               <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
-                {branchName} <span className="font-normal" style={{ color: textMuted }}>({filterMonth === 'All' ? 'All months' : filterMonth})</span>
+                {branchName}
               </h2>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <div className="flex rounded-lg p-0.5" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                <button type="button" onClick={() => setViewAll(false)}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors"
-                  style={{ backgroundColor: !viewAll ? cardBg : 'transparent', color: !viewAll ? accent : textMuted }}>
-                  <LayoutList size={12} /> Daily
-                </button>
-                <button type="button" onClick={() => setViewAll(true)}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors"
-                  style={{ backgroundColor: viewAll ? cardBg : 'transparent', color: viewAll ? accent : textMuted }}>
-                  <Table2 size={12} /> Table
-                </button>
-              </div>
               <button type="button" onClick={handleExportExcel}
                 className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors"
                 style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
@@ -1356,7 +1324,7 @@ export default function AuditFinanceExpenses() {
             <div className="p-10 text-center" style={{ color: textMuted }}>
               No expense records found. {!search && 'Add records manually or import from Excel.'}
             </div>
-          ) : viewAll ? (
+          ) : (
             // ── Table view ──
             <div className="overflow-x-auto">
               <table className="w-full text-xs min-w-[900px]">
@@ -1429,47 +1397,6 @@ export default function AuditFinanceExpenses() {
                   </tr>
                 </tfoot>
               </table>
-            </div>
-          ) : (
-            // ── Daily grouped view ──
-            <div className="flex flex-col divide-y" style={{ borderColor: border }}>
-              {byDate.map(([date, rows]) => {
-                const dayTotal = rows.reduce((s, e) => s + e.amount, 0)
-                return (
-                  <div key={date}>
-                    <div className="flex items-center justify-between px-5 py-3"
-                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                      <span className="font-black text-sm" style={{ color: textPrimary }}>{date}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs" style={{ color: textMuted }}>{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
-                        <span className="font-bold text-sm" style={{ color: accent }}>₱{peso(dayTotal)}</span>
-                      </div>
-                    </div>
-                    {rows.map((row) => (
-                      <div key={row.id} className="flex items-center justify-between px-5 py-3 text-sm transition-colors"
-                        onContextMenu={(e) => openDetails(row, e)}
-                        onDoubleClick={() => openDetails(row)}
-                        title="Right-click to view details"
-                        style={{ borderTop: `1px solid ${border}`, cursor: 'context-menu' }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHover }}
-                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}>
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-semibold truncate" style={{ color: textPrimary }}>{row.description || row.company}</span>
-                          <span className="text-xs truncate" style={{ color: textMuted }}>
-                            {row.company}{row.receiptNo ? ` · OR#${row.receiptNo}` : ''} · {row.incurredBy} · {row.expenseCategory}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 ml-3 shrink-0">
-                          <span className="font-bold" style={{ color: textPrimary }}>₱{peso(row.amount)}</span>
-                          <button type="button" onClick={() => openDetails(row)}><Receipt size={14} style={{ color: textMuted }} /></button>
-                          <button type="button" onClick={() => startEdit(row)}><Pencil size={14} style={{ color: accent }} /></button>
-                          <button type="button" onClick={() => void handleDeleteRecord(row)}><Trash2 size={14} style={{ color: danger }} /></button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
             </div>
           )}
 
