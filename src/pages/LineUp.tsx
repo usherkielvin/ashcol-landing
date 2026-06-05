@@ -249,9 +249,15 @@ export default function LineUp() {
 
   const getBranchDefaultRows = useCallback((dateStr: string, bId: string): LineUpRow[] => {
     const isTaguig = branchName && /TAGUIG/i.test(branchName)
-    const branchDrivers = suggestions.drivers || []
-    const branchInstallers = suggestions.installers || []
-    const branchServices = suggestions.services || []
+    const filterSystemKeys = (arr: string[]) => (arr || []).filter(s => {
+      if (!s) return false;
+      const upper = s.toUpperCase().trim();
+      return upper !== '__NOTES__' && upper !== '__WEEKLY_DRIVERS__' && upper !== '__WEEKLY_INSTALLERS__' && !upper.includes('_NOTES_') && !upper.includes('_WEEKLY_');
+    })
+
+    const branchDrivers = filterSystemKeys(suggestions.drivers)
+    const branchInstallers = filterSystemKeys(suggestions.installers)
+    const branchServices = filterSystemKeys(suggestions.services)
 
     if (isTaguig || branchDrivers.length === 0 || branchInstallers.length === 0) {
       return [
@@ -300,12 +306,17 @@ export default function LineUp() {
       })
       if (res.ok) {
         const data = await res.json()
+        const filterSystemKeys = (arr: string[]) => (arr || []).filter(s => {
+          if (!s) return false;
+          const upper = s.toUpperCase().trim();
+          return upper !== '__NOTES__' && upper !== '__WEEKLY_DRIVERS__' && upper !== '__WEEKLY_INSTALLERS__' && !upper.includes('_NOTES_') && !upper.includes('_WEEKLY_');
+        })
         setSuggestions({
-          services: data.services || [],
-          drivers: data.drivers || [],
-          installers: data.installers || [],
-          routes: data.routes || [],
-          remarks: data.remarks || [],
+          services: filterSystemKeys(data.services),
+          drivers: filterSystemKeys(data.drivers),
+          installers: filterSystemKeys(data.installers),
+          routes: filterSystemKeys(data.routes),
+          remarks: filterSystemKeys(data.remarks),
         })
       }
     } catch (e) {
@@ -428,7 +439,7 @@ export default function LineUp() {
       setNotesRecord(null)
     }
 
-    filtered = filtered.filter(r => r.service !== '__NOTES__').sort((a, b) => a.sortOrder - b.sortOrder)
+    filtered = filtered.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__').sort((a, b) => a.sortOrder - b.sortOrder)
     if (filtered.length === 0 && branchId) {
       filtered = getBranchDefaultRows(date, branchId)
     }
@@ -454,7 +465,7 @@ export default function LineUp() {
             setNotesRecord(null)
           }
 
-          const serverRows = data.filter(r => r.service !== '__NOTES__')
+          const serverRows = data.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__')
           if (serverRows.length > 0) {
             setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
           } else {
@@ -941,7 +952,7 @@ export default function LineUp() {
     }
 
     // 4. Sync localStorage
-    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId))
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
     lsSave([...all, ...saved])
     showToast('Default template saved to database ✓', 'success')
   }
@@ -1091,7 +1102,7 @@ export default function LineUp() {
       showToast('DB error: ' + (err.message || 'connection failed') + ' — removing locally', 'error')
     }
     setRows([])
-    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__NOTES__'))
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
     lsSave(all)
   }
 
@@ -1622,6 +1633,10 @@ export default function LineUp() {
   const wWeekKey = wDays[0]
   const [wDrivers, setWDrivers] = useState<WPersonSchedule[]>(() => wLoadSchedule('drivers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
   const [wInstallers, setWInstallers] = useState<WPersonSchedule[]>(() => wLoadSchedule('installers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
+  const [wDriversRecord, setWDriversRecord] = useState<LineUpRow | null>(null)
+  const [wInstallersRecord, setWInstallersRecord] = useState<LineUpRow | null>(null)
+  const [loadingWeekly, setLoadingWeekly] = useState(false)
+
   const wRows = wKind === 'drivers' ? wDrivers : wInstallers
   const wSetRows = (next: WPersonSchedule[]) => {
     if (wKind === 'drivers') setWDrivers(next); else setWInstallers(next)
@@ -1634,10 +1649,179 @@ export default function LineUp() {
     setWInstallers(wLoadSchedule('installers', nw, nd, branchId))
   }
 
+  const fetchWeeklySchedule = useCallback(async () => {
+    if (!branchId) return
+    setLoadingWeekly(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${wWeekKey}&branchId=${branchId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          const driversRec = data.find(r => r.service === '__WEEKLY_DRIVERS__')
+          const installersRec = data.find(r => r.service === '__WEEKLY_INSTALLERS__')
+
+          if (driversRec) {
+            setWDriversRecord(driversRec)
+            try {
+              const parsed = JSON.parse(driversRec.remarks)
+              if (Array.isArray(parsed)) {
+                setWDrivers(parsed)
+                wSaveSchedule('drivers', wWeekKey, parsed, branchId)
+              }
+            } catch (err) {
+              console.error("Failed to parse weekly drivers from DB:", err)
+            }
+          } else {
+            setWDriversRecord(null)
+            setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
+          }
+
+          if (installersRec) {
+            setWInstallersRecord(installersRec)
+            try {
+              const parsed = JSON.parse(installersRec.remarks)
+              if (Array.isArray(parsed)) {
+                setWInstallers(parsed)
+                wSaveSchedule('installers', wWeekKey, parsed, branchId)
+              }
+            } catch (err) {
+              console.error("Failed to parse weekly installers from DB:", err)
+            }
+          } else {
+            setWInstallersRecord(null)
+            setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error loading weekly schedule from backend:", e)
+    } finally {
+      setLoadingWeekly(false)
+    }
+  }, [wWeekKey, branchId, wDays, suggestions])
+
   useEffect(() => {
-    setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
-    setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
-  }, [branchId, wWeekKey, suggestions])
+    void fetchWeeklySchedule()
+  }, [fetchWeeklySchedule])
+
+  const handleSaveWeeklySchedule = async () => {
+    if (!branchId) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    
+    setLoadingWeekly(true)
+    try {
+      // 1. Fetch current Monday entries first to avoid race conditions or duplicates
+      const checkRes = await fetch(`${API_BASE_URL}/v1/lineup?date=${wWeekKey}&branchId=${branchId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      let dbDriversRec = wDriversRecord
+      let dbInstallersRec = wInstallersRecord
+      
+      if (checkRes.ok) {
+        const data = await checkRes.json()
+        if (Array.isArray(data)) {
+          const foundD = data.find(r => r.service === '__WEEKLY_DRIVERS__')
+          if (foundD) dbDriversRec = foundD
+          const foundI = data.find(r => r.service === '__WEEKLY_INSTALLERS__')
+          if (foundI) dbInstallersRec = foundI
+        }
+      }
+
+      // 2. Save drivers
+      const driversDataStr = JSON.stringify(wDrivers)
+      const isNewDrivers = !dbDriversRec || !dbDriversRec.id
+      const driversPayload: LineUpRow = {
+        id: isNewDrivers ? `w-drivers-${Date.now()}` : dbDriversRec!.id,
+        lineupDate: wWeekKey,
+        branchId: branchId,
+        service: '__WEEKLY_DRIVERS__',
+        driverName: '',
+        driverTime: '',
+        installerName: '',
+        installerTime: '',
+        route: '',
+        remarks: driversDataStr,
+        sortOrder: -100
+      }
+
+      // 3. Save installers
+      const installersDataStr = JSON.stringify(wInstallers)
+      const isNewInstallers = !dbInstallersRec || !dbInstallersRec.id
+      const installersPayload: LineUpRow = {
+        id: isNewInstallers ? `w-installers-${Date.now()}` : dbInstallersRec!.id,
+        lineupDate: wWeekKey,
+        branchId: branchId,
+        service: '__WEEKLY_INSTALLERS__',
+        driverName: '',
+        driverTime: '',
+        installerName: '',
+        installerTime: '',
+        route: '',
+        remarks: installersDataStr,
+        sortOrder: -101
+      }
+
+      // 4. Save Drivers Request
+      let dRes;
+      if (isNewDrivers) {
+        dRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(driversPayload),
+        })
+      } else {
+        dRes = await fetch(`${API_BASE_URL}/v1/lineup/${dbDriversRec!.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(driversPayload),
+        })
+      }
+      
+      if (dRes.ok) {
+        const savedD = await dRes.json() as LineUpRow
+        setWDriversRecord(savedD)
+        wSaveSchedule('drivers', wWeekKey, wDrivers, branchId)
+      }
+      
+      // 5. Save Installers Request
+      let iRes;
+      if (isNewInstallers) {
+        iRes = await fetch(`${API_BASE_URL}/v1/lineup`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(installersPayload),
+        })
+      } else {
+        iRes = await fetch(`${API_BASE_URL}/v1/lineup/${dbInstallersRec!.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(installersPayload),
+        })
+      }
+      
+      if (iRes.ok) {
+        const savedI = await iRes.json() as LineUpRow
+        setWInstallersRecord(savedI)
+        wSaveSchedule('installers', wWeekKey, wInstallers, branchId)
+      }
+      
+      if (dRes.ok && iRes.ok) {
+        showToast("Weekly schedule saved to database successfully!", "success")
+      } else {
+        showToast("Some schedules failed to save. Please try again.", "error")
+      }
+    } catch (err) {
+      console.error("Failed to save weekly schedule:", err)
+      showToast("Network error. Weekly schedule cached locally.", "error")
+    } finally {
+      setLoadingWeekly(false)
+    }
+  }
+
   const wUpdatePerson = (id: string, patch: Partial<WPersonSchedule>) =>
     wSetRows(wRows.map(r => r.id===id ? {...r,...patch} : r))
   const wUpdateDay = (id: string, day: string, patch: Partial<WPersonSchedule['days'][string]>) =>
@@ -1651,6 +1835,46 @@ export default function LineUp() {
     wSetRows([...wRows, next])
   }
   const wRemovePerson = (id: string) => wSetRows(wRows.filter(r => r.id!==id))
+
+  const wHandlePhotoUpload = (id: string, file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("Image size must be 10MB or less.", "error")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX_DIM = 160
+        let w = img.width
+        let h = img.height
+        if (w > h) {
+          if (w > MAX_DIM) {
+            h = Math.round((h * MAX_DIM) / w)
+            w = MAX_DIM
+          }
+        } else {
+          if (h > MAX_DIM) {
+            w = Math.round((w * MAX_DIM) / h)
+            h = MAX_DIM
+          }
+        }
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+          wUpdatePerson(id, { photoUrl: dataUrl })
+          showToast("Photo uploaded successfully!", "success")
+        }
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -3275,6 +3499,18 @@ export default function LineUp() {
                     style={{ backgroundColor: '#10b981' }}>
               <Plus className="w-3.5 h-3.5" /> Add Person
             </button>
+            {/* Save Weekly Schedule */}
+            <button type="button" onClick={handleSaveWeeklySchedule}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ backgroundColor: currentTheme.accent }}
+                    disabled={loadingWeekly}>
+              {loadingWeekly ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              {loadingWeekly ? 'Saving...' : 'Save Weekly Schedule'}
+            </button>
           </div>
         </div>
 
@@ -3334,24 +3570,60 @@ export default function LineUp() {
                  style={{ gridTemplateColumns: `180px repeat(7, 1fr)${wKind === 'installers' ? ' 80px 80px' : ''} 1fr` }}>
 
               {/* Name card */}
-              <div className="rounded-md px-3 py-2 flex flex-col justify-between h-full"
+              <div className="rounded-md p-2 flex flex-col justify-between h-full relative"
                    style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <div className="flex items-center justify-between gap-1 mb-1">
-                  <span className="text-[9px] font-bold" style={{ color: textMuted }}>#{idx+1}</span>
-                  <button type="button" onClick={() => wRemovePerson(person.id)}
-                          className="p-0.5 rounded hover:text-red-400 transition-colors" style={{ color: textMuted }}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                {/* Overlay Trash Button - top right */}
+                <button type="button" onClick={() => wRemovePerson(person.id)}
+                        className="absolute top-3 right-3 p-1 rounded bg-black/40 hover:bg-black/60 text-white transition-colors z-10">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Photo holder - Square and Big */}
+                <div className="relative group cursor-pointer w-full h-[120px] rounded border overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xl font-black"
+                     style={{ borderColor: border }}
+                     onClick={() => document.getElementById(`w-photo-file-${person.id}`)?.click()}
+                     title="Click to upload profile photo (Max 10MB)">
+                  {person.photoUrl ? (
+                    <img src={person.photoUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <Users className="w-6 h-6 opacity-30" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>UPLOAD</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-bold text-white transition-opacity select-none">
+                    CHANGE PHOTO
+                  </div>
+                  <input
+                    type="file"
+                    id={`w-photo-file-${person.id}`}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        wHandlePhotoUpload(person.id, file)
+                      }
+                    }}
+                  />
                 </div>
-                <input value={person.name}
-                       onChange={e => wUpdatePerson(person.id, { name: e.target.value.toUpperCase() })}
-                       placeholder={wKind === 'drivers' ? 'Driver name' : 'Installer name'}
-                       className="bg-transparent outline-none text-xs font-bold uppercase w-full mb-1"
-                       style={{ color: textPrimary }} />
-                <input value={person.roleNote}
-                       onChange={e => wUpdatePerson(person.id, { roleNote: e.target.value.toUpperCase() })}
-                       className="bg-transparent outline-none text-[9px] font-medium w-full"
-                       style={{ color: textMuted }} />
+
+                {/* Name & Role Note Inputs - Stacked below */}
+                <div className="mt-2 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-black shrink-0" style={{ color: textMuted }}>{idx+1}</span>
+                    <input value={person.name}
+                           onChange={e => wUpdatePerson(person.id, { name: e.target.value.toUpperCase() })}
+                           placeholder={wKind === 'drivers' ? 'Driver name' : 'Installer name'}
+                           className="bg-transparent outline-none text-xs font-bold uppercase w-full border-b border-transparent hover:border-slate-300 focus:border-slate-500 transition-colors"
+                           style={{ color: textPrimary }} />
+                  </div>
+                  <input value={person.roleNote}
+                         onChange={e => wUpdatePerson(person.id, { roleNote: e.target.value.toUpperCase() })}
+                         placeholder="Role/Note"
+                         className="bg-transparent outline-none text-[9px] font-semibold uppercase w-full pl-4 border-b border-transparent hover:border-slate-300 focus:border-slate-500 transition-colors"
+                         style={{ color: textMuted }} />
+                </div>
               </div>
 
               {/* Day cells */}
@@ -3417,6 +3689,23 @@ export default function LineUp() {
             </div>
           )
         })}
+
+        {/* Save button at the bottom */}
+        {wRows.length > 0 && (
+          <div className="mt-6 flex justify-end">
+            <button type="button" onClick={handleSaveWeeklySchedule}
+                    className="flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 shadow-md"
+                    style={{ backgroundColor: currentTheme.accent }}
+                    disabled={loadingWeekly}>
+              {loadingWeekly ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {loadingWeekly ? 'Saving to Database...' : 'Save Weekly Schedule'}
+            </button>
+          </div>
+        )}
 
         {/* Month label at bottom */}
         <div className="mt-4 text-center">
