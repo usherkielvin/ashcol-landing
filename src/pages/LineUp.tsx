@@ -404,19 +404,6 @@ export default function LineUp() {
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
-  useEffect(() => {
-    if (role !== 'admin') return
-    const syncFromGlobal = () => {
-      const gId = localStorage.getItem('ashcol-global-branch-id')
-      if (gId) {
-        setBranchId(gId)
-      }
-    }
-    syncFromGlobal()
-    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
-    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [role])
-
   const [lineupNotes, setLineupNotes] = useState('')
   const [notesRecord, setNotesRecord] = useState<LineUpRow | null>(null)
 
@@ -1946,21 +1933,74 @@ export default function LineUp() {
 
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (branchId === 'ALL_BRANCHES') {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3 rounded-2xl"
-           style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary, minHeight: '400px' }}>
-        <Building2 className="w-16 h-16 opacity-30 text-emerald-500 animate-pulse" />
-        <h3 className="text-lg font-bold">Select Active Branch</h3>
-        <p className="text-sm max-w-md text-center" style={{ color: textMuted }}>
-          Field Schedules and Weekly Schedules are managed per branch. Please select a specific active branch from the sidebar to view or edit schedules.
-        </p>
+  const branchLineupSelector = (
+    <div
+      className="no-print mb-4 rounded-xl p-3 md:p-4 flex flex-col gap-3"
+      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+    >
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: textMuted }}>
+            Select Branch Line-Up
+          </p>
+          <div className="flex items-center gap-2 min-w-0">
+            <Building2 className="w-4 h-4 shrink-0" style={{ color: currentTheme.accent }} />
+            <span className="text-sm font-black uppercase truncate" style={{ color: textPrimary }}>
+              {branchName || 'Loading branches...'}
+            </span>
+          </div>
+        </div>
+
+        {role === 'admin' ? (
+          <div className="relative flex items-center w-full md:w-64 shrink-0">
+            <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+            <select
+              value={branchId}
+              onChange={e => setBranchId(e.target.value)}
+              className="w-full rounded-lg pl-8 pr-8 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            >
+              {branches.length === 0 && <option value="">Loading branches...</option>}
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+          </div>
+        ) : (
+          <span className="rounded-lg px-3 py-2 text-xs font-bold w-fit"
+            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+            {branchName || 'Loading...'}
+          </span>
+        )}
       </div>
-    )
-  }
+
+      {role === 'admin' && branches.length > 0 && (
+        <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1 scroll-smooth">
+          {branches.map(b => {
+            const isSelected = b.id === branchId
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => setBranchId(b.id)}
+                className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 transition-all"
+                style={{
+                  backgroundColor: isSelected ? currentTheme.accent : (isLight ? '#f8fafc' : '#0f172a'),
+                  color: isSelected ? '#fff' : textPrimary,
+                  border: `1px solid ${isSelected ? currentTheme.accent : inputBorder}`,
+                }}
+              >
+                {b.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div style={{ minHeight: '100%', backgroundColor: pageBg }}>
+      {branchLineupSelector}
 
       {/* ── Inner Tab Switcher ───────────────────────────────────────── */}
       <div
@@ -2092,33 +2132,6 @@ export default function LineUp() {
           ═══════════════════════════════════════════════════════ */}
 
    <div className="md:hidden flex flex-col gap-4 pb-28">
-     {/* Dynamic Branch Chips selector for Mobile */}
-     {role === 'admin' && (
-       <div className="no-print flex flex-col gap-2 px-1">
-         <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
-         <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1">
-           {branches.map(b => {
-             const isSelected = b.id === branchId
-             return (
-               <button
-                 key={b.id}
-                 type="button"
-                 disabled={true}
-                 className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-sm whitespace-nowrap cursor-not-allowed"
-                 style={{
-                   backgroundColor: isSelected ? (isLight ? '#e2e8f0' : '#334155') : (isLight ? '#f1f5f9' : '#1e293b'),
-                   color: textMuted,
-                   border: `1px solid ${isLight ? '#cbd5e1' : '#475569'}`,
-                 }}
-               >
-                 {b.name}
-               </button>
-             )
-           })}
-         </div>
-       </div>
-     )}
-
      {/* Mobile Header */}
      <div className="rounded-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
        <div className="px-4 pt-4 pb-3">
@@ -2434,33 +2447,6 @@ export default function LineUp() {
           ═══════════════════════════════════════════════════════ */}
       <div className="hidden md:flex flex-col gap-6 pb-8">
 
-        {/* Dynamic Branch Chips selector */}
-        {role === 'admin' && (
-          <div className="no-print flex flex-col gap-1.5">
-            <span className="text-[10px] font-black uppercase tracking-widest pl-1" style={{ color: textMuted }}>Select Branch Line-Up</span>
-            <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-2 scroll-smooth max-w-full">
-              {branches.map(b => {
-                const isSelected = b.id === branchId
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    disabled={true}
-                    className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 cursor-not-allowed"
-                    style={{
-                      backgroundColor: isSelected ? (isLight ? '#e2e8f0' : '#334155') : (isLight ? '#f1f5f9' : '#1e293b'),
-                      color: textMuted,
-                      border: `1px solid ${isLight ? '#cbd5e1' : '#475569'}`,
-                    }}
-                  >
-                    {b.name}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
         {/* Top Control Bar */}
         <div className="rounded-xl p-4 lg:p-5 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
@@ -2470,28 +2456,6 @@ export default function LineUp() {
             <p className="text-xs md:text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end flex-wrap">
-            {/* Branch dropdown (fallback / legacy) */}
-            <div style={{ position: 'relative' }} className="flex items-center">
-              <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-              {role === 'admin' ? (
-                <>
-                  <select value={branchId} onChange={e => setBranchId(e.target.value)}
-                    disabled={true}
-                    className="rounded-lg pl-8 pr-7 py-1.5 text-xs font-bold appearance-none outline-none cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-                    style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
-                    {branches.length === 0 && <option value="">Loading branches…</option>}
-                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px]" style={{ color: textMuted }}>▼</span>
-                </>
-              ) : (
-                <span className="rounded-lg pl-8 pr-4 py-1.5 text-xs font-bold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  {branchName || 'Loading…'}
-                </span>
-              )}
-            </div>
-
             {/* Date */}
             <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"

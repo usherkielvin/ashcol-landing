@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Ticket as TicketIcon,
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
-  PanelLeftOpen, Layers, ClipboardList,
+  PanelLeftOpen, ClipboardList,
   Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
   Building2
 } from 'lucide-react'
@@ -82,12 +82,12 @@ export default function DashboardLayout() {
           }
         }
         newList.sort((a, b) => a.name.localeCompare(b.name))
-        newList.unshift({ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' })
         setAdminBranches(newList)
         
         // Initialize default global branch if not set yet
         const stored = localStorage.getItem('ashcol-global-branch-id')
-        if (!stored && newList.length > 0) {
+        const storedStillValid = stored && newList.some(b => b.id === stored)
+        if ((!storedStillValid || !stored) && newList.length > 0) {
           localStorage.setItem('ashcol-global-branch-id', newList[0].id)
           setGlobalBranchId(newList[0].id)
           window.dispatchEvent(new Event('ashcol-global-branch-change'))
@@ -180,7 +180,6 @@ export default function DashboardLayout() {
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Purchase Monitor',path: '/purchase-monitor',icon: Layers,          roles: ['admin'] },
     { name: 'Transactions',    path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Performance',     path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },

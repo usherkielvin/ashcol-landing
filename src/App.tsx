@@ -19,7 +19,6 @@ import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
 
 import ClientMasterlist from './pages/ClientMasterlist'
-import PurchaseMonitor from './pages/PurchaseMonitor'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -86,7 +85,6 @@ export default function App() {
               <Route path="/lineup" element={<LineUp />} />
               <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
               <Route path="/service-report" element={<DailyServiceReport />} />
-              <Route path="/purchase-monitor" element={<PurchaseMonitor />} />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -163,6 +163,26 @@ const getTrNoDateCode = (date: string) => {
   return `${yearShort}${month}${day}`
 }
 
+const getRefundOptionText = (p: any) => {
+  let worker = 'STAFF'
+  let desc = p.description
+  if (p.description && p.description.includes('|')) {
+    const parts = p.description.split('|')
+    worker = parts[0].trim()
+    desc = parts[1].trim()
+  }
+  return `${worker} (REFUND - ${desc})`
+}
+
+const getWorkerName = (p: any) => {
+  let worker = 'STAFF'
+  if (p.description && p.description.includes('|')) {
+    const parts = p.description.split('|')
+    worker = parts[0].trim()
+  }
+  return worker
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DailySalesForm() {
@@ -374,6 +394,7 @@ export default function DailySalesForm() {
 
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
+  const [refundablePurchases, setRefundablePurchases] = useState<any[]>([])
 
   // Fetch branch details, closing cash, and rosters
   useEffect(() => {
@@ -435,10 +456,12 @@ export default function DailySalesForm() {
           ? `${selectedBranchId}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
           : selectedBranchId
 
-        const [resLineup, resService, resEmployees] = await Promise.all([
+        const cleanBranchIdForPurchases = selectedBranchId.replace(/-(sales|services)$/, '')
+        const [resLineup, resService, resEmployees, resPurchases] = await Promise.all([
           fetch(`${API_BASE_URL}/v1/lineup?date=${reportDate}&branchId=${lineupQueryBranchId}`, { headers }),
           fetch(`${API_BASE_URL}/v1/service-reports?date=${reportDate}&branchId=${selectedBranchId}`, { headers }),
-          fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
+          fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers }),
+          fetch(`${API_BASE_URL}/v1/reports/purchases?branchId=${cleanBranchIdForPurchases}`, { headers })
         ])
 
         const namesSet = new Set<string>()
@@ -486,6 +509,13 @@ export default function DailySalesForm() {
 
         const uniqueNames = Array.from(namesSet).sort()
         setTechSuggestions(uniqueNames)
+
+        let refPurchases: any[] = []
+        if (resPurchases && resPurchases.ok) {
+          const purchasesData = await resPurchases.json()
+          refPurchases = (purchasesData || []).filter((p: any) => p.receiptReturned && p.amount > p.actualAmount)
+        }
+        setRefundablePurchases(refPurchases)
 
       } catch (err) {
         console.error('Error pre-filling data:', err)
@@ -1333,8 +1363,18 @@ export default function DailySalesForm() {
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
                         <input type="text" placeholder="Name" value={row.name}
-                          onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                          list="tech-suggestions"
+                          onChange={e => {
+                            const val = e.target.value
+                            const matched = refundablePurchases.find(p => getRefundOptionText(p) === val)
+                            if (matched) {
+                              const worker = getWorkerName(matched)
+                              const refundAmt = String((matched.amount - matched.actualAmount).toFixed(2))
+                              setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: worker, amount: refundAmt } : r))
+                            } else {
+                              setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: val } : r))
+                            }
+                          }}
+                          list="cash-return-suggestions"
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
@@ -1936,6 +1976,17 @@ export default function DailySalesForm() {
         {techSuggestions.map(name => (
           <option key={name} value={name} />
         ))}
+      </datalist>
+
+      {/* Cash Return Autocomplete Datalist */}
+      <datalist id="cash-return-suggestions">
+        {techSuggestions.map(name => (
+          <option key={name} value={name} />
+        ))}
+        {refundablePurchases.map(p => {
+          const optionText = getRefundOptionText(p)
+          return <option key={p.id} value={optionText} />
+        })}
       </datalist>
 
     </div>

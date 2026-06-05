@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronUp, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Layers, Clock, ClipboardCheck, User, TrendingUp } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -14,6 +14,22 @@ import AutoSuggestInput from '../components/AutoSuggestInput'
 import * as XLSX from 'xlsx'
 
 interface BranchOption { id: string; name: string }
+
+interface PurchaseItem {
+  id: string
+  description: string
+  amount: number
+  receiptReturned: boolean
+  actualAmount: number
+  receiptNo: string
+  receiptDate: string
+  resolvedExpenseId: string
+  reportId: string
+  reportDate: string
+  auditLine: string
+  branchId: string
+  branchName: string
+}
 const peso = (v: number) => v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const historyDateTime = (value?: string) => {
   if (!value) return '-'
@@ -82,7 +98,7 @@ export default function AuditFinanceExpenses() {
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
   const [filterMonth, setFilterMonth] = useState('All')
-  const [sortConfig, setSortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
+  const [sortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
@@ -90,6 +106,35 @@ export default function AuditFinanceExpenses() {
   const [savingReceipt, setSavingReceipt] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
+
+  // --- Purchase Monitor Integration States ---
+  const [activeTab, setActiveTab] = useState<'expenses' | 'purchases'>('expenses')
+  const [purchases, setPurchases] = useState<PurchaseItem[]>([])
+  const [loadingPurchases, setLoadingPurchases] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('pending')
+  
+  // Resolve Purchase Modal State
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false)
+  const [selectedPurchase, setSelectedPurchase] = useState<PurchaseItem | null>(null)
+  const [resolvingPurchase, setResolvingPurchase] = useState(false)
+  
+  // Resolve Purchase Form State
+  const [actualAmount, setActualAmount] = useState('')
+  const [receiptNo, setReceiptNo] = useState('')
+  const [receiptDate, setReceiptDate] = useState(formatTodayReceiptDate())
+  const [dateRawPurchase, setDateRawPurchase] = useState(formatTodayReceiptDate())
+  const [dateErrorPurchase, setDateErrorPurchase] = useState('')
+  const [companyPurchase, setCompanyPurchase] = useState('')
+  const [descriptionPurchase, setDescriptionPurchase] = useState('')
+  const [expenseCategoryPurchase, setExpenseCategoryPurchase] = useState('OTHER')
+  const [sourceOfFundsPurchase, setSourceOfFundsPurchase] = useState('PETTY CASH')
+  const [incurredByPurchase, setIncurredByPurchase] = useState('')
+
+  // OCR/Scan state for purchase resolution
+  const [scanningPurchase, setScanningPurchase] = useState(false)
+  const [scanPreviewPurchase, setScanPreviewPurchase] = useState<string | null>(null)
+  const [scanErrorPurchase, setScanErrorPurchase] = useState('')
+  const fileInputPurchaseRef = useRef<HTMLInputElement>(null)
 
   // Dynamic categories state
   const [categories, setCategories] = useState<AuditExpenseCategoryDetail[]>([])
@@ -392,6 +437,265 @@ export default function AuditFinanceExpenses() {
 
   useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
   useEffect(() => { void reload() }, [reload])
+
+  const loadPurchases = useCallback(async () => {
+    setLoadingPurchases(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      let url = `${API_BASE_URL}/v1/reports/purchases?pendingOnly=${statusFilter === 'pending'}`
+      if (branchId) {
+        const cleanBranchId = branchId.replace(/-(sales|services)$/, '')
+        url += `&branchId=${cleanBranchId}`
+      }
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) {
+        const data = await res.json()
+        setPurchases(data)
+      }
+    } catch (err) {
+      console.error('Error fetching purchases:', err)
+    } finally {
+      setLoadingPurchases(false)
+    }
+  }, [branchId, statusFilter])
+
+  useEffect(() => {
+    if (canAccess) {
+      void loadPurchases()
+    }
+  }, [canAccess, loadPurchases])
+
+  const filteredPurchases = useMemo(() => {
+    let list = [...purchases]
+
+    // Status filter
+    if (statusFilter === 'pending') {
+      list = list.filter(p => !p.receiptReturned)
+    } else if (statusFilter === 'resolved') {
+      list = list.filter(p => p.receiptReturned)
+    }
+
+    // Branch filter
+    if (branchId) {
+      const cleanBranchId = branchId.replace(/-(sales|services)$/, '')
+      list = list.filter(p =>
+        p.branchId === cleanBranchId ||
+        p.branchId === branchId ||
+        p.branchId.startsWith(cleanBranchId + '-')
+      )
+
+      // Taguig department separation
+      if (branchId.endsWith('-sales')) {
+        list = list.filter(p => p.auditLine === 'TAGUIG_SALES' || !p.auditLine || p.branchId.toUpperCase().includes('SALES'))
+      } else if (branchId.endsWith('-services')) {
+        list = list.filter(p => p.auditLine === 'TAGUIG_SERVICE' || p.branchId.toUpperCase().includes('SERVICE'))
+      }
+    }
+
+    // Search filter
+    const q = search.trim().toLowerCase()
+    if (q) {
+      list = list.filter(p => 
+        p.description.toLowerCase().includes(q) ||
+        p.branchName.toLowerCase().includes(q) ||
+        (p.receiptNo || '').toLowerCase().includes(q) ||
+        p.reportDate.includes(q)
+      )
+    }
+
+    return list
+  }, [purchases, statusFilter, branchId, search])
+
+  // Summary Metrics
+  const purchaseStats = useMemo(() => {
+    const all = purchases
+    const pending = all.filter(p => !p.receiptReturned)
+    const resolved = all.filter(p => p.receiptReturned)
+         
+    return {
+      pendingCount: pending.length,
+      pendingTotal: pending.reduce((sum, p) => sum + p.amount, 0),
+      resolvedCount: resolved.length,
+      resolvedTotal: resolved.reduce((sum, p) => sum + p.actualAmount, 0),
+      totalDisbursed: all.reduce((sum, p) => sum + p.amount, 0)
+    }
+  }, [purchases])
+
+  const openResolveModal = (item: PurchaseItem) => {
+    setSelectedPurchase(item)
+    setActualAmount(String(item.amount))
+    setReceiptNo('')
+    setDateRawPurchase(formatTodayReceiptDate())
+    setReceiptDate(formatTodayReceiptDate())
+    setCompanyPurchase('')
+         
+    // Parse description if it's in installer|materials format
+    let descPart = item.description
+    let incPart = ''
+    if (item.description.includes('|')) {
+      const idx = item.description.indexOf('|')
+      incPart = item.description.substring(0, idx).trim()
+      descPart = item.description.substring(idx + 1).trim()
+    }
+         
+    setDescriptionPurchase(descPart)
+    setIncurredByPurchase(incPart.toUpperCase() || 'INSTALLER')
+    setExpenseCategoryPurchase(item.description.toUpperCase().includes('GAS') || item.description.toUpperCase().includes('FUEL') ? 'MOBILIZATION' : 'SERVICE MATERIALS')
+    setSourceOfFundsPurchase('PETTY CASH')
+    setScanPreviewPurchase(null)
+    setScanErrorPurchase('')
+    setDateErrorPurchase('')
+    setShowPurchaseModal(true)
+  }
+
+  const handleDateBlurPurchase = (raw: string) => {
+    const parsed = parseSmartDate(raw)
+    if (parsed) {
+      setDateRawPurchase(parsed)
+      setReceiptDate(parsed)
+      setDateErrorPurchase('')
+    } else if (raw.trim()) {
+      setDateErrorPurchase('Cannot parse date. Try: May 16, 16-May-26, 2026-05-16')
+    }
+  }
+
+  const submitResolution = async () => {
+    if (!selectedPurchase) return
+    const amt = parseFloat(actualAmount)
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid actual amount.')
+      return
+    }
+    if (!receiptNo.trim()) {
+      alert('Please enter a receipt number.')
+      return
+    }
+    if (!receiptDate.trim() || dateErrorPurchase) {
+      alert('Please enter a valid receipt date.')
+      return
+    }
+
+    setResolvingPurchase(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const payload = {
+        receiptNo: receiptNo.trim(),
+        actualAmount: amt,
+        receiptDate: receiptDate.trim(),
+        company: companyPurchase.trim(),
+        description: descriptionPurchase.trim(),
+        expenseCategory: expenseCategoryPurchase,
+        sourceOfFunds: sourceOfFundsPurchase,
+        incurredBy: incurredByPurchase.trim()
+      }
+
+      const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${selectedPurchase.id}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      })
+
+      if (res.ok) {
+        alert('Purchase request successfully resolved and recorded to Expenses!')
+        setShowPurchaseModal(false)
+        setSelectedPurchase(null)
+        await loadPurchases()
+        await reload()
+      } else {
+        const errorData = await res.json()
+        alert(errorData.error || 'Failed to resolve purchase item.')
+      }
+    } catch (err) {
+      console.error(err)
+      alert('An error occurred during submission.')
+    } finally {
+      setResolvingPurchase(false)
+    }
+  }
+
+  const computedChange = useMemo(() => {
+    if (!selectedPurchase) return 0
+    const amt = parseFloat(actualAmount)
+    if (isNaN(amt)) return 0
+    return selectedPurchase.amount - amt
+  }, [selectedPurchase, actualAmount])
+
+  const processPurchaseImage = async (file: File) => {
+    const url = URL.createObjectURL(file)
+    setScanPreviewPurchase(url)
+    setScanningPurchase(true)
+    setScanErrorPurchase('')
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Scan server error ${res.status}`)
+      const data = await res.json() as Record<string, any>
+      if (data.error) {
+        setScanErrorPurchase(`Scan failed: ${data.error}`)
+        return
+      }
+
+      if (data.date) {
+        const parsed = parseSmartDate(String(data.date))
+        if (parsed) {
+          setDateRawPurchase(parsed)
+          setReceiptDate(parsed)
+        }
+      }
+      if (data.company) setCompanyPurchase(String(data.company).toUpperCase())
+      if (data.receiptNo) setReceiptNo(String(data.receiptNo))
+      if (data.amount != null) {
+        const amtVal = parseFloat(String(data.amount).replace(/,/g, ''))
+        if (!isNaN(amtVal)) {
+          setActualAmount(String(amtVal))
+        }
+      }
+      if (data.description) setDescriptionPurchase(String(data.description))
+      if (data.expenseCategory) setExpenseCategoryPurchase(String(data.expenseCategory).toUpperCase())
+      if (data.sourceOfFunds) setSourceOfFundsPurchase(String(data.sourceOfFunds))
+      if (data.incurredBy) setIncurredByPurchase(String(data.incurredBy).toUpperCase())
+    } catch (err: any) {
+      setScanErrorPurchase(err.message || 'Could not scan receipt. Please input manually.')
+    } finally {
+      setScanningPurchase(false)
+      if (fileInputPurchaseRef.current) fileInputPurchaseRef.current.value = ''
+    }
+  }
+
+  const handleScanPurchaseImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await processPurchaseImage(file)
+  }
+
+  useEffect(() => {
+    const handlePurchasePaste = async (e: ClipboardEvent) => {
+      if (!showPurchaseModal || scanningPurchase) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (blob) {
+            const file = new File([blob], 'pasted-receipt.png', { type: item.type })
+            await processPurchaseImage(file)
+            return
+          }
+        }
+      }
+    }
+    window.addEventListener('paste', handlePurchasePaste)
+    return () => window.removeEventListener('paste', handlePurchasePaste)
+  }, [showPurchaseModal, scanningPurchase])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -961,31 +1265,69 @@ export default function AuditFinanceExpenses() {
           <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
           <h1 className="text-sm md:text-base font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              if (showForm) {
-                setShowForm(false); setEditing(null)
-              } else {
-                setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+        {activeTab === 'expenses' && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (showForm) {
+                  setShowForm(false); setEditing(null)
+                } else {
+                  setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                }
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
+              style={{ backgroundColor: showForm ? '#EF4444' : accent }}
+            >
+              {showForm
+                ? <><X size={13} /> Close</>
+                : <><Plus size={13} /> Add Record</>
               }
-            }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
-            style={{ backgroundColor: showForm ? '#EF4444' : accent }}
-          >
-            {showForm
-              ? <><X size={13} /> Close</>
-              : <><Plus size={13} /> Add Record</>
-            }
-          </button>
-          <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-            <Upload size={13} />{importing ? 'Importing…' : 'Import'}
-          </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
-        </div>
+            </button>
+            <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+              <Upload size={13} />{importing ? 'Importing…' : 'Import'}
+            </button>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
+          </div>
+        )}
+      </div>
+
+      {/* ── SUB-TABS NAVIGATION ── */}
+      <div className="flex border-b" style={{ borderColor: border }}>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('expenses')
+            setSearch('')
+          }}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'expenses'
+              ? 'border-emerald-500 text-emerald-500'
+              : 'border-transparent text-slate-500 hover:text-slate-400'
+          }`}
+          style={{ color: activeTab === 'expenses' ? accent : undefined }}
+        >
+          <ClipboardList size={14} />
+          Expenses Log
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('purchases')
+            setSearch('')
+          }}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-all duration-200 ${
+            activeTab === 'purchases'
+              ? 'border-emerald-500 text-emerald-500'
+              : 'border-transparent text-slate-500 hover:text-slate-400'
+          }`}
+          style={{ color: activeTab === 'purchases' ? accent : undefined }}
+        >
+          <Layers size={14} />
+          Pending Purchases
+        </button>
       </div>
 
       {/* ── FILTERS ── */}
@@ -1018,7 +1360,7 @@ export default function AuditFinanceExpenses() {
         </div>
 
         {/* Month selector */}
-        {branchId && (
+        {activeTab === 'expenses' && branchId && (
           <div style={{ position: 'relative' }} className="w-full sm:w-36">
             <CalendarDays size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
             <select
@@ -1034,13 +1376,34 @@ export default function AuditFinanceExpenses() {
           </div>
         )}
 
+        {/* Purchase Status selector */}
+        {activeTab === 'purchases' && (
+          <div className="flex items-center gap-1.5">
+            {(['pending', 'resolved', 'all'] as const).map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setStatusFilter(status)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all duration-150"
+                style={{
+                  backgroundColor: statusFilter === status ? accent : 'transparent',
+                  color: statusFilter === status ? '#ffffff' : textMuted,
+                  border: `1px solid ${statusFilter === status ? accent : border}`
+                }}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Search */}
         <div style={{ position: 'relative' }} className="flex-1 min-w-[200px] w-full">
           <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search company, description, date, receipt no…"
+            placeholder={activeTab === 'expenses' ? "Search company, description, date, receipt no…" : "Search description, branch, receipt no…"}
             className="w-full rounded-lg pl-7 pr-7 py-2 text-xs outline-none"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
           />
@@ -1371,13 +1734,13 @@ export default function AuditFinanceExpenses() {
         </div>
       )}
 
-      {/* ── RECEIPT TABLE / DAILY LOG ── */}
-      {branchId && (
+      {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
+      {activeTab === 'expenses' && branchId && (
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
             <div className="min-w-0">
               <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
-                {branchName}
+                {branchName} — Expenses
               </h2>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1395,42 +1758,15 @@ export default function AuditFinanceExpenses() {
               No expense records found. {!search && 'Add records manually or import from Excel.'}
             </div>
           ) : (
-            // ── Table view ──
+            // ── Table view (Redesigned 5-column layout) ──
             <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[900px]">
+              <table className="w-full text-xs min-w-[750px]">
                 <thead>
                   <tr style={{ backgroundColor: `${accent}18` }}>
-                    {[
-                      { key: 'date', label: 'Date' },
-                      { key: 'incurredBy', label: 'Incurred By' },
-                      { key: 'description', label: 'Description' },
-                      { key: 'company', label: 'Company' },
-                      { key: 'receiptNo', label: 'Receipt No' },
-                      { key: 'amount', label: 'Amount' },
-                      { key: 'expenseCategory', label: 'Category' },
-                      { key: 'sourceOfFunds', label: 'Source' }
-                    ].map(({ key, label }) => {
-                      const isSorted = sortConfig?.key === key
-                      return (
-                        <th key={key}
-                          className="px-3 py-3 text-left font-bold cursor-pointer select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                          style={{ color: textMuted }}
-                          onClick={() => {
-                            setSortConfig(prev => {
-                              if (prev?.key === key) {
-                                return prev.direction === 'asc' ? { key: key as keyof AuditExpense, direction: 'desc' } : null
-                              }
-                              return { key: key as keyof AuditExpense, direction: 'asc' }
-                            })
-                          }}
-                        >
-                          <div className="flex items-center gap-1">
-                            {label}
-                            {isSorted && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
-                          </div>
-                        </th>
-                      )
-                    })}
+                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date & Incurred By</th>
+                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Details</th>
+                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category & Source</th>
+                    <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
                     <th className="px-3 py-3"></th>
                   </tr>
                 </thead>
@@ -1442,18 +1778,33 @@ export default function AuditFinanceExpenses() {
                       title="Click to view details"
                       className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                       style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
-                      <td className="px-3 py-2" style={{ color: textPrimary }}>{row.date}</td>
-                      <td className="px-3 py-2" style={{ color: textPrimary }}>{row.incurredBy}</td>
-                      <td className="px-3 py-2" style={{ color: textPrimary }}>{row.description}</td>
-                      <td className="px-3 py-2" style={{ color: textPrimary }}>{row.company}</td>
-                      <td className="px-3 py-2" style={{ color: textMuted }}>{row.receiptNo || '—'}</td>
-                      <td className="px-3 py-2 text-right font-semibold" style={{ color: textPrimary }}>₱{peso(row.amount)}</td>
-                      <td className="px-3 py-2" style={{ color: textMuted }}>{row.expenseCategory}</td>
-                      <td className="px-3 py-2" style={{ color: textMuted }}>{row.sourceOfFunds || '—'}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-2">
-                          <button type="button" onClick={(e) => { e.stopPropagation(); startEdit(row) }}><Pencil size={13} style={{ color: textMuted }} /></button>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); void handleDeleteRecord(row) }}><Trash2 size={13} style={{ color: danger }} /></button>
+                      <td className="px-3 py-2.5">
+                        <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
+                        <div className="text-[10px]" style={{ color: textMuted }}>By: {row.incurredBy}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium truncate max-w-xs md:max-w-sm" style={{ color: textPrimary }} title={row.description}>{row.description}</div>
+                        <div className="text-[10px]" style={{ color: textMuted }}>{row.company || '—'} {row.receiptNo ? `• Receipt: ${row.receiptNo}` : ''}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase" 
+                          style={{ 
+                            backgroundColor: row.expenseCategory === 'OTHER' ? `${textMuted}22` : `${accent}22`, 
+                            color: row.expenseCategory === 'OTHER' ? textMuted : accent 
+                          }}>
+                          {row.expenseCategory}
+                        </span>
+                        {row.sourceOfFunds && (
+                          <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>Source: {row.sourceOfFunds}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-bold" style={{ color: textPrimary }}>
+                        ₱{peso(row.amount)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-2 justify-end" onClick={e => e.stopPropagation()}>
+                          <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
+                          <button type="button" onClick={() => void handleDeleteRecord(row)} className="p-1 rounded hover:bg-rose-500/10"><Trash2 size={13} style={{ color: danger }} /></button>
                         </div>
                       </td>
                     </tr>
@@ -1461,9 +1812,9 @@ export default function AuditFinanceExpenses() {
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: `2px solid ${border}` }}>
-                    <td colSpan={5} className="px-3 py-2 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
-                    <td className="px-3 py-2 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
-                    <td colSpan={3} />
+                    <td colSpan={3} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
+                    <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>
@@ -1488,6 +1839,178 @@ export default function AuditFinanceExpenses() {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'purchases' && (
+        <>
+          {/* ── METRIC STATS CARDS ── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold tracking-wider text-amber-500 uppercase flex items-center gap-1">
+                  <Clock size={12} /> Pending Receipts
+                </span>
+                <span className="text-xl font-bold" style={{ color: textPrimary }}>
+                  ₱{peso(purchaseStats.pendingTotal)}
+                </span>
+                <span className="text-[10px]" style={{ color: textMuted }}>
+                  {purchaseStats.pendingCount} items waiting for receipt
+                </span>
+              </div>
+              <div className="rounded-lg p-2.5 bg-amber-500/10 text-amber-500">
+                <Receipt size={20} />
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold tracking-wider text-emerald-500 uppercase flex items-center gap-1">
+                  <ClipboardCheck size={12} /> Confirmed Expenses
+                </span>
+                <span className="text-xl font-bold" style={{ color: textPrimary }}>
+                  ₱{peso(purchaseStats.resolvedTotal)}
+                </span>
+                <span className="text-[10px]" style={{ color: textMuted }}>
+                  {purchaseStats.resolvedCount} requests successfully cleared
+                </span>
+              </div>
+              <div className="rounded-lg p-2.5 bg-emerald-500/10 text-emerald-500">
+                <TrendingUp size={20} />
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold tracking-wider uppercase" style={{ color: textMuted }}>
+                  Total Funds Released
+                </span>
+                <span className="text-xl font-bold" style={{ color: textPrimary }}>
+                  ₱{peso(purchaseStats.totalDisbursed)}
+                </span>
+                <span className="text-[10px]" style={{ color: textMuted }}>
+                  Gross cash allocated for installer purchases
+                </span>
+              </div>
+              <div className="rounded-lg p-2.5 bg-blue-500/10 text-blue-500">
+                <Building2 size={20} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── PURCHASES LIST TABLE ── */}
+          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="min-w-0">
+                <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
+                  {branchName || 'All Branches'} — Purchases
+                </h2>
+              </div>
+            </div>
+
+            {loadingPurchases ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2">
+                <Loader2 className="animate-spin text-emerald-500" size={24} />
+                <span className="text-xs font-medium" style={{ color: textMuted }}>Loading purchases...</span>
+              </div>
+            ) : filteredPurchases.length === 0 ? (
+              <div className="p-10 text-center" style={{ color: textMuted }}>
+                No purchases found. Pending purchases appear when workers request funds in DTR reports.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[750px]">
+                  <thead>
+                    <tr style={{ backgroundColor: `${accent}18` }}>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Status & Branch</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Requester & Details</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Financial Summary</th>
+                      <th className="px-3 py-3 text-center font-bold" style={{ color: textMuted }}>Resolution</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPurchases.map((p, idx) => {
+                      let worker = 'STAFF'
+                      let desc = p.description
+                      if (p.description.includes('|')) {
+                        const parts = p.description.split('|')
+                        worker = parts[0]
+                        desc = parts[1]
+                      }
+
+                      const refundAmount = p.amount - p.actualAmount
+                      const isResolved = p.receiptReturned
+
+                      return (
+                        <tr key={p.id}
+                          className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                          style={{ borderTop: `1px solid ${border}`, backgroundColor: idx % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined }}>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1.5 font-bold" style={{ color: textPrimary }}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isResolved ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                              {p.branchName.replace(/^(ashcol\s+)/i, '').toUpperCase()}
+                            </div>
+                            <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>
+                              DTR Date: {p.reportDate} {p.auditLine ? `(${p.auditLine.replace('TAGUIG_', '')})` : ''}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 max-w-xs">
+                            <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-blue-500">
+                              <User size={11} /> {worker}
+                            </div>
+                            <div className="text-xs mt-0.5 font-normal truncate" title={desc}>{desc}</div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div>
+                              <span style={{ color: textMuted }}>Released: </span>
+                              <span className="font-semibold" style={{ color: textPrimary }}>₱{peso(p.amount)}</span>
+                            </div>
+                            {isResolved ? (
+                              <>
+                                <div>
+                                  <span style={{ color: textMuted }}>Spent: </span>
+                                  <span className="font-semibold text-emerald-500">₱{peso(p.actualAmount)}</span>
+                                </div>
+                                <div className="text-[10px] font-bold">
+                                  <span style={{ color: textMuted }}>Change: </span>
+                                  <span className={refundAmount > 0 ? 'text-emerald-500' : refundAmount < 0 ? 'text-rose-500' : 'text-slate-400'}>
+                                    ₱{peso(refundAmount)}
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-[10px] italic" style={{ color: textMuted }}>Awaiting receipt resolution</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            {isResolved ? (
+                              <div className="flex flex-col items-center text-[10px]" style={{ color: textMuted }}>
+                                <span className="font-bold text-emerald-500">RESOLVED</span>
+                                <span>Receipt: {p.receiptNo}</span>
+                                <span>Date: {p.receiptDate}</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openResolveModal(p)}
+                                className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide uppercase transition-all duration-150 hover:shadow-md"
+                                style={{ backgroundColor: accent, color: '#ffffff' }}
+                              >
+                                Resolve Receipt
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* ── Excel hint ── */}
@@ -1769,6 +2292,271 @@ export default function AuditFinanceExpenses() {
                 }}
               >
                 Update Existing Record
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── RESOLVE PURCHASE MODAL ── */}
+      {showPurchaseModal && selectedPurchase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all duration-300"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            
+            {/* Modal Header */}
+            <div className="p-5 md:p-6 border-b flex justify-between items-center" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <Receipt className="text-emerald-500" size={20} />
+                <div>
+                  <h2 className="text-base font-bold" style={{ color: textPrimary }}>Resolve DTR Purchase</h2>
+                  <p className="text-xs" style={{ color: textMuted }}>Original Request: {selectedPurchase.branchName} • {selectedPurchase.reportDate}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPurchaseModal(false)} className="rounded-full p-1.5 transition-colors hover:bg-gray-500/10" style={{ color: textMuted }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body (Scrollable) */}
+            <div className="p-5 overflow-y-auto flex flex-col gap-4">
+              
+              {/* Receipt OCR Scanning Zone */}
+              <div className="border border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2.5 relative transition-all duration-200 hover:bg-emerald-500/5 group"
+                style={{ borderColor: scanPreviewPurchase ? accent : inputBorder, backgroundColor: inputBg }}>
+                
+                {scanPreviewPurchase ? (
+                  <div className="w-full flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <img src={scanPreviewPurchase} alt="Receipt preview" className="w-10 h-10 object-cover rounded border" style={{ borderColor: border }} />
+                      <div className="text-left">
+                        <span className="text-xs font-bold block" style={{ color: textPrimary }}>Receipt Image Selected</span>
+                        <span className="text-[10px]" style={{ color: textMuted }}>Press Ctrl+V to paste a different image</span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => { setScanPreviewPurchase(null); setScanErrorPurchase('') }}
+                      className="px-2 py-1 rounded text-xs font-semibold border text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      style={{ borderColor: 'rgba(239, 68, 68, 0.2)' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Upload size={24} className="text-emerald-500 group-hover:scale-110 transition-transform duration-200" />
+                    <div className="text-center">
+                      <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                        Drag & Drop or Paste Image to Scan Receipt
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>
+                        Auto-fills Receipt #, date, vendor, description, and spent amount using AI OCR
+                      </p>
+                    </div>
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      ref={fileInputPurchaseRef} 
+                      onChange={handleScanPurchaseImage} 
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputPurchaseRef.current?.click()}
+                      className="px-3 py-1 rounded text-xs font-semibold border transition-all duration-150"
+                      style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: cardBg }}
+                    >
+                      Browse Receipt Image
+                    </button>
+                  </>
+                )}
+
+                {scanningPurchase && (
+                  <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-1.5 rounded-xl">
+                    <Loader2 className="animate-spin text-emerald-500" size={20} />
+                    <span className="text-xs font-bold text-white">AI analyzing receipt data...</span>
+                  </div>
+                )}
+              </div>
+
+              {scanErrorPurchase && (
+                <div className="p-2.5 rounded-lg text-xs font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 flex items-start gap-2">
+                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                  <span>{scanErrorPurchase}</span>
+                </div>
+              )}
+
+              {/* Original Disbursed Box */}
+              <div className="rounded-xl p-3 flex justify-between items-center" style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', border: `1px solid ${border}` }}>
+                <div>
+                  <span className="text-[10px] font-bold block" style={{ color: textMuted }}>Original Purchase Request Amount</span>
+                  <span className="text-xs font-semibold uppercase text-blue-500">{selectedPurchase.description}</span>
+                </div>
+                <span className="text-base font-black text-amber-500">₱{peso(selectedPurchase.amount)}</span>
+              </div>
+
+              {/* Detail Form Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                
+                {/* 1. Actual Spent */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Actual Spent Amount (₱)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Enter amount spent"
+                    value={actualAmount}
+                    onChange={(e) => setActualAmount(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                {/* 2. Receipt Number */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Receipt / Invoice Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. INV-10029"
+                    value={receiptNo}
+                    onChange={(e) => setReceiptNo(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                {/* 3. Receipt Date */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Receipt Date</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 03-Jun-26, Jun 3"
+                    value={dateRawPurchase}
+                    onChange={(e) => setDateRawPurchase(e.target.value)}
+                    onBlur={() => handleDateBlurPurchase(dateRawPurchase)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                  {dateErrorPurchase && <span className="text-[10px] text-rose-500 font-medium">{dateErrorPurchase}</span>}
+                </div>
+
+                {/* 4. Company / Vendor */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Vendor / Supplier Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Ace Hardware"
+                    value={companyPurchase}
+                    onChange={(e) => setCompanyPurchase(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                {/* 5. Incurred By */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Incurred By (Installer)</label>
+                  <input
+                    type="text"
+                    placeholder="Worker who requested funds"
+                    value={incurredByPurchase}
+                    onChange={(e) => setIncurredByPurchase(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                {/* 6. Description */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Expense Details</label>
+                  <input
+                    type="text"
+                    placeholder="What was bought"
+                    value={descriptionPurchase}
+                    onChange={(e) => setDescriptionPurchase(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                {/* 7. Category */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Expense Category</label>
+                  <select
+                    value={expenseCategoryPurchase}
+                    onChange={(e) => setExpenseCategoryPurchase(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    {allCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 8. Source of Funds */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Source of Funds</label>
+                  <select
+                    value={sourceOfFundsPurchase}
+                    onChange={(e) => setSourceOfFundsPurchase(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="PETTY CASH">Petty Cash</option>
+                    <option value="CASH REMITS">Cash Remits</option>
+                    <option value="OFFICE FUND">Office Fund</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Calculated Change Details */}
+              <div className="rounded-xl p-3 mt-1 flex items-center justify-between transition-all duration-300"
+                style={{ 
+                  backgroundColor: computedChange > 0 ? 'rgba(16, 185, 129, 0.08)' : computedChange < 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                  border: `1px solid ${computedChange > 0 ? '#10B98133' : computedChange < 0 ? '#EF444433' : '#F59E0B33'}` 
+                }}
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className={computedChange > 0 ? 'text-emerald-500' : computedChange < 0 ? 'text-rose-500' : 'text-amber-500'} size={16} />
+                  <div>
+                    <span className="text-xs font-bold block" style={{ color: textPrimary }}>Refund or Difference</span>
+                    <span className="text-[10px]" style={{ color: textMuted }}>
+                      {computedChange > 0 
+                        ? 'Installer returned change. Safe to remit back to office cash.' 
+                        : computedChange < 0 
+                          ? 'Spent exceeded request. Additional reimbursement required.'
+                          : 'Amount matched perfectly. No change returned.'
+                      }
+                    </span>
+                  </div>
+                </div>
+                <span className={`text-lg font-black ${computedChange > 0 ? 'text-emerald-500' : computedChange < 0 ? 'text-rose-500' : 'text-amber-500'}`}>
+                  ₱{peso(computedChange)}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t flex justify-end gap-2" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={() => setShowPurchaseModal(false)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-gray-500/10 transition-colors"
+                style={{ borderColor: inputBorder, color: textPrimary }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={resolvingPurchase || !!dateErrorPurchase}
+                onClick={submitResolution}
+                className="px-4 py-1.5 text-xs font-semibold rounded-lg text-white transition-all flex items-center gap-1.5 hover:shadow disabled:opacity-50"
+                style={{ backgroundColor: accent }}
+              >
+                {resolvingPurchase && <Loader2 className="animate-spin" size={13} />}
+                Confirm & Log Expense
               </button>
             </div>
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
-  AlertTriangle, X, ChevronRight, FileText, Eye, Download,
+  AlertTriangle, X, ChevronRight, Eye, Download,
   ArrowUp, ArrowDown,
   Minimize2, Maximize2, MoreVertical,
   HelpCircle, Loader2,
@@ -218,32 +218,11 @@ export default function DailyAuditReport() {
     || jobTitleLower === 'coordinator'
     || jobTitleLower.includes('coor')
   )
-  const isManagerOrStaff = role === 'manager' || role === 'staff' || isSalesCoordinator || role === 'admin' || role === 'oic'
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
   const canImportExcel = isAdmin || isManager
 
-  const hasAlreadySubmitted = useMemo(() => {
-    if (!user?.branchId) return false
-    const userBid = user.branchId.toLowerCase().trim()
-    const userEmailLower = (user.email || '').toLowerCase()
-    const isUserServices = userEmailLower.includes('service')
 
-    return rows.some(row => {
-      const isSubmitted = row.status !== 'NO RECORD' && row.status !== 'NO REPORT' && row.status !== 'NO SCHED'
-      if (!isSubmitted) return false
-
-      const isSameBranchId = row.branchId.toLowerCase().trim() === userBid
-      const isTaguig = userBid === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' || userBid.startsWith('br-taguig') || userBid.includes('taguig')
-
-      if (isTaguig) {
-        const isRowService = row.auditLine === 'TAGUIG_SERVICE' || row.branchName.toLowerCase().includes('service') || row.branchName.toLowerCase().includes('services')
-        return isSameBranchId && (isUserServices === isRowService)
-      }
-
-      return isSameBranchId
-    })
-  }, [user, rows])
 
   const fetchAudit = useCallback(async () => {
     if (viewMode === 'range' && (!rangeFrom || !rangeTo)) return
@@ -706,22 +685,7 @@ export default function DailyAuditReport() {
         </div>
       )}
 
-      {/* ── Manager/Staff CTA ─────────────────────────────────────────── */}
-      {isManagerOrStaff && !hasAlreadySubmitted && (
-        <div className="hidden md:flex rounded-xl px-4 py-2.5 items-center justify-between gap-3 text-xs no-print"
-          style={{ backgroundColor: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
-            <span style={{ color: textPrimary }} className="font-bold">Submit Today's Branch Report:</span>
-            <span style={{ color: textMuted }}>Daily Sales &amp; Expenses encoder</span>
-          </div>
-          <a href="/daily-report" id="submit-daily-report-btn"
-            className="flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold text-white transition-all hover:opacity-90 shrink-0"
-            style={{ backgroundColor: '#10B981' }}>
-            Open Form <ChevronRight className="w-3 h-3" />
-          </a>
-        </div>
-      )}
+
 
       {/* ── Above Quota Spotlight ─────────────────────────────────────── */}
       {!loading && rows.length > 0 && (() => {
@@ -1285,19 +1249,25 @@ export default function DailyAuditReport() {
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-              <div>
-                <h4 className="font-black text-base" style={{ color: textPrimary }}>{selectedRow.branchName}</h4>
-                <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
-                  {viewMode === 'single'
-                    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-start justify-between w-full sm:w-auto">
+                <div>
+                  <h4 className="font-black text-base" style={{ color: textPrimary }}>{selectedRow.branchName}</h4>
+                  <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
+                    {viewMode === 'single'
+                      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                      : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedRow(null)}
+                  className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
                 {isAdmin && selectedRow.id && (
                   <button type="button" onClick={() => handleClearRow(selectedRow)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors text-center"
                     style={{ border: 'none' }}>
                     Clear Row
                   </button>
@@ -1308,14 +1278,14 @@ export default function DailyAuditReport() {
                       ? `/daily-report?id=${selectedRow.id}`
                       : `/daily-report?branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
                     }
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
+                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
                   >
                     {selectedRow.id ? 'Edit DTR' : 'Create DTR'}
                   </a>
                 )}
                 <button onClick={() => setSelectedRow(null)}
-                  className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
+                  className="hidden sm:block p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1575,18 +1545,15 @@ export default function DailyAuditReport() {
                               </td>
                               <td className="py-2" style={{ color: textPrimary }}>{item.description}</td>
                               <td className="py-2 px-2">
-                                {item.type === 'PURCHASE' ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                    backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                    color: item.receiptReturned ? '#10B981' : '#F59E0B'
-                                  }}>
-                                    {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
-                                    UPLOADED
-                                  </span>
-                                )}
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                  backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                  color: item.receiptReturned ? '#10B981' : '#F59E0B'
+                                }}>
+                                  {item.type === 'PURCHASE'
+                                    ? (item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING'))
+                                    : (item.receiptReturned ? 'UPLOADED' : 'NOT UPLOADED YET')
+                                  }
+                                </span>
                               </td>
                               <td className="py-2 text-right font-bold" style={{ color: tc }}>₱{peso(item.amount)}</td>
                             </tr>
