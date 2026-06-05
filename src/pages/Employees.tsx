@@ -648,6 +648,7 @@ export default function Employees() {
                       <option value="HELPER">HELPER</option>
                       <option value="DRIVER">DRIVER</option>
                       <option value="COORDINATOR">COORDINATOR</option>
+                      <option value="SALES EXECUTIVE">SALES EXECUTIVE</option>
                     </select>
                   </Field>
                 )}
@@ -747,6 +748,7 @@ export default function Employees() {
                       <option value="HELPER">HELPER</option>
                       <option value="DRIVER">DRIVER</option>
                       <option value="COORDINATOR">COORDINATOR</option>
+                      <option value="SALES EXECUTIVE">SALES EXECUTIVE</option>
                     </select>
                   </Field>
                 )}
