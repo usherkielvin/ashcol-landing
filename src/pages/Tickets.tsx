@@ -1103,11 +1103,10 @@ export default function Tickets() {
         // Click cycles through STATUS_OPTS — no dropdown needed
         const currentIdx = STATUS_OPTS.indexOf(cellValue)
         const nextVal = STATUS_OPTS[(currentIdx + 1) % STATUS_OPTS.length]
-        const sc = statusColor(cellValue, isLight)
         return (
           <span
-            className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase inline-block cursor-pointer select-none transition-all hover:opacity-80"
-            style={{ color: sc.text, backgroundColor: sc.bg, border: `1px solid ${sc.b}` }}
+            className="text-[11px] font-black uppercase inline-block cursor-pointer select-none transition-all hover:opacity-80"
+            style={{ color: textPrimary }}
             title={`Click to set: ${nextVal.replace(/_/g, ' ')}`}
             onClick={e => { e.stopPropagation(); setCellValue(nextVal); saveCell(ticket.id, label, nextVal) }}
           >
@@ -1153,10 +1152,8 @@ export default function Tickets() {
       ? { cursor: 'text' } : {}
 
     if (label === 'STATUS') {
-      const sc = statusColor(val, isLight)
       return (
-        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase inline-block"
-              style={{ color: sc.text, backgroundColor: sc.bg, border: `1px solid ${sc.b}` }}>
+        <span style={{ ...truncStyle, ...editHint, fontWeight: 700 }} title={val}>
           {val ? val.replace(/_/g, ' ') : '—'}
         </span>
       )
@@ -1164,13 +1161,7 @@ export default function Tickets() {
 
     if (label === 'SERVICE') {
       return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase block text-center truncate"
-              style={{
-                backgroundColor: isLight ? 'rgba(99,102,241,0.08)' : 'rgba(129,140,248,0.12)',
-                color: isLight ? '#4F46E5' : '#818CF8',
-                border: `1px solid ${isLight ? 'rgba(99,102,241,0.2)' : 'rgba(129,140,248,0.25)'}`,
-              }}
-              title={val}>
+        <span style={{ ...truncStyle, ...editHint, fontWeight: 500 }} title={val}>
           {val || '—'}
         </span>
       )
