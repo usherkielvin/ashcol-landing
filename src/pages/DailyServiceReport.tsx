@@ -220,7 +220,11 @@ export default function DailyServiceReport() {
   const handleAddRowInline = () => {
     if (!canEdit) return
     const tempId = `temp-${Date.now()}`
-    const realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+    let realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+    if (realBranchId === 'ALL_BRANCHES') {
+      const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
+      realBranchId = actualBranch ? actualBranch.id : null
+    }
     const newRow = blankRow(date, isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
     newRow.id = tempId
 
@@ -322,12 +326,14 @@ export default function DailyServiceReport() {
       newList.sort((a, b) => a.name.localeCompare(b.name))
 
       let finalList = newList
-      if (isBranchScoped && user?.branchId) {
+      if (isAdmin) {
+        finalList = [{ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' }, ...newList]
+      } else if (isBranchScoped && user?.branchId) {
         finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
       }
       setBranches(finalList)
     } catch (e) { console.error(e) }
-  }, [isBranchScoped, user?.branchId])
+  }, [isBranchScoped, user?.branchId, isAdmin])
 
   useEffect(() => {
     if (isBranchScoped && user?.branchId && !branchFilter) {
@@ -362,7 +368,9 @@ export default function DailyServiceReport() {
       if (branchFilter && /-(sales|services)$/i.test(branchFilter)) {
         apiBranchId = branchFilter.replace(/-sales$|-services$/i, '')
       }
-      if (apiBranchId) params.set('branchId', apiBranchId)
+      if (apiBranchId && apiBranchId !== 'ALL_BRANCHES') {
+        params.set('branchId', apiBranchId)
+      }
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -679,9 +687,17 @@ export default function DailyServiceReport() {
     if (label === "CUSTOMER'S NAME") {
       return (
         <div style={{ ...truncStyle, ...editHint }} title={val} className="flex items-center gap-1.5 justify-between">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
-            <span className="font-semibold truncate">{val}</span>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
+              <span className="font-semibold truncate">{val}</span>
+            </div>
+            {branchFilter === 'ALL_BRANCHES' && r.branchName && (
+              <span className="text-[9px] px-1 py-0.5 rounded font-bold w-fit uppercase mt-0.5"
+                    style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
+                {r.branchName}
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -689,10 +705,11 @@ export default function DailyServiceReport() {
               e.stopPropagation()
               setDetailRow(r)
             }}
-            className="p-1 rounded hover:bg-slate-200/20 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all shrink-0 hover:scale-[1.03]"
             title="View Details"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Eye className="w-3 h-3" />
+            <span>DETAILS</span>
           </button>
         </div>
       )

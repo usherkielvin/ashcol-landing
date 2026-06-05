@@ -1626,6 +1626,84 @@ export default function LineUp() {
     return '#10b981'
   }
 
+  const wGetStatusTheme = (status: WDayStatus) => {
+    const isDarkTheme = !isLight
+    switch (status) {
+      case 'WITH SCHED':
+        return {
+          border: '#10b981',
+          bg: isDarkTheme ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)',
+          headerBg: '#10b981',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#064e3b' : '#a7f3d0',
+          unitText: isDarkTheme ? '#064e3b' : '#064e3b',
+        }
+      case 'NO SCHED':
+        return {
+          border: '#ef4444',
+          bg: isDarkTheme ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.06)',
+          headerBg: '#ef4444',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#7f1d1d' : '#fecaca',
+          unitText: isDarkTheme ? '#7f1d1d' : '#7f1d1d',
+        }
+      case 'CANCEL':
+        return {
+          border: '#3b82f6',
+          bg: isDarkTheme ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.06)',
+          headerBg: '#3b82f6',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#1e3a8a' : '#bfdbfe',
+          unitText: isDarkTheme ? '#1e3a8a' : '#1e3a8a',
+        }
+      case 'ABSENT':
+        return {
+          border: '#475569',
+          bg: isDarkTheme ? 'rgba(71,85,105,0.12)' : 'rgba(71,85,105,0.06)',
+          headerBg: '#475569',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#0f172a' : '#cbd5e1',
+          unitText: isDarkTheme ? '#0f172a' : '#0f172a',
+        }
+      case 'ON LEAVE':
+        return {
+          border: '#a855f7',
+          bg: isDarkTheme ? 'rgba(168,85,247,0.12)' : 'rgba(168,85,247,0.06)',
+          headerBg: '#a855f7',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#581c87' : '#e9d5ff',
+          unitText: isDarkTheme ? '#581c87' : '#581c87',
+        }
+      case 'DAY OFF':
+        return {
+          border: '#f97316',
+          bg: isDarkTheme ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.06)',
+          headerBg: '#f97316',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#7c2d12' : '#ffedd5',
+          unitText: isDarkTheme ? '#7c2d12' : '#7c2d12',
+        }
+      case 'SURVEY':
+        return {
+          border: '#ec4899',
+          bg: isDarkTheme ? 'rgba(236,72,153,0.12)' : 'rgba(236,72,153,0.06)',
+          headerBg: '#ec4899',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#831843' : '#fbcfe8',
+          unitText: isDarkTheme ? '#831843' : '#831843',
+        }
+      default:
+        return {
+          border: '#10b981',
+          bg: isDarkTheme ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)',
+          headerBg: '#10b981',
+          headerText: '#fff',
+          unitBg: isDarkTheme ? '#064e3b' : '#a7f3d0',
+          unitText: isDarkTheme ? '#064e3b' : '#064e3b',
+        }
+    }
+  }
+
   // Weekly schedule state — defined here, only active when tab='weekly'
   const [wKind, setWKind] = useState<WScheduleKind>('drivers')
   const [wAnchorDate, setWAnchorDate] = useState(wToDateKey(new Date()))
@@ -1877,6 +1955,19 @@ export default function LineUp() {
 
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (branchId === 'ALL_BRANCHES') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 rounded-2xl"
+           style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary, minHeight: '400px' }}>
+        <Building2 className="w-16 h-16 opacity-30 text-emerald-500 animate-pulse" />
+        <h3 className="text-lg font-bold">Select Active Branch</h3>
+        <p className="text-sm max-w-md text-center" style={{ color: textMuted }}>
+          Field Schedules and Weekly Schedules are managed per branch. Please select a specific active branch from the sidebar to view or edit schedules.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100%', backgroundColor: pageBg }}>
 
@@ -3530,17 +3621,27 @@ export default function LineUp() {
         <div className="grid mb-2 gap-1"
              style={{ gridTemplateColumns: `180px repeat(7, 1fr)${wKind === 'installers' ? ' 80px 80px' : ''} 1fr` }}>
           <div />
-          {wDays.map(day => (
-            <div key={day} className="flex flex-col items-center px-1 py-1.5 rounded-md"
-                 style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                {new Date(`${day}T00:00:00`).toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}
-              </span>
-              <span className="text-[10px] font-black mt-0.5" style={{ color: textPrimary }}>
-                {new Date(`${day}T00:00:00`).getDate()}
-              </span>
-            </div>
-          ))}
+          {wDays.map(day => {
+            const isToday = day === wToDateKey(new Date())
+            return (
+              <div key={day} className="flex flex-col items-center px-1 py-1.5 rounded-md transition-all"
+                   style={{
+                     backgroundColor: isToday ? currentTheme.accent : inputBg,
+                     borderColor: isToday ? currentTheme.accent : border,
+                     borderWidth: '1px',
+                     borderStyle: 'solid'
+                   }}>
+                <span className="text-[9px] font-bold uppercase tracking-wider"
+                      style={{ color: isToday ? '#fff' : textMuted, opacity: isToday ? 0.85 : 1 }}>
+                  {new Date(`${day}T00:00:00`).toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}
+                </span>
+                <span className="text-[10px] font-black mt-0.5"
+                      style={{ color: isToday ? '#fff' : textPrimary }}>
+                  {new Date(`${day}T00:00:00`).getDate()}
+                </span>
+              </div>
+            )
+          })}
           {wKind === 'installers' && <>
             <div className="flex items-center justify-center px-1 py-1.5 rounded-md"
                  style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
@@ -3629,35 +3730,36 @@ export default function LineUp() {
               {/* Day cells */}
               {wDays.map(day => {
                 const cell = person.days[day] || { status: 'WITH SCHED' as WDayStatus, note: '', units: '' }
-                const st = wStatusStyle(cell.status)
+                const theme = wGetStatusTheme(cell.status)
                 return (
-                  <div key={day} className="rounded-md overflow-hidden flex flex-col h-full"
-                       style={{ border: `1px solid ${border}` }}>
+                  <div key={day} className="rounded-md overflow-hidden flex flex-col h-full transition-all duration-150"
+                       style={{ border: `1.5px solid ${theme.border}`, backgroundColor: theme.bg }}>
                     {/* Status Select header */}
                     <div className="px-1 py-1 flex items-center justify-center border-b"
-                         style={{ backgroundColor: st.backgroundColor, borderColor: border }}>
+                         style={{ backgroundColor: theme.headerBg, borderColor: theme.border }}>
                       <select value={cell.status}
                               onChange={e => wUpdateDay(person.id, day, { status: e.target.value as WDayStatus })}
                               className="w-full text-center text-[9px] font-black uppercase outline-none cursor-pointer bg-transparent"
-                              style={{ color: st.color }}>
+                              style={{ color: theme.headerText }}>
                         {W_STATUS_OPTIONS.map(s => <option key={s} value={s} style={{ color: '#111', backgroundColor: '#fff' }}>{s}</option>)}
                       </select>
                     </div>
                     {/* Note text area */}
-                    <div className="flex-1 p-1" style={{ backgroundColor: cardBg }}>
+                    <div className="flex-1 p-1">
                       <textarea value={cell.note}
                                 onChange={e => wUpdateDay(person.id, day, { note: e.target.value.toUpperCase() })}
                                 placeholder="Note"
                                 rows={2}
-                                className="w-full resize-none bg-transparent outline-none text-[9px] font-medium uppercase leading-tight placeholder-slate-400/55"
+                                className="w-full resize-none bg-transparent outline-none text-[9px] font-bold uppercase leading-tight placeholder-slate-400/55"
                                 style={{ color: textPrimary }} />
                     </div>
                     {/* Units input bottom bar */}
-                    <div className="flex items-center" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fef08a' : '#854d0e' }}>
-                      <span className="pl-1.5 text-[8px] font-black text-black/50 select-none">QTY:</span>
+                    <div className="flex items-center" style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: theme.unitBg }}>
+                      <span className="pl-1.5 text-[8px] font-black select-none" style={{ color: theme.unitText, opacity: 0.7 }}>QTY:</span>
                       <input value={cell.units}
                              onChange={e => wUpdateDay(person.id, day, { units: e.target.value })}
-                             className="w-full text-center text-xs font-black outline-none py-0.5 bg-transparent text-black" />
+                             className="w-full text-center text-xs font-black outline-none py-0.5 bg-transparent"
+                             style={{ color: theme.unitText }} />
                     </div>
                   </div>
                 )

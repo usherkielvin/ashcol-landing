@@ -216,7 +216,7 @@ function fmtPhone(raw: string): string {
 }
 
 function getBranchDisplayName(id: string | null): string {
-  if (!id) return 'All branches'
+  if (!id || id === 'ALL_BRANCHES') return 'All branches'
   const upper = id.toUpperCase()
   if (upper === 'BR-TAGUIG-SALES-SALES' || upper === 'BR-TAGUIG-SALES') {
     return 'TAGUIG SALES'
@@ -816,7 +816,7 @@ export default function Tickets() {
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
     let list = tickets.filter(t => ACTIVE.includes(t.status.toUpperCase()))
-    if (isAdmin && globalBranchId) {
+    if (isAdmin && globalBranchId && globalBranchId !== 'ALL_BRANCHES') {
       list = list.filter(t => {
         const b = (t.branchId || t.branch_id || '').toUpperCase()
         if (!b) return true

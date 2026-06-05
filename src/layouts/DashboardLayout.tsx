@@ -82,6 +82,7 @@ export default function DashboardLayout() {
           }
         }
         newList.sort((a, b) => a.name.localeCompare(b.name))
+        newList.unshift({ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' })
         setAdminBranches(newList)
         
         // Initialize default global branch if not set yet
