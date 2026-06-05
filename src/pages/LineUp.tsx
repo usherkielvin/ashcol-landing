@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
   ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
   ChevronDown, Camera, Copy, Save, Check, Maximize2, ArrowLeft,
+  CalendarDays, Wrench, Users,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -128,15 +130,6 @@ interface LineUpRow {
 }
 
 
-const DEFAULT_PREENCODED_ROWS = (date: string, branchId: string): LineUpRow[] => [
-  { id: `local-pre-1-${date}`, lineupDate: date, branchId, service: 'STRADA', driverName: 'ANGELO', driverTime: '8:00AM', installerName: 'RANIL', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0 },
-  { id: `local-pre-2-${date}`, lineupDate: date, branchId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'JHUMAR', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 1 },
-  { id: `local-pre-3-${date}`, lineupDate: date, branchId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'KENNAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 2 },
-  { id: `local-pre-4-${date}`, lineupDate: date, branchId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'CRIS', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 3 },
-  { id: `local-pre-5-${date}`, lineupDate: date, branchId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'SONNY', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 4 },
-  { id: `local-pre-6-${date}`, lineupDate: date, branchId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'RYAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 5 },
-  { id: `local-pre-7-${date}`, lineupDate: date, branchId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'ALLAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 6 },
-]
 
 const LS_KEY = 'ashcol_lineup_v2'
 function lsLoad(): LineUpRow[] {
@@ -151,6 +144,12 @@ export default function LineUp() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
+
+  // ── Inner tab routing ────────────────────────────────────────────────────
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'weekly' ? 'weekly' : 'field'
+  const setActiveTab = (tab: 'field' | 'weekly') =>
+    setSearchParams(tab === 'weekly' ? { tab: 'weekly' } : {}, { replace: true })
 
   const role      = (user?.role || '').toLowerCase()
   const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
@@ -247,6 +246,50 @@ export default function LineUp() {
     [...new Set([...suggestions.remarks.map(rem => rem.toUpperCase()), ...REMARKS_OPTIONS])].sort(),
     [suggestions.remarks]
   )
+
+  const getBranchDefaultRows = useCallback((dateStr: string, bId: string): LineUpRow[] => {
+    const isTaguig = branchName && /TAGUIG/i.test(branchName)
+    const branchDrivers = suggestions.drivers || []
+    const branchInstallers = suggestions.installers || []
+    const branchServices = suggestions.services || []
+
+    if (isTaguig || branchDrivers.length === 0 || branchInstallers.length === 0) {
+      return [
+        { id: `local-pre-1-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'STRADA', driverName: 'ANGELO', driverTime: '8:00AM', installerName: 'RANIL', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0 },
+        { id: `local-pre-2-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'JHUMAR', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 1 },
+        { id: `local-pre-3-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'KENNAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 2 },
+        { id: `local-pre-4-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'CRIS', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 3 },
+        { id: `local-pre-5-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'SONNY', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 4 },
+        { id: `local-pre-6-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'RYAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 5 },
+        { id: `local-pre-7-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'ALLAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 6 },
+      ]
+    }
+
+    const resRows: LineUpRow[] = []
+    const numRows = Math.max(7, branchDrivers.length)
+    for (let i = 0; i < numRows; i++) {
+      const service = branchServices[i % branchServices.length] || 
+                      (i === 0 ? 'STRADA' : i === 1 || i === 2 ? 'T3' : i === 3 || i === 4 ? 'FB19' : 'T2')
+      
+      const driver = branchDrivers[i % branchDrivers.length] || ''
+      const installer = branchInstallers[i % branchInstallers.length] || ''
+      
+      resRows.push({
+        id: `local-pre-${i + 1}-${dateStr}`,
+        lineupDate: dateStr,
+        branchId: bId,
+        service: service.toUpperCase(),
+        driverName: driver.toUpperCase(),
+        driverTime: '8:00AM',
+        installerName: installer.toUpperCase(),
+        installerTime: '7:00AM',
+        route: '',
+        remarks: '',
+        sortOrder: i
+      })
+    }
+    return resRows
+  }, [branchName, suggestions])
 
   const fetchSuggestions = useCallback(async (bId: string) => {
     if (!bId) return
@@ -387,7 +430,7 @@ export default function LineUp() {
 
     filtered = filtered.filter(r => r.service !== '__NOTES__').sort((a, b) => a.sortOrder - b.sortOrder)
     if (filtered.length === 0 && branchId) {
-      filtered = DEFAULT_PREENCODED_ROWS(date, branchId)
+      filtered = getBranchDefaultRows(date, branchId)
     }
     setRows(filtered)
 
@@ -415,7 +458,7 @@ export default function LineUp() {
           if (serverRows.length > 0) {
             setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
           } else {
-            setRows(DEFAULT_PREENCODED_ROWS(date, branchId))
+            setRows(getBranchDefaultRows(date, branchId))
           }
         }
       }
@@ -424,7 +467,7 @@ export default function LineUp() {
     } finally {
       setLoading(false)
     }
-  }, [date, branchId])
+  }, [date, branchId, getBranchDefaultRows])
 
   useEffect(() => {
     void fetchLineup()
@@ -859,7 +902,7 @@ export default function LineUp() {
 
   const performLoadDefaultTemplate = async () => {
     if (!branchId) return
-    const defaults = DEFAULT_PREENCODED_ROWS(date, branchId)
+    const defaults = getBranchDefaultRows(date, branchId)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
     // 1. Delete existing DB rows for this date+branch (non-local rows) in a single transactional request
@@ -1484,7 +1527,162 @@ export default function LineUp() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // ── Weekly Schedule (embedded) ─────────────────────────────────────────────
+  type WScheduleKind = 'drivers' | 'installers'
+  type WDayStatus = 'WITH SCHED' | 'NO SCHED' | 'CANCEL' | 'ABSENT' | 'ON LEAVE' | 'DAY OFF' | 'SURVEY'
+  interface WPersonSchedule {
+    id: string; name: string; roleNote: string; photoUrl: string
+    days: Record<string, { status: WDayStatus; note: string; units: string }>
+    totalUnitsTeamWork: string; totalUnitsCleaning: string; remarks: string
+  }
+  const W_LS_KEY = 'ashcol_weekly_field_schedule_v1'
+  const W_STATUS_OPTIONS: WDayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY']
+  const wToDateKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const wGetWeekStart = (dateKey: string) => {
+    const d = new Date(`${dateKey}T00:00:00`); const day = d.getDay()
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day)); return d
+  }
+  const wGetWeekDays = (dateKey: string) => {
+    const start = wGetWeekStart(dateKey)
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate()+i); return wToDateKey(d) })
+  }
+  const wFormatDay = (dk: string) => new Date(`${dk}T00:00:00`).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}).toUpperCase()
+  const wFormatWeekLabel = (days: string[]) => {
+    const f = new Date(`${days[0]}T00:00:00`); const l = new Date(`${days[6]}T00:00:00`)
+    return `${f.toLocaleDateString('en-US',{month:'long'}).toUpperCase()} ${f.getDate()} – ${l.getDate()}`
+  }
+  const wDefaultPeople = (kind: WScheduleKind, days: string[]): WPersonSchedule[] => {
+    let names: string[] = []
+    if (kind === 'drivers') {
+      names = suggestions.drivers && suggestions.drivers.length > 0
+        ? suggestions.drivers.map(d => d.toUpperCase())
+        : []
+    } else {
+      names = suggestions.installers && suggestions.installers.length > 0
+        ? suggestions.installers.map(i => i.toUpperCase())
+        : []
+    }
+
+    if (names.length === 0) {
+      names = kind === 'drivers' ? ['WILLIAM PRADO','GEREMIE COLOSO'] : ['ROMMEL ABECHUELA','GILBERT COLOSO']
+    }
+
+    return names.map((name,index) => ({
+      id: `${kind}-${index+1}`, name, roleNote:'IN-HOUSE', photoUrl:'',
+      days: Object.fromEntries(days.map((day,di) => [day,{
+        status: di<3?'WITH SCHED':di<5?(index===0?'WITH SCHED':'NO SCHED'):'DAY OFF' as WDayStatus,
+        note: kind==='installers'&&index===0&&di===1?'DAY 2 - INSTALLATION OF PIPING ONLY':'',
+        units: di<5&&(index===0||di<3)?'1':'0',
+      }])) as WPersonSchedule['days'],
+      totalUnitsTeamWork:'', totalUnitsCleaning:'', remarks:'',
+    }))
+  }
+  const wLoadSchedule = (kind: WScheduleKind, weekKey: string, days: string[], bId: string) => {
+    const activeBranchId = bId || 'default'
+    try {
+      const all = JSON.parse(localStorage.getItem(W_LS_KEY)||'{}')
+      const saved = all?.[activeBranchId]?.[kind]?.[weekKey]
+      if(Array.isArray(saved)&&saved.length) return saved as WPersonSchedule[]
+    } catch {}
+    return wDefaultPeople(kind, days)
+  }
+  const wSaveSchedule = (kind: WScheduleKind, weekKey: string, rows: WPersonSchedule[], bId: string) => {
+    const activeBranchId = bId || 'default'
+    try {
+      const all = JSON.parse(localStorage.getItem(W_LS_KEY)||'{}')
+      if (!all[activeBranchId]) all[activeBranchId] = {}
+      if (!all[activeBranchId][kind]) all[activeBranchId][kind] = {}
+      all[activeBranchId][kind][weekKey] = rows
+      localStorage.setItem(W_LS_KEY, JSON.stringify(all))
+    } catch {}
+  }
+  const wStatusStyle = (status: WDayStatus): React.CSSProperties => {
+    if (status==='NO SCHED')  return { backgroundColor:'#ef4444', color:'#fff' }
+    if (status==='CANCEL')    return { backgroundColor:'#60a5fa', color:'#1e293b' }
+    if (status==='ABSENT')    return { backgroundColor:'#0f172a', color:'#fff' }
+    if (status==='ON LEAVE')  return { backgroundColor:'#a855f7', color:'#fff' }
+    if (status==='DAY OFF')   return { backgroundColor:'#f97316', color:'#fff' }
+    if (status==='SURVEY')    return { backgroundColor:'#c084fc', color:'#fff' }
+    return { backgroundColor:'#10b981', color:'#fff' }
+  }
+  const wStatusDot = (status: WDayStatus): string => {
+    if (status==='NO SCHED')  return '#ef4444'
+    if (status==='CANCEL')    return '#60a5fa'
+    if (status==='ABSENT')    return '#0f172a'
+    if (status==='ON LEAVE')  return '#a855f7'
+    if (status==='DAY OFF')   return '#f97316'
+    if (status==='SURVEY')    return '#c084fc'
+    return '#10b981'
+  }
+
+  // Weekly schedule state — defined here, only active when tab='weekly'
+  const [wKind, setWKind] = useState<WScheduleKind>('drivers')
+  const [wAnchorDate, setWAnchorDate] = useState(wToDateKey(new Date()))
+  const wDays = useMemo(() => wGetWeekDays(wAnchorDate), [wAnchorDate])
+  const wWeekKey = wDays[0]
+  const [wDrivers, setWDrivers] = useState<WPersonSchedule[]>(() => wLoadSchedule('drivers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
+  const [wInstallers, setWInstallers] = useState<WPersonSchedule[]>(() => wLoadSchedule('installers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
+  const wRows = wKind === 'drivers' ? wDrivers : wInstallers
+  const wSetRows = (next: WPersonSchedule[]) => {
+    if (wKind === 'drivers') setWDrivers(next); else setWInstallers(next)
+    wSaveSchedule(wKind, wWeekKey, next, branchId)
+  }
+  const wReloadWeek = (nextDate: string) => {
+    const nd = wGetWeekDays(nextDate); const nw = nd[0]
+    setWAnchorDate(nextDate)
+    setWDrivers(wLoadSchedule('drivers', nw, nd, branchId))
+    setWInstallers(wLoadSchedule('installers', nw, nd, branchId))
+  }
+
+  useEffect(() => {
+    setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
+    setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
+  }, [branchId, wWeekKey, suggestions])
+  const wUpdatePerson = (id: string, patch: Partial<WPersonSchedule>) =>
+    wSetRows(wRows.map(r => r.id===id ? {...r,...patch} : r))
+  const wUpdateDay = (id: string, day: string, patch: Partial<WPersonSchedule['days'][string]>) =>
+    wSetRows(wRows.map(r => r.id===id ? {...r,days:{...r.days,[day]:{...(r.days[day]||{status:'WITH SCHED' as WDayStatus,note:'',units:''}), ...patch}}} : r))
+  const wAddPerson = () => {
+    const next: WPersonSchedule = {
+      id: `${wKind}-${Date.now()}`, name:'', roleNote:'IN-HOUSE', photoUrl:'',
+      days: Object.fromEntries(wDays.map(day=>[day,{status:'WITH SCHED' as WDayStatus,note:'',units:'1'}])) as WPersonSchedule['days'],
+      totalUnitsTeamWork:'', totalUnitsCleaning:'', remarks:'',
+    }
+    wSetRows([...wRows, next])
+  }
+  const wRemovePerson = (id: string) => wSetRows(wRows.filter(r => r.id!==id))
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
+    <div style={{ minHeight: '100%', backgroundColor: pageBg }}>
+
+      {/* ── Inner Tab Switcher ───────────────────────────────────────── */}
+      <div
+        className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit"
+        style={{ backgroundColor: isLight ? '#e8edf4' : '#0a1628', border: `1px solid ${border}` }}
+      >
+        {([
+          { id: 'field',  label: 'Field Schedule',  icon: <Truck className="w-3.5 h-3.5" /> },
+          { id: 'weekly', label: 'Weekly Schedule', icon: <CalendarDays className="w-3.5 h-3.5" /> },
+        ] as const).map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200"
+            style={{
+              backgroundColor: activeTab === tab.id ? (isLight ? '#fff' : '#1e2d48') : 'transparent',
+              color: activeTab === tab.id ? textPrimary : textMuted,
+              boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+            }}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+    {activeTab === 'field' && (
     <div
       style={{
         backgroundColor: pageBg,
@@ -3028,6 +3226,207 @@ export default function LineUp() {
           }
         }
       `}</style>
+    </div>
+    )}
+
+
+    {/* ══════════════════════════════════════════════════════════════════
+        WEEKLY SCHEDULE TAB
+        Redesigned: cleaner card-per-person layout, not a crowded table
+        ══════════════════════════════════════════════════════════════════ */}
+    {activeTab === 'weekly' && (
+      <div style={{ color: textPrimary }}>
+
+        {/* Header Bar */}
+        <div className="rounded-lg mb-4 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Scheduling</p>
+            <h2 className="text-md font-extrabold tracking-tight">{wFormatWeekLabel(wDays)}</h2>
+            <p className="text-xs mt-0.5 font-medium" style={{ color: textMuted }}>
+              {wKind === 'drivers' ? 'Drivers' : 'Installers'} · Weekly Overview
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Kind Toggle */}
+            <div className="flex items-center gap-1 p-1 rounded-md" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
+              {(['drivers','installers'] as WScheduleKind[]).map(k => (
+                <button key={k} type="button" onClick={() => setWKind(k)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all"
+                        style={{
+                          backgroundColor: wKind === k ? cardBg : 'transparent',
+                          color: wKind === k ? textPrimary : textMuted,
+                        }}>
+                  {k === 'drivers' ? <Truck className="w-3.5 h-3.5" /> : <Wrench className="w-3.5 h-3.5" />}
+                  {k === 'drivers' ? 'Drivers' : 'Installers'}
+                </button>
+              ))}
+            </div>
+            {/* Date picker */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+                 style={{ backgroundColor: isLight ? '#f8fafc' : '#0f172a', border: `1px solid ${border}` }}>
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: textMuted }} />
+              <input type="date" value={wAnchorDate} onChange={e => wReloadWeek(e.target.value)}
+                     className="bg-transparent outline-none text-xs font-bold" style={{ color: textPrimary }} />
+            </div>
+            {/* Add Row */}
+            <button type="button" onClick={wAddPerson}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-bold text-white transition-all hover:opacity-90"
+                    style={{ backgroundColor: '#10b981' }}>
+              <Plus className="w-3.5 h-3.5" /> Add Person
+            </button>
+          </div>
+        </div>
+
+        {/* Legend strip */}
+        <div className="rounded-lg mb-4 px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-2"
+             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Legend</span>
+          {W_STATUS_OPTIONS.map(s => (
+            <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-bold">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: wStatusDot(s) }} />
+              {s}
+            </span>
+          ))}
+        </div>
+
+        {/* Day headers row */}
+        <div className="grid mb-2 gap-1"
+             style={{ gridTemplateColumns: `180px repeat(7, 1fr)${wKind === 'installers' ? ' 80px 80px' : ''} 1fr` }}>
+          <div />
+          {wDays.map(day => (
+            <div key={day} className="flex flex-col items-center px-1 py-1.5 rounded-md"
+                 style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                {new Date(`${day}T00:00:00`).toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}
+              </span>
+              <span className="text-[10px] font-black mt-0.5" style={{ color: textPrimary }}>
+                {new Date(`${day}T00:00:00`).getDate()}
+              </span>
+            </div>
+          ))}
+          {wKind === 'installers' && <>
+            <div className="flex items-center justify-center px-1 py-1.5 rounded-md"
+                 style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: textMuted }}>TW</span>
+            </div>
+            <div className="flex items-center justify-center px-1 py-1.5 rounded-md"
+                 style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-center" style={{ color: textMuted }}>CLN</span>
+            </div>
+          </>}
+          <div className="flex items-center justify-center px-1 py-1.5 rounded-md"
+               style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>REMARKS</span>
+          </div>
+        </div>
+
+        {/* Person rows */}
+        {wRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 rounded-lg"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <Users className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+            <p className="text-sm font-semibold" style={{ color: textMuted }}>No people yet — add a row to start</p>
+          </div>
+        ) : wRows.map((person, idx) => {
+          return (
+            <div key={person.id} className="grid mb-1.5 gap-1 items-stretch"
+                 style={{ gridTemplateColumns: `180px repeat(7, 1fr)${wKind === 'installers' ? ' 80px 80px' : ''} 1fr` }}>
+
+              {/* Name card */}
+              <div className="rounded-md px-3 py-2 flex flex-col justify-between h-full"
+                   style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <span className="text-[9px] font-bold" style={{ color: textMuted }}>#{idx+1}</span>
+                  <button type="button" onClick={() => wRemovePerson(person.id)}
+                          className="p-0.5 rounded hover:text-red-400 transition-colors" style={{ color: textMuted }}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <input value={person.name}
+                       onChange={e => wUpdatePerson(person.id, { name: e.target.value.toUpperCase() })}
+                       placeholder={wKind === 'drivers' ? 'Driver name' : 'Installer name'}
+                       className="bg-transparent outline-none text-xs font-bold uppercase w-full mb-1"
+                       style={{ color: textPrimary }} />
+                <input value={person.roleNote}
+                       onChange={e => wUpdatePerson(person.id, { roleNote: e.target.value.toUpperCase() })}
+                       className="bg-transparent outline-none text-[9px] font-medium w-full"
+                       style={{ color: textMuted }} />
+              </div>
+
+              {/* Day cells */}
+              {wDays.map(day => {
+                const cell = person.days[day] || { status: 'WITH SCHED' as WDayStatus, note: '', units: '' }
+                const st = wStatusStyle(cell.status)
+                return (
+                  <div key={day} className="rounded-md overflow-hidden flex flex-col h-full"
+                       style={{ border: `1px solid ${border}` }}>
+                    {/* Status Select header */}
+                    <div className="px-1 py-1 flex items-center justify-center border-b"
+                         style={{ backgroundColor: st.backgroundColor, borderColor: border }}>
+                      <select value={cell.status}
+                              onChange={e => wUpdateDay(person.id, day, { status: e.target.value as WDayStatus })}
+                              className="w-full text-center text-[9px] font-black uppercase outline-none cursor-pointer bg-transparent"
+                              style={{ color: st.color }}>
+                        {W_STATUS_OPTIONS.map(s => <option key={s} value={s} style={{ color: '#111', backgroundColor: '#fff' }}>{s}</option>)}
+                      </select>
+                    </div>
+                    {/* Note text area */}
+                    <div className="flex-1 p-1" style={{ backgroundColor: cardBg }}>
+                      <textarea value={cell.note}
+                                onChange={e => wUpdateDay(person.id, day, { note: e.target.value.toUpperCase() })}
+                                placeholder="Note"
+                                rows={2}
+                                className="w-full resize-none bg-transparent outline-none text-[9px] font-medium uppercase leading-tight placeholder-slate-400/55"
+                                style={{ color: textPrimary }} />
+                    </div>
+                    {/* Units input bottom bar */}
+                    <div className="flex items-center" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fef08a' : '#854d0e' }}>
+                      <span className="pl-1.5 text-[8px] font-black text-black/50 select-none">QTY:</span>
+                      <input value={cell.units}
+                             onChange={e => wUpdateDay(person.id, day, { units: e.target.value })}
+                             className="w-full text-center text-xs font-black outline-none py-0.5 bg-transparent text-black" />
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Installers: TW + CLN */}
+              {wKind === 'installers' && <>
+                <div className="rounded-md overflow-hidden h-full flex flex-col" style={{ border: `1px solid ${border}`, backgroundColor: cardBg }}>
+                  <div className="px-2 py-1 text-[9px] font-bold uppercase text-center border-b" style={{ backgroundColor: inputBg, color: textMuted, borderColor: border }}>TW</div>
+                  <textarea value={person.totalUnitsTeamWork}
+                            onChange={e => wUpdatePerson(person.id, { totalUnitsTeamWork: e.target.value })}
+                            className="w-full flex-1 resize-none bg-transparent outline-none p-1.5 text-xs font-bold" style={{ color: textPrimary, minHeight: '48px' }} />
+                </div>
+                <div className="rounded-md overflow-hidden h-full flex flex-col" style={{ border: `1px solid ${border}`, backgroundColor: cardBg }}>
+                  <div className="px-2 py-1 text-[9px] font-bold uppercase text-center border-b" style={{ backgroundColor: inputBg, color: textMuted, borderColor: border }}>CLN</div>
+                  <textarea value={person.totalUnitsCleaning}
+                            onChange={e => wUpdatePerson(person.id, { totalUnitsCleaning: e.target.value })}
+                            className="w-full flex-1 resize-none bg-transparent outline-none p-1.5 text-xs font-bold" style={{ color: textPrimary, minHeight: '48px' }} />
+                </div>
+              </>}
+
+              {/* Remarks */}
+              <div className="rounded-md overflow-hidden h-full flex flex-col" style={{ border: `1px solid ${border}`, backgroundColor: cardBg }}>
+                <div className="px-2 py-1 text-[9px] font-bold uppercase border-b" style={{ backgroundColor: inputBg, color: textMuted, borderColor: border }}>Remarks</div>
+                <textarea value={person.remarks}
+                          onChange={e => wUpdatePerson(person.id, { remarks: e.target.value.toUpperCase() })}
+                          className="w-full flex-1 resize-none bg-transparent outline-none p-1.5 text-xs font-semibold uppercase" style={{ color: textPrimary, minHeight: '48px' }} />
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Month label at bottom */}
+        <div className="mt-4 text-center">
+          <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
+            {wFormatDay(wDays[0])} — {wFormatDay(wDays[6])}
+          </span>
+        </div>
+      </div>
+    )}
+
     </div>
   )
 }

@@ -175,6 +175,7 @@ export default function DashboardLayout() {
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+
     { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
