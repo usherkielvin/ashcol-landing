@@ -1607,7 +1607,7 @@ export default function LineUp() {
       localStorage.setItem(W_LS_KEY, JSON.stringify(all))
     } catch {}
   }
-  const wStatusStyle = (status: WDayStatus): React.CSSProperties => {
+  const _wStatusStyle = (status: WDayStatus): React.CSSProperties => {
     if (status==='NO SCHED')  return { backgroundColor:'#ef4444', color:'#fff' }
     if (status==='CANCEL')    return { backgroundColor:'#60a5fa', color:'#1e293b' }
     if (status==='ABSENT')    return { backgroundColor:'#0f172a', color:'#fff' }
