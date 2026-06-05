@@ -51,6 +51,20 @@ const avatarColor = (name: string) => {
 const initials = (name: string) =>
   name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '?'
 
+// ── Input helper ────────────────────────────────────────────────────────────
+interface FieldProps {
+  label: string
+  children: React.ReactNode
+  labelColor: string
+}
+
+const Field = ({ label, children, labelColor }: FieldProps) => (
+  <div className="flex flex-col gap-1.5">
+    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: labelColor }}>{label}</label>
+    {children}
+  </div>
+)
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Employees() {
   const { theme } = useTheme()
@@ -207,6 +221,7 @@ export default function Employees() {
     if (!editForm.email.trim()) { setFormErr('Email is required.'); return }
     setSaving(true); setFormErr('')
     try {
+      // 1. Save profile details first
       const url = isAdmin
         ? `${API_BASE_URL}/admin/users/${editTarget.id}`
         : `${API_BASE_URL}/manager/employees/${editTarget.id}`
@@ -229,6 +244,25 @@ export default function Employees() {
         setFormErr(d.message || d.error || 'Save failed.')
         return
       }
+
+      // 2. If active status changed, toggle it
+      if (editForm.isActive !== editTarget.isActive) {
+        const toggleUrl = isAdmin
+          ? `${API_BASE_URL}/admin/users/${editTarget.id}/toggle-active`
+          : `${API_BASE_URL}/manager/employees/${editTarget.id}/toggle-active`
+        const toggleRes = await fetch(toggleUrl, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token()}` },
+        })
+        if (!toggleRes.ok) {
+          const d = await toggleRes.json().catch(() => ({}))
+          setFormErr(d.message || d.error || 'Failed to update account status.')
+          // Still refresh table since profile changes succeeded
+          fetchEmployees()
+          return
+        }
+      }
+
       setEditTarget(null)
       fetchEmployees()
     } catch { setFormErr('Network error.') }
@@ -311,14 +345,6 @@ export default function Employees() {
     active:   employees.filter(e => e.isActive).length,
     inactive: employees.filter(e => !e.isActive).length,
   }
-
-  // ── Input helper ────────────────────────────────────────────────────────────
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{label}</label>
-      {children}
-    </div>
-  )
 
   const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm font-medium outline-none transition-all focus:ring-2 focus:ring-emerald-500/20"
   const inputStyle = { backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }
@@ -582,20 +608,20 @@ export default function Employees() {
 
               {/* Name + Email */}
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Full Name">
+                <Field label="Full Name" labelColor={textMuted}>
                   <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
                 </Field>
-                <Field label="Login Email">
+                <Field label="Login Email" labelColor={textMuted}>
                   <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
                 </Field>
               </div>
 
               {/* Phone + Branch */}
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Phone">
+                <Field label="Phone" labelColor={textMuted}>
                   <input className={inputCls} style={inputStyle} value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
                 </Field>
-                <Field label="Branch">
+                <Field label="Branch" labelColor={textMuted}>
                   <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
                     <option value="">— Unassigned —</option>
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -605,7 +631,7 @@ export default function Employees() {
 
               {/* Role + Job Title */}
               <div className="grid grid-cols-2 gap-3">
-                <Field label="System Role">
+                <Field label="System Role" labelColor={textMuted}>
                   <select className={inputCls} style={inputStyle}
                     value={editForm.role}
                     onChange={e => setEditForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}
@@ -616,7 +642,7 @@ export default function Employees() {
                   </select>
                 </Field>
                 {editForm.role === 'EMPLOYEE' && (
-                  <Field label="Job Title">
+                  <Field label="Job Title" labelColor={textMuted}>
                     <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
                       <option value="TECHNICIAN">TECHNICIAN</option>
                       <option value="HELPER">HELPER</option>
@@ -646,7 +672,7 @@ export default function Employees() {
               </div>
 
               {/* New Password */}
-              <Field label="New Password (leave blank to keep current)">
+              <Field label="New Password (leave blank to keep current)" labelColor={textMuted}>
                 <div className="relative">
                   <input
                     className={inputCls}
@@ -689,15 +715,15 @@ export default function Employees() {
             <div className="p-6 flex flex-col gap-4">
               {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
 
-              <Field label="Full Name">
+              <Field label="Full Name" labelColor={textMuted}>
                 <input className={inputCls} style={inputStyle} value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} placeholder="Juan Dela Cruz" />
               </Field>
-              <Field label="Login Email">
+              <Field label="Login Email" labelColor={textMuted}>
                 <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} placeholder="juan@ashcol.com.ph" />
               </Field>
 
               {isAdmin && (
-                <Field label="Branch">
+                <Field label="Branch" labelColor={textMuted}>
                   <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
                     <option value="">— Select branch —</option>
                     {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -706,7 +732,7 @@ export default function Employees() {
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="System Role">
+                <Field label="System Role" labelColor={textMuted}>
                   <select className={inputCls} style={inputStyle} value={createForm.role}
                     onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}>
                     <option value="EMPLOYEE">Employee</option>
@@ -715,7 +741,7 @@ export default function Employees() {
                   </select>
                 </Field>
                 {createForm.role === 'EMPLOYEE' && (
-                  <Field label="Job Title">
+                  <Field label="Job Title" labelColor={textMuted}>
                     <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
                       <option value="TECHNICIAN">TECHNICIAN</option>
                       <option value="HELPER">HELPER</option>

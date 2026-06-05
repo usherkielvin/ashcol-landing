@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
-  X, Search, AlertTriangle, Building2,
+  X, Search, AlertTriangle, Building2, Eye,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -45,20 +45,30 @@ interface ServiceRow {
   freeInstallation: boolean | null
 }
 
+const COL_FIELD: Record<string, keyof ServiceRow> = {
+  "CUSTOMER'S NAME":      'customerName',
+  'DESTINATION':          'customerAddress',
+  'DISTRICT':             'district',
+  'CONTACT NO.':          'customerPhone',
+  'BRAND':                'unitBrandModel',
+  'DLR':                  'dealer',
+  'INSTALLER':            'technicianName',
+  'NOTE':                 'note',
+  'SERVICE':              'serviceColumn',
+  'UPDATE':               'remarks',
+  'INSTALLATION CHARGES': 'amountCharged',
+  'MODE OF PAYMENT':      'paymentStatus',
+}
+
+const EDITABLE_COLS = [
+  "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
+  'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'INSTALLATION CHARGES',
+  'MODE OF PAYMENT',
+]
+
 interface BranchOption { id: string; name: string }
 
-const SERVICE_TYPES = ['INSTALLATION', 'FREE_INSTALLATION', 'SERVICE', 'REPAIR', 'MAINTENANCE', 'CHECK_UP', 'RELOCATION'] as const
-
-// Heuristic that mirrors the backend's isFreeInstallation logic so the modal
-// can keep the freeInstallation flag in sync as the user edits the COMMIT box.
-const detectFreeInstall = (commit: string | null | undefined) => {
-  if (!commit) return false
-  const u = commit.toUpperCase()
-  if (!u.includes('FREE')) return false
-  return u.includes('INSTAL') || u.includes('IDFT') || /\bFREE\s+\d+(ST|ND|RD|TH)\b/.test(u)
-}
-const PAYMENT_MODES = ['CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'PAID', 'UNPAID', 'PARTIAL'] as const
-const JOB_STATUSES = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RESCHEDULED'] as const
+const PAYMENT_MODES = ['CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'PAID', 'UNPAID', 'PARTIAL', 'FREE', 'FREE INSTALL'] as const
 
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -152,8 +162,6 @@ export default function DailyServiceReport() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
 
-  const primaryGreen = '#16A34A' // Green-600
-
   const role = (user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
@@ -172,16 +180,56 @@ export default function DailyServiceReport() {
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Modal state for create / edit
-  const [editing, setEditing] = useState<Partial<ServiceRow> | null>(null)
-  const [activeFormTab, setActiveFormTab] = useState<'customer' | 'service' | 'personnel' | 'finance'>('customer')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
+  // Inline editing states
+  const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
+  const [cellValue, setCellValue] = useState<string>('')
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
+
+  // Details Modal States
+  const [detailRow, setDetailRow] = useState<ServiceRow | null>(null)
+  const [detailForm, setDetailForm] = useState<ServiceRow | null>(null)
+
   useEffect(() => {
-    if (editing) {
-      setActiveFormTab('customer')
+    setDetailForm(detailRow)
+  }, [detailRow])
+
+  const handleSaveDetailRow = async (updatedRow: ServiceRow) => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const payload = {
+        ...updatedRow,
+        branchId: updatedRow.branchId ? updatedRow.branchId.replace(/-sales$|-services$/, '') : null
+      }
+      const url = `${API_BASE_URL}/v1/service-reports/${updatedRow.id}`
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const updated = await res.json()
+      setRows(prev => prev.map(r => r.id === updatedRow.id ? { ...r, ...updated } : r))
+      setDetailRow(null)
+    } catch (e: any) {
+      alert(`Could not save details: ${e?.message || 'Unknown error'}`)
     }
-  }, [editing])
+  }
+
+  const handleAddRowInline = () => {
+    if (!canEdit) return
+    const tempId = `temp-${Date.now()}`
+    const realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+    const newRow = blankRow(date, isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
+    newRow.id = tempId
+
+    setRows(prev => [newRow, ...prev])
+
+    setTimeout(() => {
+      startEdit(newRow, "CUSTOMER'S NAME")
+    }, 50)
+  }
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
@@ -202,15 +250,14 @@ export default function DailyServiceReport() {
       { label: 'DESTINATION', defaultW: 200, expW: 450, sticky: true, freeze: true, right: false },
       { label: 'DISTRICT', defaultW: 100, expW: 200, sticky: false, freeze: false, right: false },
       { label: 'CONTACT NO.', defaultW: 115, expW: 180, sticky: false, freeze: false, right: false },
-      { label: 'BRAND / MODEL', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
+      { label: 'BRAND', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
       { label: 'DLR', defaultW: 100, expW: 180, sticky: false, freeze: false, right: false },
-      { label: 'COMMIT', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
       { label: 'INSTALLER', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
       { label: 'NOTE', defaultW: 140, expW: 280, sticky: false, freeze: false, right: false },
       { label: 'SERVICE', defaultW: 110, expW: 200, sticky: false, freeze: false, right: false },
       { label: 'UPDATE', defaultW: 150, expW: 350, sticky: false, freeze: false, right: false },
-      { label: 'CHARGES', defaultW: 110, expW: 180, sticky: false, freeze: false, right: true },
-      { label: 'PAYMENT', defaultW: 100, expW: 160, sticky: false, freeze: false, right: false },
+      { label: 'INSTALLATION CHARGES', defaultW: 110, expW: 180, sticky: false, freeze: false, right: true },
+      { label: 'MODE OF PAYMENT', defaultW: 100, expW: 160, sticky: false, freeze: false, right: false },
     ]
 
     let accumulatedLeft = 0
@@ -333,6 +380,358 @@ export default function DailyServiceReport() {
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
+
+  // Focus the input after entering edit mode
+  useEffect(() => {
+    if (editingCell && inputRef.current) {
+      inputRef.current.focus()
+      if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
+        inputRef.current.select()
+      }
+    }
+  }, [editingCell])
+
+  // ── Cell Display & Editing Helpers ─────────────────────────────────────────
+
+  function getCellDisplay(row: ServiceRow, colLabel: string): string {
+    switch (colLabel) {
+      case "CUSTOMER'S NAME": return row.customerName || ''
+      case 'DESTINATION':     return row.customerAddress || ''
+      case 'DISTRICT':        return row.district || ''
+      case 'CONTACT NO.':     return row.customerPhone || ''
+      case 'BRAND':           return row.unitBrandModel || ''
+      case 'DLR':             return row.dealer || ''
+      case 'INSTALLER':       return row.technicianName || ''
+      case 'NOTE':            return row.note || ''
+      case 'SERVICE':         return row.serviceColumn || ''
+      case 'UPDATE':          return row.remarks || ''
+      case 'INSTALLATION CHARGES': return row.amountCharged != null ? String(row.amountCharged) : ''
+      case 'MODE OF PAYMENT':      return row.paymentStatus || ''
+      default: return ''
+    }
+  }
+
+  const startEdit = (row: ServiceRow, col: string) => {
+    if (!canEdit || !EDITABLE_COLS.includes(col)) return
+    const val = getCellDisplay(row, col)
+    setEditingCell({ rowId: row.id, col })
+    setCellValue(val)
+    setContextMenu(null)
+  }
+
+  const saveCell = useCallback(async (rowId: string, col: string, value: string, silent = false): Promise<string | null> => {
+    console.log(`[saveCell] ENTER - rowId: ${rowId}, col: ${col}, value: "${value}", active editingCell:`, editingCell);
+
+    if (!editingCell || editingCell.rowId !== rowId || editingCell.col !== col) {
+      console.log(`[saveCell] BYPASSED - editingCell does not match active cell.`);
+      return null
+    }
+
+    const field = COL_FIELD[col]
+    if (!field) { setEditingCell(null); return null }
+    const current = rows.find(r => r.id === rowId)
+    if (!current) {
+      console.log(`[saveCell] ERROR - Row not found in state: ${rowId}`);
+      setEditingCell(null);
+      return null
+    }
+
+    const isTemp = rowId.startsWith('temp-')
+
+    // If it's a temp row and customerName is empty or being saved as empty, cancel/remove the row
+    if (isTemp && col === "CUSTOMER'S NAME" && (!value || !value.trim())) {
+      setRows(prev => prev.filter(r => r.id !== rowId))
+      setEditingCell(null)
+      setCellValue('')
+      return null
+    }
+
+    let finalValue: any = value
+    const localPatch: Partial<ServiceRow> = { [field]: value } as Partial<ServiceRow>
+
+    if (col === 'INSTALLATION CHARGES') {
+      finalValue = parseFloat(value) || 0
+      localPatch.amountCharged = finalValue
+    }
+
+    if (col === 'MODE OF PAYMENT') {
+      if (value === 'FREE' || value === 'FREE INSTALL') {
+        localPatch.amountCharged = 0
+      }
+    }
+
+    // If it's a temp row and Customer Name is still not set, update locally but do not save to DB yet
+    if (isTemp) {
+      const targetCustomerName = col === "CUSTOMER'S NAME" ? value : (current.customerName || '')
+      if (!targetCustomerName || !targetCustomerName.trim()) {
+        setRows(prev => prev.map(r => r.id === rowId ? { ...r, ...localPatch } : r))
+        setEditingCell(null)
+        setCellValue('')
+        return rowId
+      }
+    }
+
+    // Optimistic UI update immediately
+    setRows(prev => prev.map(r => {
+      if (r.id !== rowId) return r
+      return { ...r, ...localPatch }
+    }))
+    setEditingCell(null)
+    setCellValue('')
+
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const mergedFields = {
+        ...current,
+        ...localPatch
+      }
+      const payload = {
+        ...mergedFields,
+        id: isTemp ? undefined : rowId,
+        branchId: mergedFields.branchId ? mergedFields.branchId.replace(/-sales$|-services$/, '') : null
+      }
+      const url = isTemp
+        ? `${API_BASE_URL}/v1/service-reports`
+        : `${API_BASE_URL}/v1/service-reports/${rowId}`
+      const method = isTemp ? 'POST' : 'PUT'
+
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const updated = await res.json()
+      
+      let finalRowId = rowId
+      if (updated && updated.id) {
+        finalRowId = updated.id
+        setRows(prev => prev.map(r => r.id === rowId ? { ...r, ...updated, ...localPatch } : r))
+      }
+      return finalRowId
+    } catch (e: any) {
+      // Revert optimistic update on failure
+      fetchRows()
+      if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
+      return null
+    }
+  }, [rows, editingCell])
+
+  const cancelEdit = () => {
+    if (editingCell) {
+      const { rowId } = editingCell
+      if (rowId.startsWith('temp-')) {
+        const current = rows.find(r => r.id === rowId)
+        if (!current || !current.customerName || !current.customerName.trim()) {
+          setRows(prev => prev.filter(r => r.id !== rowId))
+        }
+      }
+    }
+    setEditingCell(null)
+    setCellValue('')
+  }
+
+  function getAdjacentCell(rowId: string, col: string, dir: 'next' | 'prev' | 'down' | 'up') {
+    const rowIdx = visible.findIndex(r => r.id === rowId)
+    const colIdx = EDITABLE_COLS.indexOf(col)
+    if (rowIdx === -1 || colIdx === -1) return null
+
+    if (dir === 'next') {
+      const nextCol = colIdx + 1
+      if (nextCol < EDITABLE_COLS.length) return { rowId, col: EDITABLE_COLS[nextCol] }
+      const nextRow = rowIdx + 1
+      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col: EDITABLE_COLS[0] }
+    }
+    if (dir === 'prev') {
+      const prevCol = colIdx - 1
+      if (prevCol >= 0) return { rowId, col: EDITABLE_COLS[prevCol] }
+      const prevRow = rowIdx - 1
+      if (prevRow >= 0) return { rowId: visible[prevRow].id, col: EDITABLE_COLS[EDITABLE_COLS.length - 1] }
+    }
+    if (dir === 'down') {
+      const nextRow = rowIdx + 1
+      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col }
+    }
+    if (dir === 'up') {
+      const prevRow = rowIdx - 1
+      if (prevRow >= 0) return { rowId: visible[prevRow].id, col }
+    }
+    return null
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent, rowId: string, col: string) => {
+    const multiline = ['NOTE', 'DESTINATION'].includes(col)
+
+    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return }
+
+    if (e.key === 'Enter' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'down')
+      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
+        if (next && finalRowId) {
+          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
+          const r = visible.find(x => x.id === next.rowId)
+          if (r) startEdit({ ...r, id: targetRowId }, next.col)
+        }
+      })
+      return
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const dir = e.shiftKey ? 'prev' : 'next'
+      const next = getAdjacentCell(rowId, col, dir)
+      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
+        if (next && finalRowId) {
+          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
+          const r = visible.find(x => x.id === next.rowId)
+          if (r) startEdit({ ...r, id: targetRowId }, next.col)
+        }
+      })
+      return
+    }
+
+    if (e.key === 'ArrowDown' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'down')
+      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
+        if (next && finalRowId) {
+          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
+          const r = visible.find(x => x.id === next.rowId)
+          if (r) startEdit({ ...r, id: targetRowId }, next.col)
+        }
+      })
+      return
+    }
+
+    if (e.key === 'ArrowUp' && !multiline) {
+      e.preventDefault()
+      const next = getAdjacentCell(rowId, col, 'up')
+      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
+        if (next && finalRowId) {
+          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
+          const r = visible.find(x => x.id === next.rowId)
+          if (r) startEdit({ ...r, id: targetRowId }, next.col)
+        }
+      })
+      return
+    }
+  }
+
+  function renderCell(r: ServiceRow, col: any, idx: number) {
+    const { label } = col
+    const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === label
+    const isEditable    = EDITABLE_COLS.includes(label)
+
+    if (isThisEditing) {
+      const inputClass = 'w-full text-xs rounded px-2 py-1 outline-none focus:ring-2 focus:ring-slate-400 font-medium'
+      const inputSt    = { backgroundColor: inputBg, border: `1.5px solid ${inputBorder}`, color: textPrimary }
+
+      if (label === 'MODE OF PAYMENT') {
+        return (
+          <select
+            ref={el => { inputRef.current = el }}
+            value={cellValue}
+            onChange={e => setCellValue(e.target.value)}
+            onBlur={() => saveCell(r.id, label, cellValue)}
+            onKeyDown={e => handleKeyDown(e as any, r.id, label)}
+            className={inputClass} style={inputSt}>
+            {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )
+      }
+
+      const multiline = ['NOTE', 'DESTINATION'].includes(label)
+      if (multiline) {
+        return (
+          <textarea
+            ref={el => { inputRef.current = el as any }}
+            value={cellValue}
+            onChange={e => setCellValue(e.target.value)}
+            onBlur={() => saveCell(r.id, label, cellValue)}
+            onKeyDown={e => handleKeyDown(e as any, r.id, label)}
+            rows={3}
+            className={`${inputClass} resize-none`}
+            style={inputSt} />
+        )
+      }
+
+      return (
+        <input
+          ref={el => { inputRef.current = el }}
+          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : 'text'}
+          value={cellValue}
+          onChange={e => setCellValue(e.target.value)}
+          onBlur={() => saveCell(r.id, label, cellValue)}
+          onKeyDown={e => handleKeyDown(e, r.id, label)}
+          className={inputClass} style={inputSt} />
+      )
+    }
+
+    const val = getCellDisplay(r, label)
+    const truncStyle: React.CSSProperties = col.isExpanded
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.5 }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
+
+    const editHint: React.CSSProperties = isEditable && canEdit
+      ? { cursor: 'text' } : {}
+
+    if (label === "CUSTOMER'S NAME") {
+      return (
+        <div style={{ ...truncStyle, ...editHint }} title={val} className="flex items-center gap-1.5 justify-between">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
+            <span className="font-semibold truncate">{val}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setDetailRow(r)
+            }}
+            className="p-1 rounded hover:bg-slate-200/20 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+            title="View Details"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    }
+
+    if (label === 'DESTINATION') {
+      return (
+        <span className={col.isExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={val}>
+          {val}
+        </span>
+      )
+    }
+
+    if (label === 'CONTACT NO.') {
+      return <FormatPhone raw={val} />
+    }
+
+    if (label === 'SERVICE') {
+      return (
+        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+          {val || '—'}
+        </span>
+      )
+    }
+
+    if (label === 'MODE OF PAYMENT') {
+      return (
+        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+          {val || ''}
+        </span>
+      )
+    }
+
+    if (label === 'INSTALLATION CHARGES') {
+      return <span style={{ ...truncStyle, fontWeight: 600 }}>{val ? parseFloat(val).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</span>
+    }
+
+    return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
+  }
 
   // ── Detect branch from filename ───────────────────────────────────────────
   const guessBranchFromFilename = (filename: string): string => {
@@ -466,41 +865,6 @@ export default function DailyServiceReport() {
   }
 
   // ── Save (create / update) ────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!editing) return
-    if (!editing.customerName || !editing.customerName.trim()) {
-      alert('Customer name is required'); return
-    }
-    if (!editing.branchId && !isBranchScoped) {
-      alert('Please choose a branch'); return
-    }
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const isNew = !editing.id
-      const url = isNew
-        ? `${API_BASE_URL}/v1/service-reports`
-        : `${API_BASE_URL}/v1/service-reports/${editing.id}`
-      const payload = {
-        ...editing,
-        branchId: editing.branchId ? editing.branchId.replace(/-sales$|-services$/, '') : null
-      }
-      const res = await fetch(url, {
-        method: isNew ? 'POST' : 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || `Save failed (HTTP ${res.status})`)
-        return
-      }
-      setEditing(null)
-      fetchRows()
-    } catch (e) {
-      console.error(e); alert('Network error while saving')
-    }
-  }
-
   const handleDelete = async (row: ServiceRow) => {
     if (!window.confirm(`Delete service record for ${row.customerName}?`)) return
     try {
@@ -656,7 +1020,7 @@ export default function DailyServiceReport() {
           {/* Date Picker inline */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
+            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <div className="flex items-center gap-1.5">
               {viewMode !== 'weekly' && (
                 <span className="uppercase tracking-wider text-[9px] font-black opacity-60 border-r pr-1.5" style={{ borderColor: border }}>
@@ -678,7 +1042,7 @@ export default function DailyServiceReport() {
           {/* Search bar */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs md:max-w-sm shadow-sm"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: primaryGreen }} />
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
               placeholder="Search..."
@@ -699,9 +1063,9 @@ export default function DailyServiceReport() {
           <div className="flex items-center gap-2 shrink-0">
             {canEdit && (
               <button type="button"
-                onClick={() => setEditing(blankRow(date, isBranchScoped ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm transition-all"
-                style={{ backgroundColor: primaryGreen }}>
+                onClick={handleAddRowInline}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all"
+                style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
                 <Plus className="w-3.5 h-3.5" /> Add Row
               </button>
             )}
@@ -713,7 +1077,7 @@ export default function DailyServiceReport() {
                   onClick={() => document.getElementById('svc-import-input')?.click()}
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Upload className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} style={{ color: primaryGreen }} />
+                  <Upload className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} style={{ color: textMuted }} />
                   {importing ? 'Importing…' : 'Import'}
                 </button>
               </>
@@ -733,23 +1097,23 @@ export default function DailyServiceReport() {
           </div>
           <div className="flex items-center gap-1.5">
             <span style={{ color: textMuted }}>Units:</span>
-            <span style={{ color: '#0284C7' }}>{totals.qty}</span>
+            <span style={{ color: textPrimary }}>{totals.qty}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span style={{ color: textMuted }}>Charged:</span>
-            <span style={{ color: '#D97706' }}>₱{peso(totals.amount)}</span>
+            <span style={{ color: textPrimary }}>₱{peso(totals.amount)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span style={{ color: textMuted }}>Free Installs:</span>
-            <span style={{ color: '#0D9488' }}>{totals.freeInstalls}</span>
+            <span style={{ color: textPrimary }}>{totals.freeInstalls}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span style={{ color: textMuted }}>Completed:</span>
-            <span style={{ color: '#16A34A' }}>{totals.completed}</span>
+            <span style={{ color: textPrimary }}>{totals.completed}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span style={{ color: textMuted }}>Cancelled:</span>
-            <span style={{ color: '#DC2626' }}>{totals.cancelled}</span>
+            <span style={{ color: textPrimary }}>{totals.cancelled}</span>
           </div>
         </div>
       )}
@@ -772,10 +1136,10 @@ export default function DailyServiceReport() {
             </p>
             {searchQuery.trim() ? (
               <button type="button" onClick={() => setSearchQuery('')}
-                className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>Clear search</button>
+                className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
             ) : canEdit && (
-              <button onClick={() => setEditing(blankRow(date, isBranchScoped ? user?.branchId ?? null : (branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : '')))}
-                className="text-xs font-bold hover:underline" style={{ color: primaryGreen }}>+ Add the first one</button>
+              <button onClick={handleAddRowInline}
+                className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
             )}
           </div>
         ) : (
@@ -790,7 +1154,7 @@ export default function DailyServiceReport() {
                       style={{
                         padding: '9px 10px',
                         textAlign: col.right ? 'right' : 'left',
-                        color: col.isExpanded ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                        color: col.isExpanded ? textPrimary : textMuted,
                         fontWeight: 700,
                         whiteSpace: 'nowrap',
                         borderRight: `1px solid ${border}`,
@@ -829,7 +1193,7 @@ export default function DailyServiceReport() {
               <tbody>
                 {visible.map((r, idx) => {
                   const rowBaseBg = contextMenu?.row.id === r.id
-                    ? (isLight ? '#f0fdf4' : '#14532d')
+                    ? (isLight ? '#f1f5f9' : '#111827')
                     : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
                   const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
 
@@ -839,6 +1203,7 @@ export default function DailyServiceReport() {
                         e.preventDefault()
                         if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
                       }}
+                      onDoubleClick={() => setDetailRow(r)}
                       style={{
                         borderBottom: `1px solid ${border}`,
                         backgroundColor: rowBaseBg,
@@ -848,183 +1213,36 @@ export default function DailyServiceReport() {
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
                       className="transition-colors">
 
-                      {/* 1. Customer's Name — sticky 1 */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        position: 'sticky', left: columns[0].left, zIndex: 5,
-                        backgroundColor: rowBaseBg,
-                        width: columns[0].w, minWidth: columns[0].w, maxWidth: columns[0].w,
-                        fontSize: '11px', fontWeight: 600,
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
-                        {columns[0].isExpanded ? (
-                          <span className="break-words font-semibold leading-relaxed">{r.customerName || ''}</span>
-                        ) : (
-                          <span className="truncate inline-block align-middle" style={{ maxWidth: 'calc(100% - 25px)' }} title={r.customerName || ''}>{r.customerName || ''}</span>
-                        )}
-                      </td>
-
-                      {/* 2. Destination — sticky 2 */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary,
-                        position: 'sticky', left: columns[1].left, zIndex: 5,
-                        backgroundColor: rowBaseBg,
-                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                        boxShadow: isLight
-                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                        width: columns[1].w, minWidth: columns[1].w, maxWidth: columns[1].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        <span className={columns[1].isExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={r.customerAddress || ''}>
-                          {r.customerAddress || ''}
-                        </span>
-                      </td>
-
-                      {/* 3. District */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[2].w, minWidth: columns[2].w, maxWidth: columns[2].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out',
-                        wordBreak: columns[2].isExpanded ? 'break-word' : undefined,
-                        whiteSpace: columns[2].isExpanded ? 'normal' : 'nowrap',
-                        overflow: columns[2].isExpanded ? undefined : 'hidden',
-                        textOverflow: columns[2].isExpanded ? undefined : 'ellipsis'
-                      }}>
-                        {r.district || ''}
-                      </td>
-
-                      {/* 4. Contact */}
-                      <td style={{
-                        padding: '8px 10px', color: '#10B981', borderRight: `1px solid ${border}`,
-                        width: columns[3].w, minWidth: columns[3].w, maxWidth: columns[3].w,
-                        whiteSpace: 'nowrap', lineHeight: '1.6', fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        <FormatPhone raw={r.customerPhone} />
-                      </td>
-
-                      {/* 5. Brand */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[4].w, minWidth: columns[4].w, maxWidth: columns[4].w,
-                        wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px', fontWeight: 600,
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        {columns[4].isExpanded ? (
-                          r.unitBrandModel || ''
-                        ) : (
-                          <span className="truncate block" title={r.unitBrandModel || ''}>{r.unitBrandModel || ''}</span>
-                        )}
-                      </td>
-
-                      {/* 6. Dlr */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[5].w, minWidth: columns[5].w, maxWidth: columns[5].w,
-                        wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: '1.4', fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        {columns[5].isExpanded ? (
-                          r.dealer || ''
-                        ) : (
-                          <span className="truncate block" title={r.dealer || ''}>{r.dealer || ''}</span>
-                        )}
-                      </td>
-
-                      {/* 7. Commit */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[6].w, minWidth: columns[6].w, maxWidth: columns[6].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out',
-                        wordBreak: columns[6].isExpanded ? 'break-word' : undefined,
-                        whiteSpace: columns[6].isExpanded ? 'normal' : 'nowrap',
-                        overflow: columns[6].isExpanded ? undefined : 'hidden',
-                        textOverflow: columns[6].isExpanded ? undefined : 'ellipsis'
-                      }}>
-                        {r.commitTerms || ''}{r.freeInstallation ? ' (FREE)' : ''}
-                      </td>
-
-                      {/* 8. Installer */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[7].w, minWidth: columns[7].w, maxWidth: columns[7].w,
-                        whiteSpace: columns[7].isExpanded ? 'normal' : 'nowrap', fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out',
-                        wordBreak: columns[7].isExpanded ? 'break-word' : undefined,
-                        overflow: columns[7].isExpanded ? undefined : 'hidden',
-                        textOverflow: columns[7].isExpanded ? undefined : 'ellipsis'
-                      }}>
-                        {r.technicianName || ''}
-                      </td>
-
-                      {/* 9. Note */}
-                      <td style={{
-                        padding: '8px 10px', color: textMuted, borderRight: `1px solid ${border}`,
-                        width: columns[8].w, minWidth: columns[8].w, maxWidth: columns[8].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out',
-                        wordBreak: columns[8].isExpanded ? 'break-word' : undefined,
-                        whiteSpace: columns[8].isExpanded ? 'normal' : 'nowrap',
-                        overflow: columns[8].isExpanded ? undefined : 'hidden',
-                        textOverflow: columns[8].isExpanded ? undefined : 'ellipsis'
-                      }}>
-                        {r.note || ''}
-                      </td>
-
-                      {/* 10. Service */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[9].w, minWidth: columns[9].w, maxWidth: columns[9].w,
-                        whiteSpace: 'nowrap', fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase truncate block text-center ${(r.serviceColumn || r.serviceType || '').includes('INSTALL') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20'
-                          }`}>
-                          {r.serviceColumn || r.serviceType || ''}
-                        </span>
-                      </td>
-
-                      {/* 11. Update */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[10].w, minWidth: columns[10].w, maxWidth: columns[10].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out',
-                        wordBreak: columns[10].isExpanded ? 'break-word' : undefined,
-                        whiteSpace: columns[10].isExpanded ? 'normal' : 'nowrap',
-                        overflow: columns[10].isExpanded ? undefined : 'hidden',
-                        textOverflow: columns[10].isExpanded ? undefined : 'ellipsis'
-                      }}>
-                        {r.remarks || ''}
-                      </td>
-
-                      {/* 12. Charges */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary, borderRight: `1px solid ${border}`,
-                        width: columns[11].w, minWidth: columns[11].w, maxWidth: columns[11].w,
-                        whiteSpace: 'nowrap', textAlign: 'right', fontSize: '11px', fontWeight: 600,
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        {r.amountCharged ? r.amountCharged.toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}
-                      </td>
-
-                      {/* 13. Payment */}
-                      <td style={{
-                        padding: '8px 10px', color: textPrimary,
-                        width: columns[12].w, minWidth: columns[12].w, maxWidth: columns[12].w,
-                        fontSize: '11px',
-                        transition: 'all 0.15s ease-in-out'
-                      }}>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase truncate block text-center ${r.paymentStatus === 'PAID' || r.paymentStatus === 'GCASH' || r.paymentStatus === 'BANK TRANSFER' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                          }`}>
-                          {r.paymentStatus || ''}
-                        </span>
-                      </td>
+                      {columns.map((col) => {
+                        const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
+                        const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
+                        return (
+                          <td key={col.label}
+                              onClick={e => {
+                                e.stopPropagation()
+                                if (isEditable && !isThisEditing) startEdit(r, col.label)
+                              }}
+                              style={{
+                                padding: isThisEditing ? '4px 6px' : '8px 10px',
+                                color: textPrimary,
+                                fontSize: '11px', fontWeight: 500,
+                                backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                textAlign: col.right ? 'right' : 'left',
+                                borderRight: col.freeze
+                                  ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
+                                  : `1px solid ${border}`,
+                                borderBottom: `1px solid ${border}`,
+                                width: col.w, minWidth: col.w, maxWidth: col.w,
+                                transition: 'background-color 0.1s ease',
+                                cursor: isEditable && !isThisEditing ? 'text' : 'default',
+                                verticalAlign: 'top',
+                                ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
+                                ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
+                              }}>
+                            {renderCell(r, col, idx)}
+                          </td>
+                        )
+                      })}
                     </tr>
                   )
                 })}
@@ -1033,12 +1251,12 @@ export default function DailyServiceReport() {
           </div>
         )}
 
-        {/* ── Danger Zone footer ── */}
+        {/* ── Clear records footer ── */}
         {isAdmin && visible.length > 0 && (
           <div className="flex items-center justify-between px-5 py-3"
-            style={{ borderTop: '1px solid rgba(239,68,68,0.2)', backgroundColor: 'rgba(239,68,68,0.04)' }}>
+            style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
             <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#EF4444' }}>Danger Zone</span>
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Clear Records</span>
               <span className="text-xs" style={{ color: textMuted }}>
                 Permanently deletes all{' '}
                 <strong style={{ color: textPrimary }}>{visible.length}</strong>{' '}
@@ -1053,9 +1271,9 @@ export default function DailyServiceReport() {
             </div>
             <button type="button" onClick={handleClearAll}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
-              style={{ backgroundColor: 'transparent', border: '1.5px solid #EF4444', color: '#EF4444' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#EF4444'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#EF4444' }}>
+              style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = cardBg }}>
               <Trash2 className="w-3.5 h-3.5" /> Clear All Records
             </button>
           </div>
@@ -1068,16 +1286,27 @@ export default function DailyServiceReport() {
           onClick={e => e.stopPropagation()}>
           <div className="rounded-xl shadow-2xl overflow-hidden min-w-[160px]"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors"
+              style={{ color: textPrimary }}
+              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
+              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
+              onClick={() => { setDetailRow(contextMenu.row); setContextMenu(null) }}>
+              <Eye className="w-3.5 h-3.5" style={{ color: textMuted }} /> View details
+            </button>
             {canEdit && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-green-500/10"
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors"
                 style={{ color: textPrimary }}
-                onClick={() => { setEditing(contextMenu.row); setContextMenu(null) }}>
-                <Edit3 className="w-3.5 h-3.5 text-green-500" /> Edit row
+                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
+                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
+                onClick={() => { startEdit(contextMenu.row, columns[0].label); setContextMenu(null) }}>
+                <Edit3 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Edit row
               </button>
             )}
             {canDelete && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10"
-                style={{ color: '#EF4444' }}
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors"
+                style={{ color: textPrimary }}
+                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
+                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
                 onClick={() => { handleDelete(contextMenu.row); setContextMenu(null) }}>
                 <Trash2 className="w-3.5 h-3.5" /> Delete row
               </button>
@@ -1103,21 +1332,21 @@ export default function DailyServiceReport() {
             <div className="p-5 flex flex-col gap-4">
               {/* File info row */}
               <div className="flex items-start gap-3 p-3 rounded-xl" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                <Upload className="w-4 h-4 mt-0.5 shrink-0" style={{ color: primaryGreen }} />
+                <Upload className="w-4 h-4 mt-0.5 shrink-0" style={{ color: textMuted }} />
                 <div className="flex flex-col gap-1 min-w-0">
                   <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{pendingImport.file.name}</span>
                   {/* Auto-detected badges */}
                   <div className="flex flex-col gap-0.5">
                     {branches.find(b => b.id === pendingImport.branchId) && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold"
-                        style={{ color: primaryGreen }}>
-                        ✦ Branch: <span style={{ color: textPrimary }}>{branches.find(b => b.id === pendingImport.branchId)?.name}</span>
+                        style={{ color: textMuted }}>
+                        Branch: <span style={{ color: textPrimary }}>{branches.find(b => b.id === pendingImport.branchId)?.name}</span>
                       </span>
                     )}
                     {pendingImport.detectedDate && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold"
-                        style={{ color: '#059669' }}>
-                        ✦ Date: <span style={{ color: textPrimary }}>
+                        style={{ color: textMuted }}>
+                        Date: <span style={{ color: textPrimary }}>
                           {new Date(pendingImport.detectedDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                       </span>
@@ -1151,342 +1380,303 @@ export default function DailyServiceReport() {
               </button>
               <button onClick={() => runImport(pendingImport.file, pendingImport.branchId)}
                 disabled={!pendingImport.branchId || importing}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white"
-                style={{ backgroundColor: primaryGreen, opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
+                className="px-4 py-2 rounded-xl text-xs font-bold border"
+                style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
                 {importing ? 'Importing…' : 'Import'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-
-      {/* ── Edit / Create Modal ─────────────────────────────────────── */}
-      {editing && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => setEditing(null)}>
-          <div className="relative w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col my-8 max-h-[90vh] overflow-hidden border"
-            style={{ backgroundColor: cardBg, borderColor: border }}
+      {detailRow && detailForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setDetailRow(null)}>
+          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
             onClick={e => e.stopPropagation()}>
-
-            {/* Sticky Header Bar */}
-            <div className="px-6 py-4 flex items-center justify-between shrink-0"
-              style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-              <div className="flex flex-col">
-                <h3 className="font-black text-base tracking-tight" style={{ color: textPrimary }}>
-                  {editing.id ? 'Edit Service Record' : 'New Service Record'}
-                </h3>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>
-                  {editing.id || 'Draft'}
-                </p>
-              </div>
-              <button onClick={() => setEditing(null)} className="p-2 rounded-lg transition-colors hover:bg-slate-500/10 cursor-pointer"
-                style={{ color: textMuted }} title="Close">
-                <X className="w-5 h-5" />
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
+                {canEdit ? 'Edit Service Record Details' : 'Service Record Details'}
+              </h3>
+              <button onClick={() => setDetailRow(null)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
               </button>
             </div>
+            
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              {/* Customer Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Customer Information
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Customer Name">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.customerName || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, customerName: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.customerName || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Contact No.">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.customerPhone || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, customerPhone: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.customerPhone || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Destination/Address" full>
+                    {canEdit ? (
+                      <textarea value={detailForm.customerAddress || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, customerAddress: e.target.value })}
+                        rows={2}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.customerAddress || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="District">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.district || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, district: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.district || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Commit Terms">
+                    {canEdit ? (
+                      <textarea value={detailForm.commitTerms || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, commitTerms: e.target.value })}
+                        rows={1}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.commitTerms || '—'}</span>
+                    )}
+                  </Field>
+                </div>
+              </div>
 
-            {/* Form Tabs */}
-            <div className="flex border-b text-[10px] md:text-xs font-black uppercase tracking-wider shrink-0"
-              style={{ borderColor: border, backgroundColor: inputBg }}>
-              {([
-                { id: 'customer', label: 'Customer', color: primaryGreen },
-                { id: 'service', label: 'Service', color: '#8B5CF6' },
-                { id: 'personnel', label: 'Personnel', color: '#F59E0B' },
-                { id: 'finance', label: 'Finance', color: '#10B981' }
-              ] as const).map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveFormTab(t.id)}
-                  className="flex-1 py-3 text-center border-b-2 transition-all hover:bg-slate-500/5 cursor-pointer font-black"
-                  style={{
-                    borderColor: activeFormTab === t.id ? t.color : 'transparent',
-                    color: activeFormTab === t.id ? textPrimary : textMuted
-                  }}
-                >
-                  {t.label}
+              {/* Service & Unit Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Service & Unit Details
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Brand">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.unitBrandModel || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, unitBrandModel: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.unitBrandModel || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Serial No.">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.unitSerial || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, unitSerial: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.unitSerial || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Quantity">
+                    {canEdit ? (
+                      <input type="number" value={detailForm.quantity != null ? detailForm.quantity : ''} 
+                        onChange={e => setDetailForm({ ...detailForm, quantity: parseInt(e.target.value, 10) || 1 })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.quantity ?? '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Dealer (DLR)">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.dealer || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, dealer: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.dealer || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Service Vehicle">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.serviceColumn || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, serviceColumn: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.serviceColumn || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Installer / Technician">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.technicianName || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, technicianName: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.technicianName || '—'}</span>
+                    )}
+                  </Field>
+                </div>
+              </div>
+
+              {/* Workflow & Audit Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Workflow & Audit Details
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Control No. / SI">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.controlNumber || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, controlNumber: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.controlNumber || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Papers">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.papers || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, papers: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.papers || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Costing">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.costing || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, costing: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.costing || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Relay Status">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.relayStatus || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, relayStatus: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.relayStatus || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="15 Questions (15 Qs)" full>
+                    {canEdit ? (
+                      <input type="text" value={detailForm.fifteenQuestions || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, fifteenQuestions: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.fifteenQuestions || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Note" full>
+                    {canEdit ? (
+                      <textarea value={detailForm.note || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, note: e.target.value })}
+                        rows={2}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.note || '—'}</span>
+                    )}
+                  </Field>
+                </div>
+              </div>
+
+              {/* Billing & Status Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Billing & Status
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Installation Charges">
+                    {canEdit ? (
+                      <input type="number" value={detailForm.amountCharged != null ? detailForm.amountCharged : ''} 
+                        onChange={e => setDetailForm({ ...detailForm, amountCharged: parseFloat(e.target.value) || 0 })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>₱{peso(detailForm.amountCharged)}</span>
+                    )}
+                  </Field>
+                  <Field label="Mode of Payment">
+                    {canEdit ? (
+                      <select value={detailForm.paymentStatus || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, paymentStatus: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.paymentStatus || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Job Status">
+                    {canEdit ? (
+                      <select value={detailForm.jobStatus || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, jobStatus: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        {['SCHEDULED', 'COMPLETED', 'CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.jobStatus || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Update (Remarks)" full>
+                    {canEdit ? (
+                      <textarea value={detailForm.remarks || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, remarks: e.target.value })}
+                        rows={2}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.remarks || '—'}</span>
+                    )}
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
+              <button onClick={() => setDetailRow(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border"
+                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                {canEdit ? 'Cancel' : 'Close'}
+              </button>
+              {canEdit && (
+                <button onClick={() => handleSaveDetailRow(detailForm)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border"
+                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
+                  Save Changes
                 </button>
-              ))}
+              )}
             </div>
-
-            {/* Scrollable Form Body */}
-            <div className="flex-1 overflow-y-auto p-6 md:p-8">
-              <div className="max-w-3xl mx-auto flex flex-col gap-6">
-
-                {/* Section 1 — Customer & Location */}
-                {activeFormTab === 'customer' && (
-                  <div className="rounded-2xl p-5 md:p-6 shadow-sm border flex flex-col gap-4"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: primaryGreen }}>① Customer &amp; Location</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Field label="Branch" required={!isBranchScoped}>
-                        {isBranchScoped ? (
-                          <input value={branches.find(b => b.id === user?.branchId)?.name || 'Your Branch'} disabled
-                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold opacity-70"
-                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                        ) : (
-                          <select value={editing.branchId || ''}
-                            onChange={e => setEditing({ ...editing, branchId: e.target.value })}
-                            disabled={true}
-                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-                            style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
-                            <option value="">— Choose branch —</option>
-                            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                          </select>
-                        )}
-                      </Field>
-                      <Field label="Date" required>
-                        <input type="date" value={editing.reportDate || ''}
-                          onChange={e => setEditing({ ...editing, reportDate: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Customer Name" required>
-                        <input value={editing.customerName || ''}
-                          onChange={e => setEditing({ ...editing, customerName: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Contact Number">
-                        <input value={editing.customerPhone || ''}
-                          onChange={e => setEditing({ ...editing, customerPhone: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="District / City">
-                        <input value={editing.district || ''}
-                          onChange={e => setEditing({ ...editing, district: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Full Address">
-                        <input value={editing.customerAddress || ''}
-                          onChange={e => setEditing({ ...editing, customerAddress: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                    </div>
-                  </div>
-                )}
-
-                {/* Section 2 — Equipment & Service */}
-                {activeFormTab === 'service' && (
-                  <div className="rounded-2xl p-5 md:p-6 shadow-sm border flex flex-col gap-4"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#8B5CF6' }}>② Equipment &amp; Service</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Field label="Brand / Unit Model">
-                        <input value={editing.unitBrandModel || ''}
-                          onChange={e => setEditing({ ...editing, unitBrandModel: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Dealer (DLR)">
-                        <input value={editing.dealer || ''}
-                          onChange={e => setEditing({ ...editing, dealer: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Service Type">
-                        <select value={editing.serviceType || ''}
-                          onChange={e => {
-                            const v = e.target.value
-                            setEditing({ ...editing, serviceType: v, statusCode: v === 'INSTALLATION' ? 'I' : v === 'SERVICE' ? 'S' : editing.statusCode })
-                          }}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                          {SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="Quantity">
-                        <input type="number" min={1} value={editing.quantity ?? 1}
-                          onChange={e => setEditing({ ...editing, quantity: parseInt(e.target.value || '1', 10) })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Status Code (S/I)">
-                        <input value={editing.statusCode || ''}
-                          onChange={e => setEditing({ ...editing, statusCode: e.target.value })}
-                          maxLength={4}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold uppercase"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <div className="md:col-span-2">
-                        <Field label='Commit Terms — e.g. "FREE 1ST IDFT"' full>
-                          <textarea rows={2} value={editing.commitTerms || ''}
-                            onChange={e => {
-                              const v = e.target.value
-                              const free = detectFreeInstall(v)
-                              setEditing({
-                                ...editing, commitTerms: v, freeInstallation: free,
-                                serviceType: free && (editing.serviceType === 'INSTALLATION' || !editing.serviceType) ? 'FREE_INSTALLATION'
-                                  : (!free && editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType)
-                              })
-                            }}
-                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                          <label className="flex items-center gap-2 mt-1.5 text-[11px] font-bold cursor-pointer"
-                            style={{ color: editing.freeInstallation ? '#06B6D4' : textMuted }}>
-                            <input type="checkbox" checked={!!editing.freeInstallation}
-                              onChange={e => setEditing({
-                                ...editing, freeInstallation: e.target.checked,
-                                serviceType: e.target.checked ? 'FREE_INSTALLATION'
-                                  : (editing.serviceType === 'FREE_INSTALLATION' ? 'INSTALLATION' : editing.serviceType)
-                              })} />
-                            Free Installation Verified
-                          </label>
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Section 3 — Personnel & Schedule */}
-                {activeFormTab === 'personnel' && (
-                  <div className="rounded-2xl p-5 md:p-6 shadow-sm border flex flex-col gap-4"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#F59E0B' }}>③ Personnel &amp; Schedule</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Field label="Installer / Technician">
-                        <input value={editing.technicianName || ''}
-                          onChange={e => setEditing({ ...editing, technicianName: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Negotiator">
-                        <input value={editing.negotiator || ''}
-                          onChange={e => setEditing({ ...editing, negotiator: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Schedule Time (e.g. 9:00 AM)">
-                        <input value={editing.scheduleTime || ''}
-                          onChange={e => setEditing({ ...editing, scheduleTime: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Time Started">
-                        <input value={editing.timeStarted || ''}
-                          onChange={e => setEditing({ ...editing, timeStarted: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Time Ended">
-                        <input value={editing.timeEnded || ''}
-                          onChange={e => setEditing({ ...editing, timeEnded: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Schedule Status">
-                        <input value={editing.scheduleStatus || ''}
-                          onChange={e => setEditing({ ...editing, scheduleStatus: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                    </div>
-                  </div>
-                )}
-
-                {/* Section 4 — Finance & Closing */}
-                {activeFormTab === 'finance' && (
-                  <div className="rounded-2xl p-5 md:p-6 shadow-sm border flex flex-col gap-4"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#10B981' }}>④ Finance &amp; Closing</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Field label="Installation Charges (PHP)">
-                        <input type="number" min={0} step="0.01" value={editing.amountCharged ?? 0}
-                          onChange={e => setEditing({ ...editing, amountCharged: parseFloat(e.target.value || '0') })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Mode of Payment">
-                        <select value={editing.paymentStatus || 'CASH'}
-                          onChange={e => setEditing({ ...editing, paymentStatus: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                          {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="Job Status">
-                        <select value={editing.jobStatus || 'SCHEDULED'}
-                          onChange={e => setEditing({ ...editing, jobStatus: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                          {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="Control # / SI">
-                        <input value={editing.controlNumber || ''}
-                          onChange={e => setEditing({ ...editing, controlNumber: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Relay Status">
-                        <input value={editing.relayStatus || ''}
-                          onChange={e => setEditing({ ...editing, relayStatus: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Costing (e.g. FOR ACTUAL)">
-                        <input value={editing.costing || ''}
-                          onChange={e => setEditing({ ...editing, costing: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="Papers (e.g. SEND, PENDING)">
-                        <input value={editing.papers || ''}
-                          onChange={e => setEditing({ ...editing, papers: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <Field label="15 Questions (DONE / notes)">
-                        <input value={editing.fifteenQuestions || ''}
-                          onChange={e => setEditing({ ...editing, fifteenQuestions: e.target.value })}
-                          className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      </Field>
-                      <div className="md:col-span-2">
-                        <Field label="Update / Remarks" full>
-                          <textarea rows={2} value={editing.remarks || ''}
-                            onChange={e => setEditing({ ...editing, remarks: e.target.value })}
-                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                        </Field>
-                      </div>
-                      <div className="md:col-span-2">
-                        <Field label="Internal Note" full>
-                          <textarea rows={2} value={editing.note || ''}
-                            onChange={e => setEditing({ ...editing, note: e.target.value })}
-                            className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
-                            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                        </Field>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            </div>
-
-            {/* Bottom Action Bar */}
-            <div className="shrink-0 px-6 py-4 flex items-center justify-end gap-3"
-              style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
-              <button onClick={() => setEditing(null)}
-                className="px-5 py-2.5 text-xs font-bold rounded-xl border transition-colors hover:bg-slate-500/5 cursor-pointer"
-                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}>
-                Cancel
-              </button>
-              <button onClick={handleSave}
-                className="px-7 py-2.5 text-xs font-bold text-white rounded-xl shadow-md cursor-pointer hover:opacity-90 transition-all"
-                style={{ backgroundColor: primaryGreen }}>
-                {editing.id ? 'Save Changes' : 'Create Record'}
-              </button>
-            </div>
-
           </div>
         </div>
-      )}    </div>
+      )}
+    </div>
   )
 }
 
@@ -1500,7 +1690,7 @@ function Field({ label, required, full, children }: {
   return (
     <label className={`flex flex-col gap-1.5 ${full ? 'md:col-span-2' : ''}`}>
       <span className="text-[10px] font-black uppercase tracking-wider opacity-70">
-        {label}{required && <span className="text-red-400"> *</span>}
+        {label}{required && <span> *</span>}
       </span>
       {children}
     </label>
