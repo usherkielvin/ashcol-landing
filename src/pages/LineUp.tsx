@@ -331,14 +331,21 @@ export default function LineUp() {
   }, [branchId, fetchSuggestions])
 
   useEffect(() => {
-    if (!showcaseOpen) return
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowcaseOpen(false)
+    if (showcaseOpen) {
+      document.body.classList.add('showcase-mode-active')
+      const handleEscape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          setShowcaseOpen(false)
+        }
       }
+      window.addEventListener('keydown', handleEscape)
+      return () => {
+        document.body.classList.remove('showcase-mode-active')
+        window.removeEventListener('keydown', handleEscape)
+      }
+    } else {
+      document.body.classList.remove('showcase-mode-active')
     }
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
   }, [showcaseOpen])
 
 
@@ -2676,8 +2683,7 @@ export default function LineUp() {
         {/* Showcase / Edit View toggle rendering */}
         {showcaseOpen ? (
           /* Inline Showcase View Layout */
-          <div ref={captureAreaRef}
-            className="lineup-showcase-sheet mx-auto shadow-xl"
+          <div className="lineup-showcase-sheet mx-auto shadow-xl"
             style={{
               maxWidth: '1720px',
               width: '100%',
@@ -3111,230 +3117,6 @@ export default function LineUp() {
         )}
       </div>
 
-
-
-
-
-      {showcaseOpen && (
-        <div
-          className="lineup-showcase-overlay fixed inset-y-0 right-0 z-[10000] overflow-auto"
-          style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
-        >
-          <div className="min-h-screen flex flex-col">
-            <div
-              className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3"
-              style={{
-                backgroundColor: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,7,18,0.94)',
-                borderBottom: `1px solid ${border}`,
-                backdropFilter: 'blur(10px)',
-              }}
-            >
-              <div className="min-w-0">
-                <div className="text-xs font-black uppercase tracking-widest" style={{ color: currentTheme.accent }}>
-                  Field Schedule Showcase
-                </div>
-                <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>
-                  {branchName || 'Selected branch'} · {englishLabel(date)}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowcaseOpen(false)}
-                  className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold"
-                  style={{ backgroundColor: currentTheme.accent, border: `1px solid ${currentTheme.accentDark}`, color: '#ffffff' }}
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowcaseOpen(false)}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  aria-label="Close showcase"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
-              <div
-                className="lineup-showcase-sheet mx-auto"
-                style={{
-                  maxWidth: '1720px',
-                  width: '100%',
-                  backgroundColor: isLight ? '#ffffff' : '#07111f',
-                  border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
-                  boxShadow: isLight ? '0 24px 80px rgba(15,23,42,0.14)' : '0 24px 80px rgba(0,0,0,0.5)',
-                  borderRadius: 18,
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
-                    padding: '18px 24px 16px',
-                    textAlign: 'center',
-                    borderBottom: `5px solid ${currentTheme.accentDark}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      color: '#ffffff',
-                      fontWeight: 950,
-                      fontSize: 'clamp(24px, 3vw, 42px)',
-                      lineHeight: 1.05,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    TEAM {branchName ? branchName.toUpperCase() : 'FIELD'} LINE UP
-                  </div>
-                  <div
-                    style={{
-                      color: 'rgba(255,255,255,0.92)',
-                      fontWeight: 900,
-                      fontSize: 'clamp(13px, 1.3vw, 20px)',
-                      marginTop: 8,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {englishLabel(date)}
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <colgroup>
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '8%' }} />
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '28%' }} />
-                      <col style={{ width: '28%' }} />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => (
-                          <th
-                            key={label}
-                            style={{
-                              padding: '13px 10px',
-                              backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
-                              border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
-                              color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
-                              fontSize: 'clamp(12px, 1vw, 16px)',
-                              fontWeight: 850,
-                              textAlign: 'center',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={7}
-                            style={{
-                              padding: '96px 24px',
-                              textAlign: 'center',
-                              color: textMuted,
-                              fontSize: 'clamp(16px, 1.5vw, 22px)',
-                              fontWeight: 800,
-                            }}
-                          >
-                            No field schedule entries
-                          </td>
-                        </tr>
-                      ) : rows.map((row, idx) => (
-                        <tr key={row.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#07111f') : (isLight ? '#f8fafc' : '#0b1628') }}>
-                          {[
-                            row.service || '-',
-                            row.driverName || '-',
-                            row.driverTime || '-',
-                            row.installerName || '-',
-                            row.installerTime || '-',
-                            row.route || '-',
-                            row.remarks || '-',
-                          ].map((value, cellIdx) => (
-                            <td
-                              key={cellIdx}
-                              style={{
-                                padding: cellIdx >= 5 ? '14px 18px' : '14px 10px',
-                                border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
-                                color: textPrimary,
-                                fontSize: cellIdx >= 5 ? 'clamp(14px, 1.08vw, 19px)' : 'clamp(14px, 1.15vw, 21px)',
-                                fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
-                                textAlign: cellIdx >= 5 ? 'left' : 'center',
-                                lineHeight: 1.32,
-                                verticalAlign: 'middle',
-                                minWidth: cellIdx >= 5 ? 320 : 96,
-                              }}
-                            >
-                              {value}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {(lineupNotes || rows.length > 0) && (
-                  <div
-                    className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5"
-                    style={{
-                      padding: '22px 28px',
-                      borderTop: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
-                      backgroundColor: isLight ? '#f8fafc' : '#0b1628',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#EF4444',
-                        fontSize: 'clamp(14px, 1.1vw, 19px)',
-                        fontWeight: 950,
-                        textTransform: 'uppercase',
-                        whiteSpace: 'pre-line',
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      {lineupNotes}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 md:min-w-[420px]">
-                      {[
-                        ['INSTALLATION', totalUnits, currentTheme.accent],
-                        ['SURVEY', totalSurvey, '#D97706'],
-                        ['BACK JOB', totalBackJob, '#EF4444'],
-                        ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
-                      ].map(([label, value, color]) => (
-                        <div
-                          key={label}
-                          style={{
-                            border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
-                            backgroundColor: isLight ? '#ffffff' : '#07111f',
-                            padding: '12px 14px',
-                          }}
-                        >
-                          <div style={{ color: String(color), fontSize: '12px', fontWeight: 950, textTransform: 'uppercase' }}>{label}</div>
-                          <div style={{ color: String(color), fontSize: 'clamp(20px, 2vw, 32px)', fontWeight: 950, lineHeight: 1 }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {activeMenu && (
         <div
           id="row-context-menu"
@@ -3463,57 +3245,7 @@ export default function LineUp() {
         </div>
       )}
 
-      {/* Print Styles */}
-      <style>{`
-        :root {
-          --branch-accent: ${currentTheme.accent};
-          --branch-accent-dark: ${currentTheme.accentDark};
-          --branch-accent-light: ${currentTheme.accentLight};
-
-          --page-bg: #F8FAFC;
-          --card-bg: #FFFFFF;
-          --text-main: #0F172A;
-          --text-muted: #64748B;
-          --border-color: #E2E8F0;
-          --date-bar-bg: #020617;
-        }
-
-        .dark {
-          --page-bg: #0F172A;
-          --card-bg: #1E293B;
-          --text-main: #F8FAFC;
-          --text-muted: #CBD5E1;
-          --border-color: #334155;
-          --date-bar-bg: #020617;
-        }
-
-        @media print {
-          body * { visibility: hidden !important; }
-          .print-area, .print-area * { visibility: visible !important; }
-          .print-area { position: fixed; inset: 0; margin: 0; padding: 0; border: none !important; }
-          .no-print { display: none !important; }
-        }
-        .no-scrollbar::-webkit-scrollbar { display: none !important; }
-        .no-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
-
-        .lineup-showcase-overlay {
-          left: 0;
-          transition: left 0.3s ease-in-out;
-        }
-        @media (min-width: 768px) {
-          .sidebar-expanded .lineup-showcase-overlay {
-            left: 240px;
-          }
-          .sidebar-collapsed .lineup-showcase-overlay {
-            left: 64px;
-          }
-        }
-        @media (min-width: 1024px) {
-          .sidebar-expanded .lineup-showcase-overlay {
-            left: 260px;
-          }
-        }
-      `}</style>
+      
     </div>
     )}
 
@@ -3536,6 +3268,34 @@ export default function LineUp() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* View Switcher (Edit / Showcase) */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+              <button
+                type="button"
+                onClick={() => setShowcaseOpen(false)}
+                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all cursor-pointer"
+                style={{
+                  backgroundColor: !showcaseOpen ? cardBg : 'transparent',
+                  color: !showcaseOpen ? currentTheme.accent : textMuted,
+                  boxShadow: !showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowcaseOpen(true)}
+                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all cursor-pointer"
+                style={{
+                  backgroundColor: showcaseOpen ? cardBg : 'transparent',
+                  color: showcaseOpen ? currentTheme.accent : textMuted,
+                  boxShadow: showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                Showcase
+              </button>
+            </div>
+
             {/* Kind Toggle */}
             <div className="flex items-center gap-1 p-1 rounded-md" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
               {(['drivers','installers'] as WScheduleKind[]).map(k => (
@@ -3790,7 +3550,532 @@ export default function LineUp() {
         </div>
       </div>
     )}
+      {/* Showcase Overlay (Fullscreen) */}
+      {showcaseOpen && (
+        <div
+          className="lineup-showcase-overlay fixed inset-y-0 right-0 z-[10000] overflow-auto"
+          style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
+        >
+          <div className="min-h-screen flex flex-col">
+            <div
+              className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3"
+              style={{
+                backgroundColor: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,7,18,0.94)',
+                borderBottom: `1px solid ${border}`,
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              <div className="min-w-0">
+                <div className="text-xs font-black uppercase tracking-widest" style={{ color: currentTheme.accent }}>
+                  {activeTab === 'weekly' ? 'Weekly Schedule Showcase' : 'Field Schedule Showcase'}
+                </div>
+                <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                  {branchName || 'Selected branch'} · {activeTab === 'weekly' ? `${wFormatWeekLabel(wDays)} · ${wKind.toUpperCase()}` : englishLabel(date)}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowcaseOpen(false)}
+                  className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold"
+                  style={{ backgroundColor: currentTheme.accent, border: `1px solid ${currentTheme.accentDark}`, color: '#ffffff' }}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowcaseOpen(false)}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  aria-label="Close showcase"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
 
+            <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
+              <div
+                ref={captureAreaRef} className="lineup-showcase-sheet print-area mx-auto"
+                style={{
+                  maxWidth: '1720px',
+                  width: '100%',
+                  backgroundColor: isLight ? '#ffffff' : '#07111f',
+                  border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                  boxShadow: isLight ? '0 24px 80px rgba(15,23,42,0.14)' : '0 24px 80px rgba(0,0,0,0.5)',
+                  borderRadius: 18,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
+                    padding: '18px 24px 16px',
+                    textAlign: 'center',
+                    borderBottom: `5px solid ${currentTheme.accentDark}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      color: '#ffffff',
+                      fontWeight: 950,
+                      fontSize: 'clamp(24px, 3vw, 42px)',
+                      lineHeight: 1.05,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    TEAM {branchName ? branchName.toUpperCase() : 'FIELD'} {activeTab === 'weekly' ? 'WEEKLY LINE UP' : 'LINE UP'}
+                  </div>
+                  <div
+                    style={{
+                      color: 'rgba(255,255,255,0.92)',
+                      fontWeight: 900,
+                      fontSize: 'clamp(13px, 1.3vw, 20px)',
+                      marginTop: 8,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {activeTab === 'weekly' ? `${wFormatWeekLabel(wDays)} · ${wKind.toUpperCase()}` : englishLabel(date)}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    {activeTab === 'weekly' ? (
+                      <colgroup>
+                        <col style={{ width: '14%' }} />
+                        {wDays.map(d => (
+                          <col key={d} style={{ width: '7.5%' }} />
+                        ))}
+                        <col style={{ width: '6.5%' }} />
+                        {wKind === 'installers' ? (
+                          <>
+                            <col style={{ width: '6.5%' }} />
+                            <col style={{ width: '6.5%' }} />
+                            <col style={{ width: '14%' }} />
+                          </>
+                        ) : (
+                          <col style={{ width: '27%' }} />
+                        )}
+                      </colgroup>
+                    ) : (
+                      <colgroup>
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '28%' }} />
+                        <col style={{ width: '28%' }} />
+                      </colgroup>
+                    )}
+                    <thead>
+                      <tr>
+                        {activeTab === 'weekly' ? (
+                          [
+                            wKind === 'drivers' ? 'DRIVER' : 'INSTALLER',
+                            ...wDays.map(day => {
+                              const dateObj = new Date(`${day}T00:00:00`)
+                              const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()
+                              const dayNum = dateObj.getDate()
+                              return `${dayName} ${dayNum}`
+                            }),
+                            'TOTAL',
+                            ...(wKind === 'installers' ? ['TW', 'CLN'] : []),
+                            'REMARKS'
+                          ].map(label => (
+                            <th
+                              key={label}
+                              style={{
+                                padding: '18px 12px',
+                                backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
+                                border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
+                                color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
+                                fontSize: 'clamp(13px, 1vw, 16px)',
+                                fontWeight: 850,
+                                textAlign: 'center',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {label}
+                            </th>
+                          ))
+                        ) : (
+                          ['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => (
+                            <th
+                              key={label}
+                              style={{
+                                padding: '18px 12px',
+                                backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
+                                border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
+                                color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
+                                fontSize: 'clamp(14px, 1.1vw, 18px)',
+                                fontWeight: 850,
+                                textAlign: 'center',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {label}
+                            </th>
+                          ))
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeTab === 'weekly' ? (
+                        wRows.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={wKind === 'installers' ? 12 : 10}
+                              style={{
+                                padding: '120px 24px',
+                                textAlign: 'center',
+                                color: textMuted,
+                                fontSize: 'clamp(18px, 1.6vw, 24px)',
+                                fontWeight: 800,
+                              }}
+                            >
+                              No weekly schedule entries
+                            </td>
+                          </tr>
+                        ) : (
+                          wRows.map((person, idx) => {
+                            const totalPersonUnits = Object.values(person.days).reduce((sum, d) => {
+                              const val = parseFloat(d.units)
+                              return sum + (isNaN(val) ? 0 : val)
+                            }, 0)
+
+                            return (
+                              <tr key={person.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#07111f') : (isLight ? '#f8fafc' : '#0b1628') }}>
+                                {/* Person info */}
+                                <td
+                                  style={{
+                                    padding: '18px 16px',
+                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    color: textPrimary,
+                                    verticalAlign: 'middle',
+                                  }}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    {person.photoUrl ? (
+                                      <img src={person.photoUrl} alt="" className="w-28 h-28 rounded-lg object-cover border" style={{ borderColor: isLight ? '#dbe5ef' : '#1f3554' }} />
+                                    ) : (
+                                      <div className="w-28 h-28 rounded-lg border flex items-center justify-center bg-slate-100 dark:bg-slate-800" style={{ borderColor: isLight ? '#dbe5ef' : '#1f3554' }}>
+                                        <User className="w-8 h-8 opacity-40" style={{ color: textMuted }} />
+                                      </div>
+                                    )}
+                                    <div className="text-left">
+                                      <div style={{ fontWeight: 900, fontSize: '15px', color: textPrimary, textTransform: 'uppercase' }}>{person.name}</div>
+                                      <div style={{ fontSize: '11px', fontWeight: 750, color: textMuted, textTransform: 'uppercase', marginTop: '3px' }}>{person.roleNote}</div>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Day cells */}
+                                {wDays.map(day => {
+                                  const cell = person.days[day] || { status: 'WITH SCHED' as WDayStatus, note: '', units: '' }
+                                  const cellTheme = wGetStatusTheme(cell.status)
+                                  return (
+                                    <td
+                                      key={day}
+                                      style={{
+                                        padding: '10px 8px',
+                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        verticalAlign: 'middle',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          height: '100%',
+                                          minHeight: '120px',
+                                          justifyContent: 'space-between',
+                                          padding: '8px',
+                                          backgroundColor: cellTheme.bg,
+                                          color: cellTheme.text,
+                                          border: `1.5px solid ${cellTheme.border}`,
+                                          borderRadius: '6px',
+                                        }}
+                                      >
+                                        <div style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', opacity: 0.9, textAlign: 'center' }}>
+                                          {cell.status}
+                                        </div>
+                                        {cell.note && (
+                                          <div style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', margin: '4px 0', textAlign: 'center', lineHeight: 1.15 }}>
+                                            {cell.note}
+                                          </div>
+                                        )}
+                                        {cell.units && (
+                                          <div
+                                            style={{
+                                              fontSize: '11px',
+                                              fontWeight: 950,
+                                              backgroundColor: cellTheme.unitBg,
+                                              color: cellTheme.unitText,
+                                              borderRadius: '4px',
+                                              padding: '2px 4px',
+                                              textAlign: 'center',
+                                              marginTop: '2px',
+                                            }}
+                                          >
+                                            QTY: {cell.units}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  )
+                                })}
+
+                                {/* Total Units */}
+                                <td
+                                  style={{
+                                    padding: '24px 16px',
+                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    color: textPrimary,
+                                    fontSize: 'clamp(18px, 1.4vw, 26px)',
+                                    fontWeight: 950,
+                                    textAlign: 'center',
+                                    verticalAlign: 'middle',
+                                  }}
+                                >
+                                  {totalPersonUnits}
+                                </td>
+
+                                {/* TW & CLN for installers */}
+                                {wKind === 'installers' && (
+                                  <>
+                                    <td
+                                      style={{
+                                        padding: '24px 18px',
+                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        color: textPrimary,
+                                        fontSize: 'clamp(14px, 1.1vw, 17px)',
+                                        fontWeight: 700,
+                                        textAlign: 'center',
+                                        whiteSpace: 'pre-wrap',
+                                        verticalAlign: 'middle',
+                                      }}
+                                    >
+                                      {person.totalUnitsTeamWork || '—'}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: '24px 18px',
+                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        color: textPrimary,
+                                        fontSize: 'clamp(14px, 1.1vw, 17px)',
+                                        fontWeight: 700,
+                                        textAlign: 'center',
+                                        whiteSpace: 'pre-wrap',
+                                        verticalAlign: 'middle',
+                                      }}
+                                    >
+                                      {person.totalUnitsCleaning || '—'}
+                                    </td>
+                                  </>
+                                )}
+
+                                {/* Remarks */}
+                                <td
+                                  style={{
+                                    padding: '24px 20px',
+                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    color: textPrimary,
+                                    fontSize: 'clamp(14px, 1.1vw, 17px)',
+                                    fontWeight: 700,
+                                    textAlign: 'left',
+                                    whiteSpace: 'pre-wrap',
+                                    verticalAlign: 'middle',
+                                  }}
+                                >
+                                  {person.remarks || '—'}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )
+                      ) : (
+                        rows.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={7}
+                              style={{
+                                padding: '120px 24px',
+                                textAlign: 'center',
+                                color: textMuted,
+                                fontSize: 'clamp(18px, 1.6vw, 24px)',
+                                fontWeight: 800,
+                              }}
+                            >
+                              No field schedule entries
+                            </td>
+                          </tr>
+                        ) : rows.map((row, idx) => (
+                          <tr key={row.id} style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#07111f') : (isLight ? '#f8fafc' : '#0b1628') }}>
+                            {[
+                              row.service || '-',
+                              row.driverName || '-',
+                              row.driverTime || '-',
+                              row.installerName || '-',
+                              row.installerTime || '-',
+                              row.route || '-',
+                              row.remarks || '-',
+                            ].map((value, cellIdx) => (
+                              <td
+                                key={cellIdx}
+                                style={{
+                                  padding: cellIdx >= 5 ? '24px 22px' : '24px 16px',
+                                  border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                  color: textPrimary,
+                                  fontSize: cellIdx >= 5 ? 'clamp(16px, 1.2vw, 22px)' : 'clamp(16px, 1.3vw, 24px)',
+                                  fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
+                                  textAlign: cellIdx >= 5 ? 'left' : 'center',
+                                  lineHeight: 1.32,
+                                  verticalAlign: 'middle',
+                                  minWidth: cellIdx >= 5 ? 360 : 120,
+                                }}
+                              >
+                                {value}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {activeTab === 'weekly' ? (
+                  <div
+                    style={{
+                      padding: '22px 28px',
+                      borderTop: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                      backgroundColor: isLight ? '#f8fafc' : '#0b1628',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', color: textMuted }}>Legend:</span>
+                      {W_STATUS_OPTIONS.map(s => (
+                        <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 800, color: textPrimary }}>
+                          <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: wStatusDot(s), border: s === 'PENDING' ? `1.5px solid ${border}` : 'none' }} />
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', color: textMuted, letterSpacing: '0.05em' }}>
+                        {wFormatDay(wDays[0])} — {wFormatDay(wDays[6])}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  (lineupNotes || rows.length > 0) && (
+                    <div
+                      className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5"
+                      style={{
+                        padding: '22px 28px',
+                        borderTop: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                        backgroundColor: isLight ? '#f8fafc' : '#0b1628',
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: '#EF4444',
+                          fontSize: 'clamp(14px, 1.1vw, 19px)',
+                          fontWeight: 950,
+                          textTransform: 'uppercase',
+                          whiteSpace: 'pre-line',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {lineupNotes}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 md:min-w-[420px]">
+                        {[
+                          ['INSTALLATION', totalUnits, currentTheme.accent],
+                          ['SURVEY', totalSurvey, '#D97706'],
+                          ['BACK JOB', totalBackJob, '#EF4444'],
+                          ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+                        ].map(([label, value, color]) => (
+                          <div
+                            key={label}
+                            style={{
+                              border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                              backgroundColor: isLight ? '#ffffff' : '#07111f',
+                              padding: '12px 14px',
+                            }}
+                          >
+                            <div style={{ color: String(color), fontSize: '12px', fontWeight: 950, textTransform: 'uppercase' }}>{label}</div>
+                            <div style={{ color: String(color), fontSize: 'clamp(20px, 2vw, 32px)', fontWeight: 950, lineHeight: 1 }}>{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print Styles */}
+      <style>{`
+        :root {
+          --branch-accent: ${currentTheme.accent};
+          --branch-accent-dark: ${currentTheme.accentDark};
+          --branch-accent-light: ${currentTheme.accentLight};
+
+          --page-bg: #F8FAFC;
+          --card-bg: #FFFFFF;
+          --text-main: #0F172A;
+          --text-muted: #64748B;
+          --border-color: #E2E8F0;
+          --date-bar-bg: #020617;
+        }
+
+        .dark {
+          --page-bg: #0F172A;
+          --card-bg: #1E293B;
+          --text-main: #F8FAFC;
+          --text-muted: #CBD5E1;
+          --border-color: #334155;
+          --date-bar-bg: #020617;
+        }
+
+        @media print {
+          body * { visibility: hidden !important; }
+          .print-area, .print-area * { visibility: visible !important; }
+          .print-area { position: fixed; inset: 0; margin: 0; padding: 0; border: none !important; }
+          .no-print { display: none !important; }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none !important; }
+        .no-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+
+        body.showcase-mode-active aside,
+        body.showcase-mode-active header {
+          display: none !important;
+        }
+        body.showcase-mode-active main {
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        .lineup-showcase-overlay {
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 10000 !important;
+          left: 0 !important;
+          right: 0 !important;
+          top: 0 !important;
+          bottom: 0 !important;
+          transition: none !important;
+        }
+      `}</style>
     </div>
   )
 }
