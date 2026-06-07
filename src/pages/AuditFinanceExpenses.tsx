@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Layers, Clock, ClipboardCheck, User, TrendingUp } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Layers, Clock, User } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -111,7 +111,7 @@ export default function AuditFinanceExpenses() {
   const [activeTab, setActiveTab] = useState<'expenses' | 'purchases'>('expenses')
   const [purchases, setPurchases] = useState<PurchaseItem[]>([])
   const [loadingPurchases, setLoadingPurchases] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('pending')
+  const [statusFilter] = useState<'all' | 'pending' | 'resolved'>('pending')
   
   // Resolve Purchase Modal State
   const [showPurchaseModal, setShowPurchaseModal] = useState(false)
@@ -1376,26 +1376,7 @@ export default function AuditFinanceExpenses() {
           </div>
         )}
 
-        {/* Purchase Status selector */}
-        {activeTab === 'purchases' && (
-          <div className="flex items-center gap-1.5">
-            {(['pending', 'resolved', 'all'] as const).map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setStatusFilter(status)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all duration-150"
-                style={{
-                  backgroundColor: statusFilter === status ? accent : 'transparent',
-                  color: statusFilter === status ? '#ffffff' : textMuted,
-                  border: `1px solid ${statusFilter === status ? accent : border}`
-                }}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
-        )}
+
 
         {/* Search */}
         <div style={{ position: 'relative' }} className="flex-1 min-w-[200px] w-full">
@@ -1844,7 +1825,7 @@ export default function AuditFinanceExpenses() {
       {activeTab === 'purchases' && (
         <>
           {/* ── METRIC STATS CARDS ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
               <div className="flex flex-col gap-1">
@@ -1866,24 +1847,6 @@ export default function AuditFinanceExpenses() {
             <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold tracking-wider text-emerald-500 uppercase flex items-center gap-1">
-                  <ClipboardCheck size={12} /> Confirmed Expenses
-                </span>
-                <span className="text-xl font-bold" style={{ color: textPrimary }}>
-                  ₱{peso(purchaseStats.resolvedTotal)}
-                </span>
-                <span className="text-[10px]" style={{ color: textMuted }}>
-                  {purchaseStats.resolvedCount} requests successfully cleared
-                </span>
-              </div>
-              <div className="rounded-lg p-2.5 bg-emerald-500/10 text-emerald-500">
-                <TrendingUp size={20} />
-              </div>
-            </div>
-
-            <div className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01]"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
-              <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold tracking-wider uppercase" style={{ color: textMuted }}>
                   Total Funds Released
                 </span>
@@ -1891,7 +1854,7 @@ export default function AuditFinanceExpenses() {
                   ₱{peso(purchaseStats.totalDisbursed)}
                 </span>
                 <span className="text-[10px]" style={{ color: textMuted }}>
-                  Gross cash allocated for installer purchases
+                  Gross cash allocated for all personnel purchases
                 </span>
               </div>
               <div className="rounded-lg p-2.5 bg-blue-500/10 text-blue-500">

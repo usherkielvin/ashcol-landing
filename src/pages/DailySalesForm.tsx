@@ -214,6 +214,7 @@ export default function DailySalesForm() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
   const canEditOrSubmit = !reportId ? canSubmit : isAdmin
@@ -389,6 +390,7 @@ export default function DailySalesForm() {
   // Unit summary
   const [scheduledUnits, setScheduledUnits]     = useState('')
   const [installedUnits, setInstalledUnits]     = useState('')
+  const [servicedUnits, setServicedUnits]       = useState('')
   const [cancelledUnits, setCancelledUnits]     = useState('')
   const [freeInstallUnits, setFreeInstallUnits] = useState('')
 
@@ -421,33 +423,35 @@ export default function DailySalesForm() {
         }
 
         // 2. Fetch yesterday's Cash on Hand from audit summary
-        const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
-        const resAudit = await fetch(`${API_BASE_URL}/reports/audit-summary?date=${yesterday}`, { headers })
-        if (resAudit.ok) {
-          const data = await resAudit.json()
-          const myRow = data.find((r: any) => {
-            if (r.branchId !== selectedBranchId) return false
-            if (selectedAuditLine) {
-              const isServiceRow = r.auditLine === 'TAGUIG_SERVICE'
-              const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
-              return isServiceRow === isServiceTarget
+        if (!reportId) {
+          const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
+          const resAudit = await fetch(`${API_BASE_URL}/reports/audit-summary?date=${yesterday}`, { headers })
+          if (resAudit.ok) {
+            const data = await resAudit.json()
+            const myRow = data.find((r: any) => {
+              if (r.branchId !== selectedBranchId) return false
+              if (selectedAuditLine) {
+                const isServiceRow = r.auditLine === 'TAGUIG_SERVICE'
+                const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
+                return isServiceRow === isServiceTarget
+              }
+              return true
+            })
+            if (ignoreNextCohFetch.current) {
+              ignoreNextCohFetch.current = false
+            } else {
+              if (myRow && myRow.totalCohCfd !== undefined) {
+                setCashOnHand(String(myRow.totalCohCfd))
+              } else {
+                setCashOnHand('')
+              }
             }
-            return true
-          })
-          if (ignoreNextCohFetch.current) {
-            ignoreNextCohFetch.current = false
           } else {
-            if (myRow && myRow.totalCohCfd !== undefined) {
-              setCashOnHand(String(myRow.totalCohCfd))
+            if (ignoreNextCohFetch.current) {
+              ignoreNextCohFetch.current = false
             } else {
               setCashOnHand('')
             }
-          }
-        } else {
-          if (ignoreNextCohFetch.current) {
-            ignoreNextCohFetch.current = false
-          } else {
-            setCashOnHand('')
           }
         }
 
@@ -548,6 +552,8 @@ export default function DailySalesForm() {
       setReportDate(data.reportDate)
       setReceivedBy(data.receivedBy || '')
       setTrNo(data.trNo || '')
+      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
+      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
 
       // Populate rebates
       const rebatesList: RebateRow[] = []
@@ -587,6 +593,7 @@ export default function DailySalesForm() {
 
       // Populate units
       setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '')
+      setServicedUnits(data.totalUnitsServiced != null ? String(data.totalUnitsServiced) : '')
       setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '')
       setFreeInstallUnits(data.totalUnitsFreeInstall != null ? String(data.totalUnitsFreeInstall) : '')
 
@@ -719,6 +726,7 @@ export default function DailySalesForm() {
     setError(null)
     setScanError(null)
     setSuccess(false)
+    setSubmitAttempted(false)
     setReportId(null)
     if (clearTrNo) setTrNo('')
     setCashOnHand('')
@@ -735,9 +743,60 @@ export default function DailySalesForm() {
     setExpPurch([mkExp()])
     setScheduledUnits('')
     setInstalledUnits('')
+    setServicedUnits('')
     setCancelledUnits('')
     setFreeInstallUnits('')
   }
+
+  // Auto-match existing report when branch, date, or audit line changes
+  useEffect(() => {
+    // If the page was loaded with an explicit 'id' query parameter, we do NOT want to auto-match/switch reports.
+    const params = new URLSearchParams(window.location.search)
+    const urlId = params.get('id')
+    if (urlId) return
+
+    if (!selectedBranchId || !reportDate) return
+
+    let isSubscribed = true
+    const checkExistingReport = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${reportDate}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!isSubscribed) return
+        if (res.ok) {
+          const data = await res.json()
+          const match = data.find((r: any) => {
+            if (r.branchId !== selectedBranchId) return false
+            const rLine = r.auditLine || ''
+            const sLine = selectedAuditLine || ''
+            return rLine.toUpperCase() === sLine.toUpperCase()
+          })
+
+          if (match && match.id) {
+            if (reportId !== match.id) {
+              console.log('[Auto-Match] Found existing report ID:', match.id)
+              setReportId(match.id)
+              fetchReportDetails(match.id)
+            }
+          } else {
+            if (reportId !== null) {
+              console.log('[Auto-Match] No report found. Clearing reportId.')
+              clearForm(true)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking existing report:', err)
+      }
+    }
+
+    void checkExistingReport()
+    return () => {
+      isSubscribed = false
+    }
+  }, [selectedBranchId, reportDate, selectedAuditLine, reportId])
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
   const processImage = async (file: File) => {
@@ -979,6 +1038,20 @@ export default function DailySalesForm() {
   // ── Submit handler ───────────────────────────────────────────────
   const handleDtrSubmit = async () => {
     if (!canEditOrSubmit) return
+    setSubmitAttempted(true)
+    setError(null)
+    if (
+      cashOnHand.trim() === '' ||
+      fundFromHo.trim() === '' ||
+      scheduledUnits.trim() === '' ||
+      installedUnits.trim() === '' ||
+      servicedUnits.trim() === '' ||
+      cancelledUnits.trim() === '' ||
+      freeInstallUnits.trim() === ''
+    ) {
+      setError('All numeric input fields (HO Transfers & Cash on Hand, and Unit Summary) require a value. Please enter 0 if there is no amount/count.')
+      return
+    }
     if (!reviewMode) {
       setReviewStartedAt(new Date())
       setReviewMode(true)
@@ -1045,6 +1118,7 @@ export default function DailySalesForm() {
         rebatesForCollection: totalRebates,
         totalUnitsScheduled: parseInt(scheduledUnits) || 0,
         totalUnitsInstalled: parseInt(installedUnits) || 0,
+        totalUnitsServiced: parseInt(servicedUnits) || 0,
         totalUnitsCancelled: parseInt(cancelledUnits) || 0,
         totalUnitsFreeInstall: parseInt(freeInstallUnits) || 0,
         items: dtrItems,
@@ -1397,26 +1471,10 @@ export default function DailySalesForm() {
 
           {/* Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Fund Transfer from HO" />
+            <SectionHeader label="HO Transfers & Cash on Hand" />
             <div className="p-2">
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>
-                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Cash on Hand (Previous Day)</td>
-                    <td className="px-2 py-1 text-right w-36">
-                      <NumericFormat
-                        thousandSeparator=","
-                        decimalScale={2}
-                        fixedDecimalScale={true}
-                        allowNegative={false}
-                        placeholder="0.00"
-                        value={cashOnHand}
-                        onValueChange={(values) => setCashOnHand(values.value)}
-                        className={flushInputNumber}
-                        disabled={isFormDisabled}
-                      />
-                    </td>
-                  </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800/40">
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Fund Transfer from HO</td>
                     <td className="px-2 py-1 text-right w-36">
@@ -1428,7 +1486,23 @@ export default function DailySalesForm() {
                         placeholder="0.00"
                         value={fundFromHo}
                         onValueChange={(values) => setFundFromHo(values.value)}
-                        className={flushInputNumber}
+                        className={`${flushInputNumber} ${submitAttempted && fundFromHo.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
+                        disabled={isFormDisabled}
+                      />
+                    </td>
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Cash on Hand (Previous Day)</td>
+                    <td className="px-2 py-1 text-right w-36">
+                      <NumericFormat
+                        thousandSeparator=","
+                        decimalScale={2}
+                        fixedDecimalScale={true}
+                        allowNegative={false}
+                        placeholder="0.00"
+                        value={cashOnHand}
+                        onValueChange={(values) => setCashOnHand(values.value)}
+                        className={`${flushInputNumber} ${submitAttempted && cashOnHand.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
                         disabled={isFormDisabled}
                       />
                     </td>
@@ -1853,6 +1927,7 @@ export default function DailySalesForm() {
                   {([
                     { label: 'Total Scheduled Units',   value: scheduledUnits,   setter: setScheduledUnits },
                     { label: 'Total Installed Units',   value: installedUnits,   setter: setInstalledUnits },
+                    { label: 'Total Serviced Units',    value: servicedUnits,    setter: setServicedUnits },
                     { label: 'Total Cancelled',         value: cancelledUnits,   setter: setCancelledUnits },
                     { label: 'Total Free Install',      value: freeInstallUnits, setter: setFreeInstallUnits },
                   ] as { label: string; value: string; setter: (v: string) => void }[]).map(({ label, value, setter }) => (
@@ -1867,7 +1942,7 @@ export default function DailySalesForm() {
                           placeholder="0"
                           value={value}
                           onValueChange={(values) => setter(values.value)}
-                          className="w-20 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs font-bold rounded focus:outline-none focus:ring-1 focus:ring-emerald-500/30 py-0.5 px-2 text-slate-800 dark:text-slate-200"
+                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && value.trim() === '' ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
                           disabled={isFormDisabled}
                         />
                       </td>
