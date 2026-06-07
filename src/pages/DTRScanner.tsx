@@ -314,8 +314,8 @@ export default function DTRScanner() {
         <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}>
           <Check className="w-10 h-10" style={{ color: '#10B981' }} />
         </div>
-        <h2 className="text-2xl font-black" style={{ color: textPrimary }}>Branch Performance Saved!</h2>
-        <p className="text-sm" style={{ color: textMuted }}>The scanned DTR data has been added to the performance table.</p>
+        <h2 className="text-2xl font-black" style={{ color: textPrimary }}>Branch Audit Saved!</h2>
+        <p className="text-sm" style={{ color: textMuted }}>The scanned DTR data has been added to the audit summary table.</p>
         <p className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: accent }}>
           {form.branchName || 'Branch'} · {form.date}
         </p>
@@ -332,7 +332,7 @@ export default function DTRScanner() {
             className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
             style={{ backgroundColor: '#10B981' }}
           >
-            Go to Performance Table
+            Go to Audit Summary Table
           </a>
         </div>
       </div>

@@ -119,8 +119,6 @@ export default function DailyAuditReport() {
   })
 
   const [date, setDate] = useState(() => {
-    const stored = localStorage.getItem('perf-selected-date')
-    if (stored) return stored
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
@@ -142,16 +140,24 @@ export default function DailyAuditReport() {
   }, [viewMode])
 
   useEffect(() => {
-    localStorage.setItem('perf-selected-date', date)
-  }, [date])
-
-  useEffect(() => {
     localStorage.setItem('perf-range-from', rangeFrom)
   }, [rangeFrom])
 
   useEffect(() => {
     localStorage.setItem('perf-range-to', rangeTo)
   }, [rangeTo])
+
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
+
+  useEffect(() => {
+    const syncGlobal = () => {
+      setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    }
+    window.addEventListener('ashcol-global-branch-change', syncGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncGlobal)
+  }, [])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
   const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; receivedBy?: string } | null>(null)
@@ -222,6 +228,22 @@ export default function DailyAuditReport() {
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
   const canImportExcel = isAdmin || isManager
+
+  const showEditButton = useMemo(() => {
+    if (!selectedRow) return false
+    if (isAdmin) {
+      if (!globalBranchId) return false
+      if (globalBranchId === 'BR-TAGUIG-SALES-sales') {
+        const line = selectedRow.auditLine || ''
+        return selectedRow.branchId === 'BR-TAGUIG-SALES' && (line === '' || line === 'TAGUIG_SALES')
+      }
+      if (globalBranchId === 'BR-TAGUIG-SALES-services') {
+        return selectedRow.branchId === 'BR-TAGUIG-SALES' && selectedRow.auditLine === 'TAGUIG_SERVICE'
+      }
+      return selectedRow.branchId === globalBranchId
+    }
+    return isManager
+  }, [selectedRow, isAdmin, isManager, globalBranchId])
 
 
 
@@ -488,7 +510,7 @@ export default function DailyAuditReport() {
           <div className="min-w-0">
             <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
               <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-              Daily Branch Performance
+              Daily Audit Summary
             </h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
@@ -720,7 +742,7 @@ export default function DailyAuditReport() {
         <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Daily Branch Performance —{' '}
+            Daily Audit Summary —{' '}
             {viewMode === 'single'
               ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
               : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
@@ -1274,14 +1296,14 @@ export default function DailyAuditReport() {
                 </button>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
-                {isAdmin && selectedRow.id && (
+                {isAdmin && selectedRow.id && showEditButton && (
                   <button type="button" onClick={() => handleClearRow(selectedRow)}
                     className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors text-center"
                     style={{ border: 'none' }}>
-                    Clear Row
+                    Clear Report
                   </button>
                 )}
-                {(isAdmin || isManager) && (
+                {showEditButton && (
                   <a
                     href={selectedRow.id
                       ? `/daily-report?id=${selectedRow.id}`
@@ -1290,7 +1312,7 @@ export default function DailyAuditReport() {
                     className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
                   >
-                    {selectedRow.id ? 'Edit DTR' : 'Create DTR'}
+                    {selectedRow.id ? 'Edit Report' : 'Create Report'}
                   </a>
                 )}
                 <button onClick={() => setSelectedRow(null)}

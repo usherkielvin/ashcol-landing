@@ -34,6 +34,31 @@ const SESSION_KEY = 'ashcol-user'
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      if (token) {
+        // Decode JWT token and check expiration
+        const parts = token.split('.')
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+          if (payload && typeof payload.exp === 'number') {
+            const currentSec = Math.floor(Date.now() / 1000)
+            if (payload.exp < currentSec) {
+              // Token is expired! Clear all auth credentials
+              localStorage.removeItem('ashcol-token')
+              sessionStorage.removeItem('ashcol-token')
+              localStorage.removeItem(SESSION_KEY)
+              sessionStorage.removeItem(SESSION_KEY)
+              
+              const pathname = window.location.pathname
+              if (pathname !== '/login' && pathname !== '/forgot-password' && pathname !== '/create-account' && pathname !== '/') {
+                window.location.href = '/login?expired=true'
+              }
+              return null
+            }
+          }
+        }
+      }
+
       const stored = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)
       return stored ? JSON.parse(stored) : null
     } catch {

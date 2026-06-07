@@ -31,6 +31,15 @@ export default function Login() {
       setRememberMe(true)
     }
   }, [prefillEmail, prefillPassword])
+
+  // Check if session has expired
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('expired') === 'true') {
+      setError('Your session has expired. Please log in again.')
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       navigate(getPortalHomePath(user), { replace: true })

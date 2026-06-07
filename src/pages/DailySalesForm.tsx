@@ -1221,7 +1221,7 @@ export default function DailySalesForm() {
             className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
             style={{ backgroundColor: '#10B981' }}
           >
-            View Branch Performance
+            View Daily Audit Summary
           </a>
         </div>
       </div>
@@ -1247,7 +1247,7 @@ export default function DailySalesForm() {
         <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">
           <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
           <p className="text-sm text-amber-600 dark:text-amber-400">
-            <strong>Review Mode:</strong> Please double-check all details below. All fields are locked. Scroll down and click <strong>Confirm & Submit</strong> to record the report, or <strong>Go Back & Edit</strong> to make adjustments.
+            <strong>Review Mode:</strong> Please double-check all details below. All fields are locked. Scroll down and click <strong>{reportId ? 'Confirm & Update' : 'Confirm & Submit'}</strong> to record the report, or <strong>Go Back & Edit</strong> to make adjustments.
           </p>
         </div>
       )}
@@ -2040,30 +2040,64 @@ export default function DailySalesForm() {
               className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
               style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
             >
-              {submitting ? <>Submitting...</> : <><Check className="w-4 h-4" /> Confirm & Submit</>}
+              {submitting ? (reportId ? <>Updating...</> : <>Submitting...</>) : <><Check className="w-4 h-4" /> {reportId ? 'Confirm & Update' : 'Confirm & Submit'}</>}
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
-            <button
-              type="button"
-              onClick={handleClearForm}
-              disabled={submitting}
-              className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-              style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
-            >
-              <Trash2 className="w-4 h-4" /> Clear Form
-            </button>
-            <button
-              id="submit-dtr-btn"
-              onClick={handleDtrSubmit}
-              disabled={submitting}
-              className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-              style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-            >
-              {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Daily Report</>}
-            </button>
-          </div>
+          reportId ? (
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleClearForm}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+              >
+                <Trash2 className="w-4 h-4" /> Clear Form
+              </button>
+              <button
+                id="submit-dtr-btn"
+                onClick={handleDtrSubmit}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+                style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+              >
+                {submitting ? <>Updating...</> : <><Send className="w-4 h-4" /> Update Report</>}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = '/audit-report'
+                }}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleClearForm}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+              >
+                <Trash2 className="w-4 h-4" /> Clear Form
+              </button>
+              <button
+                id="submit-dtr-btn"
+                onClick={handleDtrSubmit}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+                style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+              >
+                {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Daily Report</>}
+              </button>
+            </div>
+          )
         )
       )}
 
