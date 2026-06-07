@@ -1739,13 +1739,14 @@ export default function AuditFinanceExpenses() {
               No expense records found. {!search && 'Add records manually or import from Excel.'}
             </div>
           ) : (
-            // ── Table view (Redesigned 5-column layout) ──
+            // ── Table view (Redesigned 6-column layout) ──
             <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[750px]">
+              <table className="w-full text-xs min-w-[850px]">
                 <thead>
                   <tr style={{ backgroundColor: `${accent}18` }}>
                     <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date & Incurred By</th>
-                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Details</th>
+                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Company / Vendor</th>
+                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
                     <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category & Source</th>
                     <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
                     <th className="px-3 py-3"></th>
@@ -1763,9 +1764,14 @@ export default function AuditFinanceExpenses() {
                         <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
                         <div className="text-[10px]" style={{ color: textMuted }}>By: {row.incurredBy}</div>
                       </td>
+                      <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
+                        {row.company || '—'}
+                      </td>
                       <td className="px-3 py-2.5">
                         <div className="font-medium truncate max-w-xs md:max-w-sm" style={{ color: textPrimary }} title={row.description}>{row.description}</div>
-                        <div className="text-[10px]" style={{ color: textMuted }}>{row.company || '—'} {row.receiptNo ? `• Receipt: ${row.receiptNo}` : ''}</div>
+                        {row.receiptNo && (
+                          <div className="text-[10px]" style={{ color: textMuted }}>Receipt: {row.receiptNo}</div>
+                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase" 
@@ -1793,7 +1799,7 @@ export default function AuditFinanceExpenses() {
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: `2px solid ${border}` }}>
-                    <td colSpan={3} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
+                    <td colSpan={4} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
                     <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
                     <td />
                   </tr>

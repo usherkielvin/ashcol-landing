@@ -22,6 +22,7 @@ interface AuditRow {
   totalCashCollection: number
   totalOnlineCollection: number
   totalExpenses: number
+  totalForPurchase: number
   forCollection: number
   rebatesForCollection: number
   totalUnitsInstalledServiced: number
@@ -219,6 +220,91 @@ export default function Branches() {
   const [branchPerfItemsLoading, setBranchPerfItemsLoading] = useState(false)
 
   const isRoleAdmin = user?.role?.toLowerCase() === 'admin'
+
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
+
+  useEffect(() => {
+    const syncGlobal = () => {
+      setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    }
+    window.addEventListener('ashcol-global-branch-change', syncGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncGlobal)
+  }, [])
+
+  const showEditButton = useMemo(() => {
+    if (!selectedBranch) return false
+    
+    // Admin check
+    if (isRoleAdmin) {
+      if (!globalBranchId) return false
+      
+      // Special taguig mapping
+      if (globalBranchId === 'BR-TAGUIG-SALES-sales') {
+        return selectedBranch.id === 'BR-TAGUIG-SALES-sales' || selectedBranch.id === 'BR-TAGUIG-SALES'
+      }
+      if (globalBranchId === 'BR-TAGUIG-SALES-services') {
+        return selectedBranch.id === 'BR-TAGUIG-SALES-services' || (selectedBranch.id === 'BR-TAGUIG-SALES' && branchPerfData?.auditLine === 'TAGUIG_SERVICE')
+      }
+      return selectedBranch.id === globalBranchId
+    }
+    
+    // Non-admin check
+    const userRole = (user?.role || '').toLowerCase()
+    const jobTitleLower = (user?.jobTitle || '').trim().toLowerCase()
+    const isSalesCoordinator = userRole === 'employee' && (
+      jobTitleLower === 'sales coordinator' ||
+      jobTitleLower === 'coordinator' ||
+      jobTitleLower.includes('coor')
+    )
+    const isManager = userRole === 'manager' || isSalesCoordinator || userRole === 'oic'
+    if (!isManager) return false
+    
+    // A non-admin manager can only edit their own branch DTR
+    if (!user?.branchId) return false
+    
+    // Normalize both user and selected branch to compare base ID
+    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    const selectedBranchNorm = selectedBranch.id?.replace(/-(sales|services)$/i, '').toLowerCase()
+    const baseMatch = userBranchNorm === selectedBranchNorm
+    if (!baseMatch) return false
+    
+    // For Taguig, match the audit line / sub-branch
+    if (user.branchId.toLowerCase().includes('taguig')) {
+      const emailLower = (user.email || '').toLowerCase()
+      const titleLower = (user.jobTitle || '').toLowerCase()
+      const isServiceUser = user.branchId.toLowerCase().includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const isServiceBranch = selectedBranch.id?.toLowerCase().includes('service') || selectedBranch.name.toUpperCase().includes('SERVICE')
+      return isServiceUser === isServiceBranch
+    }
+    
+    return true
+  }, [selectedBranch, isRoleAdmin, user, branchPerfData, globalBranchId])
+
+  const editReportUrl = useMemo(() => {
+    if (!selectedBranch) return ''
+    if (branchPerfData?.id) {
+      return `/daily-report?id=${branchPerfData.id}`
+    }
+    
+    // We are creating a new report
+    const baseBranchId = selectedBranch.id?.replace(/-(sales|services)$/i, '') || ''
+    const today = new Date().toISOString().split('T')[0]
+    
+    let auditLine = ''
+    if (selectedBranch.id?.toLowerCase().includes('taguig')) {
+      const nameUpper = selectedBranch.name.toUpperCase()
+      const idLower = selectedBranch.id.toLowerCase()
+      if (idLower.includes('services') || idLower.includes('service') || nameUpper.includes('SERVICES') || nameUpper.includes('SERVICE')) {
+        auditLine = 'TAGUIG_SERVICE'
+      } else {
+        auditLine = 'TAGUIG_SALES'
+      }
+    }
+    
+    return `/daily-report?branchId=${baseBranchId}&date=${today}&auditLine=${auditLine}`
+  }, [selectedBranch, branchPerfData])
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -947,13 +1033,24 @@ export default function Branches() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedBranch(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
-                style={{ color: textMuted }}
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                {showEditButton && (
+                  <a
+                    href={editReportUrl}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all hover:opacity-90 shrink-0 text-center"
+                    style={{ backgroundColor: '#10B981', border: 'none' }}
+                  >
+                    {branchPerfData?.id ? 'Edit DTR' : 'Create DTR'}
+                  </a>
+                )}
+                <button
+                  onClick={() => setSelectedBranch(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                  style={{ color: textMuted }}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* ─── SCROLLABLE BODY ─────────────────────────── */}
@@ -1025,6 +1122,7 @@ export default function Branches() {
                               { label: 'Gross Sales', value: `₱${peso(branchPerfData.grossSales)}`, color: textPrimary, bold: true },
                               { label: 'Target Quota', value: `₱${peso(branchPerfData.targetDailyQuota)}`, color: '#8B5CF6', bold: true },
                               { label: 'Total Expenses', value: `₱${peso(branchPerfData.totalExpenses)}`, color: '#EF4444', bold: false },
+                              { label: 'Total Purchases', value: `₱${peso(branchPerfData.totalForPurchase)}`, color: '#F59E0B', bold: false },
                             ]
                           },
                           {

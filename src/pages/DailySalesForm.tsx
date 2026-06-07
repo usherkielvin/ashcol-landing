@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -217,16 +217,6 @@ export default function DailySalesForm() {
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
-  const canEditOrSubmit = !reportId ? canSubmit : isAdmin
-  const isFormDisabled = !canEditOrSubmit || reviewMode
-
-  const [scanning, setScanning]     = useState(false)
-  const [scanError, setScanError]   = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const ignoreNextCohFetch = useRef(false)
-  const hasScannedTrNo = useRef(false)
-  const isApplyingScannedData = useRef(false)
-
   const [trNo, setTrNo]         = useState('')
   const [branchName, setBranch] = useState(initialBranchName)
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId)
@@ -235,6 +225,36 @@ export default function DailySalesForm() {
   const trNoExample = branchName && reportDate
     ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
     : 'DAS-260604'
+
+  const canEditOrSubmit = useMemo(() => {
+    if (!canSubmit) return false
+    if (!reportId) return true // Creating a new report
+    if (isAdmin) return true   // Admin can edit any report
+    
+    // For non-admin: they can edit only if they belong to this branch
+    if (!user?.branchId) return false
+    const userBranchNorm = normalizeTransactionBranch(user.branchId, user.email)
+    const reportBranchNorm = normalizeTransactionBranch(selectedBranchId, null)
+    
+    // Check if the base branch matches
+    const baseMatch = userBranchNorm.branchId.replace(/-(sales|services)$/i, '').toLowerCase() === reportBranchNorm.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    if (!baseMatch) return false
+    
+    // If Taguig, also check audit line
+    if (userBranchNorm.branchId.toLowerCase().includes('taguig')) {
+      return userBranchNorm.auditLine === selectedAuditLine
+    }
+    return true
+  }, [canSubmit, reportId, isAdmin, user, selectedBranchId, selectedAuditLine])
+
+  const isFormDisabled = !canEditOrSubmit || reviewMode
+
+  const [scanning, setScanning]     = useState(false)
+  const [scanError, setScanError]   = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const ignoreNextCohFetch = useRef(false)
+  const hasScannedTrNo = useRef(false)
+  const isApplyingScannedData = useRef(false)
 
   useEffect(() => {
     if (user && !reportId) {
@@ -600,6 +620,7 @@ export default function DailySalesForm() {
 
       // Map items lists
       const cashSales: CashTxRow[] = []
+      const cashReturnsList: CashRetRow[] = []
       const partsSalesList: PartsSaleRow[] = []
       const onlineTxList: OnlineTxRow[] = []
       const checkRemList: CheckRow[] = []
@@ -622,6 +643,12 @@ export default function DailySalesForm() {
                 description: parts[2] || '',
                 capital: '',
                 salePrice: amt
+              })
+            } else if (desc.startsWith('RETURN|')) {
+              cashReturnsList.push({
+                id: uid(),
+                name: desc.replace('RETURN|', ''),
+                amount: amt
               })
             } else {
               cashSales.push({
@@ -679,6 +706,7 @@ export default function DailySalesForm() {
       }
 
       setCashTx(cashSales.length > 0 ? cashSales : [mkCash()])
+      setCashRet(cashReturnsList.length > 0 ? cashReturnsList : [mkRet()])
       setPartsSales(partsSalesList.length > 0 ? partsSalesList : [mkPart()])
       setOnlineTx(onlineTxList.length > 0 ? onlineTxList : [mkOnl()])
       setCheckRem(checkRemList.length > 0 ? checkRemList : [mkChk()])
@@ -1061,14 +1089,18 @@ export default function DailySalesForm() {
     if (!canEditOrSubmit) return
     setSubmitAttempted(true)
     setError(null)
+    const checkEmpty = (val: any) => {
+      if (val === null || val === undefined) return true
+      return String(val).trim() === ''
+    }
     if (
-      cashOnHand.trim() === '' ||
-      fundFromHo.trim() === '' ||
-      scheduledUnits.trim() === '' ||
-      installedUnits.trim() === '' ||
-      servicedUnits.trim() === '' ||
-      cancelledUnits.trim() === '' ||
-      freeInstallUnits.trim() === ''
+      checkEmpty(cashOnHand) ||
+      checkEmpty(fundFromHo) ||
+      checkEmpty(scheduledUnits) ||
+      checkEmpty(installedUnits) ||
+      checkEmpty(servicedUnits) ||
+      checkEmpty(cancelledUnits) ||
+      checkEmpty(freeInstallUnits)
     ) {
       setError('All numeric input fields (HO Transfers & Cash on Hand, and Unit Summary) require a value. Please enter 0 if there is no amount/count.')
       return
@@ -1096,6 +1128,9 @@ export default function DailySalesForm() {
       const dtrItems: object[] = [
         ...cashTx.filter(r => r.name || r.amount).map(r => ({
           type: 'CASH_SALE', description: r.name, amount: parseFloat(r.amount) || 0
+        })),
+        ...cashRet.filter(r => r.name || r.amount).map(r => ({
+          type: 'CASH_SALE', description: `RETURN|${r.name}`, amount: parseFloat(r.amount) || 0
         })),
         ...onlineTx.filter(r => r.installer || r.amount).map(r => ({
           type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
