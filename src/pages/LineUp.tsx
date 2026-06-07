@@ -712,7 +712,7 @@ export default function LineUp() {
 
     if (!canEdit) {
       return (
-        <td style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}>
+        <td style={{ border: `3px solid ${isLight ? '#000000' : '#475569'}`, padding: '12px 16px', ...style }}>
           {value || '—'}
         </td>
       )
@@ -723,7 +723,7 @@ export default function LineUp() {
       return (
         <td
           style={{
-            border: `1px solid ${border}`,
+            border: `3px solid ${isLight ? '#000000' : '#475569'}`,
             padding: '2px 4px',
             ...style,
             boxShadow: 'inset 0 0 0 2px #10B981',
@@ -738,8 +738,13 @@ export default function LineUp() {
             onKeyDown={handleKeyDown}
             autoFocus
             placeholder={placeholder}
-            className="w-full px-2 py-1.5 text-xs font-semibold rounded border-none bg-transparent outline-none"
-            style={{ color: textPrimary }}
+            className="w-full px-2 py-1.5 rounded border-none bg-transparent outline-none"
+            style={{
+              color: textPrimary,
+              textAlign: style.textAlign,
+              fontWeight: style.fontWeight,
+              fontSize: style.fontSize,
+            }}
           />
           {options.length > 0 && (
             <datalist id={datalistId}>
@@ -764,7 +769,7 @@ export default function LineUp() {
         }}
         title="Double-click to edit"
         className="cursor-pointer transition-colors"
-        style={{ border: `1px solid ${border}`, padding: '12px 16px', ...style }}
+        style={{ border: `3px solid ${isLight ? '#000000' : '#475569'}`, padding: '12px 16px', ...style }}
       >
         {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>}
       </td>
@@ -1522,11 +1527,11 @@ export default function LineUp() {
 
   const thOrig = (label: string, _wide?: boolean) => (
     <th style={{
-      border: `1px solid ${border}`, padding: '8px 12px', fontSize: '10px', fontWeight: 800,
+      border: `3px solid ${isLight ? '#000000' : '#475569'}`, padding: '8px 12px', fontSize: '10px', fontWeight: 800,
       textTransform: 'uppercase' as const, letterSpacing: '0.05em', textAlign: 'center' as const,
       backgroundColor: isLight ? '#f8fafc' : '#0F172A', color: textMuted,
       whiteSpace: 'normal',
-      minWidth: label.includes('TIME') ? '110px' : undefined,
+      minWidth: label.includes('TIME') ? '90px' : undefined,
     }}>{label}</th>
   )
 
@@ -2215,9 +2220,18 @@ export default function LineUp() {
 
          <div className="overflow-x-auto">
            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+             <colgroup>
+               <col style={{ width: '12%' }} />
+               <col style={{ width: '20%' }} />
+               <col style={{ width: '10%' }} />
+               <col style={{ width: '20%' }} />
+               <col style={{ width: '10%' }} />
+               <col style={{ width: '18%' }} />
+               <col style={{ width: '10%' }} />
+             </colgroup>
              <thead>
                <tr>
-                 {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => {
+                 {['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
                    const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
                    const showcaseHeaderColor = isLight ? currentTheme.accentDark : currentTheme.accent
                    return (
@@ -2226,7 +2240,7 @@ export default function LineUp() {
                        style={{
                          padding: '10px 8px',
                          backgroundColor: showcaseHeaderBg,
-                         border: `1px solid ${border}`,
+                         border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                          color: showcaseHeaderColor,
                          fontSize: '11px',
                          fontWeight: 850,
@@ -2262,10 +2276,10 @@ export default function LineUp() {
                        key={cellIdx}
                        style={{
                          padding: '10px 8px',
-                         border: `1px solid ${border}`,
+                         border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                          color: textPrimary,
-                         fontSize: '11px',
-                         fontWeight: cellIdx === 0 ? 800 : 600,
+                         fontSize: (cellIdx === 1 || cellIdx === 3) ? '12px' : (cellIdx === 2 || cellIdx === 4) ? '9px' : '11px',
+                         fontWeight: (cellIdx === 1 || cellIdx === 3) ? 800 : (cellIdx === 2 || cellIdx === 4) ? 500 : cellIdx === 0 ? 800 : 600,
                          textAlign: cellIdx >= 5 ? 'left' : 'center',
                          whiteSpace: 'nowrap',
                        }}
@@ -2739,17 +2753,17 @@ export default function LineUp() {
             <div className="overflow-x-auto">
               <table className="lineup-showcase-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <colgroup>
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '9%' }} />
                   <col style={{ width: '8%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '28%' }} />
-                  <col style={{ width: '28%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '23%' }} />
+                  <col style={{ width: '23%' }} />
                 </colgroup>
                 <thead>
                   <tr>
-                    {['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => {
+                    {['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
                       const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
                       const showcaseHeaderColor = isLight ? currentTheme.accentDark : currentTheme.accent
                       return (
@@ -2758,7 +2772,7 @@ export default function LineUp() {
                           style={{
                             padding: '13px 10px',
                             backgroundColor: showcaseHeaderBg,
-                            border: `1px solid ${border}`,
+                            border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                             color: showcaseHeaderColor,
                             fontSize: 'clamp(12px, 1vw, 16px)',
                             fontWeight: 850,
@@ -2803,10 +2817,10 @@ export default function LineUp() {
                           key={cellIdx}
                           style={{
                             padding: cellIdx >= 5 ? '14px 18px' : '14px 10px',
-                            border: `1px solid ${border}`,
+                            border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                             color: textPrimary,
-                            fontSize: cellIdx >= 5 ? 'clamp(14px, 1.08vw, 19px)' : 'clamp(14px, 1.15vw, 21px)',
-                            fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
+                            fontSize: (cellIdx === 1 || cellIdx === 3) ? 'clamp(15px, 1.3vw, 22px)' : (cellIdx === 2 || cellIdx === 4) ? 'clamp(11px, 0.9vw, 14px)' : cellIdx >= 5 ? 'clamp(14px, 1.08vw, 19px)' : 'clamp(14px, 1.15vw, 21px)',
+                            fontWeight: (cellIdx === 1 || cellIdx === 3) ? 900 : cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 500 : 700),
                             textAlign: cellIdx >= 5 ? 'left' : 'center',
                             lineHeight: 1.32,
                             verticalAlign: 'middle',
@@ -2903,13 +2917,22 @@ export default function LineUp() {
             {/* Table */}
             <div className="overflow-x-auto">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <colgroup>
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '23%' }} />
+                  <col style={{ width: '23%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     {thOrig('SERVICE')}
                     {thOrig('DRIVER')}
-                    {thOrig('SCHEDULED TIME – IN OF DRIVER')}
+                    {thOrig('DRIVER TIME IN')}
                     {thOrig('INSTALLER')}
-                    {thOrig('SCHEDULED TIME – IN OF INSTALLER')}
+                    {thOrig('INSTALLER TIME IN')}
                     {thOrig('ROUTE', true)}
                     {thOrig('REMARKS', true)}
                   </tr>
@@ -2996,10 +3019,10 @@ export default function LineUp() {
                             })
                           }}>
                           {renderEditableTd(row, 'service',       finalVehicleOptions,   { textAlign: 'center', fontWeight: 950, fontSize: '13px', color: textPrimary })}
-                          {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                          {renderEditableTd(row, 'driverTime',    ['8:00AM','7:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
-                          {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 700, fontSize: '13px', color: textPrimary })}
-                          {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '13px', color: textPrimary })}
+                          {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
+                          {renderEditableTd(row, 'driverTime',    ['8:00AM','7:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '11px', color: textPrimary })}
+                          {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
+                          {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '11px', color: textPrimary })}
                           {renderEditableTd(row, 'route',   finalRouteOptions,   { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
                           {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary, position: 'relative' }, 'e.g. INSTALL - INSTALL (3 UNITS)')}
                         </tr>
@@ -3661,13 +3684,13 @@ export default function LineUp() {
                       </colgroup>
                     ) : (
                       <colgroup>
-                        <col style={{ width: '9%' }} />
-                        <col style={{ width: '9%' }} />
                         <col style={{ width: '8%' }} />
-                        <col style={{ width: '9%' }} />
-                        <col style={{ width: '9%' }} />
-                        <col style={{ width: '28%' }} />
-                        <col style={{ width: '28%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '23%' }} />
+                        <col style={{ width: '23%' }} />
                       </colgroup>
                     )}
                     <thead>
@@ -3690,7 +3713,7 @@ export default function LineUp() {
                               style={{
                                 padding: '18px 12px',
                                 backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
-                                border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
+                                border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                 color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
                                 fontSize: 'clamp(13px, 1vw, 16px)',
                                 fontWeight: 850,
@@ -3702,13 +3725,13 @@ export default function LineUp() {
                             </th>
                           ))
                         ) : (
-                          ['SERVICE', 'DRIVER', 'DRIVER IN', 'INSTALLER', 'INSTALLER IN', 'ROUTE', 'REMARKS'].map(label => (
+                          ['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => (
                             <th
                               key={label}
                               style={{
                                 padding: '18px 12px',
                                 backgroundColor: isLight ? currentTheme.accentLight : `${currentTheme.accent}20`,
-                                border: `1px solid ${isLight ? `${currentTheme.accent}35` : `${currentTheme.accent}45`}`,
+                                border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                 color: isLight ? currentTheme.accentDark : currentTheme.accentLight,
                                 fontSize: 'clamp(14px, 1.1vw, 18px)',
                                 fontWeight: 850,
@@ -3752,7 +3775,7 @@ export default function LineUp() {
                                 <td
                                   style={{
                                     padding: '18px 16px',
-                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                     color: textPrimary,
                                     verticalAlign: 'middle',
                                   }}
@@ -3781,7 +3804,7 @@ export default function LineUp() {
                                       key={day}
                                       style={{
                                         padding: '10px 8px',
-                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                         verticalAlign: 'middle',
                                       }}
                                     >
@@ -3832,7 +3855,7 @@ export default function LineUp() {
                                 <td
                                   style={{
                                     padding: '24px 16px',
-                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                     color: textPrimary,
                                     fontSize: 'clamp(18px, 1.4vw, 26px)',
                                     fontWeight: 950,
@@ -3849,7 +3872,7 @@ export default function LineUp() {
                                     <td
                                       style={{
                                         padding: '24px 18px',
-                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                         color: textPrimary,
                                         fontSize: 'clamp(14px, 1.1vw, 17px)',
                                         fontWeight: 700,
@@ -3863,7 +3886,7 @@ export default function LineUp() {
                                     <td
                                       style={{
                                         padding: '24px 18px',
-                                        border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                        border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                         color: textPrimary,
                                         fontSize: 'clamp(14px, 1.1vw, 17px)',
                                         fontWeight: 700,
@@ -3881,7 +3904,7 @@ export default function LineUp() {
                                 <td
                                   style={{
                                     padding: '24px 20px',
-                                    border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                    border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                     color: textPrimary,
                                     fontSize: 'clamp(14px, 1.1vw, 17px)',
                                     fontWeight: 700,
@@ -3927,10 +3950,10 @@ export default function LineUp() {
                                 key={cellIdx}
                                 style={{
                                   padding: cellIdx >= 5 ? '24px 22px' : '24px 16px',
-                                  border: `1px solid ${isLight ? '#dbe5ef' : '#1f3554'}`,
+                                  border: `3px solid ${isLight ? '#000000' : '#475569'}`,
                                   color: textPrimary,
-                                  fontSize: cellIdx >= 5 ? 'clamp(16px, 1.2vw, 22px)' : 'clamp(16px, 1.3vw, 24px)',
-                                  fontWeight: cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 550 : 700),
+                                  fontSize: (cellIdx === 1 || cellIdx === 3) ? 'clamp(17px, 1.45vw, 26px)' : (cellIdx === 2 || cellIdx === 4) ? 'clamp(12px, 1.0vw, 16px)' : cellIdx >= 5 ? 'clamp(16px, 1.2vw, 22px)' : 'clamp(16px, 1.3vw, 24px)',
+                                  fontWeight: (cellIdx === 1 || cellIdx === 3) ? 900 : cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 500 : 700),
                                   textAlign: cellIdx >= 5 ? 'left' : 'center',
                                   lineHeight: 1.32,
                                   verticalAlign: 'middle',
