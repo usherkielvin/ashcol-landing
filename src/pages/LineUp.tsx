@@ -1605,79 +1605,86 @@ export default function LineUp() {
   }
 
   const wGetStatusTheme = (status: WDayStatus) => {
-    const isDarkTheme = !isLight
     switch (status) {
       case 'WITH SCHED':
         return {
-          border: '#10b981',
-          bg: isDarkTheme ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)',
-          headerBg: '#10b981',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#064e3b' : '#a7f3d0',
-          unitText: isDarkTheme ? '#064e3b' : '#064e3b',
+          border: '#059669',
+          bg: '#10b981',
+          text: '#ffffff',
+          headerBg: '#059669',
+          headerText: '#ffffff',
+          unitBg: '#047857',
+          unitText: '#ffffff',
         }
       case 'NO SCHED':
         return {
-          border: '#ef4444',
-          bg: isDarkTheme ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.06)',
-          headerBg: '#ef4444',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#7f1d1d' : '#fecaca',
-          unitText: isDarkTheme ? '#7f1d1d' : '#7f1d1d',
+          border: '#b91c1c',
+          bg: '#ef4444',
+          text: '#ffffff',
+          headerBg: '#b91c1c',
+          headerText: '#ffffff',
+          unitBg: '#991b1b',
+          unitText: '#ffffff',
         }
       case 'CANCEL':
         return {
-          border: '#3b82f6',
-          bg: isDarkTheme ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.06)',
-          headerBg: '#3b82f6',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#1e3a8a' : '#bfdbfe',
-          unitText: isDarkTheme ? '#1e3a8a' : '#1e3a8a',
+          border: '#1d4ed8',
+          bg: '#3b82f6',
+          text: '#ffffff',
+          headerBg: '#1d4ed8',
+          headerText: '#ffffff',
+          unitBg: '#1e40af',
+          unitText: '#ffffff',
         }
       case 'ABSENT':
         return {
-          border: '#475569',
-          bg: isDarkTheme ? 'rgba(71,85,105,0.12)' : 'rgba(71,85,105,0.06)',
-          headerBg: '#475569',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#0f172a' : '#cbd5e1',
-          unitText: isDarkTheme ? '#0f172a' : '#0f172a',
+          border: '#334155',
+          bg: '#475569',
+          text: '#ffffff',
+          headerBg: '#334155',
+          headerText: '#ffffff',
+          unitBg: '#1e293b',
+          unitText: '#ffffff',
         }
       case 'ON LEAVE':
         return {
-          border: '#a855f7',
-          bg: isDarkTheme ? 'rgba(168,85,247,0.12)' : 'rgba(168,85,247,0.06)',
-          headerBg: '#a855f7',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#581c87' : '#e9d5ff',
-          unitText: isDarkTheme ? '#581c87' : '#581c87',
+          border: '#7e22ce',
+          bg: '#9333ea',
+          text: '#ffffff',
+          headerBg: '#7e22ce',
+          headerText: '#ffffff',
+          unitBg: '#6b21a8',
+          unitText: '#ffffff',
         }
       case 'DAY OFF':
         return {
-          border: '#f97316',
-          bg: isDarkTheme ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.06)',
-          headerBg: '#f97316',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#7c2d12' : '#ffedd5',
-          unitText: isDarkTheme ? '#7c2d12' : '#7c2d12',
+          border: '#c2410c',
+          bg: '#f97316',
+          text: '#ffffff',
+          headerBg: '#c2410c',
+          headerText: '#ffffff',
+          unitBg: '#9a3412',
+          unitText: '#ffffff',
         }
       case 'SURVEY':
         return {
-          border: '#ec4899',
-          bg: isDarkTheme ? 'rgba(236,72,153,0.12)' : 'rgba(236,72,153,0.06)',
-          headerBg: '#ec4899',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#831843' : '#fbcfe8',
-          unitText: isDarkTheme ? '#831843' : '#831843',
+          border: '#a21caf',
+          bg: '#d946ef',
+          text: '#ffffff',
+          headerBg: '#a21caf',
+          headerText: '#ffffff',
+          unitBg: '#86198f',
+          unitText: '#ffffff',
         }
       default:
         return {
-          border: '#10b981',
-          bg: isDarkTheme ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)',
-          headerBg: '#10b981',
-          headerText: '#fff',
-          unitBg: isDarkTheme ? '#064e3b' : '#a7f3d0',
-          unitText: isDarkTheme ? '#064e3b' : '#064e3b',
+          border: '#059669',
+          bg: '#10b981',
+          text: '#ffffff',
+          headerBg: '#059669',
+          headerText: '#ffffff',
+          unitBg: '#047857',
+          unitText: '#ffffff',
         }
     }
   }
@@ -3705,8 +3712,8 @@ export default function LineUp() {
                                 onChange={e => wUpdateDay(person.id, day, { note: e.target.value.toUpperCase() })}
                                 placeholder="Note"
                                 rows={2}
-                                className="w-full resize-none bg-transparent outline-none text-[9px] font-bold uppercase leading-tight placeholder-slate-400/55"
-                                style={{ color: textPrimary }} />
+                                className="w-full resize-none bg-transparent outline-none text-[9px] font-bold uppercase leading-tight placeholder-white/60"
+                                style={{ color: theme.text }} />
                     </div>
                     {/* Units input bottom bar */}
                     <div className="flex items-center" style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: theme.unitBg }}>

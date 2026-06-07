@@ -888,41 +888,7 @@ export default function DailySalesForm() {
 
   const applyScannedData = (data: Record<string, any>) => {
     isApplyingScannedData.current = true
-    let activeBranchName = branchName
-
-    let shouldUpdateDateAndBranch = true
-    const dateDiff = data.date && data.date !== reportDate
-    const branchDiff = data.branchId && data.branchId !== selectedBranchId
-
-    if (dateDiff || branchDiff) {
-      const scanDateStr = data.date || reportDate
-      const scanBranchStr = data.branchName || branchName
-      shouldUpdateDateAndBranch = window.confirm(
-        `The scanned DTR is for ${scanBranchStr} on ${scanDateStr}.\n\nWould you like to switch the form's Date and Branch to match the scanned DTR? (Select Cancel to keep your currently selected date/branch and apply the transactions data to it).`
-      )
-    }
-
-    if (shouldUpdateDateAndBranch) {
-      if (data.date) {
-        setReportDate(data.date)
-      }
-
-      if (data.branchId) {
-        setSelectedBranchId(data.branchId)
-        setSelectedAuditLine(data.auditLine || null)
-        if (data.branchName) {
-          setBranch(data.branchName)
-          activeBranchName = data.branchName
-        }
-      }
-
-      if (data.trNo) {
-        setTrNo(data.trNo)
-        hasScannedTrNo.current = true
-      } else {
-        hasScannedTrNo.current = false
-      }
-    }
+    const activeBranchName = branchName
 
     if (data.cohPreviousDay != null || data.fundFromHo != null) {
       ignoreNextCohFetch.current = true
