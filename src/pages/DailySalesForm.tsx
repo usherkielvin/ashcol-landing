@@ -225,6 +225,7 @@ export default function DailySalesForm() {
   const fileRef = useRef<HTMLInputElement>(null)
   const ignoreNextCohFetch = useRef(false)
   const hasScannedTrNo = useRef(false)
+  const isApplyingScannedData = useRef(false)
 
   const [trNo, setTrNo]         = useState('')
   const [branchName, setBranch] = useState(initialBranchName)
@@ -750,12 +751,17 @@ export default function DailySalesForm() {
 
   // Auto-match existing report when branch, date, or audit line changes
   useEffect(() => {
-    // If the page was loaded with an explicit 'id' query parameter, we do NOT want to auto-match/switch reports.
     const params = new URLSearchParams(window.location.search)
     const urlId = params.get('id')
-    if (urlId) return
+    if (urlId) {
+      isApplyingScannedData.current = false
+      return
+    }
 
-    if (!selectedBranchId || !reportDate) return
+    if (!selectedBranchId || !reportDate) {
+      isApplyingScannedData.current = false
+      return
+    }
 
     let isSubscribed = true
     const checkExistingReport = async () => {
@@ -778,17 +784,27 @@ export default function DailySalesForm() {
             if (reportId !== match.id) {
               console.log('[Auto-Match] Found existing report ID:', match.id)
               setReportId(match.id)
-              fetchReportDetails(match.id)
+              if (!isApplyingScannedData.current) {
+                fetchReportDetails(match.id)
+              }
             }
           } else {
             if (reportId !== null) {
               console.log('[Auto-Match] No report found. Clearing reportId.')
-              clearForm(true)
+              if (!isApplyingScannedData.current) {
+                clearForm(true)
+              } else {
+                setReportId(null)
+              }
             }
           }
         }
       } catch (err) {
         console.error('Error checking existing report:', err)
+      } finally {
+        if (isSubscribed) {
+          isApplyingScannedData.current = false
+        }
       }
     }
 
@@ -848,6 +864,7 @@ export default function DailySalesForm() {
   }
 
   const applyScannedData = (data: Record<string, any>) => {
+    isApplyingScannedData.current = true
     let activeBranchName = branchName
     if (data.date) {
       setReportDate(data.date)
