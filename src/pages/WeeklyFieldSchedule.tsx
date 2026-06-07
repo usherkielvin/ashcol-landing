@@ -3,7 +3,7 @@ import { CalendarDays, Plus, Trash2, Users, Wrench, Truck } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
 type ScheduleKind = 'drivers' | 'installers'
-type DayStatus = 'WITH SCHED' | 'NO SCHED' | 'CANCEL' | 'ABSENT' | 'ON LEAVE' | 'DAY OFF' | 'SURVEY'
+type DayStatus = 'WITH SCHED' | 'NO SCHED' | 'CANCEL' | 'ABSENT' | 'ON LEAVE' | 'DAY OFF' | 'SURVEY' | 'PENDING'
 
 interface PersonSchedule {
   id: string
@@ -17,7 +17,7 @@ interface PersonSchedule {
 }
 
 const LS_KEY = 'ashcol_weekly_field_schedule_v1'
-const STATUS_OPTIONS: DayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY']
+const STATUS_OPTIONS: DayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY', 'PENDING']
 
 const defaultPeople = (kind: ScheduleKind, days: string[]): PersonSchedule[] => {
   const names = kind === 'drivers'
@@ -159,6 +159,7 @@ export default function WeeklyFieldSchedule() {
     if (status === 'ON LEAVE') return { backgroundColor: '#a855f7', color: '#111827' }
     if (status === 'DAY OFF') return { backgroundColor: '#fb923c', color: '#111827' }
     if (status === 'SURVEY') return { backgroundColor: '#c084fc', color: '#111827' }
+    if (status === 'PENDING') return { backgroundColor: '#ffffff', color: '#111827' }
     return { backgroundColor: '#10b981', color: '#111827' }
   }
 

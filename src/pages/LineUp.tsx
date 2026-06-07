@@ -1527,14 +1527,14 @@ export default function LineUp() {
 
   // ── Weekly Schedule (embedded) ─────────────────────────────────────────────
   type WScheduleKind = 'drivers' | 'installers'
-  type WDayStatus = 'WITH SCHED' | 'NO SCHED' | 'CANCEL' | 'ABSENT' | 'ON LEAVE' | 'DAY OFF' | 'SURVEY'
+  type WDayStatus = 'WITH SCHED' | 'NO SCHED' | 'CANCEL' | 'ABSENT' | 'ON LEAVE' | 'DAY OFF' | 'SURVEY' | 'PENDING'
   interface WPersonSchedule {
     id: string; name: string; roleNote: string; photoUrl: string
     days: Record<string, { status: WDayStatus; note: string; units: string }>
     totalUnitsTeamWork: string; totalUnitsCleaning: string; remarks: string
   }
   const W_LS_KEY = 'ashcol_weekly_field_schedule_v1'
-  const W_STATUS_OPTIONS: WDayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY']
+  const W_STATUS_OPTIONS: WDayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY', 'PENDING']
   const wToDateKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
   const wGetWeekStart = (dateKey: string) => {
     const d = new Date(`${dateKey}T00:00:00`); const day = d.getDay()
@@ -1601,6 +1601,7 @@ export default function LineUp() {
     if (status==='ON LEAVE')  return '#a855f7'
     if (status==='DAY OFF')   return '#f97316'
     if (status==='SURVEY')    return '#c084fc'
+    if (status==='PENDING')   return '#ffffff'
     return '#10b981'
   }
 
@@ -1675,6 +1676,16 @@ export default function LineUp() {
           headerText: '#ffffff',
           unitBg: '#86198f',
           unitText: '#ffffff',
+        }
+      case 'PENDING':
+        return {
+          border: isLight ? '#cbd5e1' : '#475569',
+          bg: '#ffffff',
+          text: '#111827',
+          headerBg: '#f1f5f9',
+          headerText: '#111827',
+          unitBg: '#e2e8f0',
+          unitText: '#111827',
         }
       default:
         return {
@@ -3573,7 +3584,7 @@ export default function LineUp() {
           <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Legend</span>
           {W_STATUS_OPTIONS.map(s => (
             <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-bold">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: wStatusDot(s) }} />
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: wStatusDot(s), border: s === 'PENDING' ? `1px solid ${border}` : 'none' }} />
               {s}
             </span>
           ))}
@@ -3712,7 +3723,7 @@ export default function LineUp() {
                                 onChange={e => wUpdateDay(person.id, day, { note: e.target.value.toUpperCase() })}
                                 placeholder="Note"
                                 rows={2}
-                                className="w-full resize-none bg-transparent outline-none text-[9px] font-bold uppercase leading-tight placeholder-white/60"
+                                className={`w-full resize-none bg-transparent outline-none text-[9px] font-bold uppercase leading-tight ${cell.status === 'PENDING' ? 'placeholder-slate-400' : 'placeholder-white/60'}`}
                                 style={{ color: theme.text }} />
                     </div>
                     {/* Units input bottom bar */}

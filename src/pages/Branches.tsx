@@ -342,11 +342,11 @@ export default function Branches() {
         }
         // Special Taguig: match by audit line / name substring
         if (!match && branchIdLower.includes('taguig')) {
-          const isSales = branchIdLower.includes('sales') || branchNameLower.includes('sales')
+          const isServices = branchIdLower.endsWith('-services') || branchNameLower.includes('service')
           match = rows.find(r => {
             const rn = r.branchName.toLowerCase()
-            if (isSales) return rn.includes('taguig') && !rn.includes('service')
-            return rn.includes('taguig') && (rn.includes('service') || r.auditLine?.includes('SERVICE'))
+            if (isServices) return rn.includes('taguig') && (rn.includes('service') || r.auditLine?.includes('SERVICE'))
+            return rn.includes('taguig') && !rn.includes('service')
           })
         }
         setBranchPerfData(match || null)
