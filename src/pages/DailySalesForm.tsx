@@ -749,6 +749,29 @@ export default function DailySalesForm() {
     setFreeInstallUnits('')
   }
 
+  const isFormDirty = () => {
+    // Check if cashOnHand or fundFromHo are set (not empty or '0')
+    if (cashOnHand && cashOnHand !== '0' && cashOnHand !== '0.00') return true
+    if (fundFromHo && fundFromHo !== '0' && fundFromHo !== '0.00') return true
+    
+    // Check if any lists have entered content
+    if (cashTx.some(r => r.name || r.amount)) return true
+    if (cashRet.some(r => r.name || r.amount)) return true
+    if (onlineTx.some(r => r.installer || r.amount)) return true
+    if (checkRem.some(r => r.installer || r.amount)) return true
+    if (partsSales.some(r => r.customer || r.salePrice)) return true
+    if (forColl.some(r => r.installer || r.amount)) return true
+    if (rebates.some(r => r.company || r.amount)) return true
+    if (orders.some(r => r.customer || r.amount)) return true
+    if (expReceipt.some(r => r.name || r.amount)) return true
+    if (expPurch.some(r => r.name || r.amount)) return true
+    
+    // Check unit summaries
+    if (scheduledUnits || installedUnits || servicedUnits || cancelledUnits || freeInstallUnits) return true
+
+    return false
+  }
+
   // Auto-match existing report when branch, date, or audit line changes
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -784,14 +807,14 @@ export default function DailySalesForm() {
             if (reportId !== match.id) {
               console.log('[Auto-Match] Found existing report ID:', match.id)
               setReportId(match.id)
-              if (!isApplyingScannedData.current) {
+              if (!isApplyingScannedData.current && !isFormDirty()) {
                 fetchReportDetails(match.id)
               }
             }
           } else {
             if (reportId !== null) {
               console.log('[Auto-Match] No report found. Clearing reportId.')
-              if (!isApplyingScannedData.current) {
+              if (!isApplyingScannedData.current && !isFormDirty()) {
                 clearForm(true)
               } else {
                 setReportId(null)
