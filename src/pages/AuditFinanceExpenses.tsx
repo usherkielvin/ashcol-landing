@@ -1326,7 +1326,7 @@ export default function AuditFinanceExpenses() {
           style={{ color: activeTab === 'purchases' ? accent : undefined }}
         >
           <Layers size={14} />
-          Pending Purchases
+          Pending Purchases & Expenses
         </button>
       </div>
 
@@ -1874,7 +1874,7 @@ export default function AuditFinanceExpenses() {
             <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="min-w-0">
                 <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
-                  {branchName || 'All Branches'} — Purchases
+                  {branchName || 'All Branches'} — Pending Purchases & Expenses
                 </h2>
               </div>
             </div>
@@ -1882,11 +1882,11 @@ export default function AuditFinanceExpenses() {
             {loadingPurchases ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2">
                 <Loader2 className="animate-spin text-emerald-500" size={24} />
-                <span className="text-xs font-medium" style={{ color: textMuted }}>Loading purchases...</span>
+                <span className="text-xs font-medium" style={{ color: textMuted }}>Loading pending items...</span>
               </div>
             ) : filteredPurchases.length === 0 ? (
               <div className="p-10 text-center" style={{ color: textMuted }}>
-                No purchases found. Pending purchases appear when workers request funds in DTR reports.
+                No pending purchases or expenses found. Pending items appear when workers submit reports with unresolved receipts.
               </div>
             ) : (
               <div className="overflow-x-auto">
