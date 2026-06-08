@@ -292,6 +292,7 @@ export default function Tickets() {
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter]   = useState('')
+  const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
 
   // ── Cell editing state ────────────────────────────────────────────────────
@@ -1368,7 +1369,12 @@ export default function Tickets() {
               <span>{getBranchDisplayName(globalBranchId)}</span>
             </div>
           )}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
+          <div
+               onClick={() => {
+                 dateFilterInputRef.current?.focus()
+                 dateFilterInputRef.current?.showPicker?.()
+               }}
+               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm cursor-pointer"
                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
             <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
             {dateFilter && (
@@ -1376,7 +1382,7 @@ export default function Tickets() {
                 {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
               </span>
             )}
-            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+            <input ref={dateFilterInputRef} type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
                    className="bg-transparent outline-none cursor-pointer font-bold"
                    style={{ color: textPrimary }} />
             {dateFilter && (

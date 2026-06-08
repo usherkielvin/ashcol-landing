@@ -216,6 +216,7 @@ export default function LineUp() {
   const isNavigatingRef = useRef(false)
   const mobileDateInputRef   = useRef<HTMLInputElement>(null)
   const desktopDateInputRef  = useRef<HTMLInputElement>(null)
+  const weeklyDateInputRef   = useRef<HTMLInputElement>(null)
 
 
   const [suggestions, setSuggestions] = useState<{
@@ -2173,11 +2174,16 @@ export default function LineUp() {
 
          <div className="lineup-toolbar mt-3 flex flex-col gap-2">
            <div className="flex items-center gap-2 w-full justify-between">
-             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1"
+             <div
+               onClick={() => {
+                 mobileDateInputRef.current?.focus()
+                 mobileDateInputRef.current?.showPicker?.()
+               }}
+               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1 cursor-pointer"
                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
                <ClipboardList className="w-3.5 h-3.5 shrink-0" style={{ color: currentTheme.accent }} />
                <input ref={mobileDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                 className="bg-transparent outline-none text-xs w-full font-bold" style={{ color: textPrimary }} />
+                 className="bg-transparent outline-none text-xs w-full font-bold cursor-pointer" style={{ color: textPrimary }} />
              </div>
              
              <button
@@ -2496,7 +2502,10 @@ export default function LineUp() {
           </div>
           <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end flex-wrap">
             {/* Date */}
-            <div onClick={() => desktopDateInputRef.current?.showPicker?.()}
+            <div onClick={() => {
+                desktopDateInputRef.current?.focus()
+                desktopDateInputRef.current?.showPicker?.()
+              }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
               <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
@@ -3334,11 +3343,16 @@ export default function LineUp() {
               ))}
             </div>
             {/* Date picker */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            <div
+                 onClick={() => {
+                   weeklyDateInputRef.current?.focus()
+                   weeklyDateInputRef.current?.showPicker?.()
+                 }}
+                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer"
                  style={{ backgroundColor: isLight ? '#f8fafc' : '#0f172a', border: `1px solid ${border}` }}>
               <CalendarDays className="w-3.5 h-3.5" style={{ color: textMuted }} />
-              <input type="date" value={wAnchorDate} onChange={e => wReloadWeek(e.target.value)}
-                     className="bg-transparent outline-none text-xs font-bold" style={{ color: textPrimary }} />
+              <input ref={weeklyDateInputRef} type="date" value={wAnchorDate} onChange={e => wReloadWeek(e.target.value)}
+                     className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
             {/* Add Row */}
             <button type="button" onClick={wAddPerson}

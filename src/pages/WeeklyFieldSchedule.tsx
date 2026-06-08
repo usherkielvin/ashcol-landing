@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { CalendarDays, Plus, Trash2, Users, Wrench, Truck } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -96,6 +96,7 @@ export default function WeeklyFieldSchedule() {
   const isLight = theme === 'light'
   const [kind, setKind] = useState<ScheduleKind>('drivers')
   const [anchorDate, setAnchorDate] = useState(toDateKey(new Date()))
+  const anchorDateInputRef = useRef<HTMLInputElement>(null)
 
   const days = useMemo(() => getWeekDays(anchorDate), [anchorDate])
   const weekKey = days[0]
@@ -183,10 +184,17 @@ export default function WeeklyFieldSchedule() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ backgroundColor: softBg, borderColor: border }}>
+            <div
+              onClick={() => {
+                anchorDateInputRef.current?.focus()
+                anchorDateInputRef.current?.showPicker?.()
+              }}
+              className="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer"
+              style={{ backgroundColor: softBg, borderColor: border }}
+            >
               <CalendarDays className="w-4 h-4" style={{ color: textMuted }} />
-              <input type="date" value={anchorDate} onChange={e => reloadWeek(e.target.value)}
-                     className="bg-transparent outline-none text-xs font-bold" style={{ color: textPrimary }} />
+              <input ref={anchorDateInputRef} type="date" value={anchorDate} onChange={e => reloadWeek(e.target.value)}
+                     className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
             <button type="button" onClick={addPerson}
                     className="rounded-lg border px-3 py-2 text-xs font-black flex items-center gap-1.5"
