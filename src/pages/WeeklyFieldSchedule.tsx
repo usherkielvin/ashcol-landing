@@ -186,7 +186,6 @@ export default function WeeklyFieldSchedule() {
             </div>
             <div
               onClick={() => {
-                anchorDateInputRef.current?.focus()
                 anchorDateInputRef.current?.showPicker?.()
               }}
               className="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer"
@@ -194,7 +193,7 @@ export default function WeeklyFieldSchedule() {
             >
               <CalendarDays className="w-4 h-4" style={{ color: textMuted }} />
               <input ref={anchorDateInputRef} type="date" value={anchorDate} onChange={e => reloadWeek(e.target.value)}
-                     className="bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
+                     className="date-input-no-indicator date-input-trigger-only bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
             </div>
             <button type="button" onClick={addPerson}
                     className="rounded-lg border px-3 py-2 text-xs font-black flex items-center gap-1.5"

@@ -71,6 +71,11 @@ const formatLocalTime = (utcString: string | null | undefined, fallback: string 
   }
 }
 
+const formatDateTriggerLabel = (value: string) => {
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${month}/${day}/${year}` : value
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 
@@ -185,7 +190,6 @@ export default function DailyAuditReport() {
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return
     input.showPicker?.()
-    input.focus()
   }
 
   const handleClearRow = (row: AuditRow) => {
@@ -584,15 +588,18 @@ export default function DailyAuditReport() {
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
               <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                onClick={e => e.stopPropagation()}
-                className="bg-transparent outline-none text-xs w-full cursor-pointer" style={{ color: textPrimary }} />
+                tabIndex={-1}
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+              <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
+                {formatDateTriggerLabel(date)}
+              </span>
             </div>
           ) : (
             <>
               <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
-                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
-                className="px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
             </>
           )}
         </div>
@@ -632,8 +639,11 @@ export default function DailyAuditReport() {
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
               <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
               <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                onClick={e => e.stopPropagation()}
-                className="bg-transparent outline-none text-xs cursor-pointer" style={{ color: textPrimary }} />
+                tabIndex={-1}
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+              <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
+                {formatDateTriggerLabel(date)}
+              </span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
@@ -649,9 +659,12 @@ export default function DailyAuditReport() {
                     type="date"
                     value={p.val}
                     onChange={e => p.set(e.target.value)}
-                    onClick={e => e.stopPropagation()}
-                    className="bg-transparent outline-none text-xs cursor-pointer"
-                    style={{ color: textPrimary }} />
+                    tabIndex={-1}
+                    className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
+                    aria-label={i === 0 ? 'Audit range from date' : 'Audit range to date'} />
+                  <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
+                    {formatDateTriggerLabel(p.val)}
+                  </span>
                 </div>
               ))}
             </div>

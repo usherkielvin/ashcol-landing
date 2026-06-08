@@ -1371,7 +1371,6 @@ export default function Tickets() {
           )}
           <div
                onClick={() => {
-                 dateFilterInputRef.current?.focus()
                  dateFilterInputRef.current?.showPicker?.()
                }}
                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm cursor-pointer"
@@ -1383,7 +1382,7 @@ export default function Tickets() {
               </span>
             )}
             <input ref={dateFilterInputRef} type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-                   className="bg-transparent outline-none cursor-pointer font-bold"
+                   className="date-input-no-indicator date-input-trigger-only bg-transparent outline-none cursor-pointer font-bold"
                    style={{ color: textPrimary }} />
             {dateFilter && (
               <button onClick={e => { e.stopPropagation(); setDateFilter('') }} style={{ color: textMuted }}>
