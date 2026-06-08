@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Layers, Clock, User } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Layers, Clock, User, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -11,6 +11,7 @@ import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpens
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
+import CameraScannerModal from '../components/CameraScannerModal'
 import * as XLSX from 'xlsx'
 
 interface BranchOption { id: string; name: string }
@@ -104,6 +105,7 @@ export default function AuditFinanceExpenses() {
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError, setScanError] = useState('')
   const [savingReceipt, setSavingReceipt] = useState(false)
+  const [showCamera, setShowCamera] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
 
@@ -134,6 +136,7 @@ export default function AuditFinanceExpenses() {
   const [scanningPurchase, setScanningPurchase] = useState(false)
   const [scanPreviewPurchase, setScanPreviewPurchase] = useState<string | null>(null)
   const [scanErrorPurchase, setScanErrorPurchase] = useState('')
+  const [showCameraPurchase, setShowCameraPurchase] = useState(false)
   const fileInputPurchaseRef = useRef<HTMLInputElement>(null)
 
   // Dynamic categories state
@@ -1410,6 +1413,16 @@ export default function AuditFinanceExpenses() {
               <button
                 type="button"
                 disabled={scanning}
+                onClick={() => setShowCamera(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                style={{ backgroundColor: accent, color: 'white' }}
+                title="Scan receipt with your device camera"
+              >
+                <Camera size={13} /> Camera Scan
+              </button>
+              <button
+                type="button"
+                disabled={scanning}
                 onClick={handlePasteClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
@@ -2330,14 +2343,24 @@ export default function AuditFinanceExpenses() {
                       onChange={handleScanPurchaseImage} 
                       className="hidden"
                     />
-                    <button
-                      type="button"
-                      onClick={() => fileInputPurchaseRef.current?.click()}
-                      className="px-3 py-1 rounded text-xs font-semibold border transition-all duration-150"
-                      style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: cardBg }}
-                    >
-                      Browse Receipt Image
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCameraPurchase(true)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-150 flex items-center gap-1 hover:scale-105"
+                        style={{ borderColor: '#10B981', color: '#10B981', backgroundColor: 'transparent' }}
+                      >
+                        <Camera size={13} /> Camera Scan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputPurchaseRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-150"
+                        style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: cardBg }}
+                      >
+                        Browse Receipt Image
+                      </button>
+                    </div>
                   </>
                 )}
 
@@ -2531,6 +2554,22 @@ export default function AuditFinanceExpenses() {
 
           </div>
         </div>
+      )}
+
+      {showCamera && (
+        <CameraScannerModal
+          isDark={theme === 'dark'}
+          onClose={() => setShowCamera(false)}
+          onCapture={(file) => void processImage(file)}
+        />
+      )}
+
+      {showCameraPurchase && (
+        <CameraScannerModal
+          isDark={theme === 'dark'}
+          onClose={() => setShowCameraPurchase(false)}
+          onCapture={(file) => void processPurchaseImage(file)}
+        />
       )}
     </div>
   )

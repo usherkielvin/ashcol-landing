@@ -45,6 +45,7 @@ interface Ticket {
   remarksUpdate?: string
   note?: string
   commitTerms?: string
+  commitType?: string
   amountCharged?: number
   dealer?: string
   sourceVendor?: string
@@ -79,6 +80,19 @@ type ImportUnmatchedRow = {
   name: string
   phone: string
   location: string
+  district: string
+  brand: string
+  dlr: string
+  status: string
+  commit: string
+  installer: string
+  confirmation: string
+  note: string
+  service: string
+  update: string
+  charges: number | undefined
+  paymentMode: string
+  controlNo: string
   rowIdx: number
 }
 
@@ -91,7 +105,7 @@ const COL_FIELD: Record<string, keyof Ticket> = {
   'BRAND':           'unitType',
   'DLR':             'dealer',
   'STATUS':          'status',
-  'COMMIT':          'commitTerms',
+  'COMMIT':          'commitType',
   'INSTALLER':       'assignedEmployeeName',
   'NOTE':            'note',
   'SERVICE':         'serviceVehicle',
@@ -230,24 +244,6 @@ function getBranchDisplayName(id: string | null): string {
 const ACTIVE = ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
-function parseExcelRowRange(input: string, rowCount: number, defaultStartIdx: number) {
-  const trimmed = input.trim()
-  if (!trimmed) return { startIdx: defaultStartIdx, endIdx: rowCount - 1, label: `row ${defaultStartIdx + 1} onward` }
-
-  const match = trimmed.match(/^(\d+)(?:\s*[-:]\s*(\d+))?$/)
-  if (!match) return null
-
-  let start = Number(match[1])
-  let end = Number(match[2] || match[1])
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < 1) return null
-  if (end < start) [start, end] = [end, start]
-
-  const startIdx = Math.max(0, start - 1)
-  const endIdx = Math.min(rowCount - 1, end - 1)
-  if (startIdx > endIdx || startIdx >= rowCount) return null
-
-  return { startIdx, endIdx, label: `rows ${start}-${Math.min(end, rowCount)}` }
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Tickets() {
@@ -272,6 +268,9 @@ export default function Tickets() {
     window.addEventListener('ashcol-global-branch-change', sync)
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
+
+  const activeBranch = (globalBranchId || user?.branchId || '').toUpperCase()
+  const isTaguigServices = activeBranch.includes('TAGUIG') && (activeBranch.includes('SERVICES') || activeBranch.includes('SERVICE'))
 
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -320,8 +319,6 @@ export default function Tickets() {
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [importRowRange, setImportRowRange] = useState('6-21')
-  const [importSourceFile, setImportSourceFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
     isOpen: boolean
@@ -345,7 +342,7 @@ export default function Tickets() {
     })
   }
 
-  const parseImportFile = async (file: File, rowRangeValue = importRowRange) => {
+  const parseImportFile = async (file: File) => {
     setImporting(true)
 
     try {
@@ -380,15 +377,19 @@ export default function Tickets() {
       }
 
       const headers = grid[headerIdx].map((h: any) => String(h ?? '').toUpperCase().trim())
-      const rowRange = parseExcelRowRange(rowRangeValue, grid.length, headerIdx + 1)
-      if (!rowRange) {
-        alert('Invalid Excel row range. Use a format like 6-21, 6:21, or 6.')
-        setImporting(false)
-        return
-      }
+      const startIdx = headerIdx + 1
+      const endIdx = grid.length - 1
+      const rowRangeLabel = `rows ${startIdx + 1}-${endIdx + 1}`
       
       const findColIdx = (aliases: string[]): number => {
-        return headers.findIndex((h: string) => aliases.some(alias => h === alias || h.includes(alias)))
+        // 1. Try exact match first
+        const exactIdx = headers.findIndex((h: string) => aliases.some(alias => h === alias))
+        if (exactIdx !== -1) return exactIdx
+        // 2. Fall back to includes, but only for aliases that are longer than 2 characters
+        return headers.findIndex((h: string) => aliases.some(alias => {
+          if (alias.length <= 2) return h === alias
+          return h.includes(alias)
+        }))
       }
 
       const colMap = {
@@ -397,15 +398,17 @@ export default function Tickets() {
         district: findColIdx(["DISTRICT"]),
         phone: findColIdx(["CONTACT NO.", "CONTACT NO", "CONTACT", "PHONE", "TELEPHONE", "NUMBER"]),
         brand: findColIdx(["BRAND", "UNIT", "AC"]),
-        dlr: findColIdx(["DLR", "DEALER", "VENDOR"]),
+        dlr: findColIdx(["ENDORSED BY", "DLR", "DEALER", "VENDOR"]),
         status: findColIdx(["STATUS"]),
-        installer: findColIdx(["INSTALLER", "TECHNICIAN"]),
+        installer: findColIdx(["TECHNICIAN", "INSTALLER"]),
         note: findColIdx(["NOTE", "NOTES"]),
+        confirmation: findColIdx(["CONFIRMATION"]),
         service: findColIdx(["SERVICE", "SERVICE TYPE"]),
-        update: findColIdx(["UPDATE", "REMARKS"]),
+        update: findColIdx(["SERVICE STATUS", "UPDATE", "REMARKS", "ADMIN REMARKS"]),
         charges: findColIdx(["INSTALLATION CHARGES", "INSTALLATION CHARGE", "CHARGES", "AMOUNT"]),
-        paymentMode: findColIdx(["MODE OF PAYMENT", "PAYMENT MODE", "PAYMENT"]),
-        controlNo: findColIdx(["CONTROL# / SI", "CONTROL NUMBER", "CONTROL #", "SI NO", "SI NUMBER", "CONTROL"]),
+        paymentMode: findColIdx(["MOP", "MODE OF PAYMENT", "PAYMENT MODE", "PAYMENT"]),
+        controlNo: findColIdx(["PAPERS", "CONTROL# / SI", "CONTROL NUMBER", "CONTROL #", "SI NO", "SI NUMBER", "CONTROL"]),
+        commit: findColIdx(["COMMIT", "COMMIT TERMS"]),
       }
 
       const updatesList: ImportUpdate[] = []
@@ -416,10 +419,9 @@ export default function Tickets() {
       let autoCompletedCount = 0
       let parsedRowCount = 0
 
-      for (let r = rowRange.startIdx; r <= rowRange.endIdx; r++) {
+      for (let r = startIdx; r <= endIdx; r++) {
         const row = grid[r]
         if (!Array.isArray(row) || row.every(c => c === null || c === '')) continue
-        parsedRowCount++
 
         const val = (idx: number) => (idx !== -1 && row[idx] !== undefined) ? String(row[idx]).trim() : ''
 
@@ -427,7 +429,12 @@ export default function Tickets() {
         const rowDest = val(colMap.destination)
         const rowPhone = val(colMap.phone)
         
-        if (!rowName && !rowDest && !rowPhone) continue
+        if (!rowName || 
+            ['closed', 'total', 'grand total', 'subtotal', 'online', 'cash'].includes(rowName.toLowerCase().trim()) || 
+            (!rowDest && !rowPhone)) {
+          continue
+        }
+        parsedRowCount++
 
         const match = tickets.find(t => {
           const tName = (t.customerName || t.customer_name || t.title || '').toLowerCase().trim()
@@ -465,6 +472,7 @@ export default function Tickets() {
           getFieldVal('unitType', val(colMap.brand))
           getFieldVal('sourceVendor', val(colMap.dlr))
           getFieldVal('note', val(colMap.note))
+          getFieldVal('commitType', val(colMap.commit))
           getFieldVal('serviceVehicle', val(colMap.service))
           getFieldVal('remarksUpdate', val(colMap.update))
           getFieldVal('remarks', val(colMap.update))
@@ -532,10 +540,31 @@ export default function Tickets() {
           }
 
         } else {
+          const rawCharges = val(colMap.charges)
+          let chargesNum: number | undefined = undefined
+          if (rawCharges) {
+            const numeric = parseFloat(rawCharges.replace(/[₱phpPHP,\s]/g, ''))
+            if (!isNaN(numeric)) {
+              chargesNum = numeric
+            }
+          }
           unmatchedList.push({
             name: rowName || 'Unknown Customer',
             phone: rowPhone,
             location: rowDest,
+            district: val(colMap.district),
+            brand: val(colMap.brand),
+            dlr: val(colMap.dlr),
+            status: val(colMap.status),
+            commit: val(colMap.commit),
+            installer: val(colMap.installer),
+            confirmation: val(colMap.confirmation),
+            note: val(colMap.note),
+            service: val(colMap.service),
+            update: val(colMap.update),
+            charges: chargesNum,
+            paymentMode: val(colMap.paymentMode),
+            controlNo: val(colMap.controlNo),
             rowIdx: r + 1,
           })
         }
@@ -544,7 +573,7 @@ export default function Tickets() {
       setImportResults({
         isOpen: true,
         fileName: file.name,
-        rowRangeLabel: rowRange.label,
+        rowRangeLabel: rowRangeLabel,
         totalRows: parsedRowCount,
         matchedCount,
         unmatchedCount: unmatchedList.length,
@@ -565,7 +594,6 @@ export default function Tickets() {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setImportSourceFile(file)
     try {
       await parseImportFile(file)
     } finally {
@@ -579,12 +607,15 @@ export default function Tickets() {
     let successCount = 0
     let completeCount = 0
     let failCount = 0
+    let createdCount = 0
 
     const tokenVal = token()
     const todayStr = (() => {
       const d = new Date()
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     })()
+
+    const targetBranch = (globalBranchId || user?.branchId || '').replace(/-(sales|services)$/i, '')
 
     const normalUpdates = importResults.updates.filter(item => item.updatedFields.status !== 'COMPLETED')
     const completedUpdates = importResults.updates.filter(item => item.updatedFields.status === 'COMPLETED')
@@ -727,9 +758,109 @@ export default function Tickets() {
       }
     }
 
+    // Save unmatched rows as new tickets (or complete them directly if marked completed/installed)
+    for (const item of importResults.unmatched) {
+      const isComplete = (item.status && item.status.toUpperCase() === 'COMPLETED') ||
+                         (item.update && item.update.toLowerCase().includes('installed'))
+
+      if (isComplete) {
+        const charges = item.charges ?? 0
+        const mode = item.paymentMode || 'CASH'
+        const remarks = item.update || 'Installed'
+        const controlNo = item.controlNo || ''
+
+        const serviceReportPayload = {
+          branchId: targetBranch,
+          reportDate: todayStr,
+          customerName: item.name,
+          customerAddress: formatAddress(item.location),
+          customerPhone: item.phone,
+          district: parseDistrict(item.location, item.district),
+          serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+          statusCode: 'I',
+          commitTerms: item.commit || item.note || 'Excel imported completed ticket',
+          dealer: item.dlr,
+          unitBrandModel: item.brand || 'Split AC',
+          technicianName: item.installer,
+          amountCharged: parseFloat(String(charges)) || 0,
+          paymentStatus: mode,
+          jobStatus: 'COMPLETED',
+          remarks: remarks,
+          note: item.note || '',
+          controlNumber: controlNo,
+          serviceColumn: item.service || ''
+        }
+
+        try {
+          const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
+            body: JSON.stringify(serviceReportPayload)
+          })
+          if (reportRes.ok) {
+            completeCount++
+          } else {
+            failCount++
+          }
+        } catch (err) {
+          console.error('Error completing unmatched ticket:', err)
+          failCount++
+        }
+      } else {
+        const body: Record<string, any> = {
+          title: `${item.service || 'S/I'} service`,
+          description: item.note || item.update || 'Excel imported ticket',
+          customerName: item.name,
+          serviceType: item.service || 'S/I',
+          unitType: item.brand || 'Split AC',
+          contactPhone: item.phone,
+          location: typeof item.location === 'object' ? JSON.stringify(item.location) : item.location,
+          sourceVendor: item.dlr || 'Direct',
+          priorityTag: '',
+          district: item.district,
+          commitType: item.commit,
+          installerName: item.installer,
+          assignedEmployeeName: item.installer,
+          serviceVehicle: item.service,
+          remarksUpdate: item.update,
+          remarks: item.update,
+          installationCharges: item.charges,
+          modeOfPayment: item.paymentMode,
+          controlNumber: item.controlNo,
+          branchId: targetBranch,
+          status: (item.status && STATUS_OPTS.includes(item.status.toUpperCase())) ? item.status.toUpperCase() : 'PENDING'
+        }
+
+        if (!body.status || body.status === 'PENDING') {
+          if (body.installerName) {
+            body.status = 'ASSIGNED'
+          }
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/tickets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${tokenVal}`
+            },
+            body: JSON.stringify(body)
+          })
+          if (res.ok) {
+            createdCount++
+          } else {
+            failCount++
+          }
+        } catch (err) {
+          console.error('Failed to create unmatched ticket:', err)
+          failCount++
+        }
+      }
+    }
+
     setSaving(false)
     setImportResults(null)
-    showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets!${failCount > 0 ? ` (Failed: ${failCount})` : ''}`)
+    showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})` : ''}`)
     fetchTickets()
   }
 
@@ -821,8 +952,8 @@ export default function Tickets() {
         const b = (t.branchId || t.branch_id || '').toUpperCase()
         if (!b) return true
         const g = (globalBranchId || '').toUpperCase()
-        const cleanB = b.replace(/-(SALES|SERVICES)$/, '')
-        const cleanG = g.replace(/-(SALES|SERVICES)$/, '')
+        const cleanB = b.replace(/-(SALES|SERVICES)$/, '').replace(/-(SALES|SERVICES)$/, '')
+        const cleanG = g.replace(/-(SALES|SERVICES)$/, '').replace(/-(SALES|SERVICES)$/, '')
         return cleanB === cleanG
       })
     }
@@ -862,7 +993,7 @@ export default function Tickets() {
       case 'BRAND':           return parseBrand(ticket)
       case 'DLR':             return getF(ticket, 'dealer', 'serviceType', 'service_type')
       case 'STATUS':          return ticket.status
-      case 'COMMIT':          return getF(ticket, 'commitTerms', 'description')
+      case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
       case 'INSTALLER':       return getF(ticket, 'installerName', 'assignedEmployeeName', 'assigned_employee_name')
       case 'NOTE':            return ticket.note || ''
       case 'SERVICE':         return getF(ticket, 'serviceVehicle', 'service_vehicle')
@@ -943,7 +1074,8 @@ export default function Tickets() {
       body.sourceVendor = normalized
       body.acDetails = mergeAcMeta(current, { dealer: normalized, dlr: normalized })
     } else if (col === 'COMMIT') {
-      body.commitTerms = normalized
+      localPatch.commitType = normalized
+      body.commitType = normalized
       body.description = normalized
     } else if (col === 'INSTALLER') {
       localPatch.installerName = normalized
@@ -1089,7 +1221,7 @@ export default function Tickets() {
   }
 
   // ── Render cell content ───────────────────────────────────────────────────
-  function renderCell(ticket: Ticket, col: (typeof columns)[0]) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number) {
     const { label } = col
     const isThisEditing = editingCell?.rowId === ticket.id && editingCell?.col === label
     const isEditable    = EDITABLE_COLS.includes(label)
@@ -1198,8 +1330,9 @@ export default function Tickets() {
     }
 
     if (label === "CUSTOMER'S NAME") {
+      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return (
-        <span style={{ ...truncStyle, fontWeight: 600, ...editHint }} title={val}>{val}</span>
+        <span style={{ ...truncStyle, fontWeight: 600, ...editHint }} title={`${prefix}${val}`}>{prefix}{val}</span>
       )
     }
 
@@ -1348,11 +1481,6 @@ export default function Tickets() {
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
-                  <th style={{
-                    padding: '9px 8px', color: textMuted, fontWeight: 700, fontSize: '10px',
-                    letterSpacing: '0.07em', whiteSpace: 'nowrap', borderRight: `1px solid ${border}`,
-                    position: 'sticky', left: 0, zIndex: 15, backgroundColor: theadBg, width: 36, textAlign: 'center'
-                  }}>#</th>
                   {columns.map(col => (
                     <th key={col.label}
                         onClick={() => toggleCol(col.label)}
@@ -1368,7 +1496,16 @@ export default function Tickets() {
                           ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                         }}>
                       <div className="flex items-center justify-between gap-1">
-                        <span>{col.label}</span>
+                        <span>
+                          {isTaguigServices
+                            ? col.label === 'DLR' ? 'ENDORSED BY'
+                              : col.label === 'COMMIT' ? 'COMMIT (AMOUNT)'
+                              : col.label === 'INSTALLER' ? 'TECHNICIAN'
+                              : col.label === 'NOTE' ? 'CONFIRMATION'
+                              : col.label === 'UPDATE' ? 'SERVICE STATUS'
+                              : col.label
+                            : col.label}
+                        </span>
                         <span className="opacity-40 text-[9px]">{col.isExpanded ? '◀' : '▶'}</span>
                       </div>
                     </th>
@@ -1390,17 +1527,7 @@ export default function Tickets() {
                           if (canEdit || isAdmin) setContextMenu({ x: e.clientX, y: e.clientY, ticket })
                         }}>
 
-                      {/* Row # */}
-                      <td style={{
-                        padding: '7px 8px', width: 36, minWidth: 36, maxWidth: 36,
-                        textAlign: 'center', fontWeight: 700, fontSize: '10px',
-                        color: textMuted, borderRight: `1px solid ${border}`,
-                        position: 'sticky', left: 0, zIndex: 5,
-                        backgroundColor: bg,
-                        borderBottom: `1px solid ${border}`,
-                      }}>
-                        {idx + 1}
-                      </td>
+
 
                       {/* Data cells */}
                       {columns.map((col) => {
@@ -1428,7 +1555,7 @@ export default function Tickets() {
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
                                 ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                               }}>
-                            {renderCell(ticket, col)}
+                            {renderCell(ticket, col, idx)}
                           </td>
                         )
                       })}
@@ -1481,7 +1608,7 @@ export default function Tickets() {
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
                       onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
                 <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
-                Edit Update
+                {isTaguigServices ? "Edit Service Status" : "Edit Update"}
               </button>
             )}
 
@@ -1513,7 +1640,7 @@ export default function Tickets() {
         const vehicle = getF(t, 'serviceVehicle', 'service_vehicle')
         const update = t.remarks || ''
         const note = t.note || ''
-        const commit = getF(t, 'commitTerms', 'description')
+        const commit = getF(t, 'commitType', 'commitTerms', 'description')
         const custName = getF(t, 'customerName', 'customer_name') || t.title
         const email = getF(t, 'customerEmail', 'customer_email', 'email')
         const preferredDate = t.preferredDate || t.preferred_date
@@ -1569,25 +1696,25 @@ export default function Tickets() {
                   <Row icon={Wrench}  label="Service Type" val={serviceType} />
                   <Row icon={Wrench}  label="Service Vehicle" val={vehicle} />
                   <Row icon={Wrench}  label="Brand / Unit" val={brand} />
-                  <Row icon={Wrench}  label="Dealer"     val={dealer} />
-                  <Row icon={User}    label="Installer"  val={installer} />
+                  <Row icon={Wrench}  label={isTaguigServices ? "Endorsed By" : "Dealer"}     val={dealer} />
+                  <Row icon={User}    label={isTaguigServices ? "Technician" : "Installer"}  val={installer} />
                   <Row icon={Clock}   label="Preferred Date" val={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''} />
                   
                   {commit && (
                     <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Commit / Description</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Commit (Amount)" : "Commit / Description"}</p>
                       <p className="text-xs leading-relaxed" style={{ color: textPrimary }}>{commit}</p>
                     </div>
                   )}
                   {note && (
                     <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Note</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Confirmation" : "Note"}</p>
                       <p className="text-xs leading-relaxed font-semibold" style={{ color: '#EF4444' }}>{note}</p>
                     </div>
                   )}
                   {update && (
                     <div className="py-2.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>Update</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Service Status" : "Update"}</p>
                       <p className="text-xs leading-relaxed font-semibold" style={{ color: green }}>{update}</p>
                     </div>
                   )}
@@ -1857,7 +1984,7 @@ export default function Tickets() {
       {importResults && importResults.isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
              style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
-          <div className="flex flex-col w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+          <div className="flex flex-col w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             
             {/* Header */}
@@ -1872,27 +1999,6 @@ export default function Tickets() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold"
-                     style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <span style={{ color: textMuted }}>Rows</span>
-                  <input
-                    type="text"
-                    value={importRowRange}
-                    onChange={e => setImportRowRange(e.target.value)}
-                    placeholder="6-21"
-                    className="w-16 bg-transparent outline-none font-black"
-                    style={{ color: textPrimary }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  disabled={importing || !importSourceFile}
-                  onClick={() => importSourceFile && parseImportFile(importSourceFile, importRowRange)}
-                  className="px-3 py-1.5 rounded-lg border text-xs font-bold disabled:opacity-50"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  {importing ? 'Reading...' : 'Apply'}
-                </button>
                 <button onClick={() => setImportResults(null)}
                         className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors"
                         style={{ color: textMuted }}>
@@ -2033,25 +2139,60 @@ export default function Tickets() {
                 </div>
               )}
 
-              {/* Section 3: Unmatched rows */}
+              {/* Section 3: Unmatched Rows Table */}
               {importResults.unmatched.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h4 className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#F59E0B' }}>
                     ℹ️ Unmatched Rows ({importResults.unmatchedCount})
                   </h4>
-                  <div className="max-h-40 overflow-y-auto border rounded-2xl p-3 flex flex-col gap-2"
-                       style={{ borderColor: border, backgroundColor: inputBg }}>
-                    {importResults.unmatched.map((row, idx) => (
-                      <div key={idx} className="flex flex-col text-xs py-1 border-b last:border-b-0" style={{ borderColor: border }}>
-                        <div className="flex justify-between">
-                          <span className="font-bold" style={{ color: textPrimary }}>{row.name}</span>
-                          <span className="text-[10px]" style={{ color: textMuted }}>Excel row {row.rowIdx}</span>
-                        </div>
-                        <p className="text-[10px] opacity-75" style={{ color: textMuted }}>
-                          Phone: {row.phone || 'N/A'} | Address: {row.location || 'N/A'}
-                        </p>
-                      </div>
-                    ))}
+                  <div className="border rounded-2xl overflow-hidden" style={{ borderColor: border }}>
+                    <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                      <table className="text-xs text-left" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                          <tr className="border-b font-bold" style={{ borderColor: border }}>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>CUSTOMER'S NAME</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>DESTINATION</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>DISTRICT</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>CONTACT NO.</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>BRAND</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'ENDORSED BY' : 'DLR'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>STATUS</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'COMMIT (AMOUNT)' : 'COMMIT'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'CONFIRMATION' : 'NOTE'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>SERVICE</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'SERVICE STATUS' : 'UPDATE'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>CHARGES</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>PAYMENT MODE</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}` }}>CONTROL #</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y" style={{ borderColor: border }}>
+                          {importResults.unmatched.map((row, idx) => {
+                            const rowBg = idx % 2 === 0 ? rowEven : rowOdd
+                            return (
+                              <tr key={row.rowIdx} className="hover:bg-slate-500/5" style={{ backgroundColor: rowBg }}>
+                                <td className="px-3 py-2 font-semibold" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.rowIdx}. {row.name}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.location || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.district || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.phone || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.brand || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.dlr || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.status || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.commit || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.installer || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `₱${row.charges}` : '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || '—'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2071,7 +2212,7 @@ export default function Tickets() {
                       disabled={saving}
                       className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm disabled:opacity-50"
                       style={{ backgroundColor: green }}>
-                {saving ? '⏳ Saving updates...' : `Apply & Complete (${importResults.matchedCount} matches)`}
+                {saving ? '⏳ Saving updates...' : `Apply & Save All (${importResults.matchedCount} updates, ${importResults.unmatchedCount} new)`}
               </button>
             </div>
 
