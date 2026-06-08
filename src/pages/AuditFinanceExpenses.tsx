@@ -1404,45 +1404,52 @@ export default function AuditFinanceExpenses() {
       {/* ── ENTRY FORM ── */}
       {showForm && (
         <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${accent}55`, boxShadow: `0 0 0 2px ${accent}22` }}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
-              <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
-              {editing ? 'Edit Expense Record' : 'New Expense Record'}
-            </h2>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
+            <div className="flex items-center justify-between w-full sm:w-auto">
+              <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
+                <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
+                {editing ? 'Edit Expense Record' : 'New Expense Record'}
+              </h2>
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="sm:hidden text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={20} /></button>
+            </div>
+            
+            <div className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 disabled={scanning}
                 onClick={() => setShowCamera(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                className="flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: accent, color: 'white' }}
                 title="Scan receipt with your device camera"
               >
-                <Camera size={13} /> Camera Scan
+                <Camera size={13} />
+                <span>Scan<span className="hidden sm:inline"> Camera</span></span>
               </button>
               <button
                 type="button"
                 disabled={scanning}
                 onClick={handlePasteClick}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                className="flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Paste an image from your clipboard"
               >
-                <ClipboardPaste size={13} /> Paste Image
+                <ClipboardPaste size={13} />
+                <span>Paste<span className="hidden sm:inline"> Image</span></span>
               </button>
               <button
                 type="button"
                 disabled={scanning}
                 onClick={() => scanRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                className="flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: '#3B82F6', color: 'white' }}
                 title="Upload or scan a receipt image"
               >
-                <Upload size={13} /> Upload Receipt
+                <Upload size={13} />
+                <span>Upload<span className="hidden sm:inline"> Receipt</span></span>
               </button>
               <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
-              <button onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} style={{ color: textMuted }}><X size={18} /></button>
             </div>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="hidden sm:block text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={18} /></button>
           </div>
 
           {/* ── Side-by-side: image reference + form fields ── */}
