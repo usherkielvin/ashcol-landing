@@ -1369,7 +1369,7 @@ export default function AuditFinanceExpenses() {
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
-              className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-pointer font-bold"
+              className="w-full rounded-lg pl-7 pr-7 py-2 text-base sm:text-xs appearance-none outline-none cursor-pointer font-bold"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
             >
               <option value="All">All Months</option>
@@ -1388,7 +1388,7 @@ export default function AuditFinanceExpenses() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={activeTab === 'expenses' ? "Search company, description, date, receipt no…" : "Search description, branch, receipt no…"}
-            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs outline-none"
+            className="w-full rounded-lg pl-7 pr-7 py-2 text-base sm:text-xs outline-none"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
           />
           {search && (
@@ -1517,7 +1517,7 @@ export default function AuditFinanceExpenses() {
                     onChange={(e) => { setDateRaw(e.target.value); setDateError(''); clearScanned('date') }}
                     onBlur={(e) => handleDateBlur(e.target.value)}
                     placeholder={latestDateStr}
-                    className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
+                    className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }} />
                   {dateError
                     ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
@@ -1533,7 +1533,8 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, incurredBy: v })); clearScanned('incurredBy') }}
                   suggestions={suggestions.people} placeholder="Who incurred this?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs"
+                  inputStyle={{ padding: '6px 10px' }}
                   inputBorder={scannedFields.has('incurredBy') ? scanBorder : inputBorder} />
               )}
 
@@ -1545,7 +1546,8 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, description: v })); clearScanned('description') }}
                   suggestions={suggestions.descs} placeholder="What was purchased?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs"
+                  inputStyle={{ padding: '6px 10px' }}
                   inputBorder={scannedFields.has('description') ? scanBorder : inputBorder} />
               )}
 
@@ -1557,7 +1559,8 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, company: v })); clearScanned('company') }}
                   suggestions={suggestions.companies} placeholder="Store or vendor name"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs"
+                  inputStyle={{ padding: '6px 10px' }}
                   inputBorder={scannedFields.has('company') ? scanBorder : inputBorder} />
               )}
 
@@ -1568,7 +1571,7 @@ export default function AuditFinanceExpenses() {
                   id="receipt-receiptNo"
                   onChange={(e) => { setForm((f) => ({ ...f, receiptNo: e.target.value })); clearScanned('receiptNo') }}
                   placeholder="OR / SI number"
-                  className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
+                  className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('receiptNo') }} />
               )}
 
@@ -1585,7 +1588,7 @@ export default function AuditFinanceExpenses() {
                     }
                   }}
                   placeholder="0.00"
-                  className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all"
+                  className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('amount') }} />
               )}
 
@@ -1597,7 +1600,8 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, sourceOfFunds: v })); clearScanned('sourceOfFunds') }}
                   suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputStyle={{ fontSize: '0.75rem', padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs"
+                  inputStyle={{ padding: '6px 10px' }}
                   inputBorder={scannedFields.has('sourceOfFunds') ? scanBorder : inputBorder} />
               )}
             </div>
@@ -2407,7 +2411,7 @@ export default function AuditFinanceExpenses() {
                     placeholder="Enter amount spent"
                     value={actualAmount}
                     onChange={(e) => setActualAmount(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs font-semibold outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                 </div>
@@ -2420,7 +2424,7 @@ export default function AuditFinanceExpenses() {
                     placeholder="e.g. INV-10029"
                     value={receiptNo}
                     onChange={(e) => setReceiptNo(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                 </div>
@@ -2434,7 +2438,7 @@ export default function AuditFinanceExpenses() {
                     value={dateRawPurchase}
                     onChange={(e) => setDateRawPurchase(e.target.value)}
                     onBlur={() => handleDateBlurPurchase(dateRawPurchase)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                   {dateErrorPurchase && <span className="text-[10px] text-rose-500 font-medium">{dateErrorPurchase}</span>}
@@ -2448,7 +2452,7 @@ export default function AuditFinanceExpenses() {
                     placeholder="e.g. Ace Hardware"
                     value={companyPurchase}
                     onChange={(e) => setCompanyPurchase(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                 </div>
@@ -2461,7 +2465,7 @@ export default function AuditFinanceExpenses() {
                     placeholder="Worker who requested funds"
                     value={incurredByPurchase}
                     onChange={(e) => setIncurredByPurchase(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                 </div>
@@ -2474,7 +2478,7 @@ export default function AuditFinanceExpenses() {
                     placeholder="What was bought"
                     value={descriptionPurchase}
                     onChange={(e) => setDescriptionPurchase(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   />
                 </div>
@@ -2485,7 +2489,7 @@ export default function AuditFinanceExpenses() {
                   <select
                     value={expenseCategoryPurchase}
                     onChange={(e) => setExpenseCategoryPurchase(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   >
                     {allCategories.map(cat => (
@@ -2500,7 +2504,7 @@ export default function AuditFinanceExpenses() {
                   <select
                     value={sourceOfFundsPurchase}
                     onChange={(e) => setSourceOfFundsPurchase(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs outline-none border focus:border-emerald-500 transition-all"
+                    className="px-2.5 py-1.5 rounded-lg text-base sm:text-xs outline-none border focus:border-emerald-500 transition-all"
                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                   >
                     <option value="PETTY CASH">Petty Cash</option>
