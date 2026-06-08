@@ -2016,25 +2016,25 @@ export default function AuditFinanceExpenses() {
       </div>
 
       {detailRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm cursor-pointer"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', cursor: 'pointer', backdropFilter: 'blur(4px)' }}
           onClick={() => setDetailRow(null)}>
-          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl"
-            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}` }}
+          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh] cursor-default"
+            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}`, cursor: 'default' }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${neutralBorder}` }}>
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${neutralBorder}` }}>
               <div className="flex items-center gap-2">
                 <div>
                   <h3 className="font-bold" style={{ color: textPrimary }}>Expense Record Details</h3>
                   <p className="text-xs" style={{ color: textMuted }}>{detailRow.branchName} - {detailRow.date}</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setDetailRow(null)} className="p-2 rounded-lg" style={{ color: textMuted }}>
-                <X size={18} />
+              <button type="button" onClick={() => setDetailRow(null)} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }} aria-label="Close details modal">
+                <X size={22} />
               </button>
             </div>
 
-            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-y-auto">
               {[
                 ['Submitted by', detailRow.inputBy || 'Unknown'],
                 ['Incurred by', detailRow.incurredBy || '-'],
@@ -2075,17 +2075,28 @@ export default function AuditFinanceExpenses() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: `1px solid ${neutralBorder}` }}>
-              <button type="button" onClick={() => startEdit(detailRow)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: textPrimary, color: cardBg }}>
-                <Pencil size={14} /> Edit
+            <div className="flex items-center justify-between gap-2 px-5 py-4 shrink-0" style={{ borderTop: `1px solid ${neutralBorder}` }}>
+              <button type="button" onClick={() => setDetailRow(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+                style={{ 
+                  color: textPrimary, 
+                  borderColor: border, 
+                  backgroundColor: neutralSurface 
+                }}>
+                Close
               </button>
-              <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold"
-                style={{ color: danger, border: `1px solid ${danger}` }}>
-                <Trash2 size={14} /> Delete
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => startEdit(detailRow)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-150 active:scale-95"
+                  style={{ backgroundColor: textPrimary, color: cardBg }}>
+                  <Pencil size={14} /> Edit
+                </button>
+                <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
+                  style={{ color: danger, border: `1px solid ${danger}` }}>
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
             </div>
           </div>
         </div>

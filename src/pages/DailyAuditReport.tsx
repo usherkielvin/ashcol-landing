@@ -1298,13 +1298,13 @@ export default function DailyAuditReport() {
       {/* ── Row Details Modal ───────────────────────────────────────── */}
       {selectedRow && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', cursor: 'pointer' }}
           onClick={() => setSelectedRow(null)}
         >
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl flex flex-col"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl flex flex-col cursor-default"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh', cursor: 'default' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
@@ -1319,8 +1319,8 @@ export default function DailyAuditReport() {
                   </p>
                 </div>
                 <button onClick={() => setSelectedRow(null)}
-                  className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
-                  <X className="w-4 h-4" />
+                  className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
+                  <X size={22} />
                 </button>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
@@ -1344,8 +1344,8 @@ export default function DailyAuditReport() {
                   </a>
                 )}
                 <button onClick={() => setSelectedRow(null)}
-                  className="hidden sm:block p-1.5 rounded-lg transition-colors hover:bg-red-500/10" style={{ color: textMuted }}>
-                  <X className="w-4 h-4" />
+                  className="hidden sm:block p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
+                  <X size={22} />
                 </button>
               </div>
             </div>
@@ -1631,6 +1631,22 @@ export default function DailyAuditReport() {
                   </>
                 )
               })()}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t flex items-center justify-between shrink-0"
+                style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(6,11,24,0.5)' }}>
+                <span className="text-[11px]" style={{ color: textMuted }}>
+                  {user?.name && <>Viewing as <strong style={{ color: textPrimary }}>{user.name}</strong></>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRow(null)}
+                  className="px-6 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all active:scale-95"
+                  style={{ backgroundColor: '#10B981' }}
+                >
+                  Close
+                </button>
               </div>
 
             </div>
