@@ -9,6 +9,8 @@ import { getPortalHomePath, resolveImageUrl } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+  const googleDisabled = !GOOGLE_CLIENT_ID
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
   const prefillPassword = import.meta.env.VITE_LOGIN_PREFILL_PASSWORD || ''
   const [email, setEmail] = useState(prefillEmail)
@@ -416,8 +418,14 @@ export default function Login() {
 
             {/* Google Login */}
             <button
-              onClick={() => loginWithGoogle()}
-              disabled={loading}
+              onClick={() => {
+                if (googleDisabled) {
+                  setError('Google login is not configured for this environment.')
+                  return
+                }
+                loginWithGoogle()
+              }}
+              disabled={loading || googleDisabled}
               className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-semibold text-[13px] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
               style={{ backgroundColor: googleBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B981'}
@@ -431,6 +439,9 @@ export default function Login() {
               </svg>
               Continue with Google
             </button>
+            {googleDisabled && (
+              <p className="mt-2 text-xs text-center text-[#A2B7D0]">Google sign-in is not configured for this environment.</p>
+            )}
           </div>
 
           <p className="mt-8 text-center text-[12px] font-medium" style={{ color: textMuted }}>
