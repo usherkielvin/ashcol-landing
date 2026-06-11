@@ -10,7 +10,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1452,7 +1452,7 @@ export default function DailyAuditReport() {
                         <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
                       )}
                       {rowExpenses?.receivedBy && (
-                        <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{rowExpenses.receivedBy}</span></span>
+                        <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></span>
                       )}
                     </div>
 
@@ -1547,13 +1547,13 @@ export default function DailyAuditReport() {
                       <>
                         {/* Cash Transactions */}
                         {renderItemTable('Cash Transactions', cashTxItems, [
-                          { label: 'Name (Installer/Technician)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description}</span> },
+                          { label: 'Name (Installer/Technician)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
                         ])}
 
                         {/* Online Transactions */}
                         {renderItemTable('Online Transactions', onlineTxItems, [
-                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description}</span> },
+                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                           { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
@@ -1561,7 +1561,7 @@ export default function DailyAuditReport() {
 
                         {/* Check Remits */}
                         {renderItemTable('Check Remits', checkItems, [
-                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.replace('CHECK|', '')}</span> },
+                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('CHECK|', ''))}</span> },
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                           { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
@@ -1569,7 +1569,7 @@ export default function DailyAuditReport() {
 
                         {/* Cash Returns */}
                         {renderItemTable('Cash Returns', cashRetItems, [
-                          { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.replace('RETURN|', '')}</span> },
+                          { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
                         ])}
 
@@ -1582,7 +1582,7 @@ export default function DailyAuditReport() {
 
                         {/* Expenses with Receipts */}
                         {renderItemTable('Expenses with Receipts', expenseItems, [
-                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] || '—'}</span> },
+                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
                           { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                           {
                             label: 'Receipt',
@@ -1600,7 +1600,7 @@ export default function DailyAuditReport() {
 
                         {/* Expenses for Purchase */}
                         {renderItemTable('Expenses for Purchase', purchaseItems, [
-                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] || '—'}</span> },
+                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
                           { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                           {
                             label: 'Receipt',

@@ -15,10 +15,18 @@ export function resolveImageUrl(path: string | null | undefined): string {
 export function formatRole(role?: string): string {
   if (!role) return ''
   const r = role.toUpperCase()
-  if (r === 'MANAGER') return 'OFFICE IN CHARGE'
+  if (r === 'MANAGER') return 'OIC'
   if (r === 'ADMIN') return 'ADMIN'
-  if (r === 'OIC') return 'OFFICE IN CHARGE'
+  if (r === 'OIC') return 'OIC'
   return r
+}
+
+/** Strips or replaces legacy role suffixes like " - MANAGER" with " - OIC" for UI display */
+export function formatDisplayUserLabel(label?: string | null): string {
+  if (!label) return '-'
+  return label
+    .replace(/\s*-\s*MANAGER$/i, ' - OIC')
+    .replace(/\s*-\s*manager$/i, ' - OIC')
 }
 
 type PortalUserLike = {

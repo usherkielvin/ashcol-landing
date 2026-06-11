@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatRole, formatDisplayUserLabel } from '../utils/api'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
@@ -61,7 +61,7 @@ export default function AuditFinanceExpenses() {
   const role = (user?.role || '').toLowerCase()
   const currentUserLabel = user?.jobTitle
     ? `${user?.name || user?.email} - ${user.jobTitle}`
-    : `${user?.name || user?.email || 'STAFF'} - ${(user?.role || 'USER').toUpperCase()}`
+    : `${user?.name || user?.email || 'STAFF'} - ${formatRole(user?.role || 'USER')}`
   const isAdmin = role === 'admin'
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
@@ -1539,7 +1539,7 @@ export default function AuditFinanceExpenses() {
 
             <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-y-auto">
               {[
-                ['Submitted by', detailRow.inputBy || 'Unknown'],
+                ['Submitted by', formatDisplayUserLabel(detailRow.inputBy)],
                 ['Incurred by', detailRow.incurredBy || '-'],
                 ['Company', detailRow.company || '-'],
                 ['Receipt No.', detailRow.receiptNo || '-'],
@@ -1568,7 +1568,7 @@ export default function AuditFinanceExpenses() {
                       <span style={{ color: textPrimary }}>
                         <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
                         {' by '}
-                        <span className="font-semibold">{entry.by || 'Unknown'}</span>
+                        <span className="font-semibold">{formatDisplayUserLabel(entry.by)}</span>
                         {' at '}
                         <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
                       </span>

@@ -30,7 +30,7 @@ const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
   const j = (jobTitle || '').toUpperCase()
   if (r === 'ADMIN') return 'MANAGER'
-  if (r === 'MANAGER') return 'OFFICE IN CHARGE'
+  if (r === 'MANAGER') return 'OIC'
   if (j) return j
   return r
 }

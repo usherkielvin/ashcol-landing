@@ -3,7 +3,7 @@ import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -571,7 +571,7 @@ export default function DailySalesForm() {
 
       // Populate metadata
       setReportDate(data.reportDate)
-      setReceivedBy(data.receivedBy || '')
+      setReceivedBy(formatDisplayUserLabel(data.receivedBy || ''))
       setTrNo(data.trNo || '')
       setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
       setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
@@ -647,13 +647,13 @@ export default function DailySalesForm() {
             } else if (desc.startsWith('RETURN|')) {
               cashReturnsList.push({
                 id: uid(),
-                name: desc.replace('RETURN|', ''),
+                name: formatDisplayUserLabel(desc.replace('RETURN|', '')),
                 amount: amt
               })
             } else {
               cashSales.push({
                 id: uid(),
-                name: desc,
+                name: formatDisplayUserLabel(desc),
                 amount: amt
               })
             }
@@ -661,7 +661,7 @@ export default function DailySalesForm() {
             if (desc.startsWith('CHECK|')) {
               checkRemList.push({
                 id: uid(),
-                installer: desc.replace('CHECK|', ''),
+                installer: formatDisplayUserLabel(desc.replace('CHECK|', '')),
                 customer: item.customer || '',
                 bank: item.bank || '',
                 amount: amt
@@ -669,7 +669,7 @@ export default function DailySalesForm() {
             } else {
               onlineTxList.push({
                 id: uid(),
-                installer: desc,
+                installer: formatDisplayUserLabel(desc),
                 customer: item.customer || '',
                 bank: item.bank || '',
                 amount: amt
@@ -679,7 +679,7 @@ export default function DailySalesForm() {
             const parts = desc.split('|')
             expReceiptList.push({
               id: uid(),
-              name: parts[0] || '',
+              name: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
               description: parts[1] || '',
               amount: amt
             })
@@ -696,7 +696,7 @@ export default function DailySalesForm() {
               const parts = desc.split('|')
               expPurchList.push({
                 id: uid(),
-                name: parts[0] || '',
+                name: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
                 description: parts[1] || '',
                 amount: amt
               })
