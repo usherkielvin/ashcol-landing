@@ -43,6 +43,7 @@ interface ServiceRow {
   relayStatus: string | null
   fifteenQuestions: string | null
   freeInstallation: boolean | null
+  complainRequest: string | null
 }
 
 const COL_FIELD: Record<string, keyof ServiceRow> = {
@@ -51,6 +52,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
   'DISTRICT':             'district',
   'CONTACT NO.':          'customerPhone',
   'BRAND':                'unitBrandModel',
+  'COMPLAIN/REQUEST':     'complainRequest',
   'DLR':                  'dealer',
   'INSTALLER':            'technicianName',
   'NOTE':                 'note',
@@ -62,8 +64,8 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 
 const EDITABLE_COLS = [
   "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
-  'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE', 'INSTALLATION CHARGES',
-  'MODE OF PAYMENT',
+  'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
+  'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
 
 interface BranchOption { id: string; name: string }
@@ -249,12 +251,14 @@ export default function DailyServiceReport() {
   }, [])
 
   const columns = useMemo(() => {
+    const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
       { label: "CUSTOMER'S NAME", defaultW: 160, expW: 280, sticky: true, freeze: false, right: false },
       { label: 'DESTINATION', defaultW: 200, expW: 450, sticky: true, freeze: true, right: false },
       { label: 'DISTRICT', defaultW: 100, expW: 200, sticky: false, freeze: false, right: false },
       { label: 'CONTACT NO.', defaultW: 115, expW: 180, sticky: false, freeze: false, right: false },
       { label: 'BRAND', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
+      ...(isServices ? [{ label: 'COMPLAIN/REQUEST', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false }] : []),
       { label: 'DLR', defaultW: 100, expW: 180, sticky: false, freeze: false, right: false },
       { label: 'INSTALLER', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
       { label: 'NOTE', defaultW: 140, expW: 280, sticky: false, freeze: false, right: false },
@@ -281,7 +285,7 @@ export default function DailyServiceReport() {
         left: leftVal
       }
     })
-  }, [expandedCols])
+  }, [expandedCols, branchFilter])
 
   // ── Week helpers ──────────────────────────────────────────────────────────
   const weekRange = useMemo(() => {
@@ -408,6 +412,7 @@ export default function DailyServiceReport() {
       case 'DISTRICT':        return row.district || ''
       case 'CONTACT NO.':     return row.customerPhone || ''
       case 'BRAND':           return row.unitBrandModel || ''
+      case 'COMPLAIN/REQUEST': return row.complainRequest || ''
       case 'DLR':             return row.dealer || ''
       case 'INSTALLER':       return row.technicianName || ''
       case 'NOTE':            return row.note || ''
@@ -1468,6 +1473,19 @@ export default function DailyServiceReport() {
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.district || '—'}</span>
                     )}
                   </Field>
+                  {((detailForm.branchId && (detailForm.branchId.toLowerCase().includes('service') || detailForm.branchId.toLowerCase().includes('services'))) ||
+                    (branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services')))) && (
+                    <Field label="Complain / Request">
+                      {canEdit ? (
+                        <input type="text" value={detailForm.complainRequest || ''} 
+                          onChange={e => setDetailForm({ ...detailForm, complainRequest: e.target.value })}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      ) : (
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.complainRequest || '—'}</span>
+                      )}
+                    </Field>
+                  )}
                   <Field label="Commit Terms">
                     {canEdit ? (
                       <textarea value={detailForm.commitTerms || ''} 

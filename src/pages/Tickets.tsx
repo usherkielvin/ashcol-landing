@@ -241,6 +241,16 @@ function getBranchDisplayName(id: string | null): string {
   return id.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').replace(/-/g, ' ').toUpperCase()
 }
 
+function todayDateKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDateTriggerLabel(value: string) {
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
+}
+
 const ACTIVE = ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
@@ -291,7 +301,7 @@ export default function Tickets() {
   const [loading, setLoading]         = useState(true)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter]   = useState('')
+  const [dateFilter, setDateFilter]   = useState(() => isTaguigServices ? todayDateKey() : '')
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
 
@@ -301,6 +311,10 @@ export default function Tickets() {
   const [cellValue, setCellValue]     = useState('')
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isTaguigServices && !dateFilter) setDateFilter(todayDateKey())
+  }, [isTaguigServices, dateFilter])
 
   // ── Context menu ──────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -1221,6 +1235,46 @@ export default function Tickets() {
     } catch { alert('Could not delete.') }
   }
 
+  const handleClearAllVisible = async () => {
+    if (!isAdmin || visible.length === 0) return
+    const count = visible.length
+    const scope = [
+      globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? getBranchDisplayName(globalBranchId) : 'all branches',
+      dateFilter ? formatDateTriggerLabel(dateFilter) : 'all dates',
+      searchQuery.trim() ? `search "${searchQuery.trim()}"` : '',
+    ].filter(Boolean).join(' / ')
+
+    if (!confirm(`Clear all ${count} visible ticket${count === 1 ? '' : 's'} for ${scope}? This cannot be undone.`)) return
+
+    setSaving(true)
+    setContextMenu(null)
+    try {
+      const ids = visible.map(t => t.id)
+      const results = await Promise.allSettled(ids.map(id =>
+        fetch(`${API_URL}/tickets/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token()}` },
+        })
+      ))
+
+      const deletedIds = new Set<string>()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.ok) deletedIds.add(ids[index])
+      })
+
+      if (deletedIds.size > 0) {
+        setTickets(prev => prev.filter(t => !deletedIds.has(t.id)))
+      }
+
+      const failed = count - deletedIds.size
+      showToast(failed ? `Cleared ${deletedIds.size}; ${failed} failed` : `Cleared ${deletedIds.size} tickets`)
+    } catch {
+      alert('Could not clear tickets.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ── Render cell content ───────────────────────────────────────────────────
   function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number) {
     const { label } = col
@@ -1382,9 +1436,13 @@ export default function Tickets() {
               </span>
             )}
             <input ref={dateFilterInputRef} type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-                   className="date-input-no-indicator date-input-trigger-only bg-transparent outline-none cursor-pointer font-bold"
-                   style={{ color: textPrimary }} />
-            {dateFilter && (
+                   tabIndex={-1}
+                   className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
+                   aria-label="Ticket date filter" />
+            <span className="select-none" style={{ color: textPrimary }}>
+              {formatDateTriggerLabel(dateFilter)}
+            </span>
+            {dateFilter && !isTaguigServices && (
               <button onClick={e => { e.stopPropagation(); setDateFilter('') }} style={{ color: textMuted }}>
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -1395,6 +1453,29 @@ export default function Tickets() {
         <div className="flex flex-wrap items-center gap-2.5">
           {canEdit && (
             <>
+              {isTaguigServices && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/tickets/create')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
+                  style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Row</span>
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleClearAllVisible}
+                  disabled={visible.length === 0 || saving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  style={{ backgroundColor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.45)', color: '#EF4444' }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear All</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
