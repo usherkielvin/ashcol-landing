@@ -25,6 +25,7 @@ import { NotificationProvider } from './contexts/NotificationContext'
 import { getPortalHomePath } from './utils/api'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+const GOOGLE_OAUTH_ENABLED = !!GOOGLE_CLIENT_ID
 
 // Helper component to handle the root path ("/") based on the domain
 function RootRouter() {
@@ -55,40 +56,52 @@ function DashboardRedirect() {
 }
 
 export default function App() {
+  // If Google OAuth isn't configured, don't initialize the provider — this
+  // prevents runtime errors when `client_id` is missing from the environment.
+  if (!GOOGLE_OAUTH_ENABLED) {
+    console.warn('VITE_GOOGLE_CLIENT_ID is not set; Google OAuth is disabled.')
+  }
+
+  const routes = (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<RootRouter />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/create-account" element={<CreateAccount />} />
+        {/* Portal Routes */}
+        <Route element={<DashboardLayout />}>
+          <Route path="/dashboard" element={<DashboardRedirect />} />
+          <Route path="/dashboard-home" element={<Dashboard />} />
+          <Route path="/tickets" element={<Tickets />} />
+          <Route path="/tickets/create" element={<CreateTicket />} />
+          <Route path="/create-ticket" element={<CreateTicket />} />
+          <Route path="/schedules" element={<ClientMasterlist />} />
+          <Route path="/branches" element={<Branches />} />
+          <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
+          <Route path="/employees" element={<Employees />} />
+          <Route path="/profile" element={<Profile />} />
+
+          <Route path="/audit-report" element={<DailyAuditReport />} />
+          <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
+          <Route path="/daily-report" element={<DailySalesForm />} />
+          <Route path="/lineup" element={<LineUp />} />
+          <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
+          <Route path="/service-report" element={<DailyServiceReport />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+
   return (
     <ThemeProvider>
       <AuthProvider>
         <NotificationProvider>
-        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<RootRouter />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/create-account" element={<CreateAccount />} />
-              {/* Portal Routes */}
-              <Route element={<DashboardLayout />}>
-                <Route path="/dashboard" element={<DashboardRedirect />} />
-                <Route path="/dashboard-home" element={<Dashboard />} />
-              <Route path="/tickets" element={<Tickets />} />
-              <Route path="/tickets/create" element={<CreateTicket />} />
-              <Route path="/create-ticket" element={<CreateTicket />} />
-              <Route path="/schedules" element={<ClientMasterlist />} />
-              <Route path="/branches" element={<Branches />} />
-              <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
-              <Route path="/employees" element={<Employees />} />
-              <Route path="/profile" element={<Profile />} />
-
-              <Route path="/audit-report" element={<DailyAuditReport />} />
-              <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
-              <Route path="/daily-report" element={<DailySalesForm />} />
-              <Route path="/lineup" element={<LineUp />} />
-              <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
-              <Route path="/service-report" element={<DailyServiceReport />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </GoogleOAuthProvider>
+          {GOOGLE_OAUTH_ENABLED ? (
+            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
+          ) : (
+            routes
+          )}
         </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
