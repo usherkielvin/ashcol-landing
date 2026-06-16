@@ -240,17 +240,49 @@ export default function DailyAuditReport() {
     if (!selectedRow) return false
     if (isAdmin) {
       if (!globalBranchId) return false
-      if (globalBranchId === 'BR-TAGUIG-SALES-sales') {
-        const line = selectedRow.auditLine || ''
-        return selectedRow.branchId === 'BR-TAGUIG-SALES' && (line === '' || line === 'TAGUIG_SALES')
+
+      const isTaguigGlobal = globalBranchId.toUpperCase().startsWith('BR-TAGUIG') || 
+                             globalBranchId.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+      const isTaguigRow = selectedRow.branchId.toUpperCase().startsWith('BR-TAGUIG') || 
+                          selectedRow.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+
+      if (isTaguigGlobal && isTaguigRow) {
+        if (globalBranchId.endsWith('-sales') || globalBranchId.endsWith('-sales-sales')) {
+          const line = selectedRow.auditLine || ''
+          return line === '' || line === 'TAGUIG_SALES'
+        }
+        if (globalBranchId.endsWith('-services') || globalBranchId.endsWith('-services-services')) {
+          return selectedRow.auditLine === 'TAGUIG_SERVICE'
+        }
       }
-      if (globalBranchId === 'BR-TAGUIG-SALES-services') {
-        return selectedRow.branchId === 'BR-TAGUIG-SALES' && selectedRow.auditLine === 'TAGUIG_SERVICE'
-      }
+
       return selectedRow.branchId === globalBranchId
     }
-    return isManager
-  }, [selectedRow, isAdmin, isManager, globalBranchId])
+
+    // For non-admin manager
+    if (!isManager) return false
+    if (!user?.branchId) return false
+
+    // A non-admin manager can only edit their own branch DTR
+    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    const rowBranchNorm = selectedRow.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    const baseMatch = userBranchNorm === rowBranchNorm
+    if (!baseMatch) return false
+
+    // For Taguig, match the sub-branch/audit line
+    const isTaguigRow = selectedRow.branchId.toUpperCase().startsWith('BR-TAGUIG') || 
+                        selectedRow.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    if (isTaguigRow) {
+      const emailLower = (user.email || '').toLowerCase()
+      const titleLower = (user.jobTitle || '').toLowerCase()
+      const userBranchIdLower = user.branchId.toLowerCase()
+      const isServiceUser = userBranchIdLower.includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const isServiceRow = selectedRow.auditLine === 'TAGUIG_SERVICE'
+      return isServiceUser === isServiceRow
+    }
+
+    return true
+  }, [selectedRow, isAdmin, isManager, globalBranchId, user])
 
 
 
