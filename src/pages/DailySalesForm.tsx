@@ -579,13 +579,23 @@ export default function DailySalesForm() {
       if (!res.ok) {
         const text = await res.text()
         console.error('[fetchReportDetails] Error body:', text)
-        throw new Error('Failed to fetch report details: ' + res.status)
+        throw new Error(`Failed to fetch report details (HTTP ${res.status})`)
       }
       const data = await res.json()
       console.log('[fetchReportDetails] Response Data:', data)
 
       // Set ignoreNextCohFetch to true so that the branch details/COH pre-fill useEffect doesn't overwrite cashOnHand
       ignoreNextCohFetch.current = true
+
+      // Restore branch from the report so no useEffect overrides it
+      if (data.branchId) {
+        setSelectedBranchId(data.branchId)
+        setSelectedAuditLine(data.auditLine || null)
+        if (data.branchName) {
+          const cleanName = data.branchName.replace(/^(ashcol\s+)/i, '').toUpperCase()
+          setBranch(cleanName)
+        }
+      }
 
       // Populate metadata
       setReportDate(data.reportDate)
@@ -757,10 +767,12 @@ export default function DailySalesForm() {
       setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
 
     } catch (err) {
-      console.error(err)
-      setError('Error loading existing DTR report details.')
+      console.error('[fetchReportDetails] Error:', err)
+      const msg = err instanceof Error ? err.message : 'Error loading existing DTR report details.'
+      setError(msg)
     }
   }
+
 
   // Load query params on mount
   useEffect(() => {

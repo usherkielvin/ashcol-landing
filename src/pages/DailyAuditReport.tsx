@@ -1568,7 +1568,6 @@ export default function DailyAuditReport() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
-
               {(() => {
                 const items = rowExpenses?.items || []
                 
@@ -1594,7 +1593,6 @@ export default function DailyAuditReport() {
                 const forCollItems = items.filter(it => it.type === 'COLLECTION')
 
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
-                  if (itemsList.length === 0) return null
                   const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
                   const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
                   
@@ -1603,7 +1601,7 @@ export default function DailyAuditReport() {
                       <div className="flex items-center justify-between mb-4">
                         <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{title}</p>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-black tabular-nums" style={{ color: isExpenseType ? '#EF4444' : '#10B981' }}>
+                          <span className="text-xs font-black tabular-nums" style={{ color: itemsList.length === 0 ? textMuted : isExpenseType ? '#EF4444' : '#10B981' }}>
                             ₱{peso(sumValue)}
                           </span>
                           <span className="text-[10px] font-medium" style={{ color: textMuted }}>({itemsList.length} {itemsList.length === 1 ? 'item' : 'items'})</span>
@@ -1621,7 +1619,13 @@ export default function DailyAuditReport() {
                             </tr>
                           </thead>
                           <tbody>
-                            {itemsList.map((item, i) => (
+                            {itemsList.length === 0 ? (
+                              <tr>
+                                <td colSpan={columns.length} className="px-4 py-3 text-center text-[11px]" style={{ color: textMuted }}>
+                                  — No entries —
+                                </td>
+                              </tr>
+                            ) : itemsList.map((item, i) => (
                               <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < itemsList.length - 1 ? `1px solid ${border}` : 'none' }}>
                                 {columns.map((col, idx) => (
                                   <td key={idx} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
