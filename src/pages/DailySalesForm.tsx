@@ -300,6 +300,13 @@ export default function DailySalesForm() {
             if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
               if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG SALES', auditLine: 'TAGUIG_SALES' })
               if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG SERVICES', auditLine: 'TAGUIG_SERVICE' })
+            } else if (cleanName.includes('TAGUIG')) {
+              const isServ = cleanName.includes('SERVICE')
+              newList.push({
+                id: b.id,
+                name: isServ ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
+                auditLine: isServ ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES'
+              })
             } else {
               newList.push({ id: b.id, name: cleanName })
             }
