@@ -89,8 +89,9 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   const isServices = lower.endsWith('-services') || lower.endsWith('-service') || emailLower.includes('service')
 
   if (lower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || lower.startsWith('br-taguig') || lower.includes('taguig')) {
+    const baseId = raw.replace(/-(sales|services|service)$/i, '')
     return {
-      branchId: 'BR-TAGUIG-SALES',
+      branchId: baseId || 'BR-TAGUIG',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
     }
@@ -306,10 +307,15 @@ export default function DailySalesForm() {
           let finalList = newList
           if (isBranchRestricted && user?.branchId) {
             const normBranch = normalizeTransactionBranch(user.branchId, user.email)
+            const isTaguigId = (id: string) => {
+              const upper = id.toUpperCase()
+              return upper.startsWith('BR-TAGUIG') || upper.startsWith('2880C29E-581C-11F1-BF8C-74D4DD6DFC0B') || upper.includes('TAGUIG')
+            }
             finalList = newList.filter(b => {
               // Match by real base ID or virtual suffixed ID
               const baseId = normBranch.branchId.replace(/-(sales|services)$/i, '')
-              if (b.id !== baseId && b.id !== normBranch.branchId) return false
+              const isBothTaguig = isTaguigId(b.id) && isTaguigId(normBranch.branchId)
+              if (!isBothTaguig && b.id !== baseId && b.id !== normBranch.branchId) return false
               // For Taguig: only show the correct SALES or SERVICES entry
               if (normBranch.auditLine && b.auditLine) {
                 return b.auditLine === normBranch.auditLine
