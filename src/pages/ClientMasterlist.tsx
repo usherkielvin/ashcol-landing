@@ -462,8 +462,8 @@ export default function ClientMasterlist() {
 
   const columns = useMemo(() => {
     const rawCols = [
-      { label: 'STATUS',            defaultW: 118, expW: 170, sticky: true,  freeze: true,  center: true,  right: false },
-      { label: 'CATEGORY',          defaultW: 110, expW: 180, sticky: false, freeze: false, center: true,  right: false },
+      { label: 'CATEGORY',          defaultW: 110, expW: 180, sticky: true,  freeze: true,  center: true,  right: false },
+      { label: 'STATUS',            defaultW: 118, expW: 170, sticky: false, freeze: false, center: true,  right: false },
       { label: 'BRANCH ASSIGNED',   defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
       { label: 'NEGOTIATOR',        defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
       { label: 'CUSTOMER NAME',     defaultW: 165, expW: 280, sticky: false, freeze: false, center: false, right: false },
@@ -1120,13 +1120,14 @@ export default function ClientMasterlist() {
     // Tab filtering
     const stat = t.status.toUpperCase()
     const isAssigned = !!t.assignedTo || !!t.branchId
+    const isInstalled = stat === 'COMPLETED' || stat === 'INSTALLED' || !!(t.installationCharges && t.installationCharges > 0)
 
-    if (activeTab === 'ALL_PENDING') {
-      if (stat === 'COMPLETED' || stat === 'CANCELLED') return false
-    } else if (activeTab === 'UNASSIGNED') {
-      if (isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
+    if (isInstalled || stat === 'CANCELLED') return false
+
+    if (activeTab === 'UNASSIGNED') {
+      if (isAssigned) return false
     } else if (activeTab === 'PENDING') {
-      if (!isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
+      if (!isAssigned) return false
     }
 
     // Vendor filter
@@ -1707,8 +1708,8 @@ export default function ClientMasterlist() {
                     : '#F59E0B'
 
                   const cells = [
-                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
                     { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color: categoryColor, backgroundColor: `${categoryColor}14`, borderColor: `${categoryColor}33` }}>{idx + 1}. {category}</span>, center: true },
+                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{branchName}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{negotiator}</span>, center: true },
                     { value: <span className={`${columns[4].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
