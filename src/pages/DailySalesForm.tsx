@@ -223,6 +223,10 @@ export default function DailySalesForm() {
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId)
   const [selectedAuditLine, setSelectedAuditLine] = useState<string | null>(initialAuditLine)
   const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string }[]>([])
+  // Submission metadata (populated when viewing existing report)
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
+  const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null)
   const trNoExample = branchName && reportDate
     ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
     : 'DAS-260604'
@@ -589,6 +593,10 @@ export default function DailySalesForm() {
       setTrNo(data.trNo || '')
       setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
       setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
+      // Submission metadata
+      setSubmittedAt(data.createdAt || null)
+      setLastUpdatedAt(data.updatedAt || null)
+      setLastUpdatedBy(data.updatedBy || null)
 
       // Populate rebates
       const rebatesList: RebateRow[] = []
@@ -1409,6 +1417,42 @@ export default function DailySalesForm() {
             )}
           </div>
         </div>
+
+        {/* Submission info — only visible when viewing an existing report */}
+        {!!reportId && (submittedAt || lastUpdatedAt || lastUpdatedBy) && (
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-6 gap-y-2">
+            {submittedAt && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Submitted:</span>
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  {new Date(submittedAt).toLocaleString('en-PH', {
+                    month: 'long', day: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: true,
+                  }).toUpperCase()}
+                </span>
+              </div>
+            )}
+            {lastUpdatedAt && lastUpdatedAt !== submittedAt && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-500">Last Edited:</span>
+                <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  {new Date(lastUpdatedAt).toLocaleString('en-PH', {
+                    month: 'long', day: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: true,
+                  }).toUpperCase()}
+                </span>
+              </div>
+            )}
+            {lastUpdatedBy && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Updated By:</span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  {lastUpdatedBy}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── DTR Scanner Actions ──────────────────────────────────────── */}
