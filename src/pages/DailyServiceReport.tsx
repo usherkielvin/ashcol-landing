@@ -1426,8 +1426,8 @@ export default function DailyServiceReport() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', position: 'relative' }}>
+            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                   {columns.map(col => (
@@ -1524,10 +1524,16 @@ export default function DailyServiceReport() {
                                   : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: col.w, maxWidth: col.w,
+                                overflow: isThisEditing ? 'visible' : 'hidden',
                                 transition: 'background-color 0.1s ease',
                                 cursor: isThisEditing ? 'default' : 'pointer',
                                 verticalAlign: 'top',
-                                ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
+                                ...(col.sticky ? {
+                                  position: 'sticky' as const,
+                                  left: col.left,
+                                  zIndex: 5,
+                                  backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                } : {}),
                                 ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                               }}>
                             {renderCell(r, col, idx)}
