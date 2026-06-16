@@ -73,6 +73,24 @@ const formatLocalTime = (utcString: string | null | undefined, fallback: string 
   }
 }
 
+const formatDateTime = (value?: string | null) => {
+  if (!value) return ''
+  try {
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return value || ''
+    return d.toLocaleString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
+  } catch {
+    return value || ''
+  }
+}
+
 const formatDateTriggerLabel = (value: string) => {
   const [year, month, day] = value.split('-')
   return year && month && day ? `${month}/${day}/${year}` : value
@@ -168,7 +186,13 @@ export default function DailyAuditReport() {
   }, [])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
-  const [rowExpenses, setRowExpenses] = useState<{ items: DrilldownItem[]; receivedBy?: string } | null>(null)
+  const [rowExpenses, setRowExpenses] = useState<{
+    items: DrilldownItem[];
+    receivedBy?: string;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
@@ -356,6 +380,9 @@ export default function DailyAuditReport() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       let items = []
       let receivedBy = ''
+      let createdAt = null
+      let updatedAt = null
+      let updatedBy = null
       if (row.id) {
         const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${row.id}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -364,6 +391,9 @@ export default function DailyAuditReport() {
           const data = await res.json()
           items = data.items || []
           receivedBy = data.receivedBy || ''
+          createdAt = data.createdAt || null
+          updatedAt = data.updatedAt || null
+          updatedBy = data.updatedBy || null
         }
       } else {
         const params = new URLSearchParams({
@@ -379,9 +409,9 @@ export default function DailyAuditReport() {
           items = await res.json()
         }
       }
-      setRowExpenses({ items, receivedBy })
+      setRowExpenses({ items, receivedBy, createdAt, updatedAt, updatedBy })
     } catch {
-      setRowExpenses({ items: [], receivedBy: '' })
+      setRowExpenses({ items: [], receivedBy: '', createdAt: null, updatedAt: null, updatedBy: null })
     } finally {
       setRowExpensesLoading(false)
     }
@@ -1486,11 +1516,26 @@ export default function DailyAuditReport() {
                               ? 'NO TRANSACTION' : selectedRow.status}
                         </span>
                       </span>
-                      {selectedRow.timeUploaded && (
-                        <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
+                      {rowExpenses?.createdAt ? (
+                        <span style={{ color: textMuted }}>
+                          Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
+                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></>}
+                        </span>
+                      ) : (
+                        <>
+                          {selectedRow.timeUploaded && (
+                            <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
+                          )}
+                          {rowExpenses?.receivedBy && (
+                            <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></span>
+                          )}
+                        </>
                       )}
-                      {rowExpenses?.receivedBy && (
-                        <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></span>
+                      {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
+                        <span style={{ color: '#F59E0B' }}>
+                          Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
+                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.updatedBy)}</span></>}
+                        </span>
                       )}
                     </div>
 
