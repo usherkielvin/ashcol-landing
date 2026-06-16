@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
-  Scan, Loader2, ClipboardPaste, Save, Calendar,
-  Sparkles, Check,
+  Scan, Loader2, ClipboardPaste, Save,
+  Check,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
