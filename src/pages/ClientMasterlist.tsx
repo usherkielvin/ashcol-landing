@@ -356,7 +356,7 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL')
+  const [activeTab, setActiveTab] = useState<'ALL' | 'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL_PENDING')
   const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
   const [ticketScope, setTicketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
@@ -552,21 +552,7 @@ export default function ClientMasterlist() {
     fetchData()
   }, [ticketScope])
 
-  useEffect(() => {
-    if (role !== 'admin') return
-    const syncFromGlobal = () => {
-      const gId = localStorage.getItem('ashcol-global-branch-id')
-      if (gId) {
-        const cleanBranchId = gId.replace(/-(sales|services)$/, '')
-        setBranchFilter(cleanBranchId)
-      } else {
-        setBranchFilter('ALL')
-      }
-    }
-    syncFromGlobal()
-    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
-    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [role])
+  // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
 
   // File Upload OCR (PDF/Image)
   const handleVoucherScan = async (file: File) => {
@@ -1136,7 +1122,9 @@ export default function ClientMasterlist() {
     const stat = t.status.toUpperCase()
     const isAssigned = !!t.assignedTo || !!t.branchId
 
-    if (activeTab === 'UNASSIGNED') {
+    if (activeTab === 'ALL_PENDING') {
+      if (stat === 'COMPLETED' || stat === 'CANCELLED') return false
+    } else if (activeTab === 'UNASSIGNED') {
       if (isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
     } else if (activeTab === 'PENDING') {
       if (!isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
@@ -1401,13 +1389,13 @@ export default function ClientMasterlist() {
         <div className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2.5">
 
           {/* Branch Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-            style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder }}>
-            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
+            style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
+            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: isAdmin ? '#10B981' : textMuted }} />
             <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-              disabled={true}
-              className="bg-transparent outline-none text-xs font-semibold cursor-not-allowed"
-              style={{ color: textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
+              disabled={!isAdmin}
+              className={`bg-transparent outline-none text-xs font-semibold ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              style={{ color: isAdmin ? textPrimary : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL">All Branches</option>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
@@ -1436,11 +1424,12 @@ export default function ClientMasterlist() {
             <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
               className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
               style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-              <option value="ALL">All Status</option>
+              <option value="ALL_PENDING">All Pending</option>
               <option value="UNASSIGNED">Unassigned</option>
               <option value="PENDING">Pending / Scheduled</option>
               <option value="INSTALLED">Installed</option>
               <option value="CANCELLED">Cancelled</option>
+              <option value="ALL">All Status</option>
             </select>
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
@@ -1833,7 +1822,7 @@ export default function ClientMasterlist() {
               <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider hidden sm:inline">⚠ Danger Zone:</span>
               <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 border border-red-500/25 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white"
-                title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL')
+                title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL_PENDING')
                   ? 'Only matching filtered records will be deleted'
                   : 'Deletes all records permanently'}>
                 <Trash2 className="w-3.5 h-3.5 shrink-0" />
