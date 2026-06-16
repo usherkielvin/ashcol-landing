@@ -183,6 +183,8 @@ export default function DailyServiceReport() {
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
+  const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -587,6 +589,60 @@ export default function DailyServiceReport() {
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
 
+  const fetchInstallerSuggestions = useCallback(async (bId: string) => {
+    if (!bId || bId === 'ALL_BRANCHES') {
+      setInstallerSuggestions([])
+      return
+    }
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const headers = { Authorization: `Bearer ${token}` }
+      const cleanBranchId = bId.replace(/-sales$|-services$/, '')
+      
+      const [resSugg, resEmp] = await Promise.all([
+        fetch(`${API_BASE_URL}/v1/lineup/suggestions?branchId=${cleanBranchId}`, { headers }).catch(() => null),
+        fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers }).catch(() => null)
+      ])
+      
+      const namesSet = new Set<string>()
+      
+      if (resSugg && resSugg.ok) {
+        const data = await resSugg.json()
+        const list = data?.installers || []
+        list.forEach((n: string) => {
+          if (n?.trim()) namesSet.add(n.trim().toUpperCase())
+        })
+      }
+      
+      if (resEmp && resEmp.ok) {
+        const payload = await resEmp.json()
+        const list = payload?.data || payload || []
+        list.forEach((emp: any) => {
+          if (emp.name?.trim()) {
+            const empBranch = (emp.branchId || '').replace(/-sales$|-services$/, '')
+            if (empBranch === cleanBranchId && emp.isActive !== false) {
+              namesSet.add(emp.name.trim().toUpperCase())
+            }
+          }
+        })
+      }
+      
+      // Fallback/standard installers if empty
+      const standardInstallers = ['RANIL', 'JHUMAR', 'KENNAN', 'CRIS', 'SONNY', 'RYAN', 'ALLAN']
+      if (namesSet.size === 0) {
+        standardInstallers.forEach(name => namesSet.add(name))
+      }
+      
+      setInstallerSuggestions(Array.from(namesSet).sort())
+    } catch (e) {
+      console.error('Failed to fetch installer suggestions', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchInstallerSuggestions(branchFilter)
+  }, [branchFilter, fetchInstallerSuggestions])
+
   // Focus the input after entering edit mode
   useEffect(() => {
     if (editingCell && inputRef.current) {
@@ -867,6 +923,7 @@ export default function DailyServiceReport() {
         <input
           ref={el => { inputRef.current = el }}
           type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : 'text'}
+          list={label === 'INSTALLER' ? 'installer-options' : undefined}
           value={cellValue}
           onChange={e => setCellValue(e.target.value)}
           onBlur={() => saveCell(r.id, label, cellValue)}
@@ -876,12 +933,13 @@ export default function DailyServiceReport() {
     }
 
     const val = getCellDisplay(r, label)
-    const truncStyle: React.CSSProperties = col.isExpanded
+    const isCellExpanded = expandedCells[`${r.id}:${label}`]
+    const truncStyle: React.CSSProperties = (col.isExpanded || isCellExpanded)
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.5 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
 
     const editHint: React.CSSProperties = isEditable && canEdit
-      ? { cursor: 'text' } : {}
+      ? { cursor: 'pointer' } : {}
 
     if (label === "CUSTOMER'S NAME") {
       return (
@@ -915,8 +973,9 @@ export default function DailyServiceReport() {
     }
 
     if (label === 'DESTINATION') {
+      const showExpanded = col.isExpanded || isCellExpanded
       return (
-        <span className={col.isExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={val}>
+        <span className={showExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={val}>
           {val}
         </span>
       )
@@ -1444,6 +1503,14 @@ export default function DailyServiceReport() {
                           <td key={col.label}
                               onClick={e => {
                                 e.stopPropagation()
+                                if (isThisEditing) return
+                                setExpandedCells(prev => ({
+                                  ...prev,
+                                  [`${r.id}:${col.label}`]: !prev[`${r.id}:${col.label}`]
+                                }))
+                              }}
+                              onDoubleClick={e => {
+                                e.stopPropagation()
                                 if (isEditable && !isThisEditing) startEdit(r, col.label)
                               }}
                               style={{
@@ -1458,7 +1525,7 @@ export default function DailyServiceReport() {
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: col.w, maxWidth: col.w,
                                 transition: 'background-color 0.1s ease',
-                                cursor: isEditable && !isThisEditing ? 'text' : 'default',
+                                cursor: isThisEditing ? 'default' : 'pointer',
                                 verticalAlign: 'top',
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
                                 ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
@@ -1828,6 +1895,7 @@ export default function DailyServiceReport() {
                                 <input
                                   type="text"
                                   value={row.technicianName || ''}
+                                  list="installer-options"
                                   onChange={e => handleUpdateScannedRowField(row.id!, 'technicianName', e.target.value)}
                                   className="w-full rounded px-2 py-1 text-xs outline-none font-medium border"
                                   style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
@@ -2127,6 +2195,7 @@ export default function DailyServiceReport() {
                   <Field label="Installer / Technician">
                     {canEdit ? (
                       <input type="text" value={detailForm.technicianName || ''} 
+                        list="installer-options"
                         onChange={e => setDetailForm({ ...detailForm, technicianName: e.target.value })}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -2279,6 +2348,12 @@ export default function DailyServiceReport() {
           </div>
         </div>
       )}
+
+      <datalist id="installer-options">
+        {installerSuggestions.map(name => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
     </div>
   )
 }
