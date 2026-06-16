@@ -6,37 +6,54 @@ import App from './App.tsx'
 // Global fetch interceptor to handle session expiration (401/403)
 const originalFetch = window.fetch
 window.fetch = async (...args) => {
-  const response = await originalFetch(...args)
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url
-    // Only intercept API calls, avoiding login/auth endpoints to prevent loops
-    if (url.includes('/api/') && !url.includes('/auth/')) {
+  const url = typeof args[0] === 'string' ? args[0] :
+              (args[0] instanceof Request ? args[0].url : 
+               (args[0] instanceof URL ? args[0].href : String(args[0])));
+
+  // Only check and intercept for non-auth requests
+  if (!url.includes('/auth/')) {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    if (token) {
+      // Decode JWT token and check expiration client-side before sending
       try {
-        const clone = response.clone()
-        const text = await clone.text()
-        let isAuthError = true
-        try {
-          const json = JSON.parse(text)
-          if (json && json.error && json.error !== 'Forbidden' && json.error !== 'Unauthorized') {
-            isAuthError = false
+        const parts = token.split('.')
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+          if (payload && typeof payload.exp === 'number') {
+            const currentSec = Math.floor(Date.now() / 1000)
+            if (payload.exp < currentSec) {
+              localStorage.removeItem('ashcol-token')
+              sessionStorage.removeItem('ashcol-token')
+              localStorage.removeItem('ashcol-user')
+              sessionStorage.removeItem('ashcol-user')
+              const pathname = window.location.pathname
+              if (pathname !== '/login' && pathname !== '/forgot-password' && pathname !== '/create-account' && pathname !== '/') {
+                window.location.href = '/login?expired=true'
+              }
+              return new Response(JSON.stringify({ error: 'Unauthorized', message: 'Session expired' }), {
+                status: 401,
+                statusText: 'Unauthorized',
+                headers: { 'Content-Type': 'application/json' }
+              })
+            }
           }
-          if (json && json.message === 'Access Denied') {
-            isAuthError = false
-          }
-        } catch {
-          if (text.trim().length > 0) {
-            isAuthError = false
-          }
-        }
-        if (isAuthError) {
-          localStorage.removeItem('ashcol-token')
-          sessionStorage.removeItem('ashcol-token')
-          localStorage.removeItem('ashcol-user')
-          sessionStorage.removeItem('ashcol-user')
-          window.location.href = '/login?expired=true'
         }
       } catch (e) {
-        console.error('Fetch interceptor error', e)
+        // ignore malformed token parsing issues
+      }
+    }
+  }
+
+  const response = await originalFetch(...args)
+  if (response.status === 401) {
+    if (!url.includes('/auth/')) {
+      localStorage.removeItem('ashcol-token')
+      sessionStorage.removeItem('ashcol-token')
+      localStorage.removeItem('ashcol-user')
+      sessionStorage.removeItem('ashcol-user')
+      const pathname = window.location.pathname
+      if (pathname !== '/login' && pathname !== '/forgot-password' && pathname !== '/create-account' && pathname !== '/') {
+        window.location.href = '/login?expired=true'
       }
     }
   }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 
 export interface AuthUser {
   name: string
@@ -70,6 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserState(u)
     if (u) {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(u))
+      if (localStorage.getItem('ashcol-token')) {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(u))
+      }
     } else {
       sessionStorage.removeItem(SESSION_KEY)
       localStorage.removeItem(SESSION_KEY)
@@ -85,6 +88,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('ashcol-token')
     localStorage.removeItem(SESSION_KEY)
   }
+
+  // Periodic token expiration check
+  useEffect(() => {
+    const checkToken = () => {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      if (token) {
+        const parts = token.split('.')
+        if (parts.length === 3) {
+          try {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+            if (payload && typeof payload.exp === 'number') {
+              const currentSec = Math.floor(Date.now() / 1000)
+              if (payload.exp < currentSec) {
+                logout()
+                const pathname = window.location.pathname
+                if (pathname !== '/login' && pathname !== '/forgot-password' && pathname !== '/create-account' && pathname !== '/') {
+                  window.location.href = '/login?expired=true'
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    checkToken()
+    const interval = setInterval(checkToken, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, setUser, logout }}>

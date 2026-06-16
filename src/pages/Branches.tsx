@@ -25,6 +25,8 @@ interface AuditRow {
   totalForPurchase: number
   forCollection: number
   rebatesForCollection: number
+  totalUnitsScheduled?: number
+  totalUnitsSurveyOnly?: number
   totalUnitsInstalledServiced: number
   totalCancelled: number
   totalUnitsFreeInstall: number
@@ -1164,12 +1166,14 @@ export default function Branches() {
                           <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Rebate Summary</span>
                         </div>
                         
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                           {[
                             { label: 'Rebates Total', value: `₱${peso(branchPerfData.rebatesForCollection)}`, icon: <Receipt className="w-4 h-4 text-emerald-500" />, bg: 'rgba(16,185,129,0.04)', border: 'rgba(16,185,129,0.12)', text: '#10B981' },
+                            { label: 'Scheduled', value: String(branchPerfData.totalUnitsScheduled || 0), icon: <HelpCircle className="w-4 h-4 text-slate-500" />, bg: 'rgba(148,163,184,0.04)', border: 'rgba(148,163,184,0.12)', text: '#64748B' },
                             { label: 'Installed', value: String(branchPerfData.totalUnitsInstalledServiced), icon: <CheckCircle2 className="w-4 h-4 text-blue-500" />, bg: 'rgba(59,130,246,0.04)', border: 'rgba(59,130,246,0.12)', text: '#3B82F6' },
                             { label: 'Cancelled', value: String(branchPerfData.totalCancelled), icon: <XCircle className="w-4 h-4 text-red-500" />, bg: 'rgba(239,68,68,0.04)', border: 'rgba(239,68,68,0.12)', text: '#EF4444' },
                             { label: 'Free Install', value: String(branchPerfData.totalUnitsFreeInstall), icon: <Gift className="w-4 h-4 text-amber-500" />, bg: 'rgba(245,158,11,0.04)', border: 'rgba(245,158,11,0.12)', text: '#F59E0B' },
+                            { label: 'Survey Only', value: String(branchPerfData.totalUnitsSurveyOnly || 0), icon: <HelpCircle className="w-4 h-4 text-indigo-500" />, bg: 'rgba(99,102,241,0.04)', border: 'rgba(99,102,241,0.12)', text: '#6366F1' },
                           ].map((item) => (
                             <div key={item.label} className="rounded-xl border p-3 flex items-center justify-between transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ borderColor: item.border, backgroundColor: item.bg }}>
                               <div className="flex flex-col gap-0.5">

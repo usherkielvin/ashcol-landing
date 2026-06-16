@@ -98,6 +98,7 @@ export default function Login() {
         localStorage.setItem('ashcol-remembered-email', email.trim())
       } else {
         sessionStorage.setItem('ashcol-token', appToken)
+        localStorage.removeItem('ashcol-token')
         localStorage.removeItem('ashcol-user')
         localStorage.removeItem('ashcol-remembered-email')
       }
@@ -166,6 +167,7 @@ export default function Login() {
           localStorage.setItem('ashcol-remembered-email', appUser.email || profile.email)
         } else {
           sessionStorage.setItem('ashcol-token', appToken)
+          localStorage.removeItem('ashcol-token')
           localStorage.removeItem('ashcol-user')
           localStorage.removeItem('ashcol-remembered-email')
         }
@@ -320,6 +322,8 @@ export default function Login() {
                 </label>
                 <input
                   type="email"
+                  name="email"
+                  autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -342,6 +346,8 @@ export default function Login() {
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -361,17 +367,22 @@ export default function Login() {
 
               {/* Remember Me */}
               <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="remember-me"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="sr-only"
+                />
                 <button
                   type="button"
-                  id="remember-me"
-                  role="checkbox"
-                  aria-checked={rememberMe}
                   onClick={() => setRememberMe(r => !r)}
                   className="relative flex-shrink-0 w-5 h-5 rounded-md border-2 transition-all duration-150 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-[#10B981]/50"
                   style={{
                     backgroundColor: rememberMe ? '#10B981' : 'transparent',
                     borderColor: rememberMe ? '#10B981' : inputBorder,
                   }}
+                  aria-label="Keep me signed in"
                 >
                   {rememberMe && (
                     <svg viewBox="0 0 12 10" className="w-3 h-3" fill="none">
@@ -381,7 +392,6 @@ export default function Login() {
                 </button>
                 <label
                   htmlFor="remember-me"
-                  onClick={() => setRememberMe(r => !r)}
                   className="text-xs font-semibold cursor-pointer select-none"
                   style={{ color: textMuted }}
                 >

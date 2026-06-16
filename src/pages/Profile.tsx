@@ -4,10 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield,
-  KeyRound, Trash2, X, AlertTriangle, MapPin, Lock, Eye, EyeOff, Bell
+  KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff, Bell
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
-import PhAddressPicker from '../components/PhAddressPicker'
 import type { AddressValue } from '../components/PhAddressPicker'
 import { API_BASE_URL, resolveImageUrl, formatRole } from '../utils/api'
 
@@ -320,7 +319,6 @@ export default function Profile() {
 
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
     { key: 'profile' as Tab, label: 'Profile', icon: User },
-    ...(user?.role !== 'admin' ? [{ key: 'address' as Tab, label: 'Addresses', icon: MapPin }] : []),
     ...(user?.role === 'admin' ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
     ...(user?.role !== 'admin' ? [{ key: 'privacy' as Tab, label: 'Privacy Settings', icon: Eye }] : []),
@@ -521,44 +519,6 @@ export default function Profile() {
             </div>
           )}
 
-          {/* ── Tab: Addresses ───────────────────────────────────── */}
-          {tab === 'address' && (
-            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-              {/* Header */}
-              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
-                <h2 className="text-lg font-black" style={{ color: textPrimary }}>My Addresses</h2>
-                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Manage your default service address</p>
-              </div>
-
-              <form onSubmit={handleSaveName} className="px-6 py-5">
-                <PhAddressPicker
-                  value={address}
-                  onChange={setAddress}
-                  inputBg={inputBg}
-                  inputBorder={inputBorder}
-                  inputText={inputText}
-                  textMuted={textMuted}
-                />
-
-                {/* Feedback */}
-                {(nameErr || nameMsg) && (
-                  <div className="mt-4">
-                    {nameErr && <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-2">{nameErr}</p>}
-                    {nameMsg && <p className="text-sm text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl px-4 py-2">{nameMsg}</p>}
-                  </div>
-                )}
-
-                <div className="mt-5">
-                  <button
-                    type="submit" disabled={nameLoading}
-                    className={`px-8 py-2.5 rounded-lg font-bold text-sm text-white transition-all ${nameLoading ? 'bg-slate-500 cursor-not-allowed' : 'bg-[#10B981] hover:bg-emerald-500 hover:shadow-lg hover:shadow-[#10B981]/20'}`}
-                  >
-                    {nameLoading ? 'Saving...' : 'Save Address'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
 
           {/* ── Tab: Change Password ─────────────────────────────── */}
           {tab === 'password' && (

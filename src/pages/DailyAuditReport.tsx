@@ -37,6 +37,8 @@ interface AuditRow {
   payrollExpenses: number
   totalExpenses: number
   totalForPurchase: number
+  totalUnitsScheduled?: number
+  totalUnitsSurveyOnly?: number
   totalUnitsInstalledServiced: number
   totalUnitsServiced: number
   totalCancelled: number
@@ -372,7 +374,7 @@ export default function DailyAuditReport() {
       target: 'targetDailyQuota', difference: 'difference', remarks: 'remarks',
       coh: 'cohPreviousDay', fundHo: 'fundFromHo', cashReturns: 'cashReturns',
       totalCohCfd: 'totalCohCfd', cashColl: 'totalCashCollection', onlineColl: 'totalOnlineCollection',
-      totalExp: 'totalExpenses', totalPurch: 'totalForPurchase', units: 'totalUnitsInstalledServiced', serviced: 'totalUnitsServiced', cancelled: 'totalCancelled',
+      totalExp: 'totalExpenses', totalPurch: 'totalForPurchase', scheduled: 'totalUnitsScheduled', surveyOnly: 'totalUnitsSurveyOnly', units: 'totalUnitsInstalledServiced', serviced: 'totalUnitsServiced', cancelled: 'totalCancelled',
       freeInstall: 'totalUnitsFreeInstall', forColl: 'forCollection', rebates: 'rebatesForCollection',
     }
     visibleRows.sort((a, b) => {
@@ -447,10 +449,12 @@ export default function DailyAuditReport() {
       'Total Purchases': row.totalForPurchase || 0,
       'For Collection': row.forCollection,
       Rebates: row.rebatesForCollection,
+      'Units Scheduled': row.totalUnitsScheduled || 0,
       'Units Installed': row.totalUnitsInstalledServiced,
       'Units Serviced': row.totalUnitsServiced,
       Cancelled: row.totalCancelled,
       'Free Install': row.totalUnitsFreeInstall,
+      'Survey Only': row.totalUnitsSurveyOnly || 0,
     }))
 
     const ws = XLSX.utils.json_to_sheet(wsData)
@@ -1210,9 +1214,11 @@ export default function DailyAuditReport() {
                         { label: 'For coll.', field: 'forCollection', val: row.forCollection, color: '#F59E0B', money: true },
                         { label: 'COH prev', field: 'cohPreviousDay', val: row.cohPreviousDay, color: textPrimary, money: true },
                         { label: 'Total CFD', val: row.totalCohCfd, color: textPrimary, money: true, readOnly: true },
+                        { label: 'Scheduled', field: 'totalUnitsScheduled', val: row.totalUnitsScheduled, color: textPrimary, int: true },
                         { label: 'Units', field: 'totalUnitsInstalledServiced', val: row.totalUnitsInstalledServiced, color: textPrimary, int: true },
                         { label: 'Serviced', field: 'totalUnitsServiced', val: row.totalUnitsServiced, color: textPrimary, int: true },
                         { label: 'Cancelled', field: 'totalCancelled', val: row.totalCancelled, color: row.totalCancelled > 0 ? '#EF4444' : textMuted, int: true },
+                        { label: 'Survey Only', field: 'totalUnitsSurveyOnly', val: row.totalUnitsSurveyOnly, color: textPrimary, int: true },
                       ].map(item => (
                         <div key={item.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
                           <span className="text-[10px] font-medium block mb-0.5" style={{ color: textMuted }}>{item.label}</span>
@@ -1521,13 +1527,15 @@ export default function DailyAuditReport() {
                         <span className="text-[11px] font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(selectedRow.rebatesForCollection)}</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2">
                         {[
                           { label: 'Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
+                          { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0), color: textPrimary },
                           { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), color: textPrimary },
                           { label: 'Serviced', value: String(selectedRow.totalUnitsServiced), color: textPrimary },
                           { label: 'Cancelled', value: String(selectedRow.totalCancelled), color: textPrimary },
                           { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), color: textPrimary },
+                          { label: 'Survey Only', value: String(selectedRow.totalUnitsSurveyOnly || 0), color: textPrimary },
                         ].map((item) => (
                           <div key={item.label} className="rounded-lg px-3 py-2" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
                             <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
