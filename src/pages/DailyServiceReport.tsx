@@ -318,7 +318,8 @@ export default function DailyServiceReport() {
             timeEnded: row.timeEnded || '',
             amountCharged: row.amountCharged || 0,
             paymentStatus: row.paymentStatus || 'CASH',
-            jobStatus: row.jobStatus || 'SCHEDULED',
+            // Auto-complete: charged amount > 0 or free installation = COMPLETED
+            jobStatus: (row.amountCharged > 0 || row.freeInstallation) ? 'COMPLETED' : (row.jobStatus || 'SCHEDULED'),
             remarks: row.remarks || '',
             note: row.note || '',
             controlNumber: row.controlNumber || '',
@@ -715,11 +716,17 @@ export default function DailyServiceReport() {
     if (col === 'INSTALLATION CHARGES') {
       finalValue = parseFloat(value) || 0
       localPatch.amountCharged = finalValue
+      // Auto-complete: any charge > 0 means job is done
+      if (finalValue > 0) {
+        localPatch.jobStatus = 'COMPLETED'
+      }
     }
 
     if (col === 'MODE OF PAYMENT') {
       if (value === 'FREE' || value === 'FREE INSTALL') {
         localPatch.amountCharged = 0
+        localPatch.freeInstallation = true
+        localPatch.jobStatus = 'COMPLETED'
       }
     }
 
