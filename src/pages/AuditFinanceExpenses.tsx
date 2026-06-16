@@ -57,6 +57,10 @@ export default function AuditFinanceExpenses() {
   const neutralMuted = isLight ? '#6b7280' : '#a3a3a3'
   const accent = '#10B981'
   const danger = '#EF4444'
+  const editAccent = '#6366F1'
+  const editAlertBg = isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.08)'
+  const editAlertBorder = isLight ? '#C7D2FE' : 'rgba(99, 102, 241, 0.2)'
+  const editAlertText = isLight ? '#4F46E5' : '#818CF8'
 
   const role = (user?.role || '').toLowerCase()
   const currentUserLabel = user?.jobTitle
@@ -81,6 +85,7 @@ export default function AuditFinanceExpenses() {
   const [detailRow, setDetailRow] = useState<AuditExpense | null>(null)
   const [isEditingInModal, setIsEditingInModal] = useState(false)
   const [form, setForm] = useState(emptyForm)
+  const activeAccent = editing ? editAccent : accent
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
@@ -1096,12 +1101,21 @@ export default function AuditFinanceExpenses() {
 
       {/* ── ENTRY FORM ── */}
       {showForm && (
-        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${accent}55`, boxShadow: `0 0 0 2px ${accent}22` }}>
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${activeAccent}55`, boxShadow: `0 0 0 2px ${activeAccent}22` }}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
             <div className="flex items-center justify-between w-full sm:w-auto">
               <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
-                <div className="rounded-lg p-1.5" style={{ backgroundColor: `${accent}22` }}><Receipt size={16} style={{ color: accent }} /></div>
-                {editing ? 'Edit Expense Record' : 'New Expense Record'}
+                <div className="rounded-lg p-1.5" style={{ backgroundColor: `${activeAccent}22` }}><Receipt size={16} style={{ color: activeAccent }} /></div>
+                {editing ? (
+                  <span className="flex items-center gap-2">
+                    Edit Expense Record
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider text-white" style={{ backgroundColor: editAccent }}>
+                      EDITING
+                    </span>
+                  </span>
+                ) : (
+                  'New Expense Record'
+                )}
               </h2>
               <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="sm:hidden text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={20} /></button>
             </div>
@@ -1133,6 +1147,17 @@ export default function AuditFinanceExpenses() {
             </div>
             <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="hidden sm:block text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={18} /></button>
           </div>
+
+          {editing && (
+            <div className="rounded-xl p-3 flex items-start gap-2.5 text-xs border animate-fade-in"
+              style={{ backgroundColor: editAlertBg, borderColor: editAlertBorder, color: editAlertText }}>
+              <Pencil size={15} className="mt-0.5 shrink-0" style={{ color: editAlertText }} />
+              <div>
+                <span className="font-bold block mb-0.5" style={{ color: textPrimary }}>Editing Persisted Record</span>
+                <span style={{ color: textMuted }}>You are modifying an existing receipt. Saving changes will update the record and append to its history log.</span>
+              </div>
+            </div>
+          )}
 
           {/* ── Side-by-side: image reference + form fields ── */}
           <div className="flex flex-col lg:flex-row gap-4">
@@ -1414,8 +1439,8 @@ export default function AuditFinanceExpenses() {
 
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-sm rounded-lg" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }} disabled={savingReceipt}>Cancel</button>
-            <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow flex items-center gap-2 justify-center" style={{ backgroundColor: accent }} disabled={savingReceipt}>
-              {savingReceipt ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : (editing ? 'Update Record' : 'Save Record')}
+            <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow flex items-center gap-2 justify-center transition-all active:scale-95" style={{ backgroundColor: activeAccent }} disabled={savingReceipt}>
+              {savingReceipt ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : (editing ? 'Apply Updates' : 'Save Record')}
             </button>
           </div>
         </div>
@@ -1568,6 +1593,15 @@ export default function AuditFinanceExpenses() {
 
             {isEditingInModal ? (
               <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+                <div className="rounded-xl p-3 flex items-start gap-2.5 text-xs border"
+                  style={{ backgroundColor: editAlertBg, borderColor: editAlertBorder, color: editAlertText }}>
+                  <Pencil size={15} className="mt-0.5 shrink-0" style={{ color: editAlertText }} />
+                  <div>
+                    <span className="font-bold block mb-0.5" style={{ color: textPrimary }}>Editing Persisted Record</span>
+                    <span style={{ color: textMuted }}>You are modifying an existing receipt. Saving changes will update the record and append to its history log.</span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   {/* Date */}
                   {field(
@@ -1676,7 +1710,7 @@ export default function AuditFinanceExpenses() {
                     {allCategories.map((cat) => (
                       <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
                         className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:scale-102"
-                        style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
+                        style={{ border: `1px solid ${form.expenseCategory === cat ? editAccent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${editAccent}22` : inputBg, color: form.expenseCategory === cat ? editAccent : textMuted }}>
                         {cat}
                       </button>
                     ))}
@@ -1740,9 +1774,9 @@ export default function AuditFinanceExpenses() {
                   </button>
                   <button type="button" onClick={submitReceipt} disabled={savingReceipt}
                     className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-150 active:scale-95"
-                    style={{ backgroundColor: accent }}>
+                    style={{ backgroundColor: editAccent }}>
                     {savingReceipt ? <Loader2 size={14} className="animate-spin" /> : null}
-                    Save Changes
+                    Apply Changes
                   </button>
                 </>
               ) : (
