@@ -356,7 +356,7 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL' | 'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'INSTALLED' | 'CANCELLED'>('ALL_PENDING')
+  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING'>('ALL_PENDING')
   const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
   const [ticketScope, setTicketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
@@ -449,7 +449,6 @@ export default function ClientMasterlist() {
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
   const [editFinalDate, setEditFinalDate] = useState('')
-  const [editWarrantyRegistrationCompleted, setEditWarrantyRegistrationCompleted] = useState(false)
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
@@ -463,8 +462,6 @@ export default function ClientMasterlist() {
 
   const columns = useMemo(() => {
     const rawCols = [
-      { label: 'NO',                defaultW: 54,  expW: 70,  sticky: true,  freeze: false, center: true,  right: false },
-      { label: 'TICKET NO',         defaultW: 112, expW: 180, sticky: true,  freeze: false, center: true,  right: false },
       { label: 'STATUS',            defaultW: 118, expW: 170, sticky: true,  freeze: true,  center: true,  right: false },
       { label: 'CATEGORY',          defaultW: 110, expW: 180, sticky: false, freeze: false, center: true,  right: false },
       { label: 'BRANCH ASSIGNED',   defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
@@ -504,11 +501,17 @@ export default function ClientMasterlist() {
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
 
-  // Close context menu on any mouse down
+  // Close context menu on any click (excluding clicks inside the context menu itself)
   useEffect(() => {
-    const handleClose = () => setContextMenu(null)
-    window.addEventListener('mousedown', handleClose)
-    return () => window.removeEventListener('mousedown', handleClose)
+    const handleClose = (e: MouseEvent) => {
+      const menu = document.getElementById('context-menu')
+      if (menu && menu.contains(e.target as Node)) {
+        return
+      }
+      setContextMenu(null)
+    }
+    window.addEventListener('click', handleClose)
+    return () => window.removeEventListener('click', handleClose)
   }, [])
 
   // Load Initial Data
@@ -963,9 +966,6 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
-      if (editWarrantyRegistrationCompleted !== Boolean(selectedTicket.warrantyRegistrationCompleted)) {
-        payload.warrantyRegistrationCompleted = editWarrantyRegistrationCompleted
-      }
       
       const acDetailsObj = {
         landmarks: editLandmarks || '',
@@ -1110,7 +1110,6 @@ export default function ClientMasterlist() {
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
     setEditFinalDate(parsedDetails.finalDate || '')
-    setEditWarrantyRegistrationCompleted(Boolean(ticket.warrantyRegistrationCompleted))
 
     setIsActionDrawerOpen(true)
   }
@@ -1128,11 +1127,6 @@ export default function ClientMasterlist() {
       if (isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
     } else if (activeTab === 'PENDING') {
       if (!isAssigned || stat === 'COMPLETED' || stat === 'CANCELLED') return false
-    } else if (activeTab === 'INSTALLED') {
-      const hasCharges = !!(t.installationCharges && t.installationCharges > 0)
-      if (stat !== 'COMPLETED' && !hasCharges) return false
-    } else if (activeTab === 'CANCELLED') {
-      if (stat !== 'CANCELLED') return false
     }
 
     // Vendor filter
@@ -1426,10 +1420,7 @@ export default function ClientMasterlist() {
               style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
               <option value="ALL_PENDING">All Pending</option>
               <option value="UNASSIGNED">Unassigned</option>
-              <option value="PENDING">Pending / Scheduled</option>
-              <option value="INSTALLED">Installed</option>
-              <option value="CANCELLED">Cancelled</option>
-              <option value="ALL">All Status</option>
+              <option value="PENDING">Assigned</option>
             </select>
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
@@ -1560,7 +1551,7 @@ export default function ClientMasterlist() {
             <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead>
                 <tr style={{ backgroundColor: inputBg }}>
-                  {['TICKET NO', 'CATEGORY', 'STATUS', 'CUSTOMER', 'BRANCH', 'NEGOTIATOR', 'STORE', 'REQUESTED', 'FINAL', 'PAYMENT', 'ACTION'].map(label => (
+                  {['CATEGORY', 'STATUS', 'CUSTOMER', 'BRANCH', 'NEGOTIATOR', 'STORE', 'REQUESTED', 'FINAL', 'PAYMENT', 'ACTION'].map(label => (
                     <th key={label} className="px-3 py-2.5 text-left font-black text-[10px] whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
                       {label}
                     </th>
@@ -1570,14 +1561,14 @@ export default function ClientMasterlist() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="py-16 text-center" style={{ color: textMuted }}>
+                    <td colSpan={10} className="py-16 text-center" style={{ color: textMuted }}>
                       <Loader2 className="w-7 h-7 animate-spin mx-auto mb-3 text-[#10B981]" />
                       Loading tickets...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-16 text-center" style={{ color: textMuted }}>No tickets match the current filters.</td>
+                    <td colSpan={10} className="py-16 text-center" style={{ color: textMuted }}>No tickets match the current filters.</td>
                   </tr>
                 ) : filtered.map((ticket, idx) => {
                   const category = getTicketCategory(ticket)
@@ -1591,9 +1582,8 @@ export default function ClientMasterlist() {
                     <tr key={ticket.id}
                       onClick={() => { setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
                       style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'), cursor: 'pointer' }}>
-                      <td className="px-3 py-2.5 font-black font-mono whitespace-nowrap max-w-[160px] truncate" title={getTicketNumber(ticket)} style={{ color, borderBottom: `1px solid ${border}` }}>{getTicketNumber(ticket)}</td>
                       <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>{category}</span>
+                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>{idx + 1}. {category}</span>
                       </td>
                       <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{status}</td>
                       <td className="px-3 py-2.5 font-bold max-w-[210px] truncate" title={ticket.customerName || 'Direct Client'} style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{ticket.customerName || 'Direct Client'}</td>
@@ -1604,11 +1594,18 @@ export default function ClientMasterlist() {
                       <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(details.finalDate) || '—'}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap font-semibold" style={{ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted, borderBottom: `1px solid ${border}` }}>{paymentText}</td>
                       <td className="px-3 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}>
-                        <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                          <Eye className="w-3.5 h-3.5" /> View
-                        </button>
+                        <div className="flex justify-end gap-1.5">
+                          <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                            <Eye className="w-3.5 h-3.5" /> View
+                          </button>
+                          <button type="button" onClick={e => { e.stopPropagation(); openDrawer(ticket) }}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+                            Edit
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -1689,7 +1686,6 @@ export default function ClientMasterlist() {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
                   const statusLabel = getRelayStatusLabel(ticket)
-                  const ticketNumber = getTicketNumber(ticket)
                   const branchName = resolveBranch(ticket.branchId)?.name || '—'
                   const category = getTicketCategory(ticket)
                   const categoryColor = getCategoryColor(category)
@@ -1711,22 +1707,20 @@ export default function ClientMasterlist() {
                     : '#F59E0B'
 
                   const cells = [
-                    { value: <span className="font-black tabular-nums">{idx + 1}</span>, center: true },
-                    { value: <span className="font-black font-mono tracking-wide whitespace-nowrap block truncate" title={ticketNumber} style={{ color: categoryColor }}>{ticketNumber}</span>, center: true },
                     { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
-                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color: categoryColor, backgroundColor: `${categoryColor}14`, borderColor: `${categoryColor}33` }}>{category}</span>, center: true },
+                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color: categoryColor, backgroundColor: `${categoryColor}14`, borderColor: `${categoryColor}33` }}>{idx + 1}. {category}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{branchName}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{negotiator}</span>, center: true },
-                    { value: <span className={`${columns[6].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
+                    { value: <span className={`${columns[4].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
                     { value: <span className="font-semibold uppercase text-[10px]">{district}</span>, center: true },
                     { value: <span className="font-semibold truncate block" title={storeStyle.label}>{storeStyle.label}</span> },
                     { value: <span className="font-bold uppercase text-[10px]">{details.brand || '—'}</span>, center: true },
                     { value: <span className="font-bold uppercase text-[10px]">{details.capacity || '—'}</span>, center: true },
-                    { value: <span className={`${columns[11].isExpanded ? 'break-words' : 'line-clamp-2'} block font-semibold uppercase text-[10px]`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
+                    { value: <span className={`${columns[9].isExpanded ? 'break-words' : 'line-clamp-2'} block font-semibold uppercase text-[10px]`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
                     { value: <span className="font-semibold whitespace-nowrap">{relayedDate || '—'}</span>, center: true },
                     { value: <span className="font-semibold whitespace-nowrap">{requestedDate || '—'}</span>, center: true },
                     { value: <span className="font-semibold whitespace-nowrap">{finalDate || '—'}</span>, center: true },
-                    { value: <span className={`${columns[15].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={lastUpdate}>{lastUpdate || '—'}</span> },
+                    { value: <span className={`${columns[13].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={lastUpdate}>{lastUpdate || '—'}</span> },
                     { value: (
                         <div className="flex justify-end gap-1.5">
                           <button type="button" onClick={e => { e.stopPropagation(); openDrawer(ticket) }}
@@ -2071,17 +2065,6 @@ export default function ClientMasterlist() {
                           <option value="CANCELLED">Cancelled</option>
                         </select>
                       </div>
-                      {selectedTicket && getTicketCategory(selectedTicket) === 'Installation' && (
-                        <label className="flex items-center gap-1.5 rounded-lg border px-2 py-1 cursor-pointer select-none"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                          <input type="checkbox" checked={editWarrantyRegistrationCompleted}
-                            onChange={e => setEditWarrantyRegistrationCompleted(e.target.checked)}
-                            className="w-3.5 h-3.5 accent-[#10B981]" />
-                          <span className="flex flex-col">
-                            <span className="text-[9px] font-bold" style={{ color: textPrimary }}>Warranty Done</span>
-                          </span>
-                        </label>
-                      )}
                       {(updateStatus !== 'PENDING' || (selectedTicket && getTicketCategory(selectedTicket) === 'Collection')) && updateStatus !== 'CANCELLED' && (
                         <div>
                           <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone</label>
@@ -2880,7 +2863,7 @@ export default function ClientMasterlist() {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Document Viewer</span>
                 <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider bg-slate-100 dark:bg-slate-800" style={{ color: textMuted }}>
-                  JOB #{selectedPreviewTicket.id.split('-').pop()?.toUpperCase() || selectedPreviewTicket.id.slice(-6).toUpperCase()}
+                  TICKET NO: {getTicketNumber(selectedPreviewTicket)}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -2936,9 +2919,9 @@ export default function ClientMasterlist() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Control Number</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ticket Number</p>
                   <p className="text-xs font-mono font-bold mt-0.5" style={{ color: textPrimary }}>
-                    {selectedPreviewTicket.controlNumber || '—'}
+                    {getTicketNumber(selectedPreviewTicket)}
                   </p>
                 </div>
                 <div>
@@ -3134,7 +3117,7 @@ export default function ClientMasterlist() {
 
       {/* ── Right-click context menu ─────────────────────────────────── */}
       {contextMenu && (
-        <div className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
+        <div id="context-menu" className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
              onClick={e => e.stopPropagation()}>
           <div className="rounded-xl shadow-2xl overflow-hidden min-w-[160px]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
