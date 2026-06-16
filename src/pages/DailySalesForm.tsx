@@ -90,7 +90,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
 
   if (lower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || lower.startsWith('br-taguig') || lower.includes('taguig')) {
     return {
-      branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
+      branchId: 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
     }
