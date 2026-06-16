@@ -55,6 +55,8 @@ interface DrilldownItem {
   receiptStatus?: 'PENDING' | 'UPLOADED' | string
   company?: string
   units?: number
+  customer?: string
+  collectionResolved?: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -139,6 +141,16 @@ export default function DailyAuditReport() {
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [importing, setImporting] = useState(false)
+  const [collectionsSummary, setCollectionsSummary] = useState<{
+    id: string;
+    branchName: string;
+    installer: string;
+    customer: string;
+    amount: number;
+    collectionResolved: boolean;
+    reportDate?: string;
+  }[]>([])
+  const [collectionsLoading, setCollectionsLoading] = useState(false)
   const [viewMode, setViewMode]   = useState<'single' | 'range'>(() => {
     const stored = localStorage.getItem('perf-view-mode')
     return (stored === 'single' || stored === 'range') ? stored : 'single'
@@ -325,6 +337,64 @@ export default function DailyAuditReport() {
   }, [viewMode, date, rangeFrom, rangeTo])
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
+
+  useEffect(() => {
+    if (loading) return
+    const rowsWithCollection = rows.filter(r => r.forCollection > 0 && r.id)
+    if (rowsWithCollection.length === 0) {
+      setCollectionsSummary([])
+      return
+    }
+    
+    let isMounted = true
+    const fetchAllCollections = async () => {
+      setCollectionsLoading(true)
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const allPromises = rowsWithCollection.map(async (row) => {
+          try {
+            const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${row.id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (res.ok) {
+              const data = await res.json()
+              const items = data.items || []
+              return items
+                .filter((it: any) => it.type === 'COLLECTION')
+                .map((it: any) => ({
+                  id: it.id || Math.random().toString(),
+                  branchName: row.branchName,
+                  installer: it.description || '',
+                  customer: it.customer || '',
+                  amount: it.amount || 0,
+                  collectionResolved: !!it.collectionResolved,
+                  reportDate: data.reportDate,
+                }))
+            }
+          } catch (e) {
+            console.error('Error fetching collections for row:', row.branchName, e)
+          }
+          return []
+        })
+        
+        const results = await Promise.all(allPromises)
+        if (isMounted) {
+          setCollectionsSummary(results.flat())
+        }
+      } catch (err) {
+        console.error('Error fetching all collections:', err)
+      } finally {
+        if (isMounted) {
+          setCollectionsLoading(false)
+        }
+      }
+    }
+    
+    void fetchAllCollections()
+    return () => {
+      isMounted = false
+    }
+  }, [rows, loading])
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1318,6 +1388,71 @@ export default function DailyAuditReport() {
         </div>
       )}
 
+      {/* ── For Collection Detailed Summary Report ─────────────────── */}
+      {!loading && collectionsSummary.length > 0 && (
+        <div className="rounded-2xl overflow-hidden p-5 flex flex-col gap-4 print-area mt-4 animate-fadeIn"
+          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: border }}>
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-amber-500" />
+              <h3 className="font-black text-sm" style={{ color: textPrimary }}>
+                For Collection Detailed Summary Report
+              </h3>
+            </div>
+            <span className="text-xs font-black" style={{ color: '#F59E0B' }}>
+              Total: ₱{peso(collectionsSummary.reduce((acc, c) => acc + c.amount, 0))}
+            </span>
+          </div>
+
+          {collectionsLoading ? (
+            <div className="flex items-center justify-center py-6 gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-amber-500" />
+              <span className="text-xs font-medium" style={{ color: textMuted }}>Loading collection breakdown...</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider"
+                    style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
+                    <th className="px-4 py-2.5">Branch</th>
+                    {viewMode === 'range' && <th className="px-4 py-2.5">Date</th>}
+                    <th className="px-4 py-2.5">Installer/Negotiator</th>
+                    <th className="px-4 py-2.5">Customer</th>
+                    <th className="px-4 py-2.5 text-right">Amount</th>
+                    <th className="px-4 py-2.5 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {collectionsSummary.map((item, idx) => (
+                    <tr key={item.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors"
+                      style={{ borderBottom: idx < collectionsSummary.length - 1 ? `1px solid ${border}` : 'none' }}>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: textPrimary }}>{item.branchName}</td>
+                      {viewMode === 'range' && (
+                        <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>
+                          {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                        </td>
+                      )}
+                      <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.installer)}</td>
+                      <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.customer || '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-bold tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                          backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                          color: item.collectionResolved ? '#10B981' : '#F59E0B'
+                        }}>
+                          {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Printable footer */}
       <div className="hidden print:block text-center mt-6 pt-4 border-t text-[10px]" style={{ borderColor: border }}>
         <span>Printed on: {new Date().toLocaleString('en-PH')}</span>
@@ -1455,6 +1590,8 @@ export default function DailyAuditReport() {
                 const orderItems = items.filter(it => it.type === 'PURCHASE' && it.description?.startsWith('ORDER|'))
                 // Rebates
                 const rebateItems = items.filter(it => it.type === 'REBATE')
+                // Collections Breakdown
+                const forCollItems = items.filter(it => it.type === 'COLLECTION')
 
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
                   if (itemsList.length === 0) return null
@@ -1723,6 +1860,25 @@ export default function DailyAuditReport() {
                           { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                           { label: 'Unit', align: 'center', render: (item) => <span className="font-bold tabular-nums" style={{ color: textPrimary }}>{item.units || 1}</span> },
                           { label: 'Total', align: 'right', render: (item) => <span className="font-black tabular-nums text-emerald-600 dark:text-emerald-400">₱{peso(item.amount * (item.units || 1))}</span> }
+                        ])}
+
+                        {/* For Collection Breakdown */}
+                        {renderItemTable('For Collection Breakdown', forCollItems, [
+                          { label: 'Installer/Negotiator', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-amber-500">₱{peso(item.amount)}</span> },
+                          {
+                            label: 'Status',
+                            align: 'center',
+                            render: (item) => (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                color: item.collectionResolved ? '#10B981' : '#F59E0B'
+                              }}>
+                                {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
+                              </span>
+                            )
+                          }
                         ])}
                       </>
                     )}

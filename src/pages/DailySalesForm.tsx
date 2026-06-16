@@ -651,6 +651,7 @@ export default function DailySalesForm() {
       const expReceiptList: ExpenseRow[] = []
       const expPurchList: ExpenseRow[] = []
       const ordersList: OrderRow[] = []
+      const forCollList: ForCollRow[] = []
 
       if (data.items && Array.isArray(data.items)) {
         data.items.forEach((item: any) => {
@@ -725,7 +726,23 @@ export default function DailySalesForm() {
                 amount: amt
               })
             }
+          } else if (type === 'COLLECTION') {
+            forCollList.push({
+              id: uid(),
+              installer: desc ? formatDisplayUserLabel(desc) : '',
+              customer: item.customer || '',
+              amount: amt
+            })
           }
+        })
+      }
+
+      if (forCollList.length === 0 && data.forCollection != null && data.forCollection > 0) {
+        forCollList.push({
+          id: uid(),
+          installer: 'Scanned Collection',
+          customer: '',
+          amount: String(data.forCollection)
         })
       }
 
@@ -737,6 +754,7 @@ export default function DailySalesForm() {
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
       setExpPurch(expPurchList.length > 0 ? expPurchList : [mkExp()])
       setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
+      setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
 
     } catch (err) {
       console.error(err)
@@ -1182,6 +1200,9 @@ export default function DailySalesForm() {
           units: parseInt(r.units) || 1,
           amount: parseFloat(r.amount) || 0,
           description: `REBATE|${r.raNumber}|${r.hp}`
+        })),
+        ...forColl.filter(r => r.installer || r.amount).map(r => ({
+          type: 'COLLECTION', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
         })),
       ]
 
