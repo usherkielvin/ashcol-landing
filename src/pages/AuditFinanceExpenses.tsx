@@ -79,6 +79,7 @@ export default function AuditFinanceExpenses() {
     newExpense: AuditExpense;
   } | null>(null)
   const [detailRow, setDetailRow] = useState<AuditExpense | null>(null)
+  const [isEditingInModal, setIsEditingInModal] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
@@ -592,9 +593,18 @@ export default function AuditFinanceExpenses() {
       setSavingReceipt(false)
     }
     if (editing) {
-      // Updating an existing receipt — close the form
-      setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
-      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+      if (isEditingInModal) {
+        setIsEditingInModal(false)
+        setDetailRow(expense)
+        setEditing(null)
+        setForm(emptyForm(resolveFormBranchId(branchId)))
+        setDateRaw(formatTodayReceiptDate())
+        setDateError('')
+      } else {
+        // Updating an existing receipt — close the form
+        setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
+        setScanPreview(null); setScannedFields(new Set()); setScanError('')
+      }
     } else {
       // New receipt saved — keep form open, clear fields (including date) for next entry
       setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError('')
@@ -760,6 +770,16 @@ export default function AuditFinanceExpenses() {
     const resolvedBranchId = resolveFormBranchId(row.branchId)
     setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
     setShowForm(true)
+  }
+
+  const startEditInModal = (row: AuditExpense) => {
+    setEditing(row)
+    setDateRaw(row.date)
+    setDateError('')
+    setScanPreview(null)
+    const resolvedBranchId = resolveFormBranchId(row.branchId)
+    setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
+    setIsEditingInModal(true)
   }
 
   const openDetails = (row: AuditExpense, e?: React.MouseEvent) => {
@@ -1526,87 +1546,230 @@ export default function AuditFinanceExpenses() {
       </div>
 
       {detailRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm cursor-pointer"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', cursor: 'pointer', backdropFilter: 'blur(4px)' }}
-          onClick={() => setDetailRow(null)}>
-          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh] cursor-default"
-            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}`, cursor: 'default' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={() => { if (!isEditingInModal) setDetailRow(null) }}>
+          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh]"
+            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}` }}
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${neutralBorder}` }}>
               <div className="flex items-center gap-2">
                 <div>
-                  <h3 className="font-bold" style={{ color: textPrimary }}>Expense Record Details</h3>
+                  <h3 className="font-bold" style={{ color: textPrimary }}>
+                    {isEditingInModal ? 'Edit Expense Record' : 'Expense Record Details'}
+                  </h3>
                   <p className="text-xs" style={{ color: textMuted }}>{detailRow.branchName} - {detailRow.date}</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setDetailRow(null)} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }} aria-label="Close details modal">
+              <button type="button" onClick={() => { if (!isEditingInModal || window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setDetailRow(null) } }} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }} aria-label="Close details modal">
                 <X size={22} />
               </button>
             </div>
 
-            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-y-auto">
-              {[
-                ['Submitted by', formatDisplayUserLabel(detailRow.inputBy)],
-                ['Incurred by', detailRow.incurredBy || '-'],
-                ['Company', detailRow.company || '-'],
-                ['Receipt No.', detailRow.receiptNo || '-'],
-                ['Category', detailRow.expenseCategory || '-'],
-                ['Source', detailRow.sourceOfFunds || '-'],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>{label}</div>
-                  <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>{value}</div>
-                </div>
-              ))}
-              <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Description</div>
-                <div className="mt-1 font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '-'}</div>
-              </div>
-              <div className="sm:col-span-2 rounded-lg p-3 flex items-center justify-between" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Amount</span>
-                <span className="text-xl font-black" style={{ color: textPrimary }}>{peso(detailRow.amount)}</span>
-              </div>
-              <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>History</div>
-                <div className="mt-2 flex flex-col gap-2">
-                  {expenseRecordHistory(detailRow).map((entry, idx) => (
-                    <div key={`${entry.action}-${entry.at}-${idx}`} className="flex items-start gap-2 text-xs">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: neutralMuted }} />
-                      <span style={{ color: textPrimary }}>
-                        <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
-                        {' by '}
-                        <span className="font-semibold">{formatDisplayUserLabel(entry.by)}</span>
-                        {' at '}
-                        <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
-                      </span>
+            {isEditingInModal ? (
+              <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  {/* Date */}
+                  {field(
+                    'Date',
+                    <div>
+                      <input value={dateRaw}
+                        id="modal-receipt-date"
+                        onChange={(e) => { setDateRaw(e.target.value); setDateError('') }}
+                        onBlur={(e) => handleDateBlur(e.target.value)}
+                        placeholder={latestDateStr}
+                        className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all animate-fade-in"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      {dateError
+                        ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
+                        : form.date ? <p className="text-xs mt-0.5" style={{ color: accent }}>✓ {form.date}</p> : null}
                     </div>
-                  ))}
+                  )}
+
+                  {/* Incurred By */}
+                  {field(
+                    'Incurred By',
+                    <AutoSuggestInput value={form.incurredBy}
+                      id="modal-receipt-incurredBy"
+                      onChange={(v) => setForm((f) => ({ ...f, incurredBy: v }))}
+                      suggestions={suggestions.people} placeholder="Who incurred this?"
+                      {...{ inputBg, textPrimary, textMuted, accent }}
+                      inputClassName="text-base sm:text-xs"
+                      inputStyle={{ padding: '6px 10px' }}
+                      inputBorder={inputBorder} />
+                  )}
+
+                  {/* Company */}
+                  {field(
+                    'Company / Vendor',
+                    <AutoSuggestInput value={form.company}
+                      id="modal-receipt-company"
+                      onChange={(v) => setForm((f) => ({ ...f, company: v }))}
+                      suggestions={suggestions.companies} placeholder="Store or vendor name"
+                      {...{ inputBg, textPrimary, textMuted, accent }}
+                      inputClassName="text-base sm:text-xs"
+                      inputStyle={{ padding: '6px 10px' }}
+                      inputBorder={inputBorder} />
+                  )}
+
+                  {/* Receipt No */}
+                  {field(
+                    'Receipt No.',
+                    <input value={form.receiptNo}
+                      id="modal-receipt-receiptNo"
+                      onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
+                      placeholder="OR / SI number"
+                      className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  )}
+
+                  {/* Amount */}
+                  {field(
+                    'Amount (₱)',
+                    <input type="text" value={form.amount}
+                      id="modal-receipt-amount"
+                      onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                      onBlur={(e) => {
+                        const numeric = parseFloat(e.target.value.replace(/,/g, ''))
+                        if (!isNaN(numeric)) {
+                           setForm((f) => ({ ...f, amount: numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }))
+                        }
+                      }}
+                      placeholder="0.00"
+                      className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  )}
+
+                  {/* Source of Funds */}
+                  {field(
+                    'Source of Funds',
+                    <AutoSuggestInput value={form.sourceOfFunds}
+                      id="modal-receipt-sourceOfFunds"
+                      onChange={(v) => setForm((f) => ({ ...f, sourceOfFunds: v }))}
+                      suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
+                      {...{ inputBg, textPrimary, textMuted, accent }}
+                      inputClassName="text-base sm:text-xs"
+                      inputStyle={{ padding: '6px 10px' }}
+                      inputBorder={inputBorder} />
+                  )}
+
+                  {/* Description */}
+                  <div className="sm:col-span-2">
+                    {field(
+                      'Description',
+                      <AutoSuggestInput value={form.description}
+                        id="modal-receipt-description"
+                        onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+                        suggestions={suggestions.descs} placeholder="What was purchased?"
+                        {...{ inputBg, textPrimary, textMuted, accent }}
+                        inputClassName="text-base sm:text-xs"
+                        inputStyle={{ padding: '6px 10px' }}
+                        inputBorder={inputBorder} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Category Selection */}
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide block mb-2" style={{ color: textMuted }}>Expense Category</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allCategories.map((cat) => (
+                      <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:scale-102"
+                        style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-y-auto">
+                {[
+                  ['Submitted by', formatDisplayUserLabel(detailRow.inputBy)],
+                  ['Incurred by', detailRow.incurredBy || '-'],
+                  ['Company', detailRow.company || '-'],
+                  ['Receipt No.', detailRow.receiptNo || '-'],
+                  ['Category', detailRow.expenseCategory || '-'],
+                  ['Source', detailRow.sourceOfFunds || '-'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                    <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>{label}</div>
+                    <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>{value}</div>
+                  </div>
+                ))}
+                <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Description</div>
+                  <div className="mt-1 font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '-'}</div>
+                </div>
+                <div className="sm:col-span-2 rounded-lg p-3 flex items-center justify-between" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                  <span className="text-xs font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Amount</span>
+                  <span className="text-xl font-black" style={{ color: textPrimary }}>{peso(detailRow.amount)}</span>
+                </div>
+                <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>History</div>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {expenseRecordHistory(detailRow).map((entry, idx) => (
+                      <div key={`${entry.action}-${entry.at}-${idx}`} className="flex items-start gap-2 text-xs">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: neutralMuted }} />
+                        <span style={{ color: textPrimary }}>
+                          <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
+                          {' by '}
+                          <span className="font-semibold">{formatDisplayUserLabel(entry.by)}</span>
+                          {' at '}
+                          <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-2 px-5 py-4 shrink-0" style={{ borderTop: `1px solid ${neutralBorder}` }}>
-              <button type="button" onClick={() => setDetailRow(null)}
-                className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
-                style={{ 
-                  color: textPrimary, 
-                  borderColor: border, 
-                  backgroundColor: neutralSurface 
-                }}>
-                Close
-              </button>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => startEdit(detailRow)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-150 active:scale-95"
-                  style={{ backgroundColor: textPrimary, color: cardBg }}>
-                  <Pencil size={14} /> Edit
-                </button>
-                <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
-                  style={{ color: danger, border: `1px solid ${danger}` }}>
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
+              {isEditingInModal ? (
+                <>
+                  <button type="button" onClick={() => { if (window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setEditing(null) } }}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+                    style={{ 
+                      color: textPrimary, 
+                      borderColor: border, 
+                      backgroundColor: neutralSurface 
+                    }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={submitReceipt} disabled={savingReceipt}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-150 active:scale-95"
+                    style={{ backgroundColor: accent }}>
+                    {savingReceipt ? <Loader2 size={14} className="animate-spin" /> : null}
+                    Save Changes
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setDetailRow(null)}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+                    style={{ 
+                      color: textPrimary, 
+                      borderColor: border, 
+                      backgroundColor: neutralSurface 
+                    }}>
+                    Close
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => startEditInModal(detailRow)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-150 active:scale-95"
+                      style={{ backgroundColor: textPrimary, color: cardBg }}>
+                      <Pencil size={14} /> Edit
+                    </button>
+                    <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
+                      style={{ color: danger, border: `1px solid ${danger}` }}>
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
