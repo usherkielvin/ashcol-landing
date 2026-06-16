@@ -14,10 +14,10 @@ interface CashRetRow   { id: string; name: string; amount: string }
 interface OnlineTxRow  { id: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
-interface ForCollRow   { id: string; installer: string; customer: string; amount: string }
+interface ForCollRow   { id: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; company: string; raNumber: string; hp: string; amount: string; units: string; total: string }
-interface OrderRow     { id: string; customer: string; description: string; amount: string }
-interface ExpenseRow   { id: string; name: string; description: string; amount: string }
+interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
+interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,10 +114,10 @@ const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
 const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
-const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '' })
+const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
 const mkReb  = (): RebateRow   => ({ id: uid(), company: '', raNumber: '', hp: '', amount: '', units: '', total: '' })
-const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '' })
-const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '' })
+const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
+const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 
 const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
   const clean = branchName.toUpperCase()
@@ -716,7 +716,13 @@ export default function DailySalesForm() {
               id: uid(),
               name: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
               description: parts[1] || '',
-              amount: amt
+              amount: amt,
+              receiptReturned: item.receiptReturned || false,
+              actualAmount: item.actualAmount != null ? String(item.actualAmount) : '',
+              receiptNo: item.receiptNo || '',
+              receiptDate: item.receiptDate || '',
+              resolvedExpenseId: item.resolvedExpenseId || '',
+              receiptStatus: item.receiptStatus || ''
             })
           } else if (type === 'PURCHASE') {
             if (desc.startsWith('ORDER|')) {
@@ -725,7 +731,13 @@ export default function DailySalesForm() {
                 id: uid(),
                 customer: parts[1] || '',
                 description: parts[2] || '',
-                amount: amt
+                amount: amt,
+                receiptReturned: item.receiptReturned || false,
+                actualAmount: item.actualAmount != null ? String(item.actualAmount) : '',
+                receiptNo: item.receiptNo || '',
+                receiptDate: item.receiptDate || '',
+                resolvedExpenseId: item.resolvedExpenseId || '',
+                receiptStatus: item.receiptStatus || ''
               })
             } else {
               const parts = desc.split('|')
@@ -733,7 +745,13 @@ export default function DailySalesForm() {
                 id: uid(),
                 name: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
                 description: parts[1] || '',
-                amount: amt
+                amount: amt,
+                receiptReturned: item.receiptReturned || false,
+                actualAmount: item.actualAmount != null ? String(item.actualAmount) : '',
+                receiptNo: item.receiptNo || '',
+                receiptDate: item.receiptDate || '',
+                resolvedExpenseId: item.resolvedExpenseId || '',
+                receiptStatus: item.receiptStatus || ''
               })
             }
           } else if (type === 'COLLECTION') {
@@ -741,7 +759,8 @@ export default function DailySalesForm() {
               id: uid(),
               installer: desc ? formatDisplayUserLabel(desc) : '',
               customer: item.customer || '',
-              amount: amt
+              amount: amt,
+              collectionResolved: item.collectionResolved || false
             })
           }
         })
@@ -752,7 +771,8 @@ export default function DailySalesForm() {
           id: uid(),
           installer: 'Scanned Collection',
           customer: '',
-          amount: String(data.forCollection)
+          amount: String(data.forCollection),
+          collectionResolved: false
         })
       }
 
@@ -1198,13 +1218,34 @@ export default function DailySalesForm() {
           type: 'CASH_SALE', description: `PARTS|${r.customer}|${r.description}`, amount: parseFloat(r.salePrice) || 0
         })),
         ...expReceipt.filter(r => r.name || r.amount).map(r => ({
-          type: 'EXPENSE', description: `${r.name}|${r.description}`, amount: parseFloat(r.amount) || 0
+          type: 'EXPENSE',
+          description: `${r.name}|${r.description}`,
+          amount: parseFloat(r.amount) || 0,
+          receiptReturned: r.receiptReturned || false,
+          actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
+          receiptNo: r.receiptNo || null,
+          receiptDate: r.receiptDate || null,
+          resolvedExpenseId: r.resolvedExpenseId || null
         })),
         ...expPurch.filter(r => r.name || r.amount).map(r => ({
-          type: 'PURCHASE', description: `${r.name}|${r.description}`, amount: parseFloat(r.amount) || 0
+          type: 'PURCHASE',
+          description: `${r.name}|${r.description}`,
+          amount: parseFloat(r.amount) || 0,
+          receiptReturned: r.receiptReturned || false,
+          actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
+          receiptNo: r.receiptNo || null,
+          receiptDate: r.receiptDate || null,
+          resolvedExpenseId: r.resolvedExpenseId || null
         })),
         ...orders.filter(r => r.customer || r.amount).map(r => ({
-          type: 'PURCHASE', description: `ORDER|${r.customer}|${r.description}`, amount: parseFloat(r.amount) || 0
+          type: 'PURCHASE',
+          description: `ORDER|${r.customer}|${r.description}`,
+          amount: parseFloat(r.amount) || 0,
+          receiptReturned: r.receiptReturned || false,
+          actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
+          receiptNo: r.receiptNo || null,
+          receiptDate: r.receiptDate || null,
+          resolvedExpenseId: r.resolvedExpenseId || null
         })),
         ...rebates.filter(r => r.company || r.amount).map(r => ({
           type: 'REBATE',
@@ -1214,7 +1255,11 @@ export default function DailySalesForm() {
           description: `REBATE|${r.raNumber}|${r.hp}`
         })),
         ...forColl.filter(r => r.installer || r.amount).map(r => ({
-          type: 'COLLECTION', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
+          type: 'COLLECTION',
+          description: r.installer,
+          customer: r.customer,
+          amount: parseFloat(r.amount) || 0,
+          collectionResolved: r.collectionResolved || false
         })),
       ]
 
