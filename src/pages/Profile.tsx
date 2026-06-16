@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield,
-  KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff, Bell
+  KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import type { AddressValue } from '../components/PhAddressPicker'
@@ -321,8 +321,6 @@ export default function Profile() {
     { key: 'profile' as Tab, label: 'Profile', icon: User },
     ...(user?.role === 'admin' ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
-    ...(user?.role !== 'admin' ? [{ key: 'privacy' as Tab, label: 'Privacy Settings', icon: Eye }] : []),
-    { key: 'notifications' as Tab, label: 'Notifications', icon: Bell },
   ]
 
   return (

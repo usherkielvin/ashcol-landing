@@ -229,10 +229,10 @@ export default function DailySalesForm() {
 
   const canEditOrSubmit = useMemo(() => {
     if (!canSubmit) return false
-    if (!reportId) return true // Creating a new report
     if (isAdmin) return true   // Admin can edit any report
+    if (reportId) return false // Non-admins cannot edit existing reports
     
-    // For non-admin: they can edit only if they belong to this branch
+    // For non-admin: they can submit only if they belong to this branch
     if (!user?.branchId) return false
     const userBranchNorm = normalizeTransactionBranch(user.branchId, user.email)
     const reportBranchNorm = normalizeTransactionBranch(selectedBranchId, null)
