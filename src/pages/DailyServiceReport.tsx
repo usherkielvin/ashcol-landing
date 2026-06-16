@@ -1116,7 +1116,7 @@ export default function DailyServiceReport() {
     if (!confirmed) return
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ branchId: realBranchId, date })
+      const params = new URLSearchParams({ branchId: branchFilter, date })
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
