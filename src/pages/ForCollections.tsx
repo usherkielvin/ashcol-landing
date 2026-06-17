@@ -21,6 +21,11 @@ interface CollectionItem {
   receivedBy?: string
   trNo?: string
   auditLine?: string
+  collectionNotes?: string
+  collectionResolvedBy?: string
+  collectionResolvedAt?: string
+  collectionUpdatedBy?: string
+  collectionUpdatedAt?: string
 }
 
 const peso = (v: number | null | undefined) =>
@@ -77,6 +82,8 @@ export default function ForCollections() {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   
   const [confirmItem, setConfirmItem] = useState<CollectionItem | null>(null)
+  const [notesText, setNotesText] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
   
   // Details Modal state
   const [selectedRow, setSelectedRow] = useState<CollectionItem | null>(null)
@@ -167,10 +174,15 @@ export default function ForCollections() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${item.id}/resolve`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ notes: item.id === selectedRow?.id ? notesText : '' })
       })
       if (res.ok) {
         setConfirmItem(null)
+        setSelectedRow(null)
         fetchCollections()
       } else {
         alert('Failed to resolve collection item.')
@@ -179,6 +191,45 @@ export default function ForCollections() {
       alert('Error connecting to server.')
     } finally {
       setResolvingId(null)
+    }
+  }
+
+  const handleSaveNotes = async () => {
+    if (!selectedRow) return
+    setSavingNotes(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${selectedRow.id}/notes`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ notes: notesText })
+      })
+      if (res.ok) {
+        const updatedItems = items.map(it => {
+          if (it.id === selectedRow.id) {
+            const updated = {
+              ...it,
+              collectionNotes: notesText,
+              collectionUpdatedBy: user?.name || 'Staff',
+              collectionUpdatedAt: new Date().toISOString()
+            }
+            setSelectedRow(updated)
+            return updated
+          }
+          return it
+        })
+        setItems(updatedItems)
+        alert('Notes updated successfully.')
+      } else {
+        alert('Failed to update notes.')
+      }
+    } catch {
+      alert('Error connecting to server.')
+    } finally {
+      setSavingNotes(false)
     }
   }
 
@@ -326,6 +377,7 @@ export default function ForCollections() {
                   <th className="px-5 py-3.5">Assigned Tech / Installer</th>
                   <th className="px-5 py-3.5">Customer</th>
                   <th className="px-5 py-3.5 text-right">Amount</th>
+                  <th className="px-5 py-3.5">Notes</th>
                   <th className="px-5 py-3.5 text-center">Status</th>
                   <th className="px-5 py-3.5 text-center no-print">Action</th>
                 </tr>
@@ -351,6 +403,20 @@ export default function ForCollections() {
                       <td className="px-5 py-3.5 font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</td>
                       <td className="px-5 py-3.5" style={{ color: textPrimary }}>{item.customer || '—'}</td>
                       <td className="px-5 py-3.5 text-right font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</td>
+                      <td className="px-5 py-3.5 max-w-[200px] truncate" style={{ color: textMuted }} title={item.collectionNotes || ''}>
+                        {item.collectionNotes ? (
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-slate-800 dark:text-slate-200 font-medium line-clamp-1">{item.collectionNotes}</span>
+                            {(item.collectionUpdatedBy || item.collectionUpdatedAt) && (
+                              <span className="text-[9px] opacity-75">
+                                By {item.collectionUpdatedBy || '—'} ({item.collectionUpdatedAt ? new Date(item.collectionUpdatedAt).toLocaleDateString('en-PH', {month:'short', day:'numeric'}) : ''})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="italic opacity-50">No notes</span>
+                        )}
+                      </td>
                       <td className="px-5 py-3.5 text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
                           style={{ backgroundColor: statusBg, color: statusColor }}>
@@ -364,6 +430,7 @@ export default function ForCollections() {
                               type="button"
                               onClick={() => {
                                 setSelectedRow(item)
+                                setNotesText(item.collectionNotes || '')
                                 setRowExpenses(null)
                                 fetchRowExpenses(item.reportId!)
                               }}
@@ -603,6 +670,82 @@ export default function ForCollections() {
                               <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Collection Note & Status Updates */}
+                    <div className="px-6 py-5 border-b" style={{ borderColor: border }}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Collection Updates & Notes</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Audit Log / Status Column */}
+                        <div className="rounded-xl p-4 border text-left" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                          <h5 className="text-xs font-bold mb-3" style={{ color: textPrimary }}>Status & Audit Info</h5>
+                          <div className="flex flex-col gap-2 text-xs">
+                            <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
+                              <span style={{ color: textMuted }}>Current Status:</span>
+                              <span className="font-bold uppercase" style={{ color: selectedRow.collectionResolved ? '#10B981' : '#F59E0B' }}>
+                                {selectedRow.collectionResolved ? 'RESOLVED' : 'PENDING'}
+                              </span>
+                            </div>
+                            
+                            {selectedRow.collectionResolved && (
+                              <>
+                                <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
+                                  <span style={{ color: textMuted }}>Resolved By:</span>
+                                  <span className="font-bold" style={{ color: textPrimary }}>{selectedRow.collectionResolvedBy || '—'}</span>
+                                </div>
+                                <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
+                                  <span style={{ color: textMuted }}>Resolved At:</span>
+                                  <span className="font-mono text-[11px]" style={{ color: textPrimary }}>{formatDateTime(selectedRow.collectionResolvedAt)}</span>
+                                </div>
+                              </>
+                            )}
+
+                            <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
+                              <span style={{ color: textMuted }}>Last Updated By:</span>
+                              <span className="font-semibold" style={{ color: textPrimary }}>{selectedRow.collectionUpdatedBy || '—'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span style={{ color: textMuted }}>Last Updated At:</span>
+                              <span className="font-mono text-[11px]" style={{ color: textPrimary }}>{formatDateTime(selectedRow.collectionUpdatedAt)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interactive Note Field */}
+                        <div className="flex flex-col gap-2 text-left">
+                          <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Notes / Updates</label>
+                          <textarea
+                            rows={3}
+                            placeholder="Type updates or notes here..."
+                            className="w-full rounded-xl p-3 text-xs border focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all resize-none"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                            value={notesText}
+                            onChange={(e) => setNotesText(e.target.value)}
+                          />
+                          <div className="flex gap-2 justify-end mt-1">
+                            <button
+                              type="button"
+                              disabled={savingNotes}
+                              onClick={handleSaveNotes}
+                              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-slate-500 hover:bg-slate-600 transition-all flex items-center gap-1.5 disabled:opacity-50 border-none"
+                            >
+                              {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Update Notes'}
+                            </button>
+                            {!selectedRow.collectionResolved && canResolve && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConfirmItem(selectedRow)
+                                }}
+                                className="px-5 py-2 rounded-xl text-xs font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center gap-1.5 border-none"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Resolve Collection
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
