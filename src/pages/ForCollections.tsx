@@ -668,13 +668,12 @@ export default function ForCollections() {
               <thead>
                 <tr style={{ borderBottom: `2px solid ${border}`, color: textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
                   <th className="px-3 py-3 text-center" style={{ width: 36 }}>#</th>
-                  <th className="px-3 py-3" style={{ width: 100 }}>TR No.</th>
-                  <th className="px-3 py-3" style={{ width: 110 }}>Date</th>
+                  <th className="px-3 py-3" style={{ width: 130 }}>TR No. / Date</th>
+                  <th className="px-3 py-3">Submitted By</th>
                   <th className="px-3 py-3">Branch</th>
                   <th className="px-3 py-3">Customer</th>
                   <th className="px-3 py-3">Installer / Tech</th>
                   <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
-                  <th className="px-3 py-3">Submitted By</th>
                   <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>
                   <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>
                   <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
@@ -696,18 +695,25 @@ export default function ForCollections() {
                       {/* # */}
                       <td className="px-3 py-3 text-center" style={{ color: textMuted, fontSize: '11px' }}>{idx + 1}</td>
 
-                      {/* TR No. */}
+                      {/* TR No. / Date */}
                       <td className="px-3 py-3">
-                        <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600 }}>
-                          {item.trNo || <span style={{ color: textMuted }}>—</span>}
-                        </span>
+                        <div className="flex flex-col">
+                          <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600 }}>
+                            {item.trNo || <span style={{ color: textMuted }}>—</span>}
+                          </span>
+                          {item.reportDate ? (
+                            <span style={{ color: textMuted, fontSize: '10px', marginTop: '2px' }}>
+                              {new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          ) : (
+                            <span style={{ color: textMuted, fontSize: '10px', marginTop: '2px' }}>—</span>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Date */}
-                      <td className="px-3 py-3" style={{ whiteSpace: 'nowrap', color: textMuted, fontSize: '11px' }}>
-                        {item.reportDate
-                          ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-                          : '—'}
+                      {/* Submitted By */}
+                      <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px' }}>
+                        {formatDisplayUserLabel(item.receivedBy) || '—'}
                       </td>
 
                       {/* Branch */}
@@ -730,11 +736,6 @@ export default function ForCollections() {
                       {/* Amount */}
                       <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 700, color: '#D97706', fontSize: '13px', whiteSpace: 'nowrap' }}>
                         ₱{peso(item.amount)}
-                      </td>
-
-                      {/* Submitted By */}
-                      <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px' }}>
-                        {formatDisplayUserLabel(item.receivedBy) || '—'}
                       </td>
 
                       {/* Notes */}
