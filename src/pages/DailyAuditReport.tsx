@@ -10,7 +10,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -887,7 +887,7 @@ export default function DailyAuditReport() {
               {aboveQuotaBranches.map((branch) => (
                 <div key={branch.branchName} className="flex items-center gap-2 px-3 py-1 rounded-full border text-xs"
                   style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <span className="font-bold" style={{ color: textPrimary }}>{branch.branchName}</span>
+                  <span className="font-bold" style={{ color: textPrimary }}>{formatBranchName(branch.branchName)}</span>
                   <span className="font-extrabold text-[11px]" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</span>
                 </div>
               ))}
@@ -1045,7 +1045,7 @@ export default function DailyAuditReport() {
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
                               <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
-                              <span className="font-bold" style={{ fontSize: compactView ? 10 : 12 }}>{row.branchName}</span>
+                              <span className="font-bold" style={{ fontSize: compactView ? 10 : 12 }}>{formatBranchName(row.branchName)}</span>
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5" style={{ fontSize: compactView ? '8px' : '10px' }}>
                               <span style={{
@@ -1316,7 +1316,7 @@ export default function DailyAuditReport() {
                     <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{row.branchName}</span>
+                        <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{formatBranchName(row.branchName)}</span>
                         <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
                       </div>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -1436,7 +1436,7 @@ export default function DailyAuditReport() {
                   {collectionsSummary.map((item, idx) => (
                     <tr key={item.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors"
                       style={{ borderBottom: idx < collectionsSummary.length - 1 ? `1px solid ${border}` : 'none' }}>
-                      <td className="px-4 py-2.5 font-semibold" style={{ color: textPrimary }}>{item.branchName}</td>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: textPrimary }}>{formatBranchName(item.branchName)}</td>
                       {viewMode === 'range' && (
                         <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>
                           {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
@@ -1553,7 +1553,7 @@ export default function DailyAuditReport() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="flex items-start justify-between w-full sm:w-auto">
                 <div>
-                  <h4 className="font-black text-base" style={{ color: textPrimary }}>{selectedRow.branchName}</h4>
+                  <h4 className="font-black text-base" style={{ color: textPrimary }}>{formatBranchName(selectedRow.branchName)}</h4>
                   <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
                     {viewMode === 'single'
                       ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })

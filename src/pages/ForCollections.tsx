@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
 
 interface CollectionItem {
   id: string
@@ -531,7 +531,7 @@ export default function ForCollections() {
             >
               <option value="">All Branches</option>
               {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
+                <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>
               ))}
             </select>
           </div>
@@ -712,7 +712,9 @@ export default function ForCollections() {
 
                       {/* Branch */}
                       <td className="px-3 py-3" style={{ whiteSpace: 'nowrap' }}>
-                        {item.branchName || <span style={{ color: textMuted }}>—</span>}
+                        {item.branchName
+                          ? formatBranchName(item.branchName)
+                          : <span style={{ color: textMuted }}>—</span>}
                       </td>
 
                       {/* Customer */}

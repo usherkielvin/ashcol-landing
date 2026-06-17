@@ -29,6 +29,26 @@ export function formatDisplayUserLabel(label?: string | null): string {
     .replace(/\s*-\s*manager$/i, ' - OIC')
 }
 
+/** Simplifies and formats branch names for display */
+export function formatBranchName(name?: string | null): string {
+  if (!name) return ''
+  const upper = name.trim().toUpperCase()
+  if (upper.includes('TAGUIG') && (upper.includes('SERVICE') || upper.includes('SERVICES') || upper.includes('DEPT'))) {
+    return 'TAGUIG - SERVICES'
+  }
+  if (upper.includes('TAGUIG') || upper.includes('HEAD OFFICE')) {
+    return 'TAGUIG - SALES'
+  }
+  if (upper.includes('SILANG') || upper.includes('STA ROSA') || upper.includes('STA. ROSA') || upper.includes('STO ROSA') || upper.includes('STO. ROSA')) {
+    return 'SILANG'
+  }
+  if (upper.includes('DASMA') || upper.includes('DASMARIÑAS') || upper.includes('DASMARINAS')) {
+    return 'DASMA'
+  }
+  // Strip "ASHCOL" prefix (with optional dash/hyphen and space) from all other branches
+  return upper.replace(/^ASHCOL\s*-?\s*/i, '').trim()
+}
+
 type PortalUserLike = {
   role?: string | null
   branchId?: string | null
