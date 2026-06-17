@@ -46,6 +46,10 @@ interface ServiceRow {
   fifteenQuestions: string | null
   freeInstallation: boolean | null
   complainRequest: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  inputBy?: string | null
+  updatedBy?: string | null
 }
 
 const COL_FIELD: Record<string, keyof ServiceRow> = {
@@ -80,6 +84,17 @@ const peso = (v: number | null | undefined) =>
 const todayLocal = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const formatDateTime = (isoStr: string | null | undefined) => {
+  if (!isoStr) return '—'
+  try {
+    const d = new Date(isoStr)
+    if (isNaN(d.getTime())) return isoStr
+    return d.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+  } catch {
+    return isoStr
+  }
 }
 
 const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
@@ -463,6 +478,10 @@ export default function DailyServiceReport() {
       { label: 'UPDATE', defaultW: 150, expW: 350, sticky: false, freeze: false, right: false },
       { label: 'INSTALLATION CHARGES', defaultW: 110, expW: 180, sticky: false, freeze: false, right: true },
       { label: 'MODE OF PAYMENT', defaultW: 100, expW: 160, sticky: false, freeze: false, right: false },
+      { label: 'SUBMITTED BY', defaultW: 130, expW: 220, sticky: false, freeze: false, right: false },
+      { label: 'DATE SUBMITTED', defaultW: 140, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'UPDATED BY', defaultW: 130, expW: 220, sticky: false, freeze: false, right: false },
+      { label: 'DATE UPDATED', defaultW: 140, expW: 200, sticky: false, freeze: false, right: false },
     ]
 
     let accumulatedLeft = 0
@@ -649,7 +668,12 @@ export default function DailyServiceReport() {
     if (editingCell && inputRef.current) {
       inputRef.current.focus()
       if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
-        inputRef.current.select()
+        try {
+          const length = inputRef.current.value.length
+          inputRef.current.setSelectionRange(length, length)
+        } catch (e) {
+          // Fallback if setSelectionRange is not supported on this input type (e.g., number)
+        }
       }
     }
   }, [editingCell])
@@ -671,6 +695,10 @@ export default function DailyServiceReport() {
       case 'UPDATE':          return row.remarks || ''
       case 'INSTALLATION CHARGES': return row.amountCharged != null ? String(row.amountCharged) : ''
       case 'MODE OF PAYMENT':      return row.paymentStatus || ''
+      case 'SUBMITTED BY':         return row.inputBy || ''
+      case 'DATE SUBMITTED':       return formatDateTime(row.createdAt)
+      case 'UPDATED BY':           return row.updatedBy || ''
+      case 'DATE UPDATED':         return formatDateTime(row.updatedAt)
       default: return ''
     }
   }
@@ -2342,6 +2370,41 @@ export default function DailyServiceReport() {
                   </Field>
                 </div>
               </div>
+
+              {/* Audit Tracking Section */}
+              {(detailForm.inputBy || detailForm.createdAt || detailForm.updatedBy || detailForm.updatedAt) && (
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                    Audit Tracking
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {detailForm.inputBy && (
+                      <Field label="Who Input / Submitted">
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.inputBy}</span>
+                      </Field>
+                    )}
+                    {detailForm.createdAt && (
+                      <Field label="Date Submitted">
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                          {formatDateTime(detailForm.createdAt)}
+                        </span>
+                      </Field>
+                    )}
+                    {detailForm.updatedBy && (
+                      <Field label="Who Last Updated">
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.updatedBy}</span>
+                      </Field>
+                    )}
+                    {detailForm.updatedAt && (
+                      <Field label="Date Last Updated">
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                          {formatDateTime(detailForm.updatedAt)}
+                        </span>
+                      </Field>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>

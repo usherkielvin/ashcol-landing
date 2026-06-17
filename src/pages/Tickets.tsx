@@ -1031,7 +1031,12 @@ export default function Tickets() {
     if (editingCell && inputRef.current) {
       inputRef.current.focus()
       if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
-        inputRef.current.select()
+        try {
+          const length = inputRef.current.value.length
+          inputRef.current.setSelectionRange(length, length)
+        } catch (e) {
+          // Fallback if setSelectionRange is not supported on this input type (e.g., number)
+        }
       }
     }
   }, [editingCell])
