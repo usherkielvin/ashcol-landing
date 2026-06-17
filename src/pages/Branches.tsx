@@ -556,12 +556,12 @@ export default function Branches() {
         const isTaguigSalesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT' || (cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'))
         const isTaguigServicesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
         if (isTaguigSalesExplicit) {
-          merged.push(processBranch(api, undefined, 'TAGUIG SALES'))
+          merged.push(processBranch(api, undefined, 'TAGUIG - SALES'))
         } else if (isTaguigServicesExplicit) {
-          merged.push(processBranch(api, undefined, 'TAGUIG SERVICES'))
+          merged.push(processBranch(api, undefined, 'TAGUIG - SERVICES'))
         } else if (isTaguig) {
-          if (!hasExplicitTaguigSales) merged.push(processBranch(api, 'sales', 'TAGUIG SALES'))
-          if (!hasExplicitTaguigServices) merged.push(processBranch(api, 'services', 'TAGUIG SERVICES'))
+          if (!hasExplicitTaguigSales) merged.push(processBranch(api, 'sales', 'TAGUIG - SALES'))
+          if (!hasExplicitTaguigServices) merged.push(processBranch(api, 'services', 'TAGUIG - SERVICES'))
         } else {
           merged.push(processBranch(api))
         }

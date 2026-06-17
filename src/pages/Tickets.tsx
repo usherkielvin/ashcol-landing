@@ -233,10 +233,10 @@ function getBranchDisplayName(id: string | null): string {
   if (!id || id === 'ALL_BRANCHES') return 'All branches'
   const upper = id.toUpperCase()
   if (upper === 'BR-TAGUIG-SALES-SALES' || upper === 'BR-TAGUIG-SALES') {
-    return 'TAGUIG SALES'
+    return 'TAGUIG - SALES'
   }
   if (upper === 'BR-TAGUIG-SALES-SERVICES' || upper === 'BR-TAGUIG-SERVICES' || upper === 'BR-TAGUIG-SERVICE') {
-    return 'TAGUIG SERVICES'
+    return 'TAGUIG - SERVICES'
   }
   return id.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').replace(/-/g, ' ').toUpperCase()
 }

@@ -240,7 +240,7 @@ export default function AuditFinanceExpenses() {
         if (baseSel.includes('taguig')) {
           if (eBidLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-sales' || eBidLower === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') return true
           const nameUpper = (e.branchName || '').toUpperCase()
-          if ((nameUpper === 'ASHCOL TAGUIG' || nameUpper === 'TAGUIG' || nameUpper.includes('TAGUIG SALES')) && !isExpenseService) return true
+          if ((nameUpper === 'ASHCOL TAGUIG' || nameUpper === 'TAGUIG' || nameUpper.includes('TAGUIG SALES') || nameUpper.includes('TAGUIG - SALES')) && !isExpenseService) return true
         }
       }
       
@@ -339,13 +339,13 @@ export default function AuditFinanceExpenses() {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         const cleanNameUpper = cleanName.toUpperCase()
         if (cleanNameUpper === 'TAGUIG' || cleanNameUpper === 'ASHCOL TAGUIG') {
-          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
-          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'Taguig - Services' })
+          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
+          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
         } else if (cleanNameUpper.includes('TAGUIG')) {
           const isServ = cleanNameUpper.includes('SERVICE')
           newList.push({
             id: isServ ? `${b.id}-services` : `${b.id}-sales`,
-            name: isServ ? 'Taguig - Services' : 'TAGUIG SALES'
+            name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
           })
         } else {
           newList.push({ id: b.id, name: cleanName })

@@ -149,6 +149,9 @@ export default function DailyAuditReport() {
     amount: number;
     collectionResolved: boolean;
     reportDate?: string;
+    receivedBy?: string;
+    trNo?: string;
+    auditRow?: AuditRow;
   }[]>([])
   const [collectionsLoading, setCollectionsLoading] = useState(false)
   const [viewMode, setViewMode]   = useState<'single' | 'range'>(() => {
@@ -369,6 +372,9 @@ export default function DailyAuditReport() {
                   amount: it.amount || 0,
                   collectionResolved: !!it.collectionResolved,
                   reportDate: data.reportDate,
+                  receivedBy: data.receivedBy || '—',
+                  trNo: data.trNo || '—',
+                  auditRow: row,
                 }))
             }
           } catch (e) {
@@ -1417,10 +1423,13 @@ export default function DailyAuditReport() {
                     style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
                     <th className="px-4 py-2.5">Branch</th>
                     {viewMode === 'range' && <th className="px-4 py-2.5">Date</th>}
-                    <th className="px-4 py-2.5">Installer/Negotiator</th>
+                    <th className="px-4 py-2.5">TR No.</th>
+                    <th className="px-4 py-2.5">Submitted By</th>
+                    <th className="px-4 py-2.5">Assigned Tech / Installer</th>
                     <th className="px-4 py-2.5">Customer</th>
                     <th className="px-4 py-2.5 text-right">Amount</th>
                     <th className="px-4 py-2.5 text-center">Status</th>
+                    <th className="px-4 py-2.5 text-right no-print">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1433,6 +1442,8 @@ export default function DailyAuditReport() {
                           {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                         </td>
                       )}
+                      <td className="px-4 py-2.5 font-mono text-[11px]" style={{ color: textPrimary }}>{item.trNo || '—'}</td>
+                      <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>{formatDisplayUserLabel(item.receivedBy)}</td>
                       <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.installer)}</td>
                       <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.customer || '—'}</td>
                       <td className="px-4 py-2.5 text-right font-bold tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</td>
@@ -1443,6 +1454,21 @@ export default function DailyAuditReport() {
                         }}>
                           {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
                         </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right no-print">
+                        {item.auditRow && (
+                          <button type="button"
+                            onClick={() => {
+                              setSelectedRow(item.auditRow!)
+                              setRowExpenses(null)
+                              fetchRowExpenses(item.auditRow!)
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                            style={{ borderColor: inputBorder, color: textMuted }}
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Details
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1593,6 +1619,7 @@ export default function DailyAuditReport() {
                 const forCollItems = items.filter(it => it.type === 'COLLECTION')
 
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
+                  if (itemsList.length === 0) return null
                   const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
                   const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
                   

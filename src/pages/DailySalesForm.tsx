@@ -93,7 +93,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
     return {
       branchId: baseId || 'BR-TAGUIG',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
-      branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
+      branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
     }
   }
 
@@ -302,13 +302,13 @@ export default function DailySalesForm() {
           for (const b of list) {
             const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
             if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG SALES', auditLine: 'TAGUIG_SALES' })
-              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG SERVICES', auditLine: 'TAGUIG_SERVICE' })
+              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES', auditLine: 'TAGUIG_SALES' })
+              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG - SERVICES', auditLine: 'TAGUIG_SERVICE' })
             } else if (cleanName.includes('TAGUIG')) {
               const isServ = cleanName.includes('SERVICE')
               newList.push({
                 id: b.id,
-                name: isServ ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
+                name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
                 auditLine: isServ ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES'
               })
             } else {
@@ -361,11 +361,11 @@ export default function DailySalesForm() {
       if (gId === 'BR-TAGUIG-SALES-sales') {
         setSelectedBranchId('BR-TAGUIG-SALES')
         setSelectedAuditLine('TAGUIG_SALES')
-        setBranch('TAGUIG SALES')
+        setBranch('TAGUIG - SALES')
       } else if (gId === 'BR-TAGUIG-SALES-services') {
         setSelectedBranchId('BR-TAGUIG-SALES')
         setSelectedAuditLine('TAGUIG_SERVICE')
-        setBranch('TAGUIG SERVICES')
+        setBranch('TAGUIG - SERVICES')
       } else {
         setSelectedBranchId(gId)
         setSelectedAuditLine(null)
@@ -453,7 +453,7 @@ export default function DailySalesForm() {
             if (data?.data?.name) {
               const cleanName = data.data.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
               if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-                setBranch(selectedAuditLine === 'TAGUIG_SERVICE' ? 'TAGUIG SERVICES' : 'TAGUIG SALES')
+                setBranch(selectedAuditLine === 'TAGUIG_SERVICE' ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES')
               } else {
                 setBranch(cleanName)
               }

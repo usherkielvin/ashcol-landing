@@ -510,7 +510,7 @@ const branchThemes: Record<string, { name: string; accent: string; accentDark: s
 
 
 
-  "TAGUIG SALES": {
+  "TAGUIG - SALES": {
 
 
 
@@ -702,7 +702,7 @@ const branchThemes: Record<string, { name: string; accent: string; accentDark: s
 
 
 
-  "TAGUIG SERVICES": {
+  "TAGUIG - SERVICES": {
 
 
 
@@ -2462,7 +2462,7 @@ const getBranchThemeKey = (name: string): string => {
 
 
 
-  return 'TAGUIG SALES' // fallback
+  return 'TAGUIG - SALES' // fallback
 
 
 
@@ -8271,7 +8271,7 @@ export default function LineUp() {
 
 
 
-  const currentTheme = branchThemes[currentThemeKey] || branchThemes["TAGUIG SALES"]
+  const currentTheme = branchThemes[currentThemeKey] || branchThemes["TAGUIG - SALES"]
 
 
 
@@ -15151,7 +15151,7 @@ export default function LineUp() {
 
 
 
-          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
+          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
 
 
 
@@ -15183,7 +15183,7 @@ export default function LineUp() {
 
 
 
-          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
+          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
 
 
 

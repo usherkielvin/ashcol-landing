@@ -14,6 +14,7 @@ import * as XLSX from 'xlsx'
 interface Ticket {
   id: string
   customerId: string
+  createdBy?: string
   customerName?: string
   customerEmail?: string
   customerPersonalEmail?: string
@@ -1376,6 +1377,10 @@ export default function ClientMasterlist() {
     if (str === 'Installation' || str === 'Installation service' || str === 'Voucher scanned via Gemini AI.') return false
     return true
   }
+
+  const previewDetails = selectedPreviewTicket
+    ? parseAcDetails(selectedPreviewTicket)
+    : { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
 
   return (
     <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
@@ -2937,7 +2942,7 @@ export default function ClientMasterlist() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
                 
                 {/* Column 1: Client details */}
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 p-4 rounded-xl transition-all" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.015)', border: `1px solid ${border}` }}>
                   <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Client Details</h4>
                   
                   <div>
@@ -2965,49 +2970,32 @@ export default function ClientMasterlist() {
                     <div>
                       <label className="text-[10px] text-slate-400 font-semibold block">Landmark / Subd</label>
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        {(() => {
-                          try {
-                            return selectedPreviewTicket.acDetails ? JSON.parse(selectedPreviewTicket.acDetails)?.landmarks || '—' : '—'
-                          } catch (e) { return '—' }
-                        })()}
+                        {previewDetails.landmarks || '—'}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Column 2: Equipment & Sched details */}
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 p-4 rounded-xl transition-all" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.015)', border: `1px solid ${border}` }}>
                   <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Unit & Scheduling Details</h4>
 
                   <div>
                     <label className="text-[10px] text-slate-400 font-semibold block">Unit / Brand Details</label>
                     <span className="text-xs font-bold block" style={{ color: textPrimary }}>
                       {(() => {
-                        let parsed: any = null
-                        if (selectedPreviewTicket.acDetails) {
-                          try { parsed = JSON.parse(selectedPreviewTicket.acDetails) } catch (e) {}
-                        }
-                        const b = parsed?.brand || ''
-                        const cap = parsed?.capacity || ''
+                        const b = previewDetails.brand || ''
+                        const cap = previewDetails.capacity || ''
                         if (b || cap) return `${b} ${cap}`.trim()
                         return selectedPreviewTicket.unitType || 'Split AC'
                       })()}
                     </span>
-                    {(() => {
-                      let parsed: any = null
-                      if (selectedPreviewTicket.acDetails) {
-                        try { parsed = JSON.parse(selectedPreviewTicket.acDetails) } catch (e) {}
-                      }
-                      if (parsed?.sku || parsed?.serialNumber) {
-                        return (
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {parsed.sku && <div>SKU: {parsed.sku}</div>}
-                            {parsed.serialNumber && <div>Serial: {parsed.serialNumber}</div>}
-                          </div>
-                        )
-                      }
-                      return null
-                    })()}
+                    {(previewDetails.sku || previewDetails.serialNumber) && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {previewDetails.sku && <div>SKU: {previewDetails.sku}</div>}
+                        {previewDetails.serialNumber && <div>Serial: {previewDetails.serialNumber}</div>}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -3023,27 +3011,51 @@ export default function ClientMasterlist() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed Date</label>
-                      <span className="text-xs font-medium" style={{ color: textPrimary }}>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed Date & Time</label>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
                         {(() => {
                           try {
                             const d = selectedPreviewTicket.createdAt ? new Date(selectedPreviewTicket.createdAt) : null
-                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '—'
+                            return d && !isNaN(d.getTime())
+                              ? d.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+                              : '—'
                           } catch (e) { return '—' }
                         })()}
                       </span>
                     </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed By</label>
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400" style={{ color: textPrimary }}>
+                        {selectedPreviewTicket.createdBy || selectedPreviewTicket.customerEmail || 'System'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] text-slate-400 font-semibold block">Preferred Sched</label>
                       <span className="text-xs font-medium" style={{ color: textPrimary }}>
                         {(() => {
                           try {
                             const d = selectedPreviewTicket.preferredDate ? new Date(selectedPreviewTicket.preferredDate) : null
-                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '—'
+                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—'
                           } catch (e) { return '—' }
                         })()}
                       </span>
                     </div>
+                    {previewDetails.finalDate && (
+                      <div>
+                        <label className="text-[10px] text-slate-400 font-semibold block">Final Sched</label>
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          {(() => {
+                            try {
+                              const d = new Date(previewDetails.finalDate)
+                              return d && !isNaN(d.getTime()) ? d.toLocaleDateString('en-PH', { dateStyle: 'medium' }) : previewDetails.finalDate
+                            } catch (e) { return previewDetails.finalDate }
+                          })()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

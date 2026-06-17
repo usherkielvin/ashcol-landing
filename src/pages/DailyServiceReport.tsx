@@ -537,8 +537,8 @@ export default function DailyServiceReport() {
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
-          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG SALES' })
-          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG SERVICES' })
+          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
+          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
         } else {
           newList.push({ id: b.id, name: cleanName })
         }

@@ -20,11 +20,18 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
   const id = (branchId || '').toUpperCase()
   const name = (branchName || '').trim()
 
-  if (id === 'BR-TAGUIG-SALES') return 'ASHCOL TAGUIG SALES'
-  if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE') return 'ASHCOL TAGUIG SERVICES'
-  if (id.endsWith('-SALES')) return `${name || 'ASHCOL TAGUIG'} SALES`.replace(/\s+SALES\s+SALES$/i, ' SALES')
-  if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return `${name || 'ASHCOL TAGUIG'} SERVICES`.replace(/\s+SERVICES\s+SERVICES$/i, ' SERVICES')
-  if (name) return name
+  if (id === 'BR-TAGUIG-SALES') return 'TAGUIG - SALES'
+  if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE') return 'TAGUIG - SERVICES'
+  if (id.endsWith('-SALES')) return 'TAGUIG - SALES'
+  if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return 'TAGUIG - SERVICES'
+  if (name) {
+    const clean = name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+    if (clean === 'TAGUIG' || clean === 'ASHCOL TAGUIG') {
+      if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return 'TAGUIG - SERVICES'
+      return 'TAGUIG - SALES'
+    }
+    return name
+  }
   return branchId || null
 }
 
