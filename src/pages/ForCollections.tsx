@@ -673,8 +673,8 @@ export default function ForCollections() {
                   <th className="px-3 py-3">Branch</th>
                   <th className="px-3 py-3">Customer</th>
                   <th className="px-3 py-3">Installer / Tech</th>
-                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
                   <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>
+                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
                   <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>
                   <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
                 </tr>
@@ -733,11 +733,6 @@ export default function ForCollections() {
                         {formatDisplayUserLabel(item.description) || <span style={{ color: textMuted }}>—</span>}
                       </td>
 
-                      {/* Amount */}
-                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 700, color: '#D97706', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                        ₱{peso(item.amount)}
-                      </td>
-
                       {/* Notes */}
                       <td className="px-3 py-3" style={{ maxWidth: 200 }}>
                         <InlineNotesCell
@@ -764,6 +759,11 @@ export default function ForCollections() {
                             }
                           }}
                         />
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 700, color: '#D97706', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        ₱{peso(item.amount)}
                       </td>
 
                       {/* Status */}
