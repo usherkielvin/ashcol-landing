@@ -68,15 +68,12 @@ interface InlineNotesCellProps {
   textPrimary: string
   textMuted: string
   inputBg: string
-  inputBorder: string
-  border: string
-  isLight: boolean
   onSave: (itemId: string, note: string) => Promise<void>
 }
 
 function InlineNotesCell({
   itemId, note, updatedBy, updatedAt,
-  textPrimary, textMuted, inputBg, inputBorder, border, isLight, onSave
+  textPrimary, textMuted, inputBg, onSave
 }: InlineNotesCellProps) {
   const [editing, setEditing]       = useState(false)
   const [expanded, setExpanded]     = useState(false)
@@ -669,36 +666,77 @@ export default function ForCollections() {
           <div className="overflow-x-auto" style={{ animation: 'fadeInTable 0.18s ease-out' }}>
             <table className="w-full text-left border-collapse" style={{ fontSize: '12px', color: textPrimary }}>
               <thead>
-                <tr style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  <th className="px-4 py-3">Date Submitted</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">TR No.</th>
-                  <th className="px-4 py-3">Submitted By</th>
-                  <th className="px-4 py-3">Installer / Tech</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3">Notes</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center no-print">Action</th>
+                <tr style={{ borderBottom: `2px solid ${border}`, color: textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                  <th className="px-3 py-3 text-center" style={{ width: 36 }}>#</th>
+                  <th className="px-3 py-3" style={{ width: 100 }}>TR No.</th>
+                  <th className="px-3 py-3" style={{ width: 110 }}>Date</th>
+                  <th className="px-3 py-3">Branch</th>
+                  <th className="px-3 py-3">Customer</th>
+                  <th className="px-3 py-3">Installer / Tech</th>
+                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
+                  <th className="px-3 py-3">Submitted By</th>
+                  <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>
+                  <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>
+                  <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredItems.map((item, idx) => {
                   const resolved = item.collectionResolved
-                  
+
                   return (
                     <tr
                       key={item.id}
-                      style={{ borderBottom: idx < filteredItems.length - 1 ? `1px solid ${border}` : 'none', color: textPrimary }}
+                      style={{
+                        borderBottom: idx < filteredItems.length - 1 ? `1px solid ${border}` : 'none',
+                        color: textPrimary,
+                        backgroundColor: resolved ? (isLight ? 'rgba(16,185,129,0.03)' : 'rgba(16,185,129,0.04)') : 'transparent'
+                      }}
                     >
-                      <td className="px-4 py-3">{item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
-                      <td className="px-4 py-3">{item.branchName || '—'}</td>
-                      <td className="px-4 py-3">{item.trNo || '—'}</td>
-                      <td className="px-4 py-3">{formatDisplayUserLabel(item.receivedBy)}</td>
-                      <td className="px-4 py-3">{formatDisplayUserLabel(item.description)}</td>
-                      <td className="px-4 py-3">{item.customer || '—'}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">₱{peso(item.amount)}</td>
-                      <td className="px-4 py-3" style={{ maxWidth: 220 }}>
+                      {/* # */}
+                      <td className="px-3 py-3 text-center" style={{ color: textMuted, fontSize: '11px' }}>{idx + 1}</td>
+
+                      {/* TR No. */}
+                      <td className="px-3 py-3">
+                        <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600 }}>
+                          {item.trNo || <span style={{ color: textMuted }}>—</span>}
+                        </span>
+                      </td>
+
+                      {/* Date */}
+                      <td className="px-3 py-3" style={{ whiteSpace: 'nowrap', color: textMuted, fontSize: '11px' }}>
+                        {item.reportDate
+                          ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : '—'}
+                      </td>
+
+                      {/* Branch */}
+                      <td className="px-3 py-3" style={{ whiteSpace: 'nowrap' }}>
+                        {item.branchName || <span style={{ color: textMuted }}>—</span>}
+                      </td>
+
+                      {/* Customer */}
+                      <td className="px-3 py-3" style={{ fontWeight: 600 }}>
+                        {item.customer || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
+                      </td>
+
+                      {/* Installer / Tech */}
+                      <td className="px-3 py-3">
+                        {formatDisplayUserLabel(item.description) || <span style={{ color: textMuted }}>—</span>}
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 700, color: '#D97706', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        ₱{peso(item.amount)}
+                      </td>
+
+                      {/* Submitted By */}
+                      <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px' }}>
+                        {formatDisplayUserLabel(item.receivedBy) || '—'}
+                      </td>
+
+                      {/* Notes */}
+                      <td className="px-3 py-3" style={{ maxWidth: 200 }}>
                         <InlineNotesCell
                           itemId={item.id}
                           note={item.collectionNotes || ''}
@@ -707,9 +745,6 @@ export default function ForCollections() {
                           textPrimary={textPrimary}
                           textMuted={textMuted}
                           inputBg={inputBg}
-                          inputBorder={inputBorder}
-                          border={border}
-                          isLight={isLight}
                           onSave={async (id, text) => {
                             const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${id}/notes`, {
                               method: 'POST',
@@ -727,17 +762,27 @@ export default function ForCollections() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase"
-                          style={{
-                            backgroundColor: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                            color: resolved ? '#10B981' : '#F59E0B'
-                          }}>
-                          {resolved ? 'RESOLVED' : 'PENDING'}
+
+                      {/* Status */}
+                      <td className="px-3 py-3 text-center">
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          backgroundColor: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                          color: resolved ? '#10B981' : '#F59E0B'
+                        }}>
+                          {resolved ? 'Resolved' : 'Pending'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center no-print">
-                        <div className="flex items-center justify-center gap-2">
+
+                      {/* Action */}
+                      <td className="px-3 py-3 text-center no-print">
+                        <div className="flex items-center justify-center gap-1.5">
                           {item.reportId && (
                             <button
                               type="button"
@@ -747,25 +792,25 @@ export default function ForCollections() {
                                 setRowExpenses(null)
                                 fetchRowExpenses(item.reportId!)
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                              style={{ borderColor: inputBorder, color: textPrimary, fontSize: '11px' }}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                              style={{ borderColor: border, color: textMuted, fontSize: '11px' }}
                             >
-                              <Eye className="w-3.5 h-3.5" /> Details
+                              <Eye className="w-3 h-3" /> View
                             </button>
                           )}
                           {!resolved && canResolve ? (
                             <button
                               type="button"
                               onClick={() => setConfirmItem(item)}
-                              className="px-3 py-1.5 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
-                              style={{ border: 'none', fontSize: '11px' }}
+                              className="px-2.5 py-1.5 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
+                              style={{ border: 'none', fontSize: '11px', fontWeight: 600 }}
                             >
                               Resolve
                             </button>
                           ) : resolved ? (
                             <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
                           ) : (
-                            <span style={{ color: textMuted, fontSize: '11px' }}>Restricted</span>
+                            <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
                           )}
                         </div>
                       </td>
