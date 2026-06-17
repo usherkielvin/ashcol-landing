@@ -698,7 +698,7 @@ export default function ForCollections() {
                       {/* TR No. / Date */}
                       <td className="px-3 py-3">
                         <div className="flex flex-col">
-                          <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600 }}>
+                          <span style={{ fontSize: '11px', fontWeight: 500 }}>
                             {item.trNo || <span style={{ color: textMuted }}>—</span>}
                           </span>
                           {item.reportDate ? (
@@ -724,7 +724,7 @@ export default function ForCollections() {
                       </td>
 
                       {/* Customer */}
-                      <td className="px-3 py-3" style={{ fontWeight: 600 }}>
+                      <td className="px-3 py-3" style={{ fontWeight: 500 }}>
                         {item.customer || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
                       </td>
 
@@ -762,23 +762,13 @@ export default function ForCollections() {
                       </td>
 
                       {/* Amount */}
-                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 700, color: '#D97706', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: '#D97706', fontSize: '11px', whiteSpace: 'nowrap' }}>
                         ₱{peso(item.amount)}
                       </td>
 
                       {/* Status */}
-                      <td className="px-3 py-3 text-center">
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          letterSpacing: '0.04em',
-                          textTransform: 'uppercase',
-                          backgroundColor: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                          color: resolved ? '#10B981' : '#F59E0B'
-                        }}>
+                      <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
+                        <span style={{ color: resolved ? textPrimary : '#F59E0B' }}>
                           {resolved ? 'Resolved' : 'Pending'}
                         </span>
                       </td>

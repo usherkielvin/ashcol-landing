@@ -359,7 +359,7 @@ export default function ClientMasterlist() {
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING'>('ALL_PENDING')
   const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
-  const [ticketScope, setTicketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
+  const [ticketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
@@ -1119,16 +1119,13 @@ export default function ClientMasterlist() {
   // Filtered lists
   const filtered = tickets.filter(t => {
     // Tab filtering
-    const stat = t.status.toUpperCase()
-    const isAssigned = !!t.assignedTo || !!t.branchId
-    const isInstalled = stat === 'COMPLETED' || stat === 'INSTALLED' || !!(t.installationCharges && t.installationCharges > 0)
-
-    if (isInstalled || stat === 'CANCELLED') return false
+    const statusLabel = getRelayStatusLabel(t)
+    if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
 
     if (activeTab === 'UNASSIGNED') {
-      if (isAssigned) return false
+      if (statusLabel !== 'Pending') return false
     } else if (activeTab === 'PENDING') {
-      if (!isAssigned) return false
+      if (statusLabel !== 'Assigned') return false
     }
 
     // Vendor filter
@@ -1424,7 +1421,7 @@ export default function ClientMasterlist() {
             <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
               className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
               style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-              <option value="ALL_PENDING">All Pending</option>
+              <option value="ALL_PENDING">Pending</option>
               <option value="UNASSIGNED">Unassigned</option>
               <option value="PENDING">Assigned</option>
             </select>
@@ -1454,27 +1451,6 @@ export default function ClientMasterlist() {
             })}
           </div>
 
-          <div className="flex items-center rounded-lg border overflow-hidden"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            {[
-              { key: 'ALL', label: 'All' },
-              { key: 'MY', label: 'My Tickets' },
-              { key: 'BRANCH', label: 'Branch Tickets' },
-            ].map(item => {
-              const active = ticketScope === item.key
-              return (
-                <button key={item.key} type="button" onClick={() => setTicketScope(item.key as typeof ticketScope)}
-                  className="px-2.5 py-1.5 text-xs font-bold transition-colors whitespace-nowrap"
-                  style={{
-                    backgroundColor: active ? (isLight ? '#eef2ff' : 'rgba(99,102,241,0.16)') : 'transparent',
-                    color: active ? '#4F46E5' : textMuted,
-                    borderRight: item.key !== 'BRANCH' ? `1px solid ${inputBorder}` : undefined
-                  }}>
-                  {item.label}
-                </button>
-              )
-            })}
-          </div>
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1578,7 +1554,6 @@ export default function ClientMasterlist() {
                   </tr>
                 ) : filtered.map((ticket, idx) => {
                   const category = getTicketCategory(ticket)
-                  const color = getCategoryColor(category)
                   const details = parseAcDetails(ticket)
                   const status = getRelayStatusLabel(ticket)
                   const paymentText = category === 'Collection'
@@ -1589,16 +1564,16 @@ export default function ClientMasterlist() {
                       onClick={() => { setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
                       style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'), cursor: 'pointer' }}>
                       <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                        <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>{idx + 1}. {category}</span>
+                        <span className="whitespace-nowrap">{idx + 1}. {category}</span>
                       </td>
-                      <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{status}</td>
-                      <td className="px-3 py-2.5 font-bold max-w-[210px] truncate" title={ticket.customerName || 'Direct Client'} style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{ticket.customerName || 'Direct Client'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: status === 'Pending' ? '#F59E0B' : textPrimary, borderBottom: `1px solid ${border}` }}>{status}</td>
+                      <td className="px-3 py-2.5 max-w-[210px] truncate" title={ticket.customerName || 'Direct Client'} style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{ticket.customerName || 'Direct Client'}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{resolveBranch(ticket.branchId)?.name || '—'}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{ticket.assignedEmployeeName || ticket.installerName || '—'}</td>
                       <td className="px-3 py-2.5 max-w-[180px] truncate" title={ticket.sourceVendor || ''} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{getStoreStyle(ticket.sourceVendor).label}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(ticket.preferredDate) || '—'}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(details.finalDate) || '—'}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap font-semibold" style={{ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted, borderBottom: `1px solid ${border}` }}>{paymentText}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted, borderBottom: `1px solid ${border}` }}>{paymentText}</td>
                       <td className="px-3 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}>
                         <div className="flex justify-end gap-1.5">
                           <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
@@ -1694,7 +1669,6 @@ export default function ClientMasterlist() {
                   const statusLabel = getRelayStatusLabel(ticket)
                   const branchName = resolveBranch(ticket.branchId)?.name || '—'
                   const category = getTicketCategory(ticket)
-                  const categoryColor = getCategoryColor(category)
                   const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
                   const district = ticket.district || guessDistrict(ticket.location || '') || '—'
                   const relayedDate = formatShortDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
@@ -1706,26 +1680,20 @@ export default function ClientMasterlist() {
                     ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
                     : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
                   const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
-                  const statusColor = statusLabel === 'Cancelled' ? '#EF4444'
-                    : statusLabel === 'Installed' ? '#10B981'
-                    : statusLabel === 'Scheduled' ? '#06B6D4'
-                    : statusLabel === 'Assigned' ? '#3B82F6'
-                    : '#F59E0B'
-
                   const cells = [
-                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap" style={{ color: categoryColor, backgroundColor: `${categoryColor}14`, borderColor: `${categoryColor}33` }}>{idx + 1}. {category}</span>, center: true },
-                    { value: <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase border" style={{ color: statusColor, backgroundColor: `${statusColor}14`, borderColor: `${statusColor}33` }}>{statusLabel}</span>, center: true },
-                    { value: <span className="font-bold uppercase text-[10px]">{branchName}</span>, center: true },
-                    { value: <span className="font-bold uppercase text-[10px]">{negotiator}</span>, center: true },
-                    { value: <span className={`${columns[4].isExpanded ? 'break-words' : 'truncate'} block font-bold`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
-                    { value: <span className="font-semibold uppercase text-[10px]">{district}</span>, center: true },
-                    { value: <span className="font-semibold truncate block" title={storeStyle.label}>{storeStyle.label}</span> },
-                    { value: <span className="font-bold uppercase text-[10px]">{details.brand || '—'}</span>, center: true },
-                    { value: <span className="font-bold uppercase text-[10px]">{details.capacity || '—'}</span>, center: true },
-                    { value: <span className={`${columns[9].isExpanded ? 'break-words' : 'line-clamp-2'} block font-semibold uppercase text-[10px]`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
-                    { value: <span className="font-semibold whitespace-nowrap">{relayedDate || '—'}</span>, center: true },
-                    { value: <span className="font-semibold whitespace-nowrap">{requestedDate || '—'}</span>, center: true },
-                    { value: <span className="font-semibold whitespace-nowrap">{finalDate || '—'}</span>, center: true },
+                    { value: <span className="whitespace-nowrap">{idx + 1}. {category}</span>, center: true },
+                    { value: <span style={{ color: statusLabel === 'Pending' ? '#F59E0B' : undefined }}>{statusLabel}</span>, center: true },
+                    { value: <span>{branchName}</span>, center: true },
+                    { value: <span>{negotiator}</span>, center: true },
+                    { value: <span className={`${columns[4].isExpanded ? 'break-words' : 'truncate'} block`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
+                    { value: <span>{district}</span>, center: true },
+                    { value: <span className="truncate block" title={storeStyle.label}>{storeStyle.label}</span> },
+                    { value: <span>{details.brand || '—'}</span>, center: true },
+                    { value: <span>{details.capacity || '—'}</span>, center: true },
+                    { value: <span className={`${columns[9].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
+                    { value: <span className="whitespace-nowrap">{relayedDate || '—'}</span>, center: true },
+                    { value: <span className="whitespace-nowrap">{requestedDate || '—'}</span>, center: true },
+                    { value: <span className="whitespace-nowrap">{finalDate || '—'}</span>, center: true },
                     { value: <span className={`${columns[13].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={lastUpdate}>{lastUpdate || '—'}</span> },
                     { value: (
                         <div className="flex justify-end gap-1.5">
@@ -1802,11 +1770,12 @@ export default function ClientMasterlist() {
           {/* Counters */}
           <div className="flex flex-wrap items-center gap-5">
             {[
-              { label: 'Unassigned', count: tickets.filter(t => !(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-              { label: 'Scheduled',  count: tickets.filter(t => !!(t.assignedTo || t.branchId) && t.status.toUpperCase() !== 'COMPLETED' && t.status.toUpperCase() !== 'CANCELLED').length },
-              { label: 'Installed',  count: tickets.filter(t => t.status.toUpperCase() === 'COMPLETED' || !!(t.installationCharges && t.installationCharges > 0)).length },
-              { label: 'Cancelled',  count: tickets.filter(t => t.status.toUpperCase() === 'CANCELLED').length },
-              { label: 'Total',      count: tickets.length },
+              { label: 'Unassigned', count: tickets.filter(t => getRelayStatusLabel(t) === 'Pending').length },
+              { label: 'Assigned',   count: tickets.filter(t => getRelayStatusLabel(t) === 'Assigned').length },
+              { label: 'Total',      count: tickets.filter(t => {
+                  const label = getRelayStatusLabel(t)
+                  return label === 'Pending' || label === 'Assigned'
+                }).length },
             ].map((stat, idx, arr) => (
               <span key={stat.label} className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
                 {stat.label}
@@ -2065,6 +2034,10 @@ export default function ClientMasterlist() {
                           style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
                           <option value="PENDING">Not Assigned (Pending)</option>
                           <option value="ASSIGNED">Scheduled (Assigned)</option>
+                          <option value="SCHEDULED">Scheduled</option>
+                          <option value="RESCHED">Resched</option>
+                          <option value="FOR APPROVAL">For Approval</option>
+                          <option value="SURVEY">Survey</option>
                           <option value="ON_THE_WAY">On the Way</option>
                           <option value="IN_PROGRESS">In Progress</option>
                           <option value="COMPLETED">Installed (Completed)</option>
@@ -2340,6 +2313,10 @@ export default function ClientMasterlist() {
                       >
                         <option value="PENDING">Pending</option>
                         <option value="ASSIGNED">Assigned</option>
+                        <option value="SCHEDULED">Scheduled</option>
+                        <option value="RESCHED">Resched</option>
+                        <option value="FOR APPROVAL">For Approval</option>
+                        <option value="SURVEY">Survey</option>
                         <option value="ON_THE_WAY">On the Way</option>
                         <option value="IN_PROGRESS">In Progress</option>
                         <option value="COMPLETED">Completed</option>

@@ -6,7 +6,7 @@ import {
   Bell, Menu, Sun, Moon, LogOut, X,
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, ClipboardList,
-  Radio, CalendarDays, ClipboardCheck, UserCog, ArrowLeftRight, TrendingUp, MapPin,
+  Radio, CalendarDays, UserCog, ArrowLeftRight, TrendingUp, MapPin, Archive,
   Building2, Layers, FileSpreadsheet
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -186,11 +186,10 @@ export default function DashboardLayout() {
 
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
+    { name: 'Relays',          path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
-    { name: 'Relay Monitoring',path: '/schedules',        icon: Radio,           roles: ['admin'] },
+    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
-
-    { name: 'Service Report',  path: '/service-report',  icon: ClipboardCheck,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'DTR Submission',  path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -204,8 +203,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Field Schedule', 'Service Report', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
-  const serviceWorkspaceLinks = ['Tickets', 'Field Schedule', 'Service Report', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
+  const salesWorkspaceLinks = ['Tickets', 'Field Schedule', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
+  const serviceWorkspaceLinks = ['Tickets', 'Field Schedule', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -347,7 +346,7 @@ export default function DashboardLayout() {
                 {isActive && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />
                 )}
-                <Icon className="w-4 h-4 shrink-0" />
+                {Icon && <Icon className="w-4 h-4 shrink-0" />}
                 {!sidebarCollapsed && <span className="flex-1 truncate">{link.name}</span>}
                 {!sidebarCollapsed && isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
               </Link>

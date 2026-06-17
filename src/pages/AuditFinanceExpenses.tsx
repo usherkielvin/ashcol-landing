@@ -1505,11 +1505,7 @@ export default function AuditFinanceExpenses() {
                         )}
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase" 
-                          style={{ 
-                            backgroundColor: row.expenseCategory === 'OTHER' ? `${textMuted}22` : `${accent}22`, 
-                            color: row.expenseCategory === 'OTHER' ? textMuted : accent 
-                          }}>
+                        <span className="uppercase font-semibold" style={{ color: textPrimary }}>
                           {row.expenseCategory}
                         </span>
                         {row.sourceOfFunds && (

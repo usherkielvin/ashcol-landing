@@ -117,7 +117,7 @@ const EDITABLE_COLS = [
   'STATUS', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
 ]
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR APPROVAL', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatAddress(loc: any): string {
@@ -251,7 +251,6 @@ function formatDateTriggerLabel(value: string) {
   return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
 }
 
-const ACTIVE = ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
 
@@ -961,7 +960,26 @@ export default function Tickets() {
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
-    let list = tickets.filter(t => ACTIVE.includes(t.status.toUpperCase()))
+    let list = tickets.filter(t => {
+      const stat = (t.status || '').toUpperCase()
+      
+      let hasFinalDate = false
+      if (t.acDetails) {
+        try {
+          const parsed = JSON.parse(t.acDetails)
+          hasFinalDate = !!parsed.finalDate
+        } catch {}
+      }
+
+      const isScheduled = stat === 'SCHEDULED' || hasFinalDate
+      const isResched = stat === 'RESCHED'
+      const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION')
+      
+      const cat = `${t.serviceType || ''} ${t.title || ''}`.toLowerCase()
+      const isSurvey = cat.includes('survey') || stat === 'SURVEY'
+
+      return isScheduled || isResched || isForApproval || isSurvey
+    })
     if (isAdmin && globalBranchId && globalBranchId !== 'ALL_BRANCHES') {
       list = list.filter(t => {
         const b = (t.branchId || t.branch_id || '').toUpperCase()
@@ -992,11 +1010,43 @@ export default function Tickets() {
     return list
   }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
 
-  const counts = useMemo(() => ({
-    pending:    visible.filter(t => t.status.toUpperCase() === 'PENDING').length,
-    assigned:   visible.filter(t => t.status.toUpperCase() === 'ASSIGNED').length,
-    inProgress: visible.filter(t => ['ON_THE_WAY','IN_PROGRESS'].includes(t.status.toUpperCase())).length,
-  }), [visible])
+  const counts = useMemo(() => {
+    let scheduledOrRescheduled = 0
+    let survey = 0
+    let forQuotationOrForApproval = 0
+
+    visible.forEach(t => {
+      const stat = (t.status || '').toUpperCase()
+      const category = (t.serviceType || t.title || '').toLowerCase()
+      const isSurvey = category.includes('survey') || stat === 'SURVEY'
+      
+      let hasFinalDate = false
+      if (t.acDetails) {
+        try {
+          const parsed = JSON.parse(t.acDetails)
+          hasFinalDate = !!parsed.finalDate
+        } catch {}
+      }
+
+      const isScheduled = stat === 'SCHEDULED' || hasFinalDate
+      const isResched = stat === 'RESCHED'
+      const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION')
+
+      if (isScheduled || isResched) {
+        scheduledOrRescheduled++
+      } else if (isSurvey) {
+        survey++
+      } else if (isForApproval) {
+        forQuotationOrForApproval++
+      }
+    })
+
+    return {
+      scheduledOrRescheduled,
+      survey,
+      forQuotationOrForApproval
+    }
+  }, [visible])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -1529,14 +1579,17 @@ export default function Tickets() {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
-          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>Pending</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(251,146,60,0.15)', color: '#FB923C' }}>{counts.pending}</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: textMuted }}>Scheduled / Rescheduled</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.scheduledOrRescheduled}</span>
           </div>
-          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>Assigned</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.assigned}</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: textMuted }}>Survey</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8B5CF6' }}>{counts.survey}</span>
           </div>
-          <div className="flex items-center gap-1"><span style={{ color: textMuted }}>In Progress</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.inProgress}</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: textMuted }}>For Quotation / For Approval</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
           </div>
         </div>
       )}
