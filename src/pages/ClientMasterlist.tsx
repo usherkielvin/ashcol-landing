@@ -298,6 +298,46 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
   )
 }
 
+
+const parseAcDetails = (ticket: Ticket) => {
+  const fallback = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
+  if (!ticket.acDetails) return fallback
+  try {
+    return { ...fallback, ...JSON.parse(ticket.acDetails) }
+  } catch (e) {
+    return fallback
+  }
+}
+
+const getRelayStatusLabel = (ticket: Ticket) => {
+  const status = (ticket.status || '').toUpperCase()
+  const details = parseAcDetails(ticket)
+  if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
+  if (status === 'CANCELLED') return 'Cancelled'
+  if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+  if ((ticket.branchId || ticket.assignedTo) && details.finalDate) return 'Scheduled'
+  if (status === 'ASSIGNED' || ticket.branchId || ticket.assignedTo) return 'Assigned'
+  if (status === 'IN_PROGRESS') return 'In Progress'
+  if (status === 'ON_THE_WAY') return 'On the Way'
+  return 'Pending'
+}
+
+const getTicketCategory = (ticket: Ticket) => {
+  const raw = `${ticket.serviceType || ''} ${ticket.title || ''}`.toLowerCase()
+  if (raw.includes('collection') || raw.includes('collect')) return 'Collection'
+  if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Installation'
+  if (raw.includes('survey')) return 'Survey'
+  if (raw.includes('service') || raw.includes('clean')) return 'Service'
+  return ticket.serviceType || 'Service'
+}
+
+const isCollectionPaid = (ticket: Ticket) => {
+  const hasAmount = !!(ticket.installationCharges && ticket.installationCharges > 0)
+  const hasPayment = !!(ticket.modeOfPayment && ticket.modeOfPayment.trim())
+  const remarks = (ticket.remarksUpdate || '').toLowerCase()
+  return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
+}
+
 export default function ClientMasterlist() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -1296,15 +1336,7 @@ export default function ClientMasterlist() {
     return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: store || 'Other Store' }
   }
 
-  const parseAcDetails = (ticket: Ticket) => {
-    const fallback = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
-    if (!ticket.acDetails) return fallback
-    try {
-      return { ...fallback, ...JSON.parse(ticket.acDetails) }
-    } catch (e) {
-      return fallback
-    }
-  }
+  
 
   const formatShortDate = (value?: string) => {
     if (!value) return ''
@@ -1317,32 +1349,14 @@ export default function ClientMasterlist() {
     }
   }
 
-  const getRelayStatusLabel = (ticket: Ticket) => {
-    const status = (ticket.status || '').toUpperCase()
-    const details = parseAcDetails(ticket)
-    if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
-    if (status === 'CANCELLED') return 'Cancelled'
-    if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
-    if ((ticket.branchId || ticket.assignedTo) && details.finalDate) return 'Scheduled'
-    if (status === 'ASSIGNED' || ticket.branchId || ticket.assignedTo) return 'Assigned'
-    if (status === 'IN_PROGRESS') return 'In Progress'
-    if (status === 'ON_THE_WAY') return 'On the Way'
-    return 'Pending'
-  }
+  
 
   const getTicketNumber = (ticket: Ticket) => {
     if (ticket.controlNumber) return ticket.controlNumber
     return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()
   }
 
-  const getTicketCategory = (ticket: Ticket) => {
-    const raw = `${ticket.serviceType || ''} ${ticket.title || ''}`.toLowerCase()
-    if (raw.includes('collection') || raw.includes('collect')) return 'Collection'
-    if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Installation'
-    if (raw.includes('survey')) return 'Survey'
-    if (raw.includes('service') || raw.includes('clean')) return 'Service'
-    return ticket.serviceType || 'Service'
-  }
+  
 
   const getCategoryColor = (category: string) => {
     const c = category.toLowerCase()
@@ -1351,12 +1365,7 @@ export default function ClientMasterlist() {
     return isLight ? '#111827' : '#F8FAFC'
   }
 
-  const isCollectionPaid = (ticket: Ticket) => {
-    const hasAmount = !!(ticket.installationCharges && ticket.installationCharges > 0)
-    const hasPayment = !!(ticket.modeOfPayment && ticket.modeOfPayment.trim())
-    const remarks = (ticket.remarksUpdate || '').toLowerCase()
-    return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
-  }
+  
 
 
 
