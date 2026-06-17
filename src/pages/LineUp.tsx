@@ -15440,12 +15440,18 @@ export default function LineUp() {
 
 
       if (user?.role && user.role.toLowerCase() !== 'admin' && user.branchId) {
-        const userBranchIdUpper = user.branchId.toUpperCase()
+        const userBranchLower = user.branchId.toLowerCase()
+        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
         finalList = newList.filter(b => {
-          const bIdUpper = b.id.toUpperCase()
-          return bIdUpper === userBranchIdUpper || 
-                 bIdUpper.startsWith(userBranchIdUpper + '-') || 
-                 userBranchIdUpper.startsWith(bIdUpper + '-')
+          if (isUserTaguig) {
+            return b.id.toLowerCase().includes('taguig') || b.name.toUpperCase().includes('TAGUIG')
+          } else {
+            const userBranchIdUpper = user.branchId!.toUpperCase()
+            const bIdUpper = b.id.toUpperCase()
+            return bIdUpper === userBranchIdUpper || 
+                   bIdUpper.startsWith(userBranchIdUpper + '-') || 
+                   userBranchIdUpper.startsWith(bIdUpper + '-')
+          }
         })
       }
 
@@ -15544,25 +15550,23 @@ export default function LineUp() {
 
 
       if (user?.branchId) {
-        const userBranchIdUpper = user.branchId.toUpperCase()
-        const hasSplit = finalList.some(b => {
-          const bIdUpper = b.id.toUpperCase()
-          return bIdUpper.startsWith(userBranchIdUpper + '-') || userBranchIdUpper.startsWith(bIdUpper + '-')
-        })
-        if (hasSplit) {
-          // Branch was split into sales/services sub-branches — pick by email
+        const userBranchLower = user.branchId.toLowerCase()
+        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+        if (isUserTaguig) {
           const emailLower = (user.email || '').toLowerCase()
-          const targetSuffix = emailLower.includes('service') ? '-SERVICES' : '-SALES'
+          const isServicesUser = emailLower.includes('service')
           const matchedBranch = finalList.find(b => {
-            const bIdUpper = b.id.toUpperCase()
-            return bIdUpper.endsWith(targetSuffix) || (targetSuffix === '-SERVICES' && bIdUpper.endsWith('-SERVICE'))
+            const bNameUpper = b.name.toUpperCase()
+            return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
           })
           setBranchId(matchedBranch ? matchedBranch.id : (finalList[0]?.id ?? ''))
         } else {
-          // Use exact match or fall back to first in list
+          const userBranchIdUpper = user.branchId.toUpperCase()
           const exactMatch = finalList.find(b => b.id.toUpperCase() === userBranchIdUpper)
           setBranchId(exactMatch ? exactMatch.id : (finalList[0]?.id ?? ''))
         }
+      } else if (finalList.length > 0) {
+        setBranchId(finalList[0].id)
       } else if (finalList.length > 0) {
         setBranchId(finalList[0].id)
       } else if (finalList.length > 0) {

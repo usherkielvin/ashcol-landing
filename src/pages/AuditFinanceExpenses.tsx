@@ -356,12 +356,18 @@ export default function AuditFinanceExpenses() {
 
       let finalList = newList
       if (isBranchScopedUser && user?.branchId) {
-        const userBranchIdUpper = user.branchId.toUpperCase()
+        const userBranchLower = user.branchId.toLowerCase()
+        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
         finalList = newList.filter(b => {
-          const bIdUpper = b.id.toUpperCase()
-          return bIdUpper === userBranchIdUpper || 
-                 bIdUpper.startsWith(userBranchIdUpper + '-') || 
-                 userBranchIdUpper.startsWith(bIdUpper + '-')
+          if (isUserTaguig) {
+            return b.id.toLowerCase().includes('taguig') || b.name.toUpperCase().includes('TAGUIG')
+          } else {
+            const userBranchIdUpper = user.branchId!.toUpperCase()
+            const bIdUpper = b.id.toUpperCase()
+            return bIdUpper === userBranchIdUpper || 
+                   bIdUpper.startsWith(userBranchIdUpper + '-') || 
+                   userBranchIdUpper.startsWith(bIdUpper + '-')
+          }
         })
       }
 
@@ -369,20 +375,20 @@ export default function AuditFinanceExpenses() {
 
       if (finalList.length > 0) {
         if (isBranchScopedUser && user?.branchId) {
-          const emailLower = (user?.email || '').toLowerCase()
-          const isServicesUser = emailLower.includes('service')
-          let matched = null
-          const userBranchIdUpper = user.branchId.toUpperCase()
-          if (isServicesUser) {
-            matched = finalList.find(b => b.id.toUpperCase().endsWith('-SERVICES') || b.id.toUpperCase().endsWith('-SERVICE'))
-          }
-          if (!matched) {
-            matched = finalList.find(b => b.id.toUpperCase() === userBranchIdUpper || b.id.toUpperCase().startsWith(`${userBranchIdUpper}-`))
-          }
-          if (matched) {
-            setBranchId(matched.id)
+          const userBranchLower = user.branchId.toLowerCase()
+          const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+          if (isUserTaguig) {
+            const emailLower = (user?.email || '').toLowerCase()
+            const isServicesUser = emailLower.includes('service')
+            const matched = finalList.find(b => {
+              const bNameUpper = b.name.toUpperCase()
+              return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
+            })
+            setBranchId(matched ? matched.id : (finalList[0]?.id ?? ''))
           } else {
-            setBranchId(finalList[0].id)
+            const userBranchIdUpper = user.branchId.toUpperCase()
+            const exactMatch = finalList.find(b => b.id.toUpperCase() === userBranchIdUpper)
+            setBranchId(exactMatch ? exactMatch.id : (finalList[0]?.id ?? ''))
           }
         } else {
           const storedGlobal = localStorage.getItem('ashcol-global-branch-id')

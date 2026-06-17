@@ -549,12 +549,18 @@ export default function DailyServiceReport() {
       if (isAdmin) {
         finalList = [{ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' }, ...newList]
       } else if (isBranchScoped && user?.branchId) {
-        const userBranchIdUpper = user.branchId.toUpperCase()
+        const userBranchLower = user.branchId.toLowerCase()
+        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
         finalList = newList.filter(b => {
-          const bIdUpper = b.id.toUpperCase()
-          return bIdUpper === userBranchIdUpper || 
-                 bIdUpper.startsWith(userBranchIdUpper + '-') || 
-                 userBranchIdUpper.startsWith(bIdUpper + '-')
+          if (isUserTaguig) {
+            return b.id.toLowerCase().includes('taguig') || b.name.toUpperCase().includes('TAGUIG')
+          } else {
+            const userBranchIdUpper = user.branchId!.toUpperCase()
+            const bIdUpper = b.id.toUpperCase()
+            return bIdUpper === userBranchIdUpper || 
+                   bIdUpper.startsWith(userBranchIdUpper + '-') || 
+                   userBranchIdUpper.startsWith(bIdUpper + '-')
+          }
         })
       }
       setBranches(finalList)
@@ -563,17 +569,21 @@ export default function DailyServiceReport() {
 
   useEffect(() => {
     if (isBranchScoped && user?.branchId && !branchFilter) {
-      const emailLower = (user?.email || '').toLowerCase()
-      const isServicesUser = emailLower.includes('service')
-      const userBranchIdUpper = user.branchId.toUpperCase()
-      let matched = null
-      if (isServicesUser) {
-        matched = branches.find(b => b.id.toUpperCase().endsWith('-SERVICES') || b.id.toUpperCase().endsWith('-SERVICE'))
+      const userBranchLower = user.branchId.toLowerCase()
+      const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+      if (isUserTaguig) {
+        const emailLower = (user?.email || '').toLowerCase()
+        const isServicesUser = emailLower.includes('service')
+        const matched = branches.find(b => {
+          const bNameUpper = b.name.toUpperCase()
+          return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
+        })
+        setBranchFilter(matched ? matched.id : (branches[0]?.id || user.branchId))
+      } else {
+        const userBranchIdUpper = user.branchId.toUpperCase()
+        const exactMatch = branches.find(b => b.id.toUpperCase() === userBranchIdUpper)
+        setBranchFilter(exactMatch ? exactMatch.id : (branches[0]?.id || user.branchId))
       }
-      if (!matched) {
-        matched = branches.find(b => b.id.toUpperCase() === userBranchIdUpper || b.id.toUpperCase().startsWith(`${userBranchIdUpper}-`))
-      }
-      setBranchFilter(matched ? matched.id : (branches[0]?.id || user.branchId))
       return
     }
     if (isAllBranchUser && !branchFilter && branches.length > 0) {
