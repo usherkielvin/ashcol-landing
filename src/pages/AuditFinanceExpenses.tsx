@@ -72,6 +72,7 @@ export default function AuditFinanceExpenses() {
   const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 
   const [branches, setBranches] = useState<BranchOption[]>([])
+  const [allBranches, setAllBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')
   const [expenses, setExpenses] = useState<AuditExpense[]>([])
   const [importing, setImporting] = useState(false)
@@ -123,16 +124,17 @@ export default function AuditFinanceExpenses() {
 
   const resolveFormBranchId = useCallback((id: string) => {
     if (!id) return ''
-    const exists = branches.some(b => b.id === id)
+    const list = allBranches.length > 0 ? allBranches : branches
+    const exists = list.some(b => b.id === id)
     if (!exists) {
-      const splitOption = branches.find(b => b.id.startsWith(`${id}-`))
+      const splitOption = list.find(b => b.id.startsWith(`${id}-`))
       if (splitOption) {
-        const salesOption = branches.find(b => b.id === `${id}-sales`)
+        const salesOption = list.find(b => b.id === `${id}-sales`)
         return salesOption ? salesOption.id : splitOption.id
       }
     }
     return id
-  }, [branches])
+  }, [branches, allBranches])
 
   useEffect(() => {
     void reloadCategories()
@@ -372,6 +374,7 @@ export default function AuditFinanceExpenses() {
       }
 
       setBranches(finalList)
+      setAllBranches(newList)
 
       if (finalList.length > 0) {
         if (isBranchScopedUser && user?.branchId) {
@@ -673,7 +676,7 @@ export default function AuditFinanceExpenses() {
 
     const now = new Date().toISOString()
     const targetBranchId = form.branchId || branchId
-    const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || branchName
+    const targetBranchName = (allBranches.length > 0 ? allBranches : branches).find(b => b.id === targetBranchId)?.name || branchName
 
     const expense: AuditExpense = editing
       ? {
@@ -1626,6 +1629,24 @@ export default function AuditFinanceExpenses() {
                       {dateError
                         ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
                         : form.date ? <p className="text-xs mt-0.5" style={{ color: accent }}>✓ {form.date}</p> : null}
+                    </div>
+                  )}
+
+                  {/* Branch */}
+                  {field(
+                    'Branch',
+                    <div>
+                      <select
+                        value={form.branchId}
+                        id="modal-receipt-branch"
+                        onChange={(e) => setForm((f) => ({ ...f, branchId: e.target.value }))}
+                        className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                      >
+                        {(allBranches.length > 0 ? allBranches : branches).map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
                     </div>
                   )}
 
