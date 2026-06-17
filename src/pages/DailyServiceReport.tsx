@@ -573,7 +573,7 @@ export default function DailyServiceReport() {
       const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
       if (isUserTaguig) {
         const emailLower = (user?.email || '').toLowerCase()
-        const isServicesUser = emailLower.includes('service')
+        const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
         const matched = branches.find(b => {
           const bNameUpper = b.name.toUpperCase()
           return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
