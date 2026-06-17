@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   ClipboardList, Search, CheckCircle2, 
-  Loader2, Building2, Check, Eye, X 
+  Loader2, Building2, Check, Eye, X, ChevronDown, Pencil, Calendar
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -59,6 +59,168 @@ const formatRemarksLabel = (remarks: string, compact: boolean) => {
   return remarks
 }
 
+// ── Inline Notes Cell ────────────────────────────────────────────────────────
+interface InlineNotesCellProps {
+  itemId: string
+  note: string
+  updatedBy?: string
+  updatedAt?: string
+  textPrimary: string
+  textMuted: string
+  inputBg: string
+  inputBorder: string
+  border: string
+  isLight: boolean
+  onSave: (itemId: string, note: string) => Promise<void>
+}
+
+function InlineNotesCell({
+  itemId, note, updatedBy, updatedAt,
+  textPrimary, textMuted, inputBg, inputBorder, border, isLight, onSave
+}: InlineNotesCellProps) {
+  const [editing, setEditing]       = useState(false)
+  const [expanded, setExpanded]     = useState(false)
+  const [draft, setDraft]           = useState(note)
+  const [saving, setSaving]         = useState(false)
+  const textareaRef                 = useRef<HTMLTextAreaElement>(null)
+  const cellRef                     = useRef<HTMLDivElement>(null)
+  const isLong                      = note.length > 60
+
+  // Reset draft when note prop changes (after save sync)
+  useEffect(() => { setDraft(note) }, [note])
+
+  const openEdit = () => {
+    setDraft(note)
+    setEditing(true)
+    setExpanded(false)
+    // Focus + cursor at end, no select-all
+    requestAnimationFrame(() => {
+      if (!textareaRef.current) return
+      textareaRef.current.focus()
+      const len = textareaRef.current.value.length
+      textareaRef.current.setSelectionRange(len, len)
+    })
+  }
+
+  const save = async () => {
+    if (draft === note) { setEditing(false); return }
+    setSaving(true)
+    try { await onSave(itemId, draft) } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
+
+  const cancel = () => { setDraft(note); setEditing(false) }
+
+  // Close expanded dropdown when clicking outside
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e: MouseEvent) => {
+      if (cellRef.current && !cellRef.current.contains(e.target as Node)) setExpanded(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expanded])
+
+  if (editing) {
+    return (
+      <div style={{ minWidth: 200 }}>
+        <textarea
+          ref={textareaRef}
+          rows={3}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') cancel()
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') save()
+          }}
+          onBlur={save}
+          style={{
+            width: '100%', fontSize: '12px', borderRadius: '8px',
+            padding: '6px 8px', border: `1.5px solid #10B981`,
+            backgroundColor: inputBg, color: textPrimary,
+            resize: 'none', outline: 'none', lineHeight: 1.5
+          }}
+          placeholder="Add a note..."
+        />
+        <div style={{ display: 'flex', gap: 4, marginTop: 4, justifyContent: 'flex-end' }}>
+          <span style={{ fontSize: '10px', color: textMuted }}>Ctrl+Enter to save · Esc cancel</span>
+          {saving && <Loader2 size={12} style={{ color: '#10B981', animation: 'spin 1s linear infinite' }} />}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={cellRef} style={{ position: 'relative', minWidth: 160 }}>
+      <div
+        onDoubleClick={openEdit}
+        title="Double-click to edit"
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 4, cursor: 'text', userSelect: 'none' }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {note ? (
+            <>
+              <span style={{
+                display: 'block',
+                overflow: 'hidden',
+                textOverflow: expanded ? 'unset' : 'ellipsis',
+                whiteSpace: expanded ? 'pre-wrap' : 'nowrap',
+                wordBreak: 'break-word',
+                lineHeight: 1.5
+              }}>{note}</span>
+              {updatedBy && (
+                <span style={{ fontSize: '10px', color: textMuted, display: 'block', marginTop: 1 }}>
+                  {updatedBy} · {updatedAt ? new Date(updatedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : ''}
+                </span>
+              )}
+            </>
+          ) : (
+            <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>Double-click to add note</span>
+          )}
+        </div>
+
+        {/* Right-side buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, marginTop: 1 }}>
+          {/* Caret: expand/collapse long notes */}
+          {isLong && (
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+              onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+              title={expanded ? 'Collapse' : 'Expand note'}
+              style={{
+                background: 'none', border: 'none', padding: '1px 2px',
+                cursor: 'pointer', color: textMuted, lineHeight: 1,
+                transform: expanded ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.15s ease'
+              }}
+            >
+              <ChevronDown size={12} />
+            </button>
+          )}
+          {/* Pencil: open editor */}
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => { e.stopPropagation(); openEdit() }}
+            title="Edit note"
+            style={{
+              background: 'none', border: 'none', padding: '1px 2px',
+              cursor: 'pointer', color: textMuted, lineHeight: 1,
+              opacity: 0.6
+            }}
+          >
+            <Pencil size={11} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function ForCollections() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -72,19 +234,27 @@ export default function ForCollections() {
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const [items, setItems] = useState<CollectionItem[]>([])
-  const [loading, setLoading] = useState(true)
+  // true only on the very first load; subsequent refetches show stale data
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [fetching, setFetching] = useState(false)
   const [resolvingId, setResolvingId] = useState<string | null>(null)
-  
+  const hasFetchedOnce = useRef(false)
+
   // Filters
+  const [rawSearch, setRawSearch] = useState('')
   const [search, setSearch] = useState('')
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING')
   const [branchFilter, setBranchFilter] = useState('')
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
-  
+  // Date filters — monthFilter = 'YYYY-MM', dateFilter = 'YYYY-MM-DD'
+  const [monthFilter, setMonthFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState('')
+
   const [confirmItem, setConfirmItem] = useState<CollectionItem | null>(null)
   const [notesText, setNotesText] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
-  
+
   // Details Modal state
   const [selectedRow, setSelectedRow] = useState<CollectionItem | null>(null)
   const [rowExpenses, setRowExpenses] = useState<{
@@ -118,36 +288,28 @@ export default function ForCollections() {
   const isManager = role === 'manager'
   const canResolve = isAdmin || isManager || role === 'staff' || role === 'employee'
 
-  const loadBranches = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/branches`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name }))
-        setBranches(list.sort((a: any, b: any) => a.name.localeCompare(b.name)))
-      }
-    } catch (err) {
-      console.error('Failed to load branches', err)
-    }
-  }, [])
+  const getToken = () =>
+    localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-  const fetchCollections = useCallback(async () => {
-    setLoading(true)
+  // Debounced search — only triggers re-filter after 200 ms of no typing
+  const handleSearchChange = (value: string) => {
+    setRawSearch(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => setSearch(value), 200)
+  }
+
+  const fetchCollections = useCallback(async (silent = false) => {
+    if (!silent) setFetching(true)
     try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams()
       if (branchFilter) params.append('branchId', branchFilter)
       if (statusFilter === 'PENDING') params.append('pendingOnly', 'true')
-      
+
       const res = await fetch(`${API_BASE_URL}/v1/reports/collections?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${getToken()}` }
       })
       if (res.ok) {
         let list: CollectionItem[] = await res.json()
-        // If status filter is RESOLVED, we filter manually (or let backend handle it, but we can filter manually to be safe since pendingOnly is only true/false)
         if (statusFilter === 'RESOLVED') {
           list = list.filter(item => item.collectionResolved)
         }
@@ -156,39 +318,62 @@ export default function ForCollections() {
     } catch (e) {
       console.error('Failed to fetch collections', e)
     } finally {
-      setLoading(false)
+      setFetching(false)
+      if (!hasFetchedOnce.current) {
+        hasFetchedOnce.current = true
+        setInitialLoading(false)
+      }
     }
   }, [branchFilter, statusFilter])
 
+  // Parallel initial fetch — branches and collections at the same time
   useEffect(() => {
-    loadBranches()
-  }, [loadBranches])
+    const token = getToken()
+    const branchReq = fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return
+        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name }))
+        setBranches(list.sort((a: any, b: any) => a.name.localeCompare(b.name)))
+      })
+      .catch(() => {})
+    const colReq = fetchCollections()
+    Promise.all([branchReq, colReq])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // Re-fetch when filters change (stale data stays visible)
   useEffect(() => {
+    if (!hasFetchedOnce.current) return
     fetchCollections()
   }, [fetchCollections])
 
   const handleResolve = async (item: CollectionItem) => {
     setResolvingId(item.id)
+    // Optimistic update — mark resolved immediately in UI
+    const now = new Date().toISOString()
+    setItems(prev => prev.map(it =>
+      it.id === item.id
+        ? { ...it, collectionResolved: true, collectionResolvedBy: user?.name || '', collectionResolvedAt: now }
+        : it
+    ))
+    setConfirmItem(null)
+    setSelectedRow(null)
     try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${item.id}/resolve`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: item.id === selectedRow?.id ? notesText : '' })
       })
-      if (res.ok) {
-        setConfirmItem(null)
-        setSelectedRow(null)
-        fetchCollections()
+      if (!res.ok) {
+        // Rollback on failure
+        setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false } : it))
       } else {
-        alert('Failed to resolve collection item.')
+        // Silent background sync
+        fetchCollections(true)
       }
     } catch {
-      alert('Error connecting to server.')
+      setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false } : it))
     } finally {
       setResolvingId(null)
     }
@@ -275,17 +460,48 @@ export default function ForCollections() {
     }
   }
 
-  // Filtered list
-  const filteredItems = items.filter(item => {
-    const term = search.toLowerCase()
-    const matchSearch = 
-      (item.description || '').toLowerCase().includes(term) ||
-      (item.customer || '').toLowerCase().includes(term) ||
-      (item.branchName || '').toLowerCase().includes(term)
-    return matchSearch
-  })
+  // Build month options from current items (+ last 12 months always available)
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>()
+    // Add months from data
+    items.forEach(item => {
+      if (item.reportDate) seen.add(item.reportDate.slice(0, 7))
+    })
+    // Also always include last 12 months so picker isn't empty on first load
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    return Array.from(seen).sort((a, b) => b.localeCompare(a))
+  }, [items])
 
-  const totalAmount = filteredItems.reduce((acc, item) => acc + item.amount, 0)
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
+  // Memoized filter — instant, no re-render on every keystroke
+  const filteredItems = useMemo(() => {
+    const term = search.toLowerCase()
+    return items.filter(item => {
+      const matchSearch =
+        (item.description || '').toLowerCase().includes(term) ||
+        (item.customer || '').toLowerCase().includes(term) ||
+        (item.branchName || '').toLowerCase().includes(term)
+      const matchMonth = !monthFilter || (item.reportDate || '').startsWith(monthFilter)
+      const matchDate  = !dateFilter  || item.reportDate === dateFilter
+      return matchSearch && matchMonth && matchDate
+    })
+  }, [items, search, monthFilter, dateFilter])
+
+  const totalAmount = useMemo(
+    () => filteredItems.reduce((acc, item) => acc + item.amount, 0),
+    [filteredItems]
+  )
+
+  const hasDateFilter = !!monthFilter || !!dateFilter
+  const clearDateFilters = () => { setMonthFilter(''); setDateFilter('') }
 
   return (
     <div className="flex flex-col gap-6 pb-8 md:pb-8">
@@ -299,8 +515,8 @@ export default function ForCollections() {
             <input
               type="text"
               placeholder="Search installer, customer or branch..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={rawSearch}
+              onChange={e => handleSearchChange(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
             />
@@ -338,6 +554,60 @@ export default function ForCollections() {
               <option value="ALL">All Collections</option>
             </select>
           </div>
+
+          {/* Month picker */}
+          <div className="relative min-w-[160px]">
+            <Calendar className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+            <select
+              value={monthFilter}
+              onChange={e => { setMonthFilter(e.target.value); setDateFilter('') }}
+              className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all"
+              style={{ color: monthFilter ? textPrimary : textMuted, backgroundColor: inputBg, borderColor: monthFilter ? '#10B981' : inputBorder }}
+              aria-label="Filter by Month"
+            >
+              <option value="">All Months</option>
+              {monthOptions.map(ym => (
+                <option key={ym} value={ym}>{monthLabel(ym)}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Specific date picker — only when a month is selected */}
+          {monthFilter && (
+            <div className="relative">
+              <input
+                type="date"
+                value={dateFilter}
+                min={`${monthFilter}-01`}
+                max={(() => {
+                  const [y, m] = monthFilter.split('-').map(Number)
+                  return new Date(y, m, 0).toISOString().slice(0, 10)
+                })()}
+                onChange={e => setDateFilter(e.target.value)}
+                className="py-2 px-3 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all cursor-pointer"
+                style={{
+                  backgroundColor: inputBg,
+                  borderColor: dateFilter ? '#10B981' : inputBorder,
+                  color: dateFilter ? textPrimary : textMuted,
+                  minWidth: 130
+                }}
+                aria-label="Filter by Date"
+              />
+            </div>
+          )}
+
+          {/* Clear date filters chip */}
+          {hasDateFilter && (
+            <button
+              type="button"
+              onClick={clearDateFilters}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold border transition-all hover:bg-red-50 dark:hover:bg-red-900/20"
+              style={{ borderColor: '#EF4444', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.07)' }}
+              title="Clear date filters"
+            >
+              <X size={12} /> Clear
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0 md:justify-end">
@@ -350,80 +620,123 @@ export default function ForCollections() {
       </div>
 
       {/* Collections List Table */}
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        {loading ? (
-          <div className="flex flex-col gap-3 p-6">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
+      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, position: 'relative' }}>
+        {/* Slim fetch indicator — only shows on subsequent re-fetches, not initial load */}
+        {fetching && !initialLoading && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', zIndex: 10, overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+            <div style={{
+              height: '100%',
+              background: 'linear-gradient(90deg, transparent, #10B981, transparent)',
+              animation: 'shimmerBar 1.2s ease-in-out infinite',
+              backgroundSize: '200% 100%'
+            }} />
+          </div>
+        )}
+        {/* Inject shimmer keyframe once */}
+        <style>{`
+          @keyframes shimmerBar {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          @keyframes fadeInTable {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+
+        {initialLoading ? (
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} style={{
+                height: '40px',
+                borderRadius: '8px',
+                background: isLight
+                  ? `linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%)`
+                  : `linear-gradient(90deg, #0d1520 25%, #1E2D48 50%, #0d1520 75%)`,
+                backgroundSize: '200% 100%',
+                animation: `shimmerBar 1.4s ease-in-out ${i * 0.08}s infinite`
+              }} />
             ))}
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <CheckCircle2 className="w-12 h-12 opacity-25 text-emerald-500" />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              No collection items found matching the selected filters.
+              No collection items found.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse">
+          <div className="overflow-x-auto" style={{ animation: 'fadeInTable 0.18s ease-out' }}>
+            <table className="w-full text-left border-collapse" style={{ fontSize: '12px', color: textPrimary }}>
               <thead>
-                <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider"
-                  style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
-                  <th className="px-5 py-3.5">Date Submitted</th>
-                  <th className="px-5 py-3.5">Branch</th>
-                  <th className="px-5 py-3.5">TR No.</th>
-                  <th className="px-5 py-3.5">Submitted By</th>
-                  <th className="px-5 py-3.5">Assigned Tech / Installer</th>
-                  <th className="px-5 py-3.5">Customer</th>
-                  <th className="px-5 py-3.5 text-right">Amount</th>
-                  <th className="px-5 py-3.5">Notes</th>
-                  <th className="px-5 py-3.5 text-center">Status</th>
-                  <th className="px-5 py-3.5 text-center no-print">Action</th>
+                <tr style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th className="px-4 py-3">Date Submitted</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">TR No.</th>
+                  <th className="px-4 py-3">Submitted By</th>
+                  <th className="px-4 py-3">Installer / Tech</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3">Notes</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center no-print">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredItems.map((item, idx) => {
                   const resolved = item.collectionResolved
-                  const statusBg = resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)'
-                  const statusColor = resolved ? '#10B981' : '#F59E0B'
                   
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors"
-                      style={{ borderBottom: idx < filteredItems.length - 1 ? `1px solid ${border}` : 'none' }}
+                      style={{ borderBottom: idx < filteredItems.length - 1 ? `1px solid ${border}` : 'none', color: textPrimary }}
                     >
-                      <td className="px-5 py-3.5 font-medium" style={{ color: textMuted }}>
-                        {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                      <td className="px-4 py-3">{item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                      <td className="px-4 py-3">{item.branchName || '—'}</td>
+                      <td className="px-4 py-3">{item.trNo || '—'}</td>
+                      <td className="px-4 py-3">{formatDisplayUserLabel(item.receivedBy)}</td>
+                      <td className="px-4 py-3">{formatDisplayUserLabel(item.description)}</td>
+                      <td className="px-4 py-3">{item.customer || '—'}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">₱{peso(item.amount)}</td>
+                      <td className="px-4 py-3" style={{ maxWidth: 220 }}>
+                        <InlineNotesCell
+                          itemId={item.id}
+                          note={item.collectionNotes || ''}
+                          updatedBy={item.collectionUpdatedBy}
+                          updatedAt={item.collectionUpdatedAt}
+                          textPrimary={textPrimary}
+                          textMuted={textMuted}
+                          inputBg={inputBg}
+                          inputBorder={inputBorder}
+                          border={border}
+                          isLight={isLight}
+                          onSave={async (id, text) => {
+                            const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${id}/notes`, {
+                              method: 'POST',
+                              headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ notes: text })
+                            })
+                            if (res.ok) {
+                              const now = new Date().toISOString()
+                              setItems(prev => prev.map(it =>
+                                it.id === id
+                                  ? { ...it, collectionNotes: text, collectionUpdatedBy: user?.name || '', collectionUpdatedAt: now }
+                                  : it
+                              ))
+                            }
+                          }}
+                        />
                       </td>
-                      <td className="px-5 py-3.5 font-semibold" style={{ color: textPrimary }}>{item.branchName || '—'}</td>
-                      <td className="px-5 py-3.5 font-mono text-[11px]" style={{ color: textPrimary }}>{item.trNo || '—'}</td>
-                      <td className="px-5 py-3.5 font-medium" style={{ color: textMuted }}>{formatDisplayUserLabel(item.receivedBy)}</td>
-                      <td className="px-5 py-3.5 font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</td>
-                      <td className="px-5 py-3.5" style={{ color: textPrimary }}>{item.customer || '—'}</td>
-                      <td className="px-5 py-3.5 text-right font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</td>
-                      <td className="px-5 py-3.5 max-w-[200px] truncate" style={{ color: textMuted }} title={item.collectionNotes || ''}>
-                        {item.collectionNotes ? (
-                          <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-slate-800 dark:text-slate-200 font-medium line-clamp-1">{item.collectionNotes}</span>
-                            {(item.collectionUpdatedBy || item.collectionUpdatedAt) && (
-                              <span className="text-[9px] opacity-75">
-                                By {item.collectionUpdatedBy || '—'} ({item.collectionUpdatedAt ? new Date(item.collectionUpdatedAt).toLocaleDateString('en-PH', {month:'short', day:'numeric'}) : ''})
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="italic opacity-50">No notes</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
-                          style={{ backgroundColor: statusBg, color: statusColor }}>
+                      <td className="px-4 py-3 text-center">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase"
+                          style={{
+                            backgroundColor: resolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                            color: resolved ? '#10B981' : '#F59E0B'
+                          }}>
                           {resolved ? 'RESOLVED' : 'PENDING'}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-center no-print">
+                      <td className="px-4 py-3 text-center no-print">
                         <div className="flex items-center justify-center gap-2">
                           {item.reportId && (
                             <button
@@ -434,8 +747,8 @@ export default function ForCollections() {
                                 setRowExpenses(null)
                                 fetchRowExpenses(item.reportId!)
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                              style={{ borderColor: inputBorder, color: textMuted }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                              style={{ borderColor: inputBorder, color: textPrimary, fontSize: '11px' }}
                             >
                               <Eye className="w-3.5 h-3.5" /> Details
                             </button>
@@ -444,15 +757,15 @@ export default function ForCollections() {
                             <button
                               type="button"
                               onClick={() => setConfirmItem(item)}
-                              className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
-                              style={{ border: 'none' }}
+                              className="px-3 py-1.5 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
+                              style={{ border: 'none', fontSize: '11px' }}
                             >
                               Resolve
                             </button>
                           ) : resolved ? (
-                            <span className="text-[10px] font-bold text-slate-400">—</span>
+                            <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
                           ) : (
-                            <span className="text-[10px] font-bold text-slate-400">Restricted</span>
+                            <span style={{ color: textMuted, fontSize: '11px' }}>Restricted</span>
                           )}
                         </div>
                       </td>
