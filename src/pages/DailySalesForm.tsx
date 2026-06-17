@@ -318,20 +318,25 @@ export default function DailySalesForm() {
           let finalList = newList
           if (isBranchRestricted && user?.branchId) {
             const normBranch = normalizeTransactionBranch(user.branchId, user.email)
-            const isTaguigId = (id: string) => {
-              const upper = id.toUpperCase()
-              return upper.startsWith('BR-TAGUIG') || upper.startsWith('2880C29E-581C-11F1-BF8C-74D4DD6DFC0B') || upper.includes('TAGUIG')
-            }
             finalList = newList.filter(b => {
-              // Match by real base ID or virtual suffixed ID
-              const baseId = normBranch.branchId.replace(/-(sales|services)$/i, '')
-              const isBothTaguig = isTaguigId(b.id) && isTaguigId(normBranch.branchId)
-              if (!isBothTaguig && b.id !== baseId && b.id !== normBranch.branchId) return false
-              // For Taguig: only show the correct SALES or SERVICES entry
-              if (normBranch.auditLine && b.auditLine) {
-                return b.auditLine === normBranch.auditLine
+              const bNameUpper = b.name.toUpperCase()
+              const userBranchLower = (user?.branchId || '').toLowerCase()
+              const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+              
+              if (isUserTaguig) {
+                // If user is Taguig, show this branch only if it is Taguig
+                if (!bNameUpper.includes('TAGUIG')) return false
+                // Match the audit line
+                if (normBranch.auditLine && b.auditLine) {
+                  return b.auditLine === normBranch.auditLine
+                }
+                return true
+              } else {
+                // For other branches: match by ID case-insensitively
+                const baseId = normBranch.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+                const bIdLower = b.id.toLowerCase()
+                return bIdLower === baseId || bIdLower === normBranch.branchId.toLowerCase()
               }
-              return true
             })
           }
           finalList.sort((a, b) => a.name.localeCompare(b.name))

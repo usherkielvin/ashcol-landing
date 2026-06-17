@@ -356,7 +356,13 @@ export default function AuditFinanceExpenses() {
 
       let finalList = newList
       if (isBranchScopedUser && user?.branchId) {
-        finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+        const userBranchIdUpper = user.branchId.toUpperCase()
+        finalList = newList.filter(b => {
+          const bIdUpper = b.id.toUpperCase()
+          return bIdUpper === userBranchIdUpper || 
+                 bIdUpper.startsWith(userBranchIdUpper + '-') || 
+                 userBranchIdUpper.startsWith(bIdUpper + '-')
+        })
       }
 
       setBranches(finalList)
@@ -366,11 +372,12 @@ export default function AuditFinanceExpenses() {
           const emailLower = (user?.email || '').toLowerCase()
           const isServicesUser = emailLower.includes('service')
           let matched = null
+          const userBranchIdUpper = user.branchId.toUpperCase()
           if (isServicesUser) {
-            matched = finalList.find(b => b.id === `${user.branchId}-services` || b.id === 'BR-TAGUIG-SALES-services')
+            matched = finalList.find(b => b.id.toUpperCase().endsWith('-SERVICES') || b.id.toUpperCase().endsWith('-SERVICE'))
           }
           if (!matched) {
-            matched = finalList.find(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+            matched = finalList.find(b => b.id.toUpperCase() === userBranchIdUpper || b.id.toUpperCase().startsWith(`${userBranchIdUpper}-`))
           }
           if (matched) {
             setBranchId(matched.id)

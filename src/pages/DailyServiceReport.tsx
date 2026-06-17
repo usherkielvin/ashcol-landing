@@ -549,7 +549,13 @@ export default function DailyServiceReport() {
       if (isAdmin) {
         finalList = [{ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' }, ...newList]
       } else if (isBranchScoped && user?.branchId) {
-        finalList = newList.filter(b => b.id === user.branchId || b.id.startsWith(`${user.branchId}-`))
+        const userBranchIdUpper = user.branchId.toUpperCase()
+        finalList = newList.filter(b => {
+          const bIdUpper = b.id.toUpperCase()
+          return bIdUpper === userBranchIdUpper || 
+                 bIdUpper.startsWith(userBranchIdUpper + '-') || 
+                 userBranchIdUpper.startsWith(bIdUpper + '-')
+        })
       }
       setBranches(finalList)
     } catch (e) { console.error(e) }
@@ -557,7 +563,17 @@ export default function DailyServiceReport() {
 
   useEffect(() => {
     if (isBranchScoped && user?.branchId && !branchFilter) {
-      setBranchFilter(user.branchId)
+      const emailLower = (user?.email || '').toLowerCase()
+      const isServicesUser = emailLower.includes('service')
+      const userBranchIdUpper = user.branchId.toUpperCase()
+      let matched = null
+      if (isServicesUser) {
+        matched = branches.find(b => b.id.toUpperCase().endsWith('-SERVICES') || b.id.toUpperCase().endsWith('-SERVICE'))
+      }
+      if (!matched) {
+        matched = branches.find(b => b.id.toUpperCase() === userBranchIdUpper || b.id.toUpperCase().startsWith(`${userBranchIdUpper}-`))
+      }
+      setBranchFilter(matched ? matched.id : (branches[0]?.id || user.branchId))
       return
     }
     if (isAllBranchUser && !branchFilter && branches.length > 0) {
