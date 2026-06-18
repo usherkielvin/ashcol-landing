@@ -321,10 +321,8 @@ export default function ForCollections() {
       console.error('Failed to fetch collections', e)
     } finally {
       setFetching(false)
-      if (!hasFetchedOnce.current) {
-        hasFetchedOnce.current = true
-        setInitialLoading(false)
-      }
+      if (!hasFetchedOnce.current) hasFetchedOnce.current = true
+      setInitialLoading(false)
     }
   }, [branchFilter, statusFilter, activeTab])
 
