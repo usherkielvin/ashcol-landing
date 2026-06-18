@@ -731,9 +731,9 @@ export default function ForCollections() {
                       <th className="px-3 py-3 text-center" style={{ width: 60 }}>Units</th>
                     </>
                   )}
-                  <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>
+                  {activeTab === 'collections' && <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>}
                   <th className="px-3 py-3 text-right" style={{ width: 110 }}>{activeTab === 'collections' ? 'Amount' : 'Price'}</th>
-                  <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>
+                  {activeTab === 'collections' && <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>}
                   <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
                 </tr>
               </thead>
@@ -850,45 +850,49 @@ export default function ForCollections() {
                         </>
                       )}
 
-                      {/* Notes */}
-                      <td className="px-3 py-3" style={{ maxWidth: 200 }}>
-                        <InlineNotesCell
-                          itemId={item.id}
-                          note={item.collectionNotes || ''}
-                          updatedBy={item.collectionUpdatedBy}
-                          updatedAt={item.collectionUpdatedAt}
-                          textPrimary={textPrimary}
-                          textMuted={textMuted}
-                          inputBg={inputBg}
-                          onSave={async (id, text) => {
-                            const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${id}/notes`, {
-                              method: 'POST',
-                              headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ notes: text })
-                            })
-                            if (res.ok) {
-                              const now = new Date().toISOString()
-                              setItems(prev => prev.map(it =>
-                                it.id === id
-                                  ? { ...it, collectionNotes: text, collectionUpdatedBy: user?.name || '', collectionUpdatedAt: now }
-                                  : it
-                              ))
-                            }
-                          }}
-                        />
-                      </td>
+                      {/* Notes — Collections only */}
+                      {activeTab === 'collections' && (
+                        <td className="px-3 py-3" style={{ maxWidth: 200 }}>
+                          <InlineNotesCell
+                            itemId={item.id}
+                            note={item.collectionNotes || ''}
+                            updatedBy={item.collectionUpdatedBy}
+                            updatedAt={item.collectionUpdatedAt}
+                            textPrimary={textPrimary}
+                            textMuted={textMuted}
+                            inputBg={inputBg}
+                            onSave={async (id, text) => {
+                              const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${id}/notes`, {
+                                method: 'POST',
+                                headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ notes: text })
+                              })
+                              if (res.ok) {
+                                const now = new Date().toISOString()
+                                setItems(prev => prev.map(it =>
+                                  it.id === id
+                                    ? { ...it, collectionNotes: text, collectionUpdatedBy: user?.name || '', collectionUpdatedAt: now }
+                                    : it
+                                ))
+                              }
+                            }}
+                          />
+                        </td>
+                      )}
 
                       {/* Amount / Price */}
                       <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: activeTab === 'collections' ? '#D97706' : '#10B981', fontSize: '11px', whiteSpace: 'nowrap' }}>
                         ₱{peso(activeTab === 'collections' ? item.amount : price)}
                       </td>
 
-                      {/* Status */}
-                      <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
-                        <span style={{ color: resolved ? textPrimary : '#F59E0B' }}>
-                          {resolved ? 'Resolved' : 'Pending'}
-                        </span>
-                      </td>
+                      {/* Status — Collections only */}
+                      {activeTab === 'collections' && (
+                        <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
+                          <span style={{ color: resolved ? textPrimary : '#F59E0B' }}>
+                            {resolved ? 'Resolved' : 'Pending'}
+                          </span>
+                        </td>
+                      )}
 
                       {/* Action */}
                       <td className="px-3 py-3 text-center no-print">
@@ -1325,6 +1329,7 @@ export default function ForCollections() {
 
                     {/* Rebates Breakdown */}
                     {renderItemTable('Rebates Breakdown', rebateItems, [
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                       { label: 'Company', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                       { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
                       {
