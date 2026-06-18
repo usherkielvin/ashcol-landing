@@ -15,7 +15,7 @@ interface OnlineTxRow  { id: string; installer: string; customer: string; bank: 
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
 interface ForCollRow   { id: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
-interface RebateRow    { id: string; company: string; raNumber: string; hp: string; amount: string; units: string; total: string }
+interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string; units: string; total: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 
@@ -115,7 +115,7 @@ const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', ban
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
-const mkReb  = (): RebateRow   => ({ id: uid(), company: '', raNumber: '', hp: '', amount: '', units: '', total: '' })
+const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '', units: '', total: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 
@@ -605,6 +605,7 @@ export default function DailySalesForm() {
             const units = item.units != null ? String(item.units) : '1'
             rebatesList.push({
               id: uid(),
+              customer: item.customer || '',
               company: item.company || '',
               raNumber,
               hp,
@@ -618,6 +619,7 @@ export default function DailySalesForm() {
       if (rebatesList.length === 0 && data.rebatesForCollection != null && data.rebatesForCollection > 0) {
         rebatesList.push({
           id: uid(),
+          customer: '',
           company: 'Rebates',
           raNumber: '',
           hp: '',
@@ -972,6 +974,7 @@ export default function DailySalesForm() {
         const sUnits = scanned.units != null ? String(scanned.units) : '1'
         return {
           id: uid(),
+          customer: (scanned.customer || '').trim(),
           company: (scanned.company || '').trim(),
           raNumber: '',
           hp: '',
@@ -981,7 +984,7 @@ export default function DailySalesForm() {
         }
       }))
     } else if (data.rebatesForCollection) {
-      setRebates([{ id: uid(), company: 'Scanned Rebates', raNumber: '', hp: '', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
+      setRebates([{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
     } else {
       setRebates([mkReb()])
     }
@@ -1171,8 +1174,9 @@ export default function DailySalesForm() {
           receiptDate: r.receiptDate || null,
           resolvedExpenseId: r.resolvedExpenseId || null
         })),
-        ...rebates.filter(r => r.company || r.amount).map(r => ({
+        ...rebates.filter(r => r.customer || r.company || r.amount).map(r => ({
           type: 'REBATE',
+          customer: r.customer,
           company: r.company,
           units: parseInt(r.units) || 1,
           amount: parseFloat(r.amount) || 0,
@@ -1842,6 +1846,7 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
+                    <th className={tableTh}>Customer</th>
                     <th className={tableTh}>Company</th>
                     <th className={tableTh}>Brand</th>
                     <th className={tableTh + ' w-16'}>HP</th>
@@ -1856,6 +1861,11 @@ export default function DailySalesForm() {
                     const calc = num(row.amount) * num(row.units)
                     return (
                       <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                        <td className={tableTd}>
+                          <input type="text" placeholder="Customer" value={row.customer}
+                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                            className={flushInput} disabled={isFormDisabled} />
+                        </td>
                         <td className={tableTd}>
                           <input type="text" placeholder="ROBINSONS" value={row.raNumber}
                             onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
@@ -2048,13 +2058,13 @@ export default function DailySalesForm() {
                 </thead>
                 <tbody>
                   {([
-                    { label: 'Scheduled Unit',          value: scheduledUnits,   setter: setScheduledUnits },
-                    { label: 'Total Installed Units',   value: installedUnits,   setter: setInstalledUnits },
-                    { label: 'Total Serviced Units',    value: servicedUnits,    setter: setServicedUnits },
-                    { label: 'Total Cancelled',         value: cancelledUnits,   setter: setCancelledUnits },
-                    { label: 'Total Free Install',      value: freeInstallUnits, setter: setFreeInstallUnits },
-                    { label: 'Customer for Survey Only', value: surveyOnlyUnits,   setter: setSurveyOnlyUnits },
-                    { label: 'Rescheduled Unit',        value: rescheduledUnits, setter: setRescheduledUnits },
+                    { label: 'Scheduled Units',          value: scheduledUnits,   setter: setScheduledUnits },
+                    { label: 'Rescheduled Units',        value: rescheduledUnits, setter: setRescheduledUnits },
+                    { label: 'Installed Units',          value: installedUnits,   setter: setInstalledUnits },
+                    { label: 'Serviced Units',           value: servicedUnits,    setter: setServicedUnits },
+                    { label: 'Cancelled Units',          value: cancelledUnits,   setter: setCancelledUnits },
+                    { label: 'Free Install Units',       value: freeInstallUnits, setter: setFreeInstallUnits },
+                    { label: 'Survey Only Units',        value: surveyOnlyUnits,  setter: setSurveyOnlyUnits },
                   ] as { label: string; value: string; setter: (v: string) => void }[]).map(({ label, value, setter }) => (
                     <tr key={label} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className="px-3 py-1.5 font-medium text-slate-600 dark:text-slate-400">{label}</td>
