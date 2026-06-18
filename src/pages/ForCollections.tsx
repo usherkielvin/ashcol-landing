@@ -303,7 +303,20 @@ export default function ForCollections() {
     searchTimer.current = setTimeout(() => setSearch(value), 200)
   }
 
+  const cacheKey = (tab: string) =>
+    `ashcol-fc-cache-${tab}-${branchFilter}-${statusFilter}`
+
   const fetchCollections = useCallback(async (silent = false) => {
+    // ── Restore from cache instantly so there's no blank flash ──
+    const cached = sessionStorage.getItem(cacheKey(activeTab))
+    if (cached) {
+      try {
+        const parsed: CollectionItem[] = JSON.parse(cached)
+        setItems(parsed)
+        setInitialLoading(false)
+      } catch { /* ignore */ }
+    }
+
     if (!silent) setFetching(true)
     try {
       const params = new URLSearchParams()
@@ -320,6 +333,8 @@ export default function ForCollections() {
           list = list.filter(item => item.collectionResolved)
         }
         setItems(list)
+        // Persist to session cache for instant restore on next visit/tab switch
+        try { sessionStorage.setItem(cacheKey(activeTab), JSON.stringify(list)) } catch { /* ignore */ }
       }
     } catch (e) {
       console.error('Failed to fetch collections', e)
@@ -328,6 +343,7 @@ export default function ForCollections() {
       if (!hasFetchedOnce.current) hasFetchedOnce.current = true
       setInitialLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchFilter, statusFilter, activeTab])
 
   // Parallel initial fetch — branches and collections at the same time
@@ -346,14 +362,23 @@ export default function ForCollections() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Clear list and show loader on tab switch
+  // On tab switch — restore cached data instantly; no blank screen
   useEffect(() => {
     if (!hasFetchedOnce.current) return
-    setItems([])
-    setInitialLoading(true)
+    const cached = sessionStorage.getItem(cacheKey(activeTab))
+    if (cached) {
+      try {
+        setItems(JSON.parse(cached))
+        setInitialLoading(false)
+      } catch { setItems([]); setInitialLoading(true) }
+    } else {
+      setItems([])
+      setInitialLoading(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
-  // Re-fetch when filters change (stale data stays visible)
+  // Re-fetch when filters change
   useEffect(() => {
     if (!hasFetchedOnce.current) return
     fetchCollections()
