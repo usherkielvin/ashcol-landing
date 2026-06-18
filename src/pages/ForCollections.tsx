@@ -750,7 +750,6 @@ export default function ForCollections() {
             <table className="w-full text-left border-collapse" style={{ fontSize: '12px', color: textPrimary }}>
               <thead>
                 <tr style={{ borderBottom: `2px solid ${border}`, color: textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                  <th className="px-3 py-3 text-center" style={{ width: 36 }}>#</th>
                   <th className="px-3 py-3" style={{ width: 130 }}>TR No. / Date</th>
                   <th className="px-3 py-3">Submitted By</th>
                   <th className="px-3 py-3">Branch</th>
@@ -772,7 +771,7 @@ export default function ForCollections() {
                   {activeTab === 'collections' && <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>}
                   <th className="px-3 py-3 text-right" style={{ width: 110 }}>{activeTab === 'collections' ? 'Amount' : 'Price'}</th>
                   {activeTab === 'collections' && <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>}
-                  <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
+                  {activeTab === 'collections' && <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -807,15 +806,15 @@ export default function ForCollections() {
                         backgroundColor: resolved ? (isLight ? 'rgba(16,185,129,0.03)' : 'rgba(16,185,129,0.04)') : 'transparent'
                       }}
                     >
-                      {/* # */}
-                      <td className="px-3 py-3 text-center" style={{ color: textMuted, fontSize: '11px' }}>{idx + 1}</td>
-
-                      {/* TR No. / Date */}
+                      {/* TR No. / Date — idx shown as inline badge */}
                       <td className="px-3 py-3">
                         <div className="flex flex-col">
-                          <span style={{ fontSize: '11px', fontWeight: 500 }}>
-                            {item.trNo || <span style={{ color: textMuted }}>—</span>}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span style={{ fontSize: '10px', fontWeight: 700, color: isLight ? '#94a3b8' : '#475569', background: isLight ? '#f1f5f9' : '#1e293b', borderRadius: '4px', padding: '1px 5px', lineHeight: 1.4, flexShrink: 0 }}>{idx + 1}</span>
+                            <span style={{ fontSize: '11px', fontWeight: 500 }}>
+                              {item.trNo || <span style={{ color: textMuted }}>—</span>}
+                            </span>
+                          </div>
                           {item.reportDate ? (
                             <span style={{ color: textMuted, fontSize: '10px', marginTop: '2px' }}>
                               {new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -932,40 +931,42 @@ export default function ForCollections() {
                         </td>
                       )}
 
-                      {/* Action */}
-                      <td className="px-3 py-3 text-center no-print">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {item.reportId && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedRow(item)
-                                setNotesText(item.collectionNotes || '')
-                                setRowExpenses(null)
-                                fetchRowExpenses(item.reportId!)
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                              style={{ borderColor: border, color: textMuted, fontSize: '11px' }}
-                            >
-                              <Eye className="w-3 h-3" /> View
-                            </button>
-                          )}
-                          {!resolved && canResolve ? (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmItem(item)}
-                              className="px-2.5 py-1.5 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
-                              style={{ border: 'none', fontSize: '11px', fontWeight: 600 }}
-                            >
-                              Resolve
-                            </button>
-                          ) : resolved ? (
-                            <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
-                          ) : (
-                            <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
-                          )}
-                        </div>
-                      </td>
+                      {/* Action — Collections only */}
+                      {activeTab === 'collections' && (
+                        <td className="px-3 py-3 text-center no-print">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {item.reportId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRow(item)
+                                  setNotesText(item.collectionNotes || '')
+                                  setRowExpenses(null)
+                                  fetchRowExpenses(item.reportId!)
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                                style={{ borderColor: border, color: textMuted, fontSize: '11px' }}
+                              >
+                                <Eye className="w-3 h-3" /> View
+                              </button>
+                            )}
+                            {!resolved && canResolve ? (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmItem(item)}
+                                className="px-2.5 py-1.5 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
+                                style={{ border: 'none', fontSize: '11px', fontWeight: 600 }}
+                              >
+                                Resolve
+                              </button>
+                            ) : resolved ? (
+                              <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
+                            ) : (
+                              <span style={{ color: textMuted, fontSize: '11px' }}>—</span>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   )
                 })}

@@ -141,35 +141,6 @@ export default function DailyAuditReport() {
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
-  const [collectionsSummary, setCollectionsSummary] = useState<{
-    id: string;
-    branchName: string;
-    installer: string;
-    customer: string;
-    amount: number;
-    collectionResolved: boolean;
-    reportDate?: string;
-    receivedBy?: string;
-    trNo?: string;
-    auditRow?: AuditRow;
-  }[]>([])
-  const [rebatesSummary, setRebatesSummary] = useState<{
-    id: string;
-    branchName: string;
-    company: string;
-    description: string;
-    hp: string;
-    amount: number;
-    units: number;
-    customer: string;
-    collectionResolved: boolean;
-    reportDate?: string;
-    receivedBy?: string;
-    trNo?: string;
-    auditRow?: AuditRow;
-  }[]>([])
-  const [collectionsLoading, setCollectionsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'collections' | 'rebates'>('collections')
   const [viewMode, setViewMode]   = useState<'single' | 'range'>(() => {
     const stored = localStorage.getItem('perf-view-mode')
     return (stored === 'single' || stored === 'range') ? stored : 'single'
@@ -356,107 +327,7 @@ export default function DailyAuditReport() {
 
   useEffect(() => { fetchAudit() }, [fetchAudit])
 
-  useEffect(() => {
-    if (loading) return
-    const rowsWithData = rows.filter(r => (r.forCollection > 0 || r.rebatesForCollection > 0) && r.id)
-    if (rowsWithData.length === 0) {
-      setCollectionsSummary([])
-      setRebatesSummary([])
-      return
-    }
-    
-    let isMounted = true
-    const fetchAllData = async () => {
-      setCollectionsLoading(true)
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        const allPromises = rowsWithData.map(async (row) => {
-          try {
-            const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${row.id}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            })
-            if (res.ok) {
-              const data = await res.json()
-              const items = data.items || []
-              
-              const cols = items
-                .filter((it: any) => it.type === 'COLLECTION')
-                .map((it: any) => ({
-                  id: it.id || Math.random().toString(),
-                  branchName: row.branchName,
-                  installer: it.description || '',
-                  customer: it.customer || '',
-                  amount: it.amount || 0,
-                  collectionResolved: !!it.collectionResolved,
-                  reportDate: data.reportDate,
-                  receivedBy: data.receivedBy || '—',
-                  trNo: data.trNo || '—',
-                  auditRow: row,
-                }))
 
-              const rebs = items
-                .filter((it: any) => it.type === 'REBATE')
-                .map((it: any) => ({
-                  id: it.id || Math.random().toString(),
-                  branchName: row.branchName,
-                  company: it.company || '',
-                  description: it.description || '',
-                  customer: it.customer || '',
-                  amount: it.amount || 0,
-                  units: it.units || 1,
-                  collectionResolved: !!it.collectionResolved,
-                  reportDate: data.reportDate,
-                  receivedBy: data.receivedBy || '—',
-                  trNo: data.trNo || '—',
-                  auditRow: row,
-                }))
-
-              if (rebs.length === 0 && data.rebatesForCollection > 0) {
-                rebs.push({
-                  id: 'VIRTUAL-REBATE-' + row.id,
-                  branchName: row.branchName,
-                  company: 'Rebates',
-                  description: 'Scanned Rebates',
-                  customer: '',
-                  amount: data.rebatesForCollection,
-                  units: 1,
-                  collectionResolved: false,
-                  reportDate: data.reportDate,
-                  receivedBy: data.receivedBy || '—',
-                  trNo: data.trNo || '—',
-                  auditRow: row,
-                })
-              }
-
-              return { cols, rebs }
-            }
-          } catch (e) {
-            console.error('Error fetching details for row:', row.branchName, e)
-          }
-          return { cols: [], rebs: [] }
-        })
-        
-        const results = await Promise.all(allPromises)
-        if (isMounted) {
-          const flatCols = results.map(r => r?.cols || []).flat()
-          const flatRebs = results.map(r => r?.rebs || []).flat()
-          setCollectionsSummary(flatCols)
-          setRebatesSummary(flatRebs)
-        }
-      } catch (err) {
-        console.error('Error fetching detailed summary data:', err)
-      } finally {
-        if (isMounted) {
-          setCollectionsLoading(false)
-        }
-      }
-    }
-    
-    void fetchAllData()
-    return () => {
-      isMounted = false
-    }
-  }, [rows, loading])
 
   const fetchRowExpenses = async (row: AuditRow) => {
     setRowExpensesLoading(true)
@@ -753,6 +624,7 @@ export default function DailyAuditReport() {
             {mobileKpiChip('Expenses', `₱${peso(totals.totalExpenses)}`, '#EF4444')}
             {mobileKpiChip('Purchases', `₱${peso(totals.totalForPurchase)}`, '#F59E0B')}
             {mobileKpiChip('For coll.', `₱${peso(totals.forCollection)}`, '#F59E0B')}
+            {mobileKpiChip('Rebates', `₱${peso(totals.rebatesForCollection)}`, '#10B981')}
           </div>
         )}
 
@@ -844,6 +716,8 @@ export default function DailyAuditReport() {
             { label: 'Online Collected', value: peso(totals.totalOnlineCollection),  color: '#8B5CF6', icon: TrendingUp },
             { label: 'Total Expenses',         value: peso(totals.totalExpenses),          color: '#EF4444', icon: TrendingDown },
             { label: 'Total Purchases',        value: peso(totals.totalForPurchase),       color: '#F59E0B', icon: TrendingDown },
+            { label: 'For Collection',         value: peso(totals.forCollection),          color: '#F59E0B', icon: ClipboardList },
+            { label: 'Rebates',                value: peso(totals.rebatesForCollection),   color: '#10B981', icon: TrendingUp },
           ].map((k, i, arr) => {
             const Icon = k.icon
             return (
@@ -1373,220 +1247,24 @@ export default function DailyAuditReport() {
         )}
       </div>
 
-      {/* ── For Collection & Rebates Banners ──────────────────────────── */}
+      {/* ── For Collection & Rebates Totals — Simple ──────────────────── */}
       {!loading && (totals.forCollection > 0 || totals.rebatesForCollection > 0) && (
-        <div className="hidden md:flex gap-4 no-print">
+        <div className="flex flex-wrap gap-3 mt-4 no-print">
           {totals.forCollection > 0 && (
-            <div className="flex-1 rounded-2xl p-4 flex items-center justify-between"
-              style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
-              <span className="text-sm font-bold uppercase tracking-wider" style={{ color: '#F59E0B' }}>Total for Collection</span>
-              <span className="text-xl font-black" style={{ color: '#F59E0B' }}>₱{peso(totals.forCollection)}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#F59E0B' }}>
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>For Collection:</span>
+              <span className="font-extrabold">₱{peso(totals.forCollection)}</span>
             </div>
           )}
           {totals.rebatesForCollection > 0 && (
-            <div className="flex-1 rounded-2xl p-4 flex items-center justify-between"
-              style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
-              <span className="text-sm font-bold uppercase tracking-wider" style={{ color: '#10B981' }}>Total Rebates for Collection</span>
-              <span className="text-xl font-black" style={{ color: '#10B981' }}>₱{peso(totals.rebatesForCollection)}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: '#10B981' }}>
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Rebates:</span>
+              <span className="font-extrabold">₱{peso(totals.rebatesForCollection)}</span>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ── For Collection Detailed Summary Report ─────────────────── */}
-      {!loading && (collectionsSummary.length > 0 || rebatesSummary.length > 0) && (
-        <div className="rounded-2xl overflow-hidden p-5 flex flex-col gap-4 print-area mt-4 animate-fadeIn"
-          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b gap-3" style={{ borderColor: border }}>
-            <div className="flex items-center gap-3">
-              <ClipboardList className="w-4 h-4 text-emerald-500" />
-              <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('collections')}
-                  className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all ${activeTab === 'collections' ? 'shadow-sm text-white bg-emerald-500' : 'opacity-70 hover:opacity-100'}`}
-                  style={activeTab !== 'collections' ? { color: textPrimary } : {}}
-                >
-                  Collections ({collectionsSummary.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('rebates')}
-                  className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all ${activeTab === 'rebates' ? 'shadow-sm text-white bg-emerald-500' : 'opacity-70 hover:opacity-100'}`}
-                  style={activeTab !== 'rebates' ? { color: textPrimary } : {}}
-                >
-                  Rebates ({rebatesSummary.length})
-                </button>
-              </div>
-            </div>
-            
-            <span className="text-xs font-black" style={{ color: activeTab === 'collections' ? '#F59E0B' : '#10B981' }}>
-              {activeTab === 'collections' ? (
-                <>Total: ₱{peso(collectionsSummary.reduce((acc, c) => acc + c.amount, 0))}</>
-              ) : (
-                <>Total: ₱{peso(rebatesSummary.reduce((acc, r) => acc + r.amount * r.units, 0))}</>
-              )}
-            </span>
-          </div>
-
-          {collectionsLoading ? (
-            <div className="flex items-center justify-center py-6 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-              <span className="text-xs font-medium" style={{ color: textMuted }}>Loading breakdown details...</span>
-            </div>
-          ) : activeTab === 'collections' ? (
-            collectionsSummary.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-400">No collection items found.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider"
-                      style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
-                      <th className="px-4 py-2.5">Branch</th>
-                      {viewMode === 'range' && <th className="px-4 py-2.5">Date</th>}
-                      <th className="px-4 py-2.5">TR No.</th>
-                      <th className="px-4 py-2.5">Submitted By</th>
-                      <th className="px-4 py-2.5">Assigned Tech / Installer</th>
-                      <th className="px-4 py-2.5">Customer</th>
-                      <th className="px-4 py-2.5 text-right">Amount</th>
-                      <th className="px-4 py-2.5 text-center">Status</th>
-                      <th className="px-4 py-2.5 text-right no-print">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {collectionsSummary.map((item, idx) => (
-                      <tr key={item.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors"
-                        style={{ borderBottom: idx < collectionsSummary.length - 1 ? `1px solid ${border}` : 'none' }}>
-                        <td className="px-4 py-2.5 font-semibold" style={{ color: textPrimary }}>{formatBranchName(item.branchName)}</td>
-                        {viewMode === 'range' && (
-                          <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>
-                            {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                          </td>
-                        )}
-                        <td className="px-4 py-2.5 font-mono text-[11px]" style={{ color: textPrimary }}>{item.trNo || '—'}</td>
-                        <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>{formatDisplayUserLabel(item.receivedBy)}</td>
-                        <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.installer)}</td>
-                        <td className="px-4 py-2.5" style={{ color: textPrimary }}>{item.customer || '—'}</td>
-                        <td className="px-4 py-2.5 text-right font-bold tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</td>
-                        <td className="px-4 py-2.5 text-center">
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                            backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                            color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                          }}>
-                            {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-right no-print">
-                          {item.auditRow && (
-                            <button type="button"
-                              onClick={() => {
-                                setSelectedRow(item.auditRow!)
-                                setRowExpenses(null)
-                                fetchRowExpenses(item.auditRow!)
-                              }}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                              style={{ borderColor: inputBorder, color: textMuted }}
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Details
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          ) : (
-            rebatesSummary.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-400">No rebate items found.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider"
-                      style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
-                      <th className="px-4 py-2.5">Branch</th>
-                      {viewMode === 'range' && <th className="px-4 py-2.5">Date</th>}
-                      <th className="px-4 py-2.5">TR No.</th>
-                      <th className="px-4 py-2.5">Submitted By</th>
-                      <th className="px-4 py-2.5">Customer</th>
-                      <th className="px-4 py-2.5">Company / RA No.</th>
-                      <th className="px-4 py-2.5">Brand</th>
-                      <th className="px-4 py-2.5 text-center">HP</th>
-                      <th className="px-4 py-2.5 text-right">Rate</th>
-                      <th className="px-4 py-2.5 text-center">Units</th>
-                      <th className="px-4 py-2.5 text-right">Total Price</th>
-                      <th className="px-4 py-2.5 text-center">Status</th>
-                      <th className="px-4 py-2.5 text-right no-print">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rebatesSummary.map((item, idx) => {
-                      const desc = item.description || ''
-                      const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
-                      const companyRa = parts[1] || '—'
-                      const hp = parts[2] || '—'
-                      const rate = item.amount
-                      const units = item.units || 1
-                      const total = rate * units
-
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors"
-                          style={{ borderBottom: idx < rebatesSummary.length - 1 ? `1px solid ${border}` : 'none' }}>
-                          <td className="px-4 py-2.5 font-semibold" style={{ color: textPrimary }}>{formatBranchName(item.branchName)}</td>
-                          {viewMode === 'range' && (
-                            <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>
-                              {item.reportDate ? new Date(item.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                            </td>
-                          )}
-                          <td className="px-4 py-2.5 font-mono text-[11px]" style={{ color: textPrimary }}>{item.trNo || '—'}</td>
-                          <td className="px-4 py-2.5 font-medium" style={{ color: textMuted }}>{formatDisplayUserLabel(item.receivedBy)}</td>
-                          <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{item.customer || '—'}</td>
-                          <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{companyRa}</td>
-                          <td className="px-4 py-2.5 font-medium" style={{ color: textPrimary }}>{item.company || '—'}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            {hp !== '—' ? (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                {hp}
-                              </span>
-                            ) : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-medium tabular-nums text-slate-500">₱{peso(rate)}</td>
-                          <td className="px-4 py-2.5 text-center font-bold">{units}</td>
-                          <td className="px-4 py-2.5 text-right font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(total)}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                              backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                              color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                            }}>
-                              {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 text-right no-print">
-                            {item.auditRow && (
-                              <button type="button"
-                                onClick={() => {
-                                  setSelectedRow(item.auditRow!)
-                                  setRowExpenses(null)
-                                  fetchRowExpenses(item.auditRow!)
-                                }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                                style={{ borderColor: inputBorder, color: textMuted }}
-                              >
-                                <Eye className="w-3.5 h-3.5" /> Details
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
           )}
         </div>
       )}
