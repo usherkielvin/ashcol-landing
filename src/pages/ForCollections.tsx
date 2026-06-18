@@ -280,6 +280,7 @@ export default function ForCollections() {
     totalUnitsServiced?: number;
     totalUnitsCancelled?: number;
     totalUnitsFreeInstall?: number;
+    totalRescheduled?: number;
   } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
 
@@ -458,6 +459,7 @@ export default function ForCollections() {
           totalUnitsServiced: data.totalUnitsServiced || 0,
           totalUnitsCancelled: data.totalUnitsCancelled || 0,
           totalUnitsFreeInstall: data.totalUnitsFreeInstall || 0,
+          totalRescheduled: data.totalRescheduled || 0,
         })
       }
     } catch (err) {
@@ -721,6 +723,7 @@ export default function ForCollections() {
                     </>
                   ) : (
                     <>
+                      <th className="px-3 py-3">Customer</th>
                       <th className="px-3 py-3">Company / RA No.</th>
                       <th className="px-3 py-3">Brand</th>
                       <th className="px-3 py-3 text-center" style={{ width: 60 }}>HP</th>
@@ -811,6 +814,11 @@ export default function ForCollections() {
                         </>
                       ) : (
                         <>
+                          {/* Customer */}
+                          <td className="px-3 py-3 font-semibold">
+                            {item.customer || <span className="text-slate-400 font-normal dark:text-slate-600">—</span>}
+                          </td>
+
                           {/* Company / RA No. */}
                           <td className="px-3 py-3" style={{ fontWeight: 500 }}>
                             {companyRa}
@@ -1217,10 +1225,11 @@ export default function ForCollections() {
                         <span className="text-[11px] font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(rowExpenses?.rebatesForCollection)}</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
                         {[
                           { label: 'Total', value: `₱${peso(rowExpenses?.rebatesForCollection)}`, color: '#10B981' },
                           { label: 'Scheduled', value: String(rowExpenses?.totalUnitsScheduled || 0), color: textPrimary },
+                          { label: 'Rescheduled', value: String(rowExpenses?.totalRescheduled || 0), color: textPrimary },
                           { label: 'Installed', value: String(rowExpenses?.totalUnitsInstalled || 0), color: textPrimary },
                           { label: 'Serviced', value: String(rowExpenses?.totalUnitsServiced || 0), color: textPrimary },
                           { label: 'Cancelled', value: String(rowExpenses?.totalUnitsCancelled || 0), color: textPrimary },

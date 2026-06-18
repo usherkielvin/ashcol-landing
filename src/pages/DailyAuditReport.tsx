@@ -39,6 +39,7 @@ interface AuditRow {
   totalForPurchase: number
   totalUnitsScheduled?: number
   totalUnitsSurveyOnly?: number
+  totalRescheduled?: number
   totalUnitsInstalledServiced: number
   totalUnitsServiced: number
   totalCancelled: number
@@ -140,7 +141,6 @@ export default function DailyAuditReport() {
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
-  const [importing, setImporting] = useState(false)
   const [collectionsSummary, setCollectionsSummary] = useState<{
     id: string;
     branchName: string;
@@ -273,7 +273,6 @@ export default function DailyAuditReport() {
   )
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
-  const canImportExcel = isAdmin || isManager
 
   const showEditButton = useMemo(() => {
     if (!selectedRow) return false
@@ -401,51 +400,6 @@ export default function DailyAuditReport() {
       isMounted = false
     }
   }, [rows, loading])
-
-  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) { e.target.value = ''; return }
-    const inputElement = e.target
-    const targetDate = viewMode === 'single' ? date : rangeFrom
-    const prettyDate = viewMode === 'single'
-      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      : new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-
-    setConfirmModal({
-      title: 'Import DTR Performance',
-      message: `Import "${file.name}" into ${prettyDate}?\n\nThe backend will look for a sheet matching this date and save the data under that day. Existing reports for ${prettyDate} will be REPLACED.`,
-      confirmText: 'Import',
-      cancelText: 'Cancel',
-      type: 'warning',
-      onConfirm: async () => {
-        setImporting(true)
-        const formData = new FormData()
-        formData.append('file', file)
-        try {
-          const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-          const res = await fetch(`${API_BASE_URL}/v1/reports/import?date=${encodeURIComponent(targetDate)}`, {
-            method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
-          })
-          if (res.ok) {
-            const result = await res.json()
-            if (!result?.count) {
-              alert(`Import finished but no report rows were saved. Please check that the Excel sheet matches ${prettyDate} and contains branch rows.`)
-              return
-            }
-            const importedDate = (result?.date as string) || targetDate
-            alert(`${result.message || 'Import successful!'}${result?.sheet ? ` (from sheet "${result.sheet}")` : ''}`)
-            if (viewMode === 'single') { if (importedDate !== date) setDate(importedDate); else fetchAudit() }
-            else { if (importedDate !== rangeFrom) { setRangeFrom(importedDate); setRangeTo(importedDate) } else fetchAudit() }
-          } else {
-            const error = await res.json().catch(() => ({}))
-            alert(error.error || `Import failed (HTTP ${res.status})`)
-          }
-        } catch { alert('Network error during import') }
-        finally { setImporting(false); inputElement.value = '' }
-      }
-    })
-    e.target.value = ''
-  }
 
   const fetchRowExpenses = async (row: AuditRow) => {
     setRowExpensesLoading(true)
@@ -652,8 +606,6 @@ export default function DailyAuditReport() {
   return (
     <div className="flex flex-col gap-4 pb-8 md:pb-8">
 
-      <input type="file" accept=".xlsx,.xls" className="hidden" id="excel-import-input" onChange={handleImportExcel} />
-
       {/* ── Mobile header ──────────────────────────────────────────────────── */}
       <div className="md:hidden rounded-xl no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
@@ -668,9 +620,9 @@ export default function DailyAuditReport() {
             <button type="button" onClick={handleExportExcel}
               disabled={visibleRows.length === 0}
               title="Export Excel"
-              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-40 disabled:cursor-not-allowed text-white bg-blue-500 hover:bg-blue-600 transition-colors"
-              style={{ border: 'none' }}>
-              <Download className="w-4 h-4" />
+              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-40 disabled:cursor-not-allowed border transition-colors focus:outline-none"
+              style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
+              <Download className="w-4 h-4 text-emerald-500" />
             </button>
             <div className="relative shrink-0">
               <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
@@ -687,18 +639,8 @@ export default function DailyAuditReport() {
                       <button type="button" onClick={() => { handleExportExcel(); setMobileMenuOpen(false) }}
                         disabled={visibleRows.length === 0}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: textPrimary }}>
-                        <Download className="w-3.5 h-3.5" style={{ color: textMuted }} /> Export Excel
+                        <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
                       </button>
-
-                    {canImportExcel && (
-                      <>
-                        <button type="button" onClick={() => { document.getElementById('excel-import-input')?.click(); setMobileMenuOpen(false) }}
-                          disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40" style={{ color: textPrimary }}>
-                          <TrendingUp className="w-3.5 h-3.5" style={{ color: textMuted }} /> Import
-                        </button>
-                      </>
-                    )}
                     {hiddenBranches.length > 0 && (
                       <button type="button" onClick={() => { setHiddenBranches([]); setMobileMenuOpen(false) }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
@@ -817,9 +759,9 @@ export default function DailyAuditReport() {
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <button type="button" onClick={handleExportExcel}
             disabled={visibleRows.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#3B82F6', borderColor: '#3B82F6', color: '#fff' }}>
-            <Download className="w-3.5 h-3.5" /> Export Excel
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
+            <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
           </button>
 
           {hiddenBranches.length > 0 && (
@@ -827,18 +769,6 @@ export default function DailyAuditReport() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
               style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
               <Eye className="w-3.5 h-3.5" />Show {hiddenBranches.length} Hidden
-            </button>
-          )}
-
-          {canImportExcel && (
-            <button id="audit-import-btn" type="button"
-              disabled={importing || (viewMode === 'range' && rangeFrom !== rangeTo)}
-              onClick={() => document.getElementById('excel-import-input')?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-              style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#fff',
-                opacity: importing || (viewMode === 'range' && rangeFrom !== rangeTo) ? 0.5 : 1 }}>
-              <TrendingUp className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} />
-              {importing ? 'Importing…' : `Import Excel`}
             </button>
           )}
         </div>
@@ -1353,6 +1283,7 @@ export default function DailyAuditReport() {
                         { label: 'COH prev', field: 'cohPreviousDay', val: row.cohPreviousDay, color: textPrimary, money: true },
                         { label: 'Total CFD', val: row.totalCohCfd, color: textPrimary, money: true, readOnly: true },
                         { label: 'Scheduled', field: 'totalUnitsScheduled', val: row.totalUnitsScheduled, color: textPrimary, int: true },
+                        { label: 'Rescheduled', field: 'totalRescheduled', val: row.totalRescheduled, color: textPrimary, int: true },
                         { label: 'Units', field: 'totalUnitsInstalledServiced', val: row.totalUnitsInstalledServiced, color: textPrimary, int: true },
                         { label: 'Serviced', field: 'totalUnitsServiced', val: row.totalUnitsServiced, color: textPrimary, int: true },
                         { label: 'Cancelled', field: 'totalCancelled', val: row.totalCancelled, color: row.totalCancelled > 0 ? '#EF4444' : textMuted, int: true },
@@ -1772,10 +1703,11 @@ export default function DailyAuditReport() {
                         <span className="text-[11px] font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(selectedRow.rebatesForCollection)}</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
                         {[
                           { label: 'Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
                           { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0), color: textPrimary },
+                          { label: 'Rescheduled', value: String(selectedRow.totalRescheduled || 0), color: textPrimary },
                           { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), color: textPrimary },
                           { label: 'Serviced', value: String(selectedRow.totalUnitsServiced), color: textPrimary },
                           { label: 'Cancelled', value: String(selectedRow.totalCancelled), color: textPrimary },

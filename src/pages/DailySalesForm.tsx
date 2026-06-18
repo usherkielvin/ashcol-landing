@@ -408,6 +408,7 @@ export default function DailySalesForm() {
   // Unit summary
   const [scheduledUnits, setScheduledUnits]     = useState('')
   const [surveyOnlyUnits, setSurveyOnlyUnits]   = useState('')
+  const [rescheduledUnits, setRescheduledUnits] = useState('')
   const [installedUnits, setInstalledUnits]     = useState('')
   const [servicedUnits, setServicedUnits]       = useState('')
   const [cancelledUnits, setCancelledUnits]     = useState('')
@@ -630,6 +631,7 @@ export default function DailySalesForm() {
       // Populate units
       setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '')
       setSurveyOnlyUnits(data.totalUnitsSurveyOnly != null ? String(data.totalUnitsSurveyOnly) : '')
+      setRescheduledUnits(data.totalRescheduled != null ? String(data.totalRescheduled) : '')
       setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '')
       setServicedUnits(data.totalUnitsServiced != null ? String(data.totalUnitsServiced) : '')
       setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '')
@@ -829,6 +831,7 @@ export default function DailySalesForm() {
     setExpPurch([mkExp()])
     setScheduledUnits('')
     setSurveyOnlyUnits('')
+    setRescheduledUnits('')
     setInstalledUnits('')
     setServicedUnits('')
     setCancelledUnits('')
@@ -1093,6 +1096,7 @@ export default function DailySalesForm() {
       checkEmpty(fundFromHo) ||
       checkEmpty(scheduledUnits) ||
       checkEmpty(surveyOnlyUnits) ||
+      checkEmpty(rescheduledUnits) ||
       checkEmpty(installedUnits) ||
       checkEmpty(servicedUnits) ||
       checkEmpty(cancelledUnits) ||
@@ -1198,6 +1202,7 @@ export default function DailySalesForm() {
         rebatesForCollection: totalRebates,
         totalUnitsScheduled: parseInt(scheduledUnits) || 0,
         totalUnitsSurveyOnly: parseInt(surveyOnlyUnits) || 0,
+        totalRescheduled: parseInt(rescheduledUnits) || 0,
         totalUnitsInstalled: parseInt(installedUnits) || 0,
         totalUnitsServiced: parseInt(servicedUnits) || 0,
         totalUnitsCancelled: parseInt(cancelledUnits) || 0,
@@ -2049,6 +2054,7 @@ export default function DailySalesForm() {
                     { label: 'Total Cancelled',         value: cancelledUnits,   setter: setCancelledUnits },
                     { label: 'Total Free Install',      value: freeInstallUnits, setter: setFreeInstallUnits },
                     { label: 'Customer for Survey Only', value: surveyOnlyUnits,   setter: setSurveyOnlyUnits },
+                    { label: 'Rescheduled Unit',        value: rescheduledUnits, setter: setRescheduledUnits },
                   ] as { label: string; value: string; setter: (v: string) => void }[]).map(({ label, value, setter }) => (
                     <tr key={label} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className="px-3 py-1.5 font-medium text-slate-600 dark:text-slate-400">{label}</td>
