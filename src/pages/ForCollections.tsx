@@ -245,7 +245,11 @@ export default function ForCollections() {
   const [search, setSearch] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING')
-  const [branchFilter, setBranchFilter] = useState('')
+  const [branchFilter, setBranchFilter] = useState(() =>
+    (!( (user?.role || '').toLowerCase() === 'admin' ) && user?.branchId)
+      ? user.branchId.replace(/-(sales|services|service)$/i, '')
+      : ''
+  )
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   // Date filters — monthFilter = 'YYYY-MM', dateFilter = 'YYYY-MM-DD'
   const [monthFilter, setMonthFilter] = useState('')
@@ -562,22 +566,33 @@ export default function ForCollections() {
             />
           </div>
 
-          {/* Branch filter */}
-          <div className="relative min-w-[180px]">
-            <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
-            <select
-              value={branchFilter}
-              onChange={e => setBranchFilter(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all"
-              style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-              aria-label="Filter by Branch"
-            >
-              <option value="">All Branches</option>
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>
-              ))}
-            </select>
-          </div>
+          {/* Branch filter — admins can switch, non-admins see a locked badge */}
+          {isAdmin ? (
+            <div className="relative min-w-[180px]">
+              <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
+              <select
+                value={branchFilter}
+                onChange={e => setBranchFilter(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all"
+                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                aria-label="Filter by Branch"
+              >
+                <option value="">All Branches</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+              <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              <span className="truncate max-w-[160px]">
+                {branches.find(b => b.id === branchFilter)?.name
+                  ? formatBranchName(branches.find(b => b.id === branchFilter)!.name)
+                  : formatBranchName(user?.branchId || 'My Branch')}
+              </span>
+            </div>
+          )}
 
           {/* Status filter */}
           <div className="relative min-w-[140px]">

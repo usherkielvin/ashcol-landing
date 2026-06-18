@@ -1837,72 +1837,6 @@ export default function DailySalesForm() {
             </div>
           </div>
 
-          {/* Rebates for Collection */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Rebates for Collection" total={totalRebates} />
-            <div className="p-3 flex flex-col gap-2">
-              {rebates.map(row => {
-                return (
-                  <div key={row.id} className="rounded-lg border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/20 px-3 py-3">
-                    {/* Row 1: Customer + Company + Brand */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Customer</label>
-                        <input type="text" placeholder="Customer name" value={row.customer}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          disabled={isFormDisabled} />
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Company / RA No.</label>
-                        <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
-                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          disabled={isFormDisabled} />
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Brand</label>
-                        <input type="text" placeholder="e.g. MIDEA" value={row.company}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          disabled={isFormDisabled} />
-                      </div>
-                    </div>
-                    {/* Row 2: HP + Amount + Total + Delete — 1 unit per row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-[1fr_2fr_1.5fr_auto] gap-2 items-end">
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">HP</label>
-                        <input type="text" placeholder="1.5" value={row.hp}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
-                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-center text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          disabled={isFormDisabled} />
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Amount</label>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                          onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-right font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          disabled={isFormDisabled} />
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Total</label>
-                        <div className="h-[30px] flex items-center justify-end px-2.5 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/40">
-                          <span className="text-xs font-black tabular-nums text-emerald-700 dark:text-emerald-400">{php(num(row.amount))}</span>
-                        </div>
-                      </div>
-                      {canSubmit && !reviewMode && (
-                        <div className="flex items-end pb-0.5">
-                          <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
-            </div>
-          </div>
-
         </div>
 
         {/* ── RIGHT COLUMN ── */}
@@ -2117,6 +2051,66 @@ export default function DailySalesForm() {
 
         </div>
 
+      </div>
+
+      {/* ── Rebates for Collection — full width ──────────────────────── */}
+      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+        <SectionHeader label="Rebates for Collection" total={totalRebates} />
+        <div className="p-2">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr>
+                <th className={tableTh}>Customer</th>
+                <th className={tableTh}>Company / RA No.</th>
+                <th className={tableTh}>Brand</th>
+                <th className={tableTh + ' w-20 text-center'}>HP</th>
+                <th className={tableTh + ' text-right w-32'}>Amount</th>
+                <th className={tableTh + ' text-right w-32'}>Total</th>
+                {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rebates.map(row => (
+                <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                  <td className={tableTd}>
+                    <input type="text" placeholder="Customer name" value={row.customer}
+                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                      className={flushInput} disabled={isFormDisabled} />
+                  </td>
+                  <td className={tableTd}>
+                    <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
+                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                      className={flushInput} disabled={isFormDisabled} />
+                  </td>
+                  <td className={tableTd}>
+                    <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                      className={flushInput} disabled={isFormDisabled} />
+                  </td>
+                  <td className={tableTd}>
+                    <input type="text" placeholder="1.5" value={row.hp}
+                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                      className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                  </td>
+                  <td className={tableTd}>
+                    <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                      onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                      className={flushInputNumber} disabled={isFormDisabled} />
+                  </td>
+                  <td className={tableTd + ' text-right font-black text-emerald-700 dark:text-emerald-400 pr-2 text-xs tabular-nums'}>
+                    {php(num(row.amount))}
+                  </td>
+                  {canSubmit && !reviewMode && (
+                    <td className={tableTd + ' text-center'}>
+                      <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
+        </div>
       </div>
 
       {/* Error */}
