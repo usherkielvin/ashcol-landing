@@ -41329,359 +41329,29 @@ export default function LineUp() {
 
 
 
-  const totalDismantle = rows.reduce((acc, r) => {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const remarks = r.remarks || ''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const route = r.route || ''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const isServiceDismantle = /DISMANTLE/i.test(remarks) || /DISMANTLE/i.test(route) ||
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                               /CLEANING/i.test(remarks) || /CHECK\s*UP/i.test(remarks) ||
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                               /SERVICE/i.test(remarks)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if (!isServiceDismantle) return acc
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const unitSum = sumAllUnits(remarks)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if (unitSum > 0) return acc + unitSum
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const matches = remarks.match(/DISMANTLE|CLEANING|CHECK\s*UP|SERVICE/gi)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    return acc + (matches ? matches.length : 1)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  }, 0)
+  const totalCleaning = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    const route = r.route || ''
+    const isCleaning = /CLEANING/i.test(remarks) || /CLEANING/i.test(route)
+    if (!isCleaning) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/CLEANING/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
+
+  const totalDismantle = rows.reduce((acc, r) => {
+    const remarks = r.remarks || ''
+    const route = r.route || ''
+    const isServiceDismantle = /DISMANTLE/i.test(remarks) || /DISMANTLE/i.test(route) ||
+                               /CHECK\s*UP/i.test(remarks) ||
+                               /SERVICE/i.test(remarks)
+    if (!isServiceDismantle) return acc
+    const unitSum = sumAllUnits(remarks)
+    if (unitSum > 0) return acc + unitSum
+    const matches = remarks.match(/DISMANTLE|CHECK\s*UP|SERVICE/gi)
+    return acc + (matches ? matches.length : 1)
+  }, 0)
 
 
 
@@ -78897,7 +78567,8 @@ export default function LineUp() {
 
 
 
-                 ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['CLEANING', totalCleaning, '#0D9488'],
 
 
 
@@ -97649,7 +97320,8 @@ export default function LineUp() {
 
 
 
-                    ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['CLEANING', totalCleaning, '#0D9488'],
 
 
 
@@ -105009,7 +104681,11 @@ export default function LineUp() {
 
 
 
-                    </tr>
+</tr>
+                    <tr style={{ backgroundColor: isLight ? '#ccfbf1' : 'rgba(13,148,136,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#0D9488' }}>TOTAL CLEANING</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#0D9488' }}>{totalCleaning}</td>
+                    </tr>
 
 
 
@@ -105713,7 +105389,11 @@ export default function LineUp() {
 
 
 
-                  </tr>
+</tr>
+                    <tr style={{ backgroundColor: isLight ? '#ccfbf1' : 'rgba(13,148,136,0.1)' }}>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#0D9488' }}>TOTAL CLEANING</td>
+                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#0D9488' }}>{totalCleaning}</td>
+                    </tr>
 
 
 
@@ -135441,7 +135121,8 @@ export default function LineUp() {
 
 
 
-                          ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
+  ['CLEANING', totalCleaning, '#0D9488'],
 
 
 

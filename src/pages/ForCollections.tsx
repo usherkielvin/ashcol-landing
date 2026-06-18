@@ -12,6 +12,8 @@ interface CollectionItem {
   description: string // Installer/Negotiator
   amount: number
   customer: string
+  company?: string
+  units?: number
   collectionResolved: boolean
   status: 'PENDING' | 'RESOLVED'
   reportId?: string
@@ -231,6 +233,7 @@ export default function ForCollections() {
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const [items, setItems] = useState<CollectionItem[]>([])
+  const [activeTab, setActiveTab] = useState<'collections' | 'rebates'>('collections')
   // true only on the very first load; subsequent refetches show stale data
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
@@ -302,7 +305,8 @@ export default function ForCollections() {
       if (branchFilter) params.append('branchId', branchFilter)
       if (statusFilter === 'PENDING') params.append('pendingOnly', 'true')
 
-      const res = await fetch(`${API_BASE_URL}/v1/reports/collections?${params.toString()}`, {
+      const endpoint = activeTab === 'collections' ? 'collections' : 'rebates'
+      const res = await fetch(`${API_BASE_URL}/v1/reports/${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
       if (res.ok) {
@@ -321,7 +325,7 @@ export default function ForCollections() {
         setInitialLoading(false)
       }
     }
-  }, [branchFilter, statusFilter])
+  }, [branchFilter, statusFilter, activeTab])
 
   // Parallel initial fetch — branches and collections at the same time
   useEffect(() => {
@@ -338,6 +342,13 @@ export default function ForCollections() {
     Promise.all([branchReq, colReq])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Clear list and show loader on tab switch
+  useEffect(() => {
+    if (!hasFetchedOnce.current) return
+    setItems([])
+    setInitialLoading(true)
+  }, [activeTab])
 
   // Re-fetch when filters change (stale data stays visible)
   useEffect(() => {
@@ -485,6 +496,7 @@ export default function ForCollections() {
       const matchSearch =
         (item.description || '').toLowerCase().includes(term) ||
         (item.customer || '').toLowerCase().includes(term) ||
+        (item.company || '').toLowerCase().includes(term) ||
         (item.branchName || '').toLowerCase().includes(term)
       const matchMonth = !monthFilter || (item.reportDate || '').startsWith(monthFilter)
       const matchDate  = !dateFilter  || item.reportDate === dateFilter
@@ -493,8 +505,13 @@ export default function ForCollections() {
   }, [items, search, monthFilter, dateFilter])
 
   const totalAmount = useMemo(
-    () => filteredItems.reduce((acc, item) => acc + item.amount, 0),
-    [filteredItems]
+    () => filteredItems.reduce((acc, item) => {
+      if (activeTab === 'rebates') {
+        return acc + (item.amount * (item.units || 1))
+      }
+      return acc + item.amount
+    }, 0),
+    [filteredItems, activeTab]
   )
 
   const hasDateFilter = !!monthFilter || !!dateFilter
@@ -502,6 +519,32 @@ export default function ForCollections() {
 
   return (
     <div className="flex flex-col gap-6 pb-8 md:pb-8">
+      {/* Tab Selector */}
+      <div className="flex items-center gap-2 p-1 rounded-xl self-start" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('collections')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'collections' ? 'shadow-md' : 'opacity-70 hover:opacity-100'}`}
+          style={{
+            backgroundColor: activeTab === 'collections' ? '#10B981' : 'transparent',
+            color: activeTab === 'collections' ? '#ffffff' : textPrimary
+          }}
+        >
+          Collections
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('rebates')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'rebates' ? 'shadow-md' : 'opacity-70 hover:opacity-100'}`}
+          style={{
+            backgroundColor: activeTab === 'rebates' ? '#10B981' : 'transparent',
+            color: activeTab === 'rebates' ? '#ffffff' : textPrimary
+          }}
+        >
+          Rebates
+        </button>
+      </div>
+
       {/* Filters Toolbar */}
       <div className="rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
@@ -511,7 +554,7 @@ export default function ForCollections() {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="Search installer, customer or branch..."
+              placeholder={activeTab === 'collections' ? "Search installer, customer or branch..." : "Search company, brand or branch..."}
               value={rawSearch}
               onChange={e => handleSearchChange(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
@@ -546,9 +589,9 @@ export default function ForCollections() {
               style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
               aria-label="Filter by Resolution Status"
             >
-              <option value="PENDING">Pending Collections</option>
-              <option value="RESOLVED">Resolved Collections</option>
-              <option value="ALL">All Collections</option>
+              <option value="PENDING">Pending {activeTab === 'collections' ? 'Collections' : 'Rebates'}</option>
+              <option value="RESOLVED">Resolved {activeTab === 'collections' ? 'Collections' : 'Rebates'}</option>
+              <option value="ALL">All {activeTab === 'collections' ? 'Collections' : 'Rebates'}</option>
             </select>
           </div>
 
@@ -659,7 +702,7 @@ export default function ForCollections() {
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <CheckCircle2 className="w-12 h-12 opacity-25 text-emerald-500" />
             <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              No collection items found.
+              No {activeTab === 'collections' ? 'collection' : 'rebate'} items found.
             </p>
           </div>
         ) : (
@@ -671,10 +714,22 @@ export default function ForCollections() {
                   <th className="px-3 py-3" style={{ width: 130 }}>TR No. / Date</th>
                   <th className="px-3 py-3">Submitted By</th>
                   <th className="px-3 py-3">Branch</th>
-                  <th className="px-3 py-3">Customer</th>
-                  <th className="px-3 py-3">Installer / Tech</th>
+                  {activeTab === 'collections' ? (
+                    <>
+                      <th className="px-3 py-3">Customer</th>
+                      <th className="px-3 py-3">Installer / Tech</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-3 py-3">Company / RA No.</th>
+                      <th className="px-3 py-3">Brand</th>
+                      <th className="px-3 py-3 text-center" style={{ width: 60 }}>HP</th>
+                      <th className="px-3 py-3 text-right" style={{ width: 90 }}>Rate</th>
+                      <th className="px-3 py-3 text-center" style={{ width: 60 }}>Units</th>
+                    </>
+                  )}
                   <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>
-                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
+                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>{activeTab === 'collections' ? 'Amount' : 'Price'}</th>
                   <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>
                   <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>
                 </tr>
@@ -682,6 +737,25 @@ export default function ForCollections() {
               <tbody>
                 {filteredItems.map((item, idx) => {
                   const resolved = item.collectionResolved
+
+                  // Parse rebate details
+                  let companyRa = '—'
+                  let brand = '—'
+                  let hp = '—'
+                  let rate = item.amount
+                  let units = item.units || 1
+                  let price = rate * units
+
+                  if (activeTab === 'rebates') {
+                    brand = item.company || '—'
+                    if (item.description && item.description.includes('|')) {
+                      const parts = item.description.split('|')
+                      companyRa = parts[1] || '—'
+                      hp = parts[2] || '—'
+                    } else {
+                      companyRa = item.description || '—'
+                    }
+                  }
 
                   return (
                     <tr
@@ -723,15 +797,50 @@ export default function ForCollections() {
                           : <span style={{ color: textMuted }}>—</span>}
                       </td>
 
-                      {/* Customer */}
-                      <td className="px-3 py-3" style={{ fontWeight: 500 }}>
-                        {item.customer || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
-                      </td>
+                      {activeTab === 'collections' ? (
+                        <>
+                          {/* Customer */}
+                          <td className="px-3 py-3" style={{ fontWeight: 500 }}>
+                            {item.customer || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
+                          </td>
 
-                      {/* Installer / Tech */}
-                      <td className="px-3 py-3">
-                        {formatDisplayUserLabel(item.description) || <span style={{ color: textMuted }}>—</span>}
-                      </td>
+                          {/* Installer / Tech */}
+                          <td className="px-3 py-3">
+                            {formatDisplayUserLabel(item.description) || <span style={{ color: textMuted }}>—</span>}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          {/* Company / RA No. */}
+                          <td className="px-3 py-3" style={{ fontWeight: 500 }}>
+                            {companyRa}
+                          </td>
+
+                          {/* Brand */}
+                          <td className="px-3 py-3">
+                            {brand}
+                          </td>
+
+                          {/* HP */}
+                          <td className="px-3 py-3 text-center">
+                            {hp !== '—' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+                                {hp}
+                              </span>
+                            ) : '—'}
+                          </td>
+
+                          {/* Rate */}
+                          <td className="px-3 py-3 text-right tabular-nums" style={{ color: textMuted }}>
+                            ₱{peso(rate)}
+                          </td>
+
+                          {/* Units */}
+                          <td className="px-3 py-3 text-center font-bold tabular-nums">
+                            {units}
+                          </td>
+                        </>
+                      )}
 
                       {/* Notes */}
                       <td className="px-3 py-3" style={{ maxWidth: 200 }}>
@@ -761,9 +870,9 @@ export default function ForCollections() {
                         />
                       </td>
 
-                      {/* Amount */}
-                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: '#D97706', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                        ₱{peso(item.amount)}
+                      {/* Amount / Price */}
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: activeTab === 'collections' ? '#D97706' : '#10B981', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        ₱{peso(activeTab === 'collections' ? item.amount : price)}
                       </td>
 
                       {/* Status */}
@@ -1278,11 +1387,11 @@ export default function ForCollections() {
           >
             <div className="flex items-center gap-3 text-emerald-500 mb-4">
               <CheckCircle2 size={24} />
-              <h4 className="font-black text-base" style={{ color: textPrimary }}>Resolve Collection</h4>
+              <h4 className="font-black text-base" style={{ color: textPrimary }}>Resolve {activeTab === 'collections' ? 'Collection' : 'Rebate'}</h4>
             </div>
             
             <p className="text-xs mb-5" style={{ color: textMuted }}>
-              Are you sure you want to mark the collection of <strong style={{ color: textPrimary }}>₱{peso(confirmItem.amount)}</strong> from <strong style={{ color: textPrimary }}>{confirmItem.customer || '—'}</strong> (assigned to <strong style={{ color: textPrimary }}>{confirmItem.description}</strong>) as <strong style={{ color: '#10B981' }}>RESOLVED</strong>?
+              Are you sure you want to mark the {activeTab === 'collections' ? 'collection' : 'rebate'} of <strong style={{ color: textPrimary }}>₱{peso(activeTab === 'collections' ? confirmItem.amount : confirmItem.amount * (confirmItem.units || 1))}</strong> {activeTab === 'collections' ? `from ${confirmItem.customer || '—'}` : `for ${confirmItem.company || confirmItem.description.split('|')[1] || '—'}`} as <strong style={{ color: '#10B981' }}>RESOLVED</strong>?
             </p>
 
             <div className="flex gap-3 justify-end">
