@@ -764,12 +764,10 @@ export default function ForCollections() {
                       <th className="px-3 py-3">Company / RA No.</th>
                       <th className="px-3 py-3">Brand</th>
                       <th className="px-3 py-3 text-center" style={{ width: 60 }}>HP</th>
-                      <th className="px-3 py-3 text-right" style={{ width: 90 }}>Rate</th>
-                      <th className="px-3 py-3 text-center" style={{ width: 60 }}>Units</th>
                     </>
                   )}
                   {activeTab === 'collections' && <th className="px-3 py-3" style={{ minWidth: 160 }}>Notes</th>}
-                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>{activeTab === 'collections' ? 'Amount' : 'Price'}</th>
+                  <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
                   {activeTab === 'collections' && <th className="px-3 py-3 text-center" style={{ width: 90 }}>Status</th>}
                   {activeTab === 'collections' && <th className="px-3 py-3 text-center no-print" style={{ width: 130 }}>Action</th>}
                 </tr>
@@ -781,17 +779,15 @@ export default function ForCollections() {
                   // Parse rebate details
                   let companyRa = '—'
                   let brand = '—'
-                  let hp = '—'
-                  let rate = item.amount
-                  let units = item.units || 1
-                  let price = rate * units
+                  let hpDisplay = '—'
 
                   if (activeTab === 'rebates') {
                     brand = item.company || '—'
                     if (item.description && item.description.includes('|')) {
                       const parts = item.description.split('|')
                       companyRa = parts[1] || '—'
-                      hp = parts[2] || '—'
+                      const rawHp = parts[2] || '—'
+                      hpDisplay = rawHp !== '—' ? rawHp.replace(/hp/i, '').trim() : '—'
                     } else {
                       companyRa = item.description || '—'
                     }
@@ -868,21 +864,11 @@ export default function ForCollections() {
 
                           {/* HP */}
                           <td className="px-3 py-3 text-center">
-                            {hp !== '—' ? (
+                            {hpDisplay !== '—' ? (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                {hp}
+                                {hpDisplay}
                               </span>
                             ) : '—'}
-                          </td>
-
-                          {/* Rate */}
-                          <td className="px-3 py-3 text-right tabular-nums" style={{ color: textMuted }}>
-                            ₱{peso(rate)}
-                          </td>
-
-                          {/* Units */}
-                          <td className="px-3 py-3 text-center font-bold tabular-nums">
-                            {units}
                           </td>
                         </>
                       )}
@@ -919,7 +905,7 @@ export default function ForCollections() {
 
                       {/* Amount / Price */}
                       <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: activeTab === 'collections' ? '#D97706' : '#10B981', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                        ₱{peso(activeTab === 'collections' ? item.amount : price)}
+                        ₱{peso(item.amount)}
                       </td>
 
                       {/* Status — Collections only */}

@@ -15,7 +15,7 @@ interface OnlineTxRow  { id: string; installer: string; customer: string; bank: 
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
 interface ForCollRow   { id: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
-interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string; units: string; total: string }
+interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 
@@ -115,7 +115,7 @@ const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', ban
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
-const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '', units: '1', total: '' })
+const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 
@@ -600,18 +600,16 @@ export default function DailySalesForm() {
             const desc = item.description || ''
             const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
             const raNumber = parts[1] || ''
-            const hp = parts[2] || ''
+            const hpRaw = parts[2] || ''
+            const hp = hpRaw.replace(/hp/i, '').trim()
             const amt = item.amount != null ? String(item.amount) : ''
-            const units = item.units != null ? String(item.units) : '1'
             rebatesList.push({
               id: uid(),
               customer: item.customer || '',
               company: item.company || '',
               raNumber,
               hp,
-              amount: amt,
-              units,
-              total: String(num(amt) * num(units))
+              amount: amt
             })
           }
         })
@@ -623,9 +621,7 @@ export default function DailySalesForm() {
           company: 'Rebates',
           raNumber: '',
           hp: '',
-          amount: String(data.rebatesForCollection),
-          units: '1',
-          total: String(data.rebatesForCollection)
+          amount: String(data.rebatesForCollection)
         })
       }
       setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
@@ -971,20 +967,17 @@ export default function DailySalesForm() {
     if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
       setRebates(data.rebates.map((scanned: any) => {
         const sAmount = scanned.amount != null ? String(scanned.amount) : ''
-        const sUnits = scanned.units != null ? String(scanned.units) : '1'
         return {
           id: uid(),
           customer: (scanned.customer || '').trim(),
           company: (scanned.company || '').trim(),
           raNumber: '',
           hp: '',
-          amount: sAmount,
-          units: sUnits,
-          total: String(num(sAmount) * num(sUnits))
+          amount: sAmount
         }
       }))
     } else if (data.rebatesForCollection) {
-      setRebates([{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', units: '1', amount: String(data.rebatesForCollection), total: String(data.rebatesForCollection) }])
+      setRebates([{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }])
     } else {
       setRebates([mkReb()])
     }
@@ -1178,7 +1171,7 @@ export default function DailySalesForm() {
           type: 'REBATE',
           customer: r.customer,
           company: r.company,
-          units: parseInt(r.units) || 1,
+          units: 1,
           amount: parseFloat(r.amount) || 0,
           description: `REBATE|${r.raNumber}|${r.hp}`
         })),
@@ -2065,7 +2058,6 @@ export default function DailySalesForm() {
                 <th className={tableTh}>Brand</th>
                 <th className={tableTh + ' w-20 text-center'}>HP</th>
                 <th className={tableTh + ' text-right w-32'}>Amount</th>
-                <th className={tableTh + ' text-right w-32'}>Total</th>
                 {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
               </tr>
             </thead>
@@ -2096,9 +2088,6 @@ export default function DailySalesForm() {
                     <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                       onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                       className={flushInputNumber} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd + ' text-right font-black text-emerald-700 dark:text-emerald-400 pr-2 text-xs tabular-nums'}>
-                    {php(num(row.amount))}
                   </td>
                   {canSubmit && !reviewMode && (
                     <td className={tableTd + ' text-center'}>
