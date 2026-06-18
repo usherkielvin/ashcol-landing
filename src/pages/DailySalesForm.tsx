@@ -115,7 +115,7 @@ const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', ban
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
-const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '', units: '', total: '' })
+const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '', units: '1', total: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 
@@ -1077,7 +1077,7 @@ export default function DailySalesForm() {
   const totalOnline          = sumArr(onlineTx.map(r => r.amount))
   const totalCheck           = sumArr(checkRem.map(r => r.amount))
   const totalForColl         = sumArr(forColl.map(r => r.amount))
-  const totalRebates         = rebates.reduce((s, r) => s + num(r.amount) * num(r.units), 0)
+  const totalRebates         = rebates.reduce((s, r) => s + num(r.amount), 0)
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
@@ -1652,8 +1652,8 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Installer</th>
                     <th className={tableTh}>Customer Name</th>
+                    <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
                     <th className={tableTh + ' text-right w-24'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
@@ -1663,13 +1663,13 @@ export default function DailySalesForm() {
                   {onlineTx.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
@@ -1702,8 +1702,8 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Installer</th>
                     <th className={tableTh}>Customer Name</th>
+                    <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
                     <th className={tableTh + ' text-right w-24'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
@@ -1713,13 +1713,13 @@ export default function DailySalesForm() {
                   {checkRem.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
@@ -1798,43 +1798,41 @@ export default function DailySalesForm() {
           {/* For Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="For Collection" total={totalForColl} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Installer</th>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {forColl.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="p-3 flex flex-col gap-2">
+              {forColl.map(row => (
+                <div key={row.id} className="grid grid-cols-[1fr_1fr_auto] md:grid-cols-[2fr_2fr_1fr_auto] gap-2 items-center rounded-lg border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/20 px-3 py-2.5">
+                  {/* Customer */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Customer</label>
+                    <input type="text" placeholder="Name" value={row.customer}
+                      onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      disabled={isFormDisabled} />
+                  </div>
+                  {/* Installer */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Installer</label>
+                    <input type="text" placeholder="Name" value={row.installer}
+                      onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      disabled={isFormDisabled} />
+                  </div>
+                  {/* Amount */}
+                  <div className="flex flex-col gap-0.5">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Amount</label>
+                    <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                      onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-right font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      disabled={isFormDisabled} />
+                  </div>
+                  {/* Delete */}
+                  {canSubmit && !reviewMode && (
+                    <div className="flex items-end pb-0.5">
+                      <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
+                    </div>
+                  )}
+                </div>
+              ))}
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
             </div>
           </div>
@@ -1842,68 +1840,65 @@ export default function DailySalesForm() {
           {/* Rebates for Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Rebates for Collection" total={totalRebates} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Company</th>
-                    <th className={tableTh}>Brand</th>
-                    <th className={tableTh + ' w-16'}>HP</th>
-                    <th className={tableTh + ' text-right w-24'}>Rate</th>
-                    <th className={tableTh + ' text-center w-16'}>Units</th>
-                    <th className={tableTh + ' text-right w-24'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-8'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rebates.map(row => {
-                    const calc = num(row.amount) * num(row.units)
-                    return (
-                      <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                        <td className={tableTd}>
-                          <input type="text" placeholder="Customer" value={row.customer}
-                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                            className={flushInput} disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd}>
-                          <input type="text" placeholder="ROBINSONS" value={row.raNumber}
-                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
-                            className={flushInput} disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd}>
-                          <input type="text" placeholder="MIDEA" value={row.company}
-                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                            className={flushInput} disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd}>
-                          <input type="text" placeholder="1.5HP" value={row.hp}
-                            onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
-                            className={flushInput} disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd}>
-                          <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                            onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                            className={flushInputNumber} disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd}>
-                          <NumericFormat thousandSeparator="," decimalScale={0} fixedDecimalScale={false} allowNegative={false} placeholder="0" value={row.units} min="0"
-                            onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, units: values.value } : r))}
-                            className="w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-center transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200" disabled={isFormDisabled} />
-                        </td>
-                        <td className={tableTd + ' text-right font-bold text-slate-700 dark:text-slate-300 pr-2 text-xs'}>
-                          {php(calc)}
-                        </td>
-                        {canSubmit && !reviewMode && (
-                          <td className={tableTd + ' text-center'}>
-                            <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
-                          </td>
-                        )}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="p-3 flex flex-col gap-2">
+              {rebates.map(row => {
+                return (
+                  <div key={row.id} className="rounded-lg border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/20 px-3 py-3">
+                    {/* Row 1: Customer + Company + Brand */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Customer</label>
+                        <input type="text" placeholder="Customer name" value={row.customer}
+                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          disabled={isFormDisabled} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Company / RA No.</label>
+                        <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
+                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          disabled={isFormDisabled} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Brand</label>
+                        <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          disabled={isFormDisabled} />
+                      </div>
+                    </div>
+                    {/* Row 2: HP + Amount + Total + Delete — 1 unit per row */}
+                    <div className="grid grid-cols-2 sm:grid-cols-[1fr_2fr_1.5fr_auto] gap-2 items-end">
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">HP</label>
+                        <input type="text" placeholder="1.5" value={row.hp}
+                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-center text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          disabled={isFormDisabled} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Amount</label>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-right font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          disabled={isFormDisabled} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Total</label>
+                        <div className="h-[30px] flex items-center justify-end px-2.5 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/40">
+                          <span className="text-xs font-black tabular-nums text-emerald-700 dark:text-emerald-400">{php(num(row.amount))}</span>
+                        </div>
+                      </div>
+                      {canSubmit && !reviewMode && (
+                        <div className="flex items-end pb-0.5">
+                          <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
             </div>
           </div>
