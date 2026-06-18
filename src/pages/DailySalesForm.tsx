@@ -443,7 +443,9 @@ export default function DailySalesForm() {
         }
 
         // 2. Fetch yesterday's Cash on Hand from audit summary
-        if (!reportId) {
+        const urlParams = new URLSearchParams(window.location.search)
+        const isEditing = !!(reportId || urlParams.get('id'))
+        if (!isEditing && !ignoreNextCohFetch.current) {
           const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
           const resAudit = await fetch(`${API_BASE_URL}/reports/audit-summary?date=${yesterday}`, { headers })
           if (resAudit.ok) {
@@ -457,21 +459,13 @@ export default function DailySalesForm() {
               }
               return true
             })
-            if (ignoreNextCohFetch.current) {
-              ignoreNextCohFetch.current = false
-            } else {
-              if (myRow && myRow.totalCohCfd !== undefined) {
-                setCashOnHand(String(myRow.totalCohCfd))
-              } else {
-                setCashOnHand('')
-              }
-            }
-          } else {
-            if (ignoreNextCohFetch.current) {
-              ignoreNextCohFetch.current = false
+            if (myRow && myRow.totalCohCfd !== undefined) {
+              setCashOnHand(String(myRow.totalCohCfd))
             } else {
               setCashOnHand('')
             }
+          } else {
+            setCashOnHand('')
           }
         }
 
@@ -547,7 +541,7 @@ export default function DailySalesForm() {
     }
 
     loadData()
-  }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin])
+  }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin, reportId])
 
   const fetchReportDetails = async (id: string) => {
     console.log('[fetchReportDetails] Requested ID:', id)
@@ -814,6 +808,7 @@ export default function DailySalesForm() {
     setSuccess(false)
     setSubmitAttempted(false)
     setReportId(null)
+    ignoreNextCohFetch.current = false
     if (clearTrNo) setTrNo('')
     setCashOnHand('')
     setFundFromHo('')
@@ -1342,7 +1337,10 @@ export default function DailySalesForm() {
               id="report-date-input"
               type="date"
               value={reportDate}
-              onChange={e => setReportDate(e.target.value)}
+              onChange={e => {
+                ignoreNextCohFetch.current = false
+                setReportDate(e.target.value)
+              }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
               disabled={reviewMode}
             />
@@ -1377,6 +1375,7 @@ export default function DailySalesForm() {
                 id="branch-select"
                 value={`${selectedBranchId}-${selectedAuditLine || ''}`}
                 onChange={e => {
+                  ignoreNextCohFetch.current = false
                   const val = e.target.value
                   const found = branchesList.find(b => `${b.id}-${b.auditLine || ''}` === val)
                   if (found) {
