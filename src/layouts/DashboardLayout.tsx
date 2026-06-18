@@ -189,7 +189,7 @@ export default function DashboardLayout() {
     { name: 'Relays',          path: '/schedules',        icon: Radio,           roles: ['admin'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Field Schedule',  path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Schedules',       path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'DTR Submission',  path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -203,8 +203,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Field Schedule', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
-  const serviceWorkspaceLinks = ['Tickets', 'Field Schedule', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
+  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
+  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
