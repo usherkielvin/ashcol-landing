@@ -252,6 +252,9 @@ export default function DailySalesForm() {
   const ignoreNextCohFetch = useRef(false)
   const hasScannedTrNo = useRef(false)
   const isApplyingScannedData = useRef(false)
+  const loadedReportDate = useRef<string | null>(null)
+  const loadedBranchId = useRef<string | null>(null)
+  const loadedAuditLine = useRef<string | null>(null)
 
   useEffect(() => {
     if (user && !reportId) {
@@ -567,7 +570,9 @@ export default function DailySalesForm() {
       // Restore branch from the report so no useEffect overrides it
       if (data.branchId) {
         setSelectedBranchId(data.branchId)
+        loadedBranchId.current = data.branchId
         setSelectedAuditLine(data.auditLine || null)
+        loadedAuditLine.current = data.auditLine || null
         if (data.branchName) {
           const cleanName = data.branchName.replace(/^(ashcol\s+)/i, '').toUpperCase()
           setBranch(cleanName)
@@ -576,6 +581,7 @@ export default function DailySalesForm() {
 
       // Populate metadata
       setReportDate(data.reportDate)
+      loadedReportDate.current = data.reportDate
       setReceivedBy(formatDisplayUserLabel(data.receivedBy || ''))
       setTrNo(data.trNo || '')
       setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
@@ -852,70 +858,28 @@ export default function DailySalesForm() {
     return false
   }
 
-  // Auto-match existing report when branch, date, or audit line changes
+  // Reset form and clear URL parameter when changing branch or date of a loaded report
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlId = params.get('id')
-    if (urlId) {
-      isApplyingScannedData.current = false
-      return
-    }
+    if (reportId) {
+      const dateChanged = !!loadedReportDate.current && reportDate !== loadedReportDate.current
+      const branchChanged = !!loadedBranchId.current && selectedBranchId !== loadedBranchId.current
+      const auditLineChanged = loadedAuditLine.current !== undefined && selectedAuditLine !== loadedAuditLine.current
 
-    if (!selectedBranchId || !reportDate) {
-      isApplyingScannedData.current = false
-      return
-    }
-
-    let isSubscribed = true
-    const checkExistingReport = async () => {
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${reportDate}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (!isSubscribed) return
-        if (res.ok) {
-          const data = await res.json()
-          const match = data.find((r: any) => {
-            if (r.branchId !== selectedBranchId) return false
-            const rLine = r.auditLine || ''
-            const sLine = selectedAuditLine || ''
-            return rLine.toUpperCase() === sLine.toUpperCase()
-          })
-
-          if (match && match.id) {
-            if (reportId !== match.id) {
-              console.log('[Auto-Match] Found existing report ID:', match.id)
-              setReportId(match.id)
-              if (!isApplyingScannedData.current && !isFormDirty()) {
-                fetchReportDetails(match.id)
-              }
-            }
-          } else {
-            if (reportId !== null) {
-              console.log('[Auto-Match] No report found. Clearing reportId.')
-              if (!isApplyingScannedData.current && !isFormDirty()) {
-                clearForm(true)
-              } else {
-                setReportId(null)
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error checking existing report:', err)
-      } finally {
-        if (isSubscribed) {
-          isApplyingScannedData.current = false
-        }
+      if (dateChanged || branchChanged || auditLineChanged) {
+        console.log('[Date/Branch Change] Clearing reportId and form state')
+        setReportId(null)
+        clearForm(true)
+        loadedReportDate.current = null
+        loadedBranchId.current = null
+        loadedAuditLine.current = null
+        
+        // Remove `id` from browser URL parameters to transition out of edit mode
+        const url = new URL(window.location.href)
+        url.searchParams.delete('id')
+        window.history.replaceState({}, '', url.toString())
       }
     }
-
-    void checkExistingReport()
-    return () => {
-      isSubscribed = false
-    }
-  }, [selectedBranchId, reportDate, selectedAuditLine, reportId])
+  }, [reportDate, selectedBranchId, selectedAuditLine, reportId])
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
   const processImage = async (file: File) => {
