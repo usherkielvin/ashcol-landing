@@ -222,7 +222,7 @@ export default function DailySalesForm() {
   const [branchName, setBranch] = useState(initialBranchName)
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId)
   const [selectedAuditLine, setSelectedAuditLine] = useState<string | null>(initialAuditLine)
-  const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string }[]>([])
+  const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string; isActive?: boolean }[]>([])
   // Submission metadata (populated when viewing existing report)
   const [submittedAt, setSubmittedAt] = useState<string | null>(null)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
@@ -236,21 +236,13 @@ export default function DailySalesForm() {
     if (isAdmin) return true   // Admin can edit any report
     if (reportId) return false // Non-admins cannot edit existing reports
     
-    // For non-admin: they can submit only if they belong to this branch
-    if (!user?.branchId) return false
-    const userBranchNorm = normalizeTransactionBranch(user.branchId, user.email)
-    const reportBranchNorm = normalizeTransactionBranch(selectedBranchId, null)
-    
-    // Check if the base branch matches
-    const baseMatch = userBranchNorm.branchId.replace(/-(sales|services)$/i, '').toLowerCase() === reportBranchNorm.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    if (!baseMatch) return false
-    
-    // If Taguig, also check audit line
-    if (userBranchNorm.branchId.toLowerCase().includes('taguig')) {
-      return userBranchNorm.auditLine === selectedAuditLine
+    // Non-admin can submit to any active branch
+    const selectedBranch = branchesList.find(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
+    if (selectedBranch && selectedBranch.isActive === false) {
+      return false
     }
     return true
-  }, [canSubmit, reportId, isAdmin, user, selectedBranchId, selectedAuditLine])
+  }, [canSubmit, reportId, isAdmin, selectedBranchId, selectedAuditLine, branchesList])
 
   const isFormDisabled = !canEditOrSubmit || reviewMode
 
@@ -286,7 +278,7 @@ export default function DailySalesForm() {
         })
         if (res.ok) {
           const data = await res.json()
-          const list: { id: string; name: string }[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
+          const list: { id: string; name: string; isActive?: boolean }[] = (data?.data || data || []).map((b: { id: string; name: string; isActive?: boolean }) => ({ id: b.id, name: b.name, isActive: b.isActive }))
           const hasExplicitTaguigSales = list.some((b: { id: string; name: string }) => {
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
@@ -298,47 +290,27 @@ export default function DailySalesForm() {
             return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
           })
 
-          const newList: { id: string; name: string; auditLine?: string }[] = []
+          const newList: { id: string; name: string; auditLine?: string; isActive?: boolean }[] = []
           for (const b of list) {
             const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
             if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES', auditLine: 'TAGUIG_SALES' })
-              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG - SERVICES', auditLine: 'TAGUIG_SERVICE' })
+              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES', auditLine: 'TAGUIG_SALES', isActive: b.isActive })
+              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG - SERVICES', auditLine: 'TAGUIG_SERVICE', isActive: b.isActive })
             } else if (cleanName.includes('TAGUIG')) {
               const isServ = cleanName.includes('SERVICE')
               newList.push({
                 id: b.id,
                 name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
-                auditLine: isServ ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES'
+                auditLine: isServ ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
+                isActive: b.isActive
               })
             } else {
-              newList.push({ id: b.id, name: cleanName })
+              newList.push({ id: b.id, name: cleanName, isActive: b.isActive })
             }
           }
-          let finalList = newList
-          if (isBranchRestricted && user?.branchId) {
-            const normBranch = normalizeTransactionBranch(user.branchId, user.email)
-            finalList = newList.filter(b => {
-              const bNameUpper = b.name.toUpperCase()
-              const userBranchLower = (user?.branchId || '').toLowerCase()
-              const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-              
-              if (isUserTaguig) {
-                // If user is Taguig, show this branch only if it is Taguig
-                if (!bNameUpper.includes('TAGUIG')) return false
-                // Match the audit line
-                if (normBranch.auditLine && b.auditLine) {
-                  return b.auditLine === normBranch.auditLine
-                }
-                return true
-              } else {
-                // For other branches: match by ID case-insensitively
-                const baseId = normBranch.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-                const bIdLower = b.id.toLowerCase()
-                return bIdLower === baseId || bIdLower === normBranch.branchId.toLowerCase()
-              }
-            })
-          }
+          // Filter to active branches only (where submission isn't disabled)
+          const finalList = newList.filter(b => b.isActive !== false)
+          
           finalList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(finalList)
           if (finalList.length > 0) {
@@ -1297,6 +1269,7 @@ export default function DailySalesForm() {
       })
       if (!res.ok) throw new Error(await res.text())
       setSuccess(true)
+      clearForm(true) // Clear form state on successful submission!
       setReviewMode(false)
       setReviewStartedAt(null)
     } catch (e: unknown) {
@@ -1426,7 +1399,7 @@ export default function DailySalesForm() {
               value={reportDate}
               onChange={e => setReportDate(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={isFormDisabled}
+              disabled={reviewMode}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -1480,8 +1453,8 @@ export default function DailySalesForm() {
                     }
                   }
                 }}
-                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
-                disabled={true}
+                className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`}
+                disabled={reviewMode}
               >
                 {branchesList.map(b => (
                   <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
