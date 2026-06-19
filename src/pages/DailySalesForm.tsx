@@ -334,7 +334,23 @@ export default function DailySalesForm() {
 
   useEffect(() => {
     if (!isAdmin) return
-    const syncFromGlobal = () => {
+    const syncFromGlobal = (isInitial = false) => {
+      if (isInitial && user?.branchId) {
+        const emailLower = (user.email || '').toLowerCase()
+        const norm = normalizeTransactionBranch(user.branchId, emailLower)
+        if (norm.branchId) {
+          setSelectedBranchId(norm.branchId)
+          setSelectedAuditLine(norm.auditLine)
+          setBranch(norm.branchName)
+          let storedId = norm.branchId
+          if (norm.branchId === 'BR-TAGUIG-SALES' || norm.branchId === 'BR-TAGUIG') {
+            storedId = norm.auditLine === 'TAGUIG_SERVICE' ? 'BR-TAGUIG-SALES-services' : 'BR-TAGUIG-SALES-sales'
+          }
+          localStorage.setItem('ashcol-global-branch-id', storedId)
+          return
+        }
+      }
+
       const gId = localStorage.getItem('ashcol-global-branch-id')
       if (!gId) return
       
@@ -359,10 +375,11 @@ export default function DailySalesForm() {
       }
     }
 
-    syncFromGlobal()
-    window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
-    return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [isAdmin, branchesList])
+    syncFromGlobal(true)
+    const handleSync = () => syncFromGlobal(false)
+    window.addEventListener('ashcol-global-branch-change', handleSync)
+    return () => window.removeEventListener('ashcol-global-branch-change', handleSync)
+  }, [isAdmin, branchesList, user])
 
   useEffect(() => {
     if (!reviewMode) return
