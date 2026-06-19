@@ -104,8 +104,8 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
 
   return {
     branchId: raw.replace(/-(sales|services|service)$/i, ''),
-    auditLine: isServices ? `${baseName}_SERVICE` : `${baseName}_SALES`,
-    branchName: isServices ? `${baseName} SERVICES` : `${baseName} SALES`,
+    auditLine: null,
+    branchName: baseName,
   }
 }
 
@@ -318,7 +318,7 @@ export default function DailySalesForm() {
           setBranchesList(finalList)
           if (finalList.length > 0) {
             const exists = finalList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
-            if (!exists) {
+            if (!exists && isAdmin) {
               setSelectedBranchId(finalList[0].id)
               setSelectedAuditLine(finalList[0].auditLine || null)
               setBranch(finalList[0].name)
@@ -1370,7 +1370,7 @@ export default function DailySalesForm() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch</label>
-            {canEditOrSubmit ? (
+            {canEditOrSubmit && isAdmin ? (
               <select
                 id="branch-select"
                 value={`${selectedBranchId}-${selectedAuditLine || ''}`}
