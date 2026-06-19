@@ -918,7 +918,7 @@ export default function ForCollections() {
                       {/* Action */}
                       <td className="px-3 py-3 text-center no-print">
                         <div className="flex items-center justify-center gap-1.5">
-                          {item.reportId && (
+                          {item.reportId && activeTab !== 'rebates' && (
                             <button
                               type="button"
                               onClick={() => {
