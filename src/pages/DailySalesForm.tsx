@@ -89,9 +89,8 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   const isServices = lower.endsWith('-services') || lower.endsWith('-service') || emailLower.includes('service')
 
   if (lower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || lower.startsWith('br-taguig') || lower.includes('taguig')) {
-    const baseId = raw.replace(/-(sales|services|service)$/i, '')
     return {
-      branchId: (baseId || 'BR-TAGUIG').toUpperCase(),
+      branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
     }
@@ -344,7 +343,7 @@ export default function DailySalesForm() {
           setSelectedAuditLine(norm.auditLine)
           setBranch(norm.branchName)
           let storedId = norm.branchId
-          if (norm.branchId === 'BR-TAGUIG-SALES' || norm.branchId === 'BR-TAGUIG') {
+          if (norm.branchId.startsWith('BR-TAGUIG') || norm.branchId.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
             storedId = norm.auditLine === 'TAGUIG_SERVICE' ? 'BR-TAGUIG-SALES-services' : 'BR-TAGUIG-SALES-sales'
           }
           localStorage.setItem('ashcol-global-branch-id', storedId)
