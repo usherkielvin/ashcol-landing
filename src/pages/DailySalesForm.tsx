@@ -404,8 +404,8 @@ export default function DailySalesForm() {
   // Cash Returns
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
   // Fund Transfer from HO
-  const [cashOnHand, setCashOnHand]     = useState('')
-  const [fundFromHo, setFundFromHo]     = useState('')
+  const [cashOnHand, setCashOnHand]     = useState('0')
+  const [fundFromHo, setFundFromHo]     = useState('0')
   // Online Transactions
   const [onlineTx, setOnlineTx]         = useState<OnlineTxRow[]>([mkOnl()])
   // Check Remits
@@ -423,13 +423,13 @@ export default function DailySalesForm() {
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
   // Unit summary
-  const [scheduledUnits, setScheduledUnits]     = useState('')
-  const [surveyOnlyUnits, setSurveyOnlyUnits]   = useState('')
-  const [rescheduledUnits, setRescheduledUnits] = useState('')
-  const [installedUnits, setInstalledUnits]     = useState('')
-  const [servicedUnits, setServicedUnits]       = useState('')
-  const [cancelledUnits, setCancelledUnits]     = useState('')
-  const [freeInstallUnits, setFreeInstallUnits] = useState('')
+  const [scheduledUnits, setScheduledUnits]     = useState('0')
+  const [surveyOnlyUnits, setSurveyOnlyUnits]   = useState('0')
+  const [rescheduledUnits, setRescheduledUnits] = useState('0')
+  const [installedUnits, setInstalledUnits]     = useState('0')
+  const [servicedUnits, setServicedUnits]       = useState('0')
+  const [cancelledUnits, setCancelledUnits]     = useState('0')
+  const [freeInstallUnits, setFreeInstallUnits] = useState('0')
 
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
@@ -479,10 +479,10 @@ export default function DailySalesForm() {
             if (myRow && myRow.totalCohCfd !== undefined) {
               setCashOnHand(String(myRow.totalCohCfd))
             } else {
-              setCashOnHand('')
+              setCashOnHand('0')
             }
           } else {
-            setCashOnHand('')
+            setCashOnHand('0')
           }
         }
 
@@ -596,8 +596,8 @@ export default function DailySalesForm() {
       loadedReportDate.current = data.reportDate
       setReceivedBy(formatDisplayUserLabel(data.receivedBy || ''))
       setTrNo(data.trNo || '')
-      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
-      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
+      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
+      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
       // Submission metadata
       setSubmittedAt(data.createdAt || null)
       setLastUpdatedAt(data.updatedAt || null)
@@ -638,13 +638,13 @@ export default function DailySalesForm() {
       setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
 
       // Populate units
-      setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '')
-      setSurveyOnlyUnits(data.totalUnitsSurveyOnly != null ? String(data.totalUnitsSurveyOnly) : '')
-      setRescheduledUnits(data.totalRescheduled != null ? String(data.totalRescheduled) : '')
-      setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '')
-      setServicedUnits(data.totalUnitsServiced != null ? String(data.totalUnitsServiced) : '')
-      setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '')
-      setFreeInstallUnits(data.totalUnitsFreeInstall != null ? String(data.totalUnitsFreeInstall) : '')
+      setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '0')
+      setSurveyOnlyUnits(data.totalUnitsSurveyOnly != null ? String(data.totalUnitsSurveyOnly) : '0')
+      setRescheduledUnits(data.totalRescheduled != null ? String(data.totalRescheduled) : '0')
+      setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '0')
+      setServicedUnits(data.totalUnitsServiced != null ? String(data.totalUnitsServiced) : '0')
+      setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '0')
+      setFreeInstallUnits(data.totalUnitsFreeInstall != null ? String(data.totalUnitsFreeInstall) : '0')
 
       // Map items lists
       const cashSales: CashTxRow[] = []
@@ -827,8 +827,8 @@ export default function DailySalesForm() {
     setReportId(null)
     ignoreNextCohFetch.current = false
     if (clearTrNo) setTrNo('')
-    setCashOnHand('')
-    setFundFromHo('')
+    setCashOnHand('0')
+    setFundFromHo('0')
     setCashTx([mkCash()])
     setCashRet([mkRet()])
     setOnlineTx([mkOnl()])
@@ -839,13 +839,13 @@ export default function DailySalesForm() {
     setOrders([mkOrd()])
     setExpReceipt([mkExp()])
     setExpPurch([mkExp()])
-    setScheduledUnits('')
-    setSurveyOnlyUnits('')
-    setRescheduledUnits('')
-    setInstalledUnits('')
-    setServicedUnits('')
-    setCancelledUnits('')
-    setFreeInstallUnits('')
+    setScheduledUnits('0')
+    setSurveyOnlyUnits('0')
+    setRescheduledUnits('0')
+    setInstalledUnits('0')
+    setServicedUnits('0')
+    setCancelledUnits('0')
+    setFreeInstallUnits('0')
   }
 
 
@@ -929,8 +929,8 @@ export default function DailySalesForm() {
     if (data.cohPreviousDay != null || data.fundFromHo != null) {
       ignoreNextCohFetch.current = true
     }
-    setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '')
-    setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '')
+    setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
+    setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
 
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
       setCashTx(data.cashTransactions.map((scanned: any) => ({
@@ -1624,6 +1624,7 @@ export default function DailySalesForm() {
                         onValueChange={(values) => setFundFromHo(values.value)}
                         className={`${flushInputNumber} ${submitAttempted && fundFromHo.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
                         disabled={isFormDisabled}
+                        autoComplete="off"
                       />
                     </td>
                   </tr>
@@ -1640,6 +1641,7 @@ export default function DailySalesForm() {
                         onValueChange={(values) => setCashOnHand(values.value)}
                         className={`${flushInputNumber} ${submitAttempted && cashOnHand.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
                         disabled={isFormDisabled}
+                        autoComplete="off"
                       />
                     </td>
                   </tr>
@@ -2017,6 +2019,7 @@ export default function DailySalesForm() {
                           onValueChange={(values) => setter(values.value)}
                           className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && value.trim() === '' ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
                           disabled={isFormDisabled}
+                          autoComplete="off"
                         />
                       </td>
                     </tr>
