@@ -280,6 +280,7 @@ export default function Tickets() {
 
   const activeBranch = (globalBranchId || user?.branchId || '').toUpperCase()
   const isTaguigServices = activeBranch.includes('TAGUIG') && (activeBranch.includes('SERVICES') || activeBranch.includes('SERVICE'))
+  const isTaguig = activeBranch.includes('TAGUIG')
 
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -300,7 +301,7 @@ export default function Tickets() {
   const [loading, setLoading]         = useState(true)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter]   = useState(() => isTaguigServices ? todayDateKey() : '')
+  const [dateFilter, setDateFilter]   = useState(() => isTaguig ? todayDateKey() : '')
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
 
@@ -312,10 +313,10 @@ export default function Tickets() {
   const [toast, setToast]             = useState<string | null>(null)
 
   useEffect(() => {
-    if (isTaguigServices) {
+    if (isTaguig) {
       setDateFilter(todayDateKey())
     }
-  }, [isTaguigServices])
+  }, [isTaguig])
 
   // ── Context menu ──────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -1629,16 +1630,6 @@ export default function Tickets() {
           <div className="flex flex-col gap-2 p-5">
             {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
           </div>
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-            <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              {tickets.length === 0 ? 'No active tickets' : 'No tickets match filters'}
-            </p>
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
-            )}
-          </div>
         ) : (
           <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -1676,8 +1667,23 @@ export default function Tickets() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((ticket, idx) => {
-                  const isHovered = hoveredRow === ticket.id
+                {visible.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} style={{ borderBottom: `1px solid ${border}`, padding: '40px 10px' }}>
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+                        <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                          {tickets.length === 0 ? 'No active tickets' : 'No tickets match filters'}
+                        </p>
+                        {searchQuery && (
+                          <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  visible.map((ticket, idx) => {
+                    const isHovered = hoveredRow === ticket.id
                   const baseBg   = idx % 2 === 0 ? rowEven : rowOdd
                   const bg       = isHovered ? rowHover : baseBg
                   return (
@@ -1724,7 +1730,7 @@ export default function Tickets() {
                       })}
                     </tr>
                   )
-                })}
+                }))}
               </tbody>
             </table>
           </div>

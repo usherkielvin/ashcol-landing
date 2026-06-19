@@ -575,26 +575,33 @@ export default function DailyServiceReport() {
   }, [isBranchScoped, user?.branchId, user?.email, isAdmin])
 
   useEffect(() => {
-    if (isBranchScoped && user?.branchId && !branchFilter) {
-      const userBranchLower = user.branchId.toLowerCase()
-      const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-      if (isUserTaguig) {
-        const emailLower = (user?.email || '').toLowerCase()
-        const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
-        const matched = branches.find(b => {
-          const bNameUpper = b.name.toUpperCase()
-          return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
-        })
-        setBranchFilter(matched ? matched.id : (branches[0]?.id || user.branchId))
-      } else {
-        const userBranchIdUpper = user.branchId.toUpperCase()
-        const exactMatch = branches.find(b => b.id.toUpperCase() === userBranchIdUpper)
-        setBranchFilter(exactMatch ? exactMatch.id : (branches[0]?.id || user.branchId))
+    if (branches.length === 0) return
+
+    const isRawBranchId = branchFilter === user?.branchId
+    if (!branchFilter || isRawBranchId) {
+      if (isBranchScoped && user?.branchId) {
+        const userBranchLower = user.branchId.toLowerCase()
+        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+        if (isUserTaguig) {
+          const emailLower = (user?.email || '').toLowerCase()
+          const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
+          const matched = branches.find(b => {
+            const bNameUpper = b.name.toUpperCase()
+            return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
+          })
+          if (matched) {
+            setBranchFilter(matched.id)
+          } else {
+            setBranchFilter(branches[0]?.id || user.branchId)
+          }
+        } else {
+          const userBranchIdUpper = user.branchId.toUpperCase()
+          const exactMatch = branches.find(b => b.id.toUpperCase() === userBranchIdUpper)
+          setBranchFilter(exactMatch ? exactMatch.id : (branches[0]?.id || user.branchId))
+        }
+      } else if (isAllBranchUser && !branchFilter) {
+        setBranchFilter(branches[0].id)
       }
-      return
-    }
-    if (isAllBranchUser && !branchFilter && branches.length > 0) {
-      setBranchFilter(branches[0].id)
     }
   }, [isAllBranchUser, isBranchScoped, user?.branchId, branchFilter, branches])
 
