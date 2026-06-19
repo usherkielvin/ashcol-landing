@@ -312,8 +312,10 @@ export default function Tickets() {
   const [toast, setToast]             = useState<string | null>(null)
 
   useEffect(() => {
-    if (isTaguigServices && !dateFilter) setDateFilter(todayDateKey())
-  }, [isTaguigServices, dateFilter])
+    if (isTaguigServices) {
+      setDateFilter(todayDateKey())
+    }
+  }, [isTaguigServices])
 
   // ── Context menu ──────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -994,8 +996,25 @@ export default function Tickets() {
       list = list.filter(t => {
         const dateStr = t.preferredDate || t.preferred_date || t.createdAt || t.created_at
         if (!dateStr) return false
+        
+        // 1. Direct string match (handles simple date format or YYYY-MM-DD prefix)
         const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
-        return parsedDate === dateFilter
+        if (parsedDate === dateFilter) return true
+        
+        // 2. Timezone-aware check for ISO/timestamp strings
+        if (dateStr.includes('T') || dateStr.includes(':')) {
+          try {
+            const d = new Date(dateStr)
+            if (!isNaN(d.getTime())) {
+              const localY = d.getFullYear()
+              const localM = String(d.getMonth() + 1).padStart(2, '0')
+              const localD = String(d.getDate()).padStart(2, '0')
+              const localDateKey = `${localY}-${localM}-${localD}`
+              if (localDateKey === dateFilter) return true
+            }
+          } catch {}
+        }
+        return false
       })
     }
     if (searchQuery.trim()) {
@@ -1497,7 +1516,7 @@ export default function Tickets() {
             <span className="select-none" style={{ color: textPrimary }}>
               {formatDateTriggerLabel(dateFilter)}
             </span>
-            {dateFilter && !isTaguigServices && (
+            {dateFilter && (
               <button onClick={e => { e.stopPropagation(); setDateFilter('') }} style={{ color: textMuted }}>
                 <X className="w-3.5 h-3.5" />
               </button>
