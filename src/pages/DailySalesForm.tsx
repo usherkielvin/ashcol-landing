@@ -1394,61 +1394,29 @@ export default function DailySalesForm() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch</label>
-            {canEditOrSubmit && isAdmin ? (
-              <select
-                id="branch-select"
-                value={`${selectedBranchId}-${selectedAuditLine || ''}`}
-                onChange={e => {
-                  ignoreNextCohFetch.current = false
-                  const val = e.target.value
-                  const found = branchesList.find(b => `${b.id}-${b.auditLine || ''}` === val)
-                  if (found) {
-                    setSelectedBranchId(found.id)
-                    setSelectedAuditLine(found.auditLine || null)
-                    setBranch(found.name)
-                    
-                    if (isAdmin) {
-                      let gId = found.id
-                      const idLower = found.id.toLowerCase()
-                      if (idLower.includes('taguig') || idLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
-                        if (found.auditLine === 'TAGUIG_SERVICE') {
-                          gId = `${found.id}-services`
-                        } else {
-                          gId = `${found.id}-sales`
-                        }
-                      }
-                      localStorage.setItem('ashcol-global-branch-id', gId)
-                      window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                    }
-                  }
-                }}
-                className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`}
-                disabled={reviewMode}
-              >
-                {branchesList.map(b => (
-                  <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <select
-                id="branch-select-disabled"
-                value={`${selectedBranchId}-${selectedAuditLine || ''}`}
-                disabled={true}
-                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
-              >
-                {branchesList.length === 0 ? (
+            <select
+              id="branch-select-disabled"
+              value={`${selectedBranchId}-${selectedAuditLine || ''}`}
+              disabled={true}
+              className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
+            >
+              {branchesList.length === 0 || !branchesList.some(b => `${b.id}-${b.auditLine || ''}` === `${selectedBranchId}-${selectedAuditLine || ''}`) ? (
+                <>
                   <option value={`${selectedBranchId}-${selectedAuditLine || ''}`}>{branchName}</option>
-                ) : (
-                  branchesList.map(b => (
+                  {branchesList.map(b => (
                     <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
                       {b.name}
                     </option>
-                  ))
-                )}
-              </select>
-            )}
+                  ))}
+                </>
+              ) : (
+                branchesList.map(b => (
+                  <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
+                    {b.name}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
         </div>
 
