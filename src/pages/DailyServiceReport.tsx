@@ -465,23 +465,23 @@ export default function DailyServiceReport() {
   const columns = useMemo(() => {
     const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
-      { label: "CUSTOMER'S NAME", defaultW: 160, expW: 280, sticky: true, freeze: false, right: false },
-      { label: 'DESTINATION', defaultW: 200, expW: 450, sticky: true, freeze: true, right: false },
-      { label: 'DISTRICT', defaultW: 100, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'CONTACT NO.', defaultW: 115, expW: 180, sticky: false, freeze: false, right: false },
-      { label: 'BRAND', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
-      ...(isServices ? [{ label: 'COMPLAIN/REQUEST', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false }] : []),
-      { label: 'DLR', defaultW: 100, expW: 180, sticky: false, freeze: false, right: false },
-      { label: 'INSTALLER', defaultW: 130, expW: 250, sticky: false, freeze: false, right: false },
-      { label: 'NOTE', defaultW: 140, expW: 280, sticky: false, freeze: false, right: false },
-      { label: 'SERVICE', defaultW: 110, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'UPDATE', defaultW: 150, expW: 350, sticky: false, freeze: false, right: false },
-      { label: 'INSTALLATION CHARGES', defaultW: 110, expW: 180, sticky: false, freeze: false, right: true },
-      { label: 'MODE OF PAYMENT', defaultW: 100, expW: 160, sticky: false, freeze: false, right: false },
-      { label: 'SUBMITTED BY', defaultW: 130, expW: 220, sticky: false, freeze: false, right: false },
-      { label: 'DATE SUBMITTED', defaultW: 140, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'UPDATED BY', defaultW: 130, expW: 220, sticky: false, freeze: false, right: false },
-      { label: 'DATE UPDATED', defaultW: 140, expW: 200, sticky: false, freeze: false, right: false },
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", defaultW: 180, expW: 300, sticky: true, freeze: false, right: false },
+      { label: 'DESTINATION', display: "DESTINATION ADDRESS", defaultW: 250, expW: 450, sticky: true, freeze: true, right: false },
+      { label: 'DISTRICT', display: "DISTRICT", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'CONTACT NO.', display: "CONTACT NO.", defaultW: 130, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'BRAND', display: "AC UNIT / BRAND", defaultW: 150, expW: 260, sticky: false, freeze: false, right: false },
+      ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", defaultW: 160, expW: 280, sticky: false, freeze: false, right: false }] : []),
+      { label: 'DLR', display: isServices ? "ENDORSED BY" : "DEALER / VENDOR", defaultW: 130, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'INSTALLER', display: isServices ? "TECHNICIAN" : "INSTALLER NAME", defaultW: 150, expW: 260, sticky: false, freeze: false, right: false },
+      { label: 'NOTE', display: isServices ? "CONFIRMATION" : "NOTES / REMARKS", defaultW: 160, expW: 300, sticky: false, freeze: false, right: false },
+      { label: 'SERVICE', display: "SERVICE VEHICLE", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'UPDATE', display: isServices ? "SERVICE STATUS" : "UPDATE REMARKS", defaultW: 180, expW: 360, sticky: false, freeze: false, right: false },
+      { label: 'INSTALLATION CHARGES', display: "CHARGES (₱)", defaultW: 120, expW: 180, sticky: false, freeze: false, right: true },
+      { label: 'MODE OF PAYMENT', display: "PAYMENT MODE", defaultW: 130, expW: 180, sticky: false, freeze: false, right: false },
+      { label: 'SUBMITTED BY', display: "CREATED BY", defaultW: 140, expW: 220, sticky: false, freeze: false, right: false },
+      { label: 'DATE SUBMITTED', display: "CREATED AT", defaultW: 155, expW: 200, sticky: false, freeze: false, right: false },
+      { label: 'UPDATED BY', display: "UPDATED BY", defaultW: 140, expW: 220, sticky: false, freeze: false, right: false },
+      { label: 'DATE UPDATED', display: "UPDATED AT", defaultW: 155, expW: 200, sticky: false, freeze: false, right: false },
     ]
 
     let accumulatedLeft = 0
@@ -1539,7 +1539,7 @@ export default function DailyServiceReport() {
                         } : {}),
                       }}>
                       <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : 'justify-between'}`}>
-                        <span>{col.label}</span>
+                        <span>{col.display}</span>
                         <span className="text-[9px] opacity-60 transition-transform duration-200" style={{ transform: col.isExpanded ? 'rotate(180deg)' : 'none' }}>
                           {col.isExpanded ? '◀' : '▶'}
                         </span>

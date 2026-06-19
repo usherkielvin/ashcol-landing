@@ -915,18 +915,18 @@ export default function Tickets() {
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     const raw = [
-      { label: "CUSTOMER'S NAME", w: 160, expW: 280, sticky: true,  freeze: false },
-      { label: 'DESTINATION',     w: 200, expW: 420, sticky: true,  freeze: true  },
-      { label: 'DISTRICT',        w: 100, expW: 160, sticky: false, freeze: false },
-      { label: 'CONTACT NO.',     w: 120, expW: 180, sticky: false, freeze: false },
-      { label: 'BRAND',           w: 120, expW: 220, sticky: false, freeze: false },
-      { label: 'DLR',             w: 90,  expW: 160, sticky: false, freeze: false },
-      { label: 'STATUS',          w: 72,  expW: 110, sticky: false, freeze: false },
-      { label: 'COMMIT',          w: 140, expW: 280, sticky: false, freeze: false },
-      { label: 'INSTALLER',       w: 130, expW: 220, sticky: false, freeze: false },
-      { label: 'NOTE',            w: 150, expW: 300, sticky: false, freeze: false },
-      { label: 'SERVICE',         w: 110, expW: 180, sticky: false, freeze: false },
-      { label: 'UPDATE',          w: 170, expW: 340, sticky: false, freeze: false },
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", w: 180, expW: 300, sticky: true,  freeze: false },
+      { label: 'DESTINATION',     display: "DESTINATION ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true  },
+      { label: 'DISTRICT',        display: "DISTRICT", w: 120, expW: 200, sticky: false, freeze: false },
+      { label: 'CONTACT NO.',     display: "CONTACT NO.", w: 130, expW: 200, sticky: false, freeze: false },
+      { label: 'BRAND',           display: "AC UNIT / BRAND", w: 150, expW: 260, sticky: false, freeze: false },
+      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER / VENDOR", w: 130, expW: 200, sticky: false, freeze: false },
+      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false },
+      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT (AMOUNT)" : "COMMIT TERMS", w: 160, expW: 300, sticky: false, freeze: false },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER NAME", w: 150, expW: 260, sticky: false, freeze: false },
+      { label: 'NOTE',            display: isTaguigServices ? "CONFIRMATION" : "NOTES / REMARKS", w: 160, expW: 300, sticky: false, freeze: false },
+      { label: 'SERVICE',         display: "SERVICE VEHICLE", w: 120, expW: 200, sticky: false, freeze: false },
+      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "UPDATE REMARKS", w: 180, expW: 360, sticky: false, freeze: false },
     ]
     let left = 0
     return raw.map(c => {
@@ -936,7 +936,7 @@ export default function Tickets() {
       if (c.sticky) left += width
       return { ...c, isExpanded, width, left: l }
     })
-  }, [expandedCols])
+  }, [expandedCols, isTaguigServices])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -1651,14 +1651,7 @@ export default function Tickets() {
                         }}>
                       <div className="flex items-center justify-between gap-1">
                         <span>
-                          {isTaguigServices
-                            ? col.label === 'DLR' ? 'ENDORSED BY'
-                              : col.label === 'COMMIT' ? 'COMMIT (AMOUNT)'
-                              : col.label === 'INSTALLER' ? 'TECHNICIAN'
-                              : col.label === 'NOTE' ? 'CONFIRMATION'
-                              : col.label === 'UPDATE' ? 'SERVICE STATUS'
-                              : col.label
-                            : col.label}
+                          {col.display}
                         </span>
                         <span className="opacity-40 text-[9px]">{col.isExpanded ? '◀' : '▶'}</span>
                       </div>
