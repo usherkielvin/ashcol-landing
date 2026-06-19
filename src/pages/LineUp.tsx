@@ -884,6 +884,18 @@ export default function LineUp() {
 
           if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
 
+        } else if (cleanName.includes('TAGUIG')) {
+
+          const isServ = cleanName.includes('SERVICE')
+
+          newList.push({
+
+            id: isServ ? `${b.id}-services` : `${b.id}-sales`,
+
+            name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
+
+          })
+
         } else {
 
           newList.push({ id: b.id, name: cleanName })

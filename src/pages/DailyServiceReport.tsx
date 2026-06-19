@@ -536,9 +536,16 @@ export default function DailyServiceReport() {
       const newList: BranchOption[] = []
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
-        if (b.name.toUpperCase() === 'ASHCOL TAGUIG' || b.name.toUpperCase() === 'TAGUIG') {
+        const cleanNameUpper = cleanName.toUpperCase()
+        if (cleanNameUpper === 'TAGUIG' || cleanNameUpper === 'ASHCOL TAGUIG') {
           if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
           if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
+        } else if (cleanNameUpper.includes('TAGUIG')) {
+          const isServ = cleanNameUpper.includes('SERVICE')
+          newList.push({
+            id: isServ ? `${b.id}-services` : `${b.id}-sales`,
+            name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
+          })
         } else {
           newList.push({ id: b.id, name: cleanName })
         }

@@ -355,24 +355,29 @@ export default function DailySalesForm() {
       const gId = localStorage.getItem('ashcol-global-branch-id')
       if (!gId) return
       
-      if (gId === 'BR-TAGUIG-SALES-sales') {
-        setSelectedBranchId('BR-TAGUIG-SALES')
-        setSelectedAuditLine('TAGUIG_SALES')
-        setBranch('TAGUIG - SALES')
-      } else if (gId === 'BR-TAGUIG-SALES-services') {
-        setSelectedBranchId('BR-TAGUIG-SALES')
-        setSelectedAuditLine('TAGUIG_SERVICE')
-        setBranch('TAGUIG - SERVICES')
-      } else {
-        setSelectedBranchId(gId)
-        setSelectedAuditLine(null)
-        const found = branchesList.find(b => b.id === gId)
-        if (found) {
-          setBranch(found.name)
-        } else {
-          const baseName = gId.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
-          setBranch(baseName || 'BRANCH')
+      const norm = normalizeTransactionBranch(gId, null)
+      const found = branchesList.find(b => {
+        const bIdBase = b.id.toLowerCase().replace(/-(sales|services|service)$/i, '')
+        const normIdBase = norm.branchId.toLowerCase().replace(/-(sales|services|service)$/i, '')
+        if (bIdBase === normIdBase) {
+          if (normIdBase.includes('taguig') || normIdBase.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
+            const isServiceB = b.auditLine === 'TAGUIG_SERVICE' || (b.name && b.name.toUpperCase().includes('SERVICES'))
+            const isServiceNorm = norm.auditLine === 'TAGUIG_SERVICE'
+            return isServiceB === isServiceNorm
+          }
+          return true
         }
+        return false
+      })
+
+      if (found) {
+        setSelectedBranchId(found.id)
+        setSelectedAuditLine(found.auditLine || null)
+        setBranch(found.name)
+      } else {
+        setSelectedBranchId(norm.branchId)
+        setSelectedAuditLine(norm.auditLine)
+        setBranch(norm.branchName)
       }
     }
 
@@ -1403,11 +1408,12 @@ export default function DailySalesForm() {
                     
                     if (isAdmin) {
                       let gId = found.id
-                      if (found.id === 'BR-TAGUIG-SALES') {
+                      const idLower = found.id.toLowerCase()
+                      if (idLower.includes('taguig') || idLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
                         if (found.auditLine === 'TAGUIG_SERVICE') {
-                          gId = 'BR-TAGUIG-SALES-services'
+                          gId = `${found.id}-services`
                         } else {
-                          gId = 'BR-TAGUIG-SALES-sales'
+                          gId = `${found.id}-sales`
                         }
                       }
                       localStorage.setItem('ashcol-global-branch-id', gId)
