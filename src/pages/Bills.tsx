@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 import {
-  FileSpreadsheet, Calendar, RefreshCw, Plus, FileText,
+  FileSpreadsheet, Calendar, Plus, FileText,
   Search, AlertCircle
 } from 'lucide-react'
 
@@ -45,7 +45,7 @@ export default function Bills() {
   const excelGreen  = '#10B981'
 
   // ── States ──────────────────────────────────────────────────────
-  const [loading, setLoading] = useState(true)
+
   const [error, setError] = useState<string | null>(null)
   
   // Data lists
@@ -80,7 +80,6 @@ export default function Bills() {
 
   // ── Fetch Operations ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
-    setLoading(true)
     setError(null)
     const token = getToken()
     const headers = { Authorization: `Bearer ${token}` }
@@ -92,8 +91,6 @@ export default function Bills() {
       if (paymentsRes.ok) setPayments(await paymentsRes.json())
     } catch (err: any) {
       setError(err?.message || 'Failed to sync data with the server.')
-    } finally {
-      setLoading(false)
     }
   }, [billingMonthFilter, getToken])
 
@@ -256,20 +253,6 @@ export default function Bills() {
             Corporate recurring asset dues, utility bills, and payment cycles
           </p>
         </div>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
-          style={{
-            background: 'linear-gradient(135deg, #10B981, #059669)',
-            color: '#fff',
-            opacity: loading ? 0.7 : 1,
-            boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
-          }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Sync Data
-        </button>
       </div>
 
       {/* ── Error Banner ────────────────────────────────────────── */}
