@@ -553,7 +553,14 @@ export default function DailyServiceReport() {
         const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
         finalList = newList.filter(b => {
           if (isUserTaguig) {
-            return b.id.toLowerCase().includes('taguig') || b.name.toUpperCase().includes('TAGUIG')
+            const emailLower = (user?.email || '').toLowerCase()
+            const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
+            const bNameUpper = b.name.toUpperCase()
+            if (isServicesUser) {
+              return bNameUpper.includes('SERVICE') || bNameUpper.includes('SERVICES')
+            } else {
+              return bNameUpper.includes('SALES')
+            }
           } else {
             const userBranchIdUpper = user.branchId!.toUpperCase()
             const bIdUpper = b.id.toUpperCase()
@@ -565,7 +572,7 @@ export default function DailyServiceReport() {
       }
       setBranches(finalList)
     } catch (e) { console.error(e) }
-  }, [isBranchScoped, user?.branchId, isAdmin])
+  }, [isBranchScoped, user?.branchId, user?.email, isAdmin])
 
   useEffect(() => {
     if (isBranchScoped && user?.branchId && !branchFilter) {
