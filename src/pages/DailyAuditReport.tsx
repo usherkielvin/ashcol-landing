@@ -1247,27 +1247,6 @@ export default function DailyAuditReport() {
         )}
       </div>
 
-      {/* ── For Collection & Rebates Totals — Simple ──────────────────── */}
-      {!loading && (totals.forCollection > 0 || totals.rebatesForCollection > 0) && (
-        <div className="flex flex-wrap gap-3 mt-4 no-print">
-          {totals.forCollection > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#F59E0B' }}>
-              <ClipboardList className="w-3.5 h-3.5" />
-              <span>For Collection:</span>
-              <span className="font-extrabold">₱{peso(totals.forCollection)}</span>
-            </div>
-          )}
-          {totals.rebatesForCollection > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: '#10B981' }}>
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Rebates:</span>
-              <span className="font-extrabold">₱{peso(totals.rebatesForCollection)}</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Printable footer */}
       <div className="hidden print:block text-center mt-6 pt-4 border-t text-[10px]" style={{ borderColor: border }}>
