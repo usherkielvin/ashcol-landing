@@ -183,6 +183,10 @@ const getWorkerName = (p: any) => {
   return worker
 }
 
+// ── Draft helpers ────────────────────────────────────────────────────────────
+const getDraftKey = (branchId: string, auditLine: string | null) =>
+  `ashcol-dtr-draft-${branchId}-${auditLine || 'default'}`
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DailySalesForm() {
@@ -435,6 +439,11 @@ export default function DailySalesForm() {
   const [servicedUnits, setServicedUnits]       = useState('0')
   const [cancelledUnits, setCancelledUnits]     = useState('0')
   const [freeInstallUnits, setFreeInstallUnits] = useState('0')
+
+  // ── Draft state ──────────────────────────────────────────────────
+  const [draftRestored, setDraftRestored] = useState(false)
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipNextDraftSave = useRef(false)
 
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
@@ -826,7 +835,7 @@ export default function DailySalesForm() {
     }
   }, [branchName, reportDate, selectedAuditLine])
 
-  const clearForm = (clearTrNo = true) => {
+  const clearForm = (clearTrNo = true, clearDraft = false) => {
     setError(null)
     setScanError(null)
     setSuccess(false)
@@ -853,7 +862,104 @@ export default function DailySalesForm() {
     setServicedUnits('0')
     setCancelledUnits('0')
     setFreeInstallUnits('0')
+    if (clearDraft) {
+      // Remove draft for every known key pattern to be safe
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith('ashcol-dtr-draft-')) localStorage.removeItem(k)
+      }
+      setDraftRestored(false)
+    }
   }
+
+  // ── Draft save effect ─────────────────────────────────────────────
+  useEffect(() => {
+    // Only save drafts for new (non-edit) forms
+    if (reportId) return
+    if (!selectedBranchId) return
+    if (skipNextDraftSave.current) {
+      skipNextDraftSave.current = false
+      return
+    }
+    // Debounce to avoid thrashing localStorage on every keystroke
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
+    draftSaveTimer.current = setTimeout(() => {
+      const draft = {
+        reportDate,
+        receivedBy,
+        trNo,
+        cashOnHand,
+        fundFromHo,
+        cashTx,
+        cashRet,
+        onlineTx,
+        checkRem,
+        partsSales,
+        forColl,
+        rebates,
+        orders,
+        expReceipt,
+        expPurch,
+        scheduledUnits,
+        surveyOnlyUnits,
+        rescheduledUnits,
+        installedUnits,
+        servicedUnits,
+        cancelledUnits,
+        freeInstallUnits,
+      }
+      try {
+        localStorage.setItem(getDraftKey(selectedBranchId, selectedAuditLine), JSON.stringify(draft))
+      } catch { /* quota exceeded – ignore */ }
+    }, 600)
+    return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
+  }, [
+    reportId, selectedBranchId, selectedAuditLine,
+    reportDate, receivedBy, trNo, cashOnHand, fundFromHo,
+    cashTx, cashRet, onlineTx, checkRem, partsSales,
+    forColl, rebates, orders, expReceipt, expPurch,
+    scheduledUnits, surveyOnlyUnits, rescheduledUnits,
+    installedUnits, servicedUnits, cancelledUnits, freeInstallUnits,
+  ])
+
+  // ── Draft restore effect ──────────────────────────────────────────
+  useEffect(() => {
+    // Only restore for new forms (no ?id= in URL) and once branch is resolved
+    if (!selectedBranchId) return
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('id')) return // editing existing report – skip draft
+    const key = getDraftKey(selectedBranchId, selectedAuditLine)
+    const raw = localStorage.getItem(key)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw)
+      skipNextDraftSave.current = true // don't immediately re-save right after restore
+      if (d.reportDate) setReportDate(d.reportDate)
+      if (d.receivedBy) setReceivedBy(d.receivedBy)
+      if (d.trNo) { setTrNo(d.trNo); hasScannedTrNo.current = true }
+      if (d.cashOnHand !== undefined) { setCashOnHand(d.cashOnHand); ignoreNextCohFetch.current = true }
+      if (d.fundFromHo !== undefined) setFundFromHo(d.fundFromHo)
+      if (Array.isArray(d.cashTx) && d.cashTx.length) setCashTx(d.cashTx)
+      if (Array.isArray(d.cashRet) && d.cashRet.length) setCashRet(d.cashRet)
+      if (Array.isArray(d.onlineTx) && d.onlineTx.length) setOnlineTx(d.onlineTx)
+      if (Array.isArray(d.checkRem) && d.checkRem.length) setCheckRem(d.checkRem)
+      if (Array.isArray(d.partsSales) && d.partsSales.length) setPartsSales(d.partsSales)
+      if (Array.isArray(d.forColl) && d.forColl.length) setForColl(d.forColl)
+      if (Array.isArray(d.rebates) && d.rebates.length) setRebates(d.rebates)
+      if (Array.isArray(d.orders) && d.orders.length) setOrders(d.orders)
+      if (Array.isArray(d.expReceipt) && d.expReceipt.length) setExpReceipt(d.expReceipt)
+      if (Array.isArray(d.expPurch) && d.expPurch.length) setExpPurch(d.expPurch)
+      if (d.scheduledUnits !== undefined) setScheduledUnits(d.scheduledUnits)
+      if (d.surveyOnlyUnits !== undefined) setSurveyOnlyUnits(d.surveyOnlyUnits)
+      if (d.rescheduledUnits !== undefined) setRescheduledUnits(d.rescheduledUnits)
+      if (d.installedUnits !== undefined) setInstalledUnits(d.installedUnits)
+      if (d.servicedUnits !== undefined) setServicedUnits(d.servicedUnits)
+      if (d.cancelledUnits !== undefined) setCancelledUnits(d.cancelledUnits)
+      if (d.freeInstallUnits !== undefined) setFreeInstallUnits(d.freeInstallUnits)
+      setDraftRestored(true)
+    } catch { /* corrupted draft – ignore */ }
+  // Only run when the branch is first resolved (not on every field change)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranchId, selectedAuditLine])
 
 
 
@@ -1233,7 +1339,7 @@ export default function DailySalesForm() {
       })
       if (!res.ok) throw new Error(await res.text())
       setSuccess(true)
-      clearForm(true) // Clear form state on successful submission!
+      clearForm(true, true) // Clear form state AND draft on successful submission!
       setReviewMode(false)
       setReviewStartedAt(null)
     } catch (e: unknown) {
@@ -1243,9 +1349,10 @@ export default function DailySalesForm() {
 
   const handleClearForm = () => {
     if (!canEditOrSubmit) return
-    const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
+    const ok = window.confirm('Clear all entered transaction form details for this branch and date? This will also discard the saved draft.')
     if (!ok) return
-    clearForm(true)
+    clearForm(true, true)
+    setDraftRestored(false)
   }
 
   // ── Style helper tokens ──────────────────────────────────────────
@@ -1349,6 +1456,21 @@ export default function DailySalesForm() {
           <p className="text-sm text-amber-600 dark:text-amber-400">
             <strong>Uploaded Report:</strong> This report has been submitted and is final. Editing is disabled.
           </p>
+        </div>
+      )}
+
+      {draftRestored && !reportId && !reviewMode && (
+        <div className="rounded-xl p-3 flex items-center justify-between gap-3 bg-blue-500/5 border border-blue-500/20">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p className="text-xs text-blue-600 dark:text-blue-400"><strong>Draft restored.</strong> Your unsaved form data has been reloaded automatically.</p>
+          </div>
+          <button
+            onClick={() => { clearForm(true, true); setDraftRestored(false) }}
+            className="shrink-0 text-[11px] font-semibold text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 underline whitespace-nowrap"
+          >
+            Discard draft
+          </button>
         </div>
       )}
 
