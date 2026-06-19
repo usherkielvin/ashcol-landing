@@ -473,7 +473,9 @@ export default function DailySalesForm() {
           if (resAudit.ok) {
             const data = await resAudit.json()
             const myRow = data.find((r: any) => {
-              if (r.branchId !== selectedBranchId) return false
+              const rIdBase = r.branchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
+              const selIdBase = selectedBranchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
+              if (rIdBase !== selIdBase) return false
               if (selectedAuditLine) {
                 const isServiceRow = r.auditLine === 'TAGUIG_SERVICE'
                 const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
@@ -1430,13 +1432,22 @@ export default function DailySalesForm() {
                 ))}
               </select>
             ) : (
-              <input
-                id="branch-name-input"
-                type="text"
-                value={branchName}
-                readOnly
-                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none"
-              />
+              <select
+                id="branch-select-disabled"
+                value={`${selectedBranchId}-${selectedAuditLine || ''}`}
+                disabled={true}
+                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
+              >
+                {branchesList.length === 0 ? (
+                  <option value={`${selectedBranchId}-${selectedAuditLine || ''}`}>{branchName}</option>
+                ) : (
+                  branchesList.map(b => (
+                    <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
+                      {b.name}
+                    </option>
+                  ))
+                )}
+              </select>
             )}
           </div>
         </div>
