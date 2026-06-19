@@ -19,7 +19,9 @@ import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
 import WorkflowPipeline from './pages/WorkflowPipeline'
-import HrisAndBills from './pages/HrisAndBills'
+import Hris from './pages/Hris'
+import Bills from './pages/Bills'
+import Telecom from './pages/Telecom'
 
 import ClientMasterlist from './pages/ClientMasterlist'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -94,7 +96,9 @@ export default function App() {
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />
           <Route path="/admin-workflow" element={<WorkflowPipeline />} />
-          <Route path="/admin-hris-bills" element={<HrisAndBills />} />
+          <Route path="/admin-hris" element={<Hris />} />
+          <Route path="/admin-bills" element={<Bills />} />
+          <Route path="/admin-telecom" element={<Telecom />} />
         </Route>
       </Routes>
     </BrowserRouter>

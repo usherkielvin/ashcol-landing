@@ -7,7 +7,7 @@ import {
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, ClipboardList,
   Radio, CalendarDays, UserCog, ArrowLeftRight, TrendingUp, MapPin, Archive,
-  Building2, Layers, FileSpreadsheet
+  Building2, Layers, FileSpreadsheet, Calendar, Landmark, Wifi
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
@@ -197,7 +197,9 @@ export default function DashboardLayout() {
     { name: 'Daily Audit Summary', path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
     { name: 'Workflow Pipeline', path: '/admin-workflow',  icon: Layers,          roles: ['admin'] },
-    { name: 'HRIS & Bills',      path: '/admin-hris-bills',icon: FileSpreadsheet,  roles: ['admin', 'manager'] },
+    { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'manager'] },
+    { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'manager'] },
+    { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'manager'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
