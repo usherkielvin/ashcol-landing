@@ -91,7 +91,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   if (lower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || lower.startsWith('br-taguig') || lower.includes('taguig')) {
     const baseId = raw.replace(/-(sales|services|service)$/i, '')
     return {
-      branchId: baseId || 'BR-TAGUIG',
+      branchId: (baseId || 'BR-TAGUIG').toUpperCase(),
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
       branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
     }
@@ -103,7 +103,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   }
 
   return {
-    branchId: raw.replace(/-(sales|services|service)$/i, ''),
+    branchId: raw.replace(/-(sales|services|service)$/i, '').toUpperCase(),
     auditLine: null,
     branchName: baseName,
   }
