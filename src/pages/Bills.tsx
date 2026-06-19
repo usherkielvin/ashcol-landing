@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 import {
-  FileSpreadsheet, Calendar, Landmark, RefreshCw, Plus, FileText,
+  FileSpreadsheet, Calendar, RefreshCw, Plus, FileText,
   Search, AlertCircle
 } from 'lucide-react'
 

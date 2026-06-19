@@ -7,7 +7,7 @@ import {
   ChevronRight, UserCircle, ChevronDown, CheckCheck,
   PanelLeftOpen, ClipboardList,
   Radio, CalendarDays, UserCog, ArrowLeftRight, TrendingUp, MapPin, Archive,
-  Building2, Layers, FileSpreadsheet, Calendar, Landmark, Wifi
+  Building2, Layers, Calendar, Landmark, Wifi
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
