@@ -624,8 +624,13 @@ export default function DailyServiceReport() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ date, weekly: String(viewMode === 'weekly') })
 
+      // For TAGUIG virtual branches, preserve the -sales/-services suffix so the backend
+      // can correctly distinguish TAGUIG-SALES vs TAGUIG-SERVICES archives.
+      // For all other branches, strip the suffix as the real branch ID has none.
       let apiBranchId = branchFilter
-      if (branchFilter && /-(sales|services)$/i.test(branchFilter)) {
+      const upperFilter = (branchFilter || '').toUpperCase()
+      const isTaguigVirtual = upperFilter.includes('TAGUIG') && /-(SALES|SERVICES)$/i.test(upperFilter)
+      if (!isTaguigVirtual && branchFilter && /-(sales|services)$/i.test(branchFilter)) {
         apiBranchId = branchFilter.replace(/-sales$|-services$/i, '')
       }
       if (apiBranchId && apiBranchId !== 'ALL_BRANCHES') {
