@@ -335,7 +335,8 @@ export default function DailySalesForm() {
   useEffect(() => {
     if (!isAdmin) return
     const syncFromGlobal = (isInitial = false) => {
-      if (isInitial && user?.branchId) {
+      const stored = localStorage.getItem('ashcol-global-branch-id')
+      if (isInitial && user?.branchId && !stored) {
         const emailLower = (user.email || '').toLowerCase()
         const norm = normalizeTransactionBranch(user.branchId, emailLower)
         if (norm.branchId) {
