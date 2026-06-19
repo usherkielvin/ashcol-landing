@@ -26,6 +26,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { getPortalHomePath } from './utils/api'
+import AutoUpdateWatcher from './components/AutoUpdateWatcher'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const GOOGLE_OAUTH_ENABLED = !!GOOGLE_CLIENT_ID
@@ -103,6 +104,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <NotificationProvider>
+          <AutoUpdateWatcher />
           {GOOGLE_OAUTH_ENABLED ? (
             <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
           ) : (
