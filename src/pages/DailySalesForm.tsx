@@ -183,74 +183,30 @@ const getWorkerName = (p: any) => {
   return worker
 }
 
-// ── Draft helpers ────────────────────────────────────────────────────────────
-const getDraftKey = (branchId: string, auditLine: string | null) =>
-  `ashcol-dtr-draft-${branchId}-${auditLine || 'default'}`
+// ── Helper Components ─────────────────────────────────────────
 
-const hasMeaningfulData = (d: any) => {
-  if (!d) return false
+const SectionHeader = ({ label, total }: { label: string; total?: number }) => (
+  <div className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
+    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">{label}</span>
+    {total !== undefined && (
+      <span className="text-xs font-black tabular-nums" style={{ color: '#10B981' }}>
+        ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
+    )}
+  </div>
+)
 
-  // Helper to check if a row has any user-entered text or numbers
-  const rowHasData = (row: any) => {
-    if (!row) return false
-    return Object.keys(row).some(k => {
-      if (['id', 'receiptReturned', 'collectionResolved', 'resolvedExpenseId', 'receiptStatus'].includes(k)) {
-        return false
-      }
-      const val = row[k]
-      if (val === undefined || val === null) return false
-      
-      // If it's an amount/capital/salePrice field, check if non-zero
-      if (['amount', 'capital', 'salePrice'].includes(k)) {
-        const numVal = parseFloat(String(val))
-        return !isNaN(numVal) && numVal !== 0
-      }
-      
-      // Otherwise check if non-empty string
-      if (typeof val === 'string') {
-        return val.trim() !== ''
-      }
-      if (typeof val === 'number') {
-        return val !== 0
-      }
-      return false
-    })
-  }
+const AddRowBtn = ({ onClick, label }: { onClick: () => void; label: string }) => (
+  <button onClick={onClick} className="flex items-center gap-1 text-[11px] font-bold mt-1.5 mb-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors self-start ml-2">
+    <Plus className="w-3 h-3" /> {label}
+  </button>
+)
 
-  // Check array fields
-  const arrayFields = [
-    d.cashTx, d.cashRet, d.onlineTx, d.checkRem, d.partsSales,
-    d.forColl, d.rebates, d.orders, d.expReceipt, d.expPurch
-  ]
-  for (const arr of arrayFields) {
-    if (Array.isArray(arr) && arr.some(rowHasData)) {
-      return true
-    }
-  }
-
-  // Check cash / fund fields
-  const cashFields = [d.cashOnHand, d.fundFromHo]
-  for (const val of cashFields) {
-    if (val !== undefined && val !== null) {
-      const numVal = parseFloat(String(val))
-      if (!isNaN(numVal) && numVal !== 0) return true
-    }
-  }
-
-  // Check unit counts
-  const unitFields = [
-    d.scheduledUnits, d.surveyOnlyUnits, d.rescheduledUnits,
-    d.installedUnits, d.servicedUnits, d.cancelledUnits, d.freeInstallUnits
-  ]
-  for (const val of unitFields) {
-    if (val !== undefined && val !== null) {
-      const numVal = parseFloat(String(val))
-      if (!isNaN(numVal) && numVal !== 0) return true
-    }
-  }
-
-  return false
-}
+const DelBtn = ({ onClick }: { onClick: () => void }) => (
+  <button onClick={onClick} className="p-1 rounded hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors shrink-0">
+    <Trash2 className="w-3 h-3" />
+  </button>
+)
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -505,10 +461,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [cancelledUnits, setCancelledUnits]     = useState('0')
   const [freeInstallUnits, setFreeInstallUnits] = useState('0')
 
-  // ── Draft state ──────────────────────────────────────────────────
-  const [draftRestored, setDraftRestored] = useState(false)
-  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const skipNextDraftSave = useRef(false)
+  // (Draft state removed)
 
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
@@ -901,7 +854,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }, [branchName, reportDate, selectedAuditLine])
 
-  const clearForm = (clearTrNo = true, clearDraft = false) => {
+  const clearForm = (clearTrNo = true) => {
     setError(null)
     setScanError(null)
     setSuccess(false)
@@ -928,114 +881,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     setServicedUnits('0')
     setCancelledUnits('0')
     setFreeInstallUnits('0')
-    if (clearDraft) {
-      // Remove draft for every known key pattern to be safe
-      for (const k of Object.keys(localStorage)) {
-        if (k.startsWith('ashcol-dtr-draft-')) localStorage.removeItem(k)
-      }
-      setDraftRestored(false)
-    }
   }
-
-  // ── Draft save effect ─────────────────────────────────────────────
-  useEffect(() => {
-    // Only save drafts for new (non-edit) forms
-    if (reportId) return
-    if (!selectedBranchId) return
-    if (skipNextDraftSave.current) {
-      skipNextDraftSave.current = false
-      return
-    }
-    // Debounce to avoid thrashing localStorage on every keystroke
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
-    draftSaveTimer.current = setTimeout(() => {
-      const draft = {
-        reportDate,
-        receivedBy,
-        trNo,
-        cashOnHand,
-        fundFromHo,
-        cashTx,
-        cashRet,
-        onlineTx,
-        checkRem,
-        partsSales,
-        forColl,
-        rebates,
-        orders,
-        expReceipt,
-        expPurch,
-        scheduledUnits,
-        surveyOnlyUnits,
-        rescheduledUnits,
-        installedUnits,
-        servicedUnits,
-        cancelledUnits,
-        freeInstallUnits,
-      }
-      try {
-        localStorage.setItem(getDraftKey(selectedBranchId, selectedAuditLine), JSON.stringify(draft))
-      } catch { /* quota exceeded – ignore */ }
-    }, 600)
-    return () => { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [
-    reportId, selectedBranchId, selectedAuditLine,
-    reportDate, receivedBy, trNo, cashOnHand, fundFromHo,
-    cashTx, cashRet, onlineTx, checkRem, partsSales,
-    forColl, rebates, orders, expReceipt, expPurch,
-    scheduledUnits, surveyOnlyUnits, rescheduledUnits,
-    installedUnits, servicedUnits, cancelledUnits, freeInstallUnits,
-  ])
-
-  // ── Draft restore effect ──────────────────────────────────────────
-  useEffect(() => {
-    // Only restore for new forms (no ?id= in URL) and once branch is resolved
-    if (!selectedBranchId) return
-    const urlParams = new URLSearchParams(window.location.search)
-    if (urlParams.get('id')) return // editing existing report – skip draft
-    const key = getDraftKey(selectedBranchId, selectedAuditLine)
-    const raw = localStorage.getItem(key)
-    if (!raw) {
-      setDraftRestored(false)
-      return
-    }
-    try {
-      const d = JSON.parse(raw)
-      skipNextDraftSave.current = true // don't immediately re-save right after restore
-      if (d.reportDate) setReportDate(d.reportDate)
-      if (d.receivedBy) setReceivedBy(d.receivedBy)
-      if (d.trNo) { setTrNo(d.trNo); hasScannedTrNo.current = true }
-      if (d.cashOnHand !== undefined) { setCashOnHand(d.cashOnHand); ignoreNextCohFetch.current = true }
-      if (d.fundFromHo !== undefined) setFundFromHo(d.fundFromHo)
-      if (Array.isArray(d.cashTx) && d.cashTx.length) setCashTx(d.cashTx)
-      if (Array.isArray(d.cashRet) && d.cashRet.length) setCashRet(d.cashRet)
-      if (Array.isArray(d.onlineTx) && d.onlineTx.length) setOnlineTx(d.onlineTx)
-      if (Array.isArray(d.checkRem) && d.checkRem.length) setCheckRem(d.checkRem)
-      if (Array.isArray(d.partsSales) && d.partsSales.length) setPartsSales(d.partsSales)
-      if (Array.isArray(d.forColl) && d.forColl.length) setForColl(d.forColl)
-      if (Array.isArray(d.rebates) && d.rebates.length) setRebates(d.rebates)
-      if (Array.isArray(d.orders) && d.orders.length) setOrders(d.orders)
-      if (Array.isArray(d.expReceipt) && d.expReceipt.length) setExpReceipt(d.expReceipt)
-      if (Array.isArray(d.expPurch) && d.expPurch.length) setExpPurch(d.expPurch)
-      if (d.scheduledUnits !== undefined) setScheduledUnits(d.scheduledUnits)
-      if (d.surveyOnlyUnits !== undefined) setSurveyOnlyUnits(d.surveyOnlyUnits)
-      if (d.rescheduledUnits !== undefined) setRescheduledUnits(d.rescheduledUnits)
-      if (d.installedUnits !== undefined) setInstalledUnits(d.installedUnits)
-      if (d.servicedUnits !== undefined) setServicedUnits(d.servicedUnits)
-      if (d.cancelledUnits !== undefined) setCancelledUnits(d.cancelledUnits)
-      if (d.freeInstallUnits !== undefined) setFreeInstallUnits(d.freeInstallUnits)
-      
-      if (hasMeaningfulData(d)) {
-        setDraftRestored(true)
-      } else {
-        setDraftRestored(false)
-      }
-    } catch {
-      setDraftRestored(false)
-    }
-  // Only run when the branch is first resolved (not on every field change)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranchId, selectedAuditLine])
 
 
 
@@ -1416,7 +1262,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       })
       if (!res.ok) throw new Error(await res.text())
       setSuccess(true)
-      clearForm(true, true) // Clear form state AND draft on successful submission!
+      clearForm(true)
       setReviewMode(false)
       setReviewStartedAt(null)
     } catch (e: unknown) {
@@ -1426,10 +1272,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const handleClearForm = () => {
     if (!canEditOrSubmit) return
-    const ok = window.confirm('Clear all entered transaction form details for this branch and date? This will also discard the saved draft.')
+    const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
     if (!ok) return
-    clearForm(true, true)
-    setDraftRestored(false)
+    clearForm(true)
   }
 
   // ── Style helper tokens ──────────────────────────────────────────
@@ -1439,28 +1284,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
   const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
 
-  const SectionHeader = ({ label, total }: { label: string; total?: number }) => (
-    <div className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
-      <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">{label}</span>
-      {total !== undefined && (
-        <span className="text-xs font-black tabular-nums" style={{ color: '#10B981' }}>
-          ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
-      )}
-    </div>
-  )
-
-  const AddRowBtn = ({ onClick, label }: { onClick: () => void; label: string }) => (
-    <button onClick={onClick} className="flex items-center gap-1 text-[11px] font-bold mt-1.5 mb-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors self-start ml-2">
-      <Plus className="w-3 h-3" /> {label}
-    </button>
-  )
-
-  const DelBtn = ({ onClick }: { onClick: () => void }) => (
-    <button onClick={onClick} className="p-1 rounded hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors shrink-0">
-      <Trash2 className="w-3 h-3" />
-    </button>
-  )
+  // (Helper subcomponents extracted outside the component)
 
   // ── Success screen ───────────────────────────────────────────────
   if (success) {
@@ -1558,20 +1382,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         </div>
       )}
 
-      {draftRestored && !reportId && !reviewMode && (
-        <div className="rounded-xl p-3 flex items-center justify-between gap-3 bg-blue-500/5 border border-blue-500/20">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4 shrink-0 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <p className="text-xs text-blue-600 dark:text-blue-400"><strong>Draft restored.</strong> Your unsaved form data has been reloaded automatically.</p>
-          </div>
-          <button
-            onClick={() => { clearForm(true, true); setDraftRestored(false) }}
-            className="shrink-0 text-[11px] font-semibold text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 underline whitespace-nowrap"
-          >
-            Discard draft
-          </button>
-        </div>
-      )}
+      {/* Draft banner removed */}
 
       {/* ── Metadata Header ─────────────────────────────────────────── */}
       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
