@@ -1166,10 +1166,10 @@ export default function Hris() {
                   className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold select-none opacity-80 cursor-not-allowed border"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
                 >
-                  {selectedEmployeeId 
-                    ? getUserBranchName(selectedEmployeeId)
-                    : (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES' 
-                        ? getBranchDisplayName(activeBranchFilter) 
+                  {(activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES')
+                    ? getBranchDisplayName(activeBranchFilter)
+                    : (selectedEmployeeId 
+                        ? getUserBranchName(selectedEmployeeId)
                         : getUserBranchName(user?.id || ''))}
                 </div>
               </div>
