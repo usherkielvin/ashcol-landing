@@ -260,12 +260,11 @@ export default function ForCollections() {
     }
   })
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
-  // Date filters — monthFilter = 'YYYY-MM', dateFilter = 'YYYY-MM-DD'
+  // Date filters — monthFilter = 'YYYY-MM'
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [dateFilter, setDateFilter] = useState('')
 
   // Sync branchFilter for Admin from active branch
   useEffect(() => {
@@ -558,10 +557,9 @@ export default function ForCollections() {
         (item.company || '').toLowerCase().includes(term) ||
         (item.branchName || '').toLowerCase().includes(term)
       const matchMonth = !monthFilter || (item.reportDate || '').startsWith(monthFilter)
-      const matchDate  = !dateFilter  || item.reportDate === dateFilter
-      return matchSearch && matchMonth && matchDate
+      return matchSearch && matchMonth
     })
-  }, [items, search, monthFilter, dateFilter])
+  }, [items, search, monthFilter])
 
   const totalAmount = useMemo(
     () => filteredItems.reduce((acc, item) => {
@@ -572,9 +570,6 @@ export default function ForCollections() {
     }, 0),
     [filteredItems, activeTab]
   )
-
-  const hasDateFilter = !!monthFilter || !!dateFilter
-  const clearDateFilters = () => { setMonthFilter(''); setDateFilter('') }
 
   return (
     <div className="flex flex-col gap-6 pb-8 md:pb-8">
@@ -670,7 +665,7 @@ export default function ForCollections() {
             <Calendar className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
             <select
               value={monthFilter}
-              onChange={e => { setMonthFilter(e.target.value); setDateFilter('') }}
+              onChange={e => setMonthFilter(e.target.value)}
               className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all"
               style={{ color: monthFilter ? textPrimary : textMuted, backgroundColor: inputBg, borderColor: monthFilter ? '#10B981' : inputBorder }}
               aria-label="Filter by Month"
@@ -681,43 +676,6 @@ export default function ForCollections() {
               ))}
             </select>
           </div>
-
-          {/* Specific date picker — only when a month is selected */}
-          {monthFilter && (
-            <div className="relative">
-              <input
-                type="date"
-                value={dateFilter}
-                min={`${monthFilter}-01`}
-                max={(() => {
-                  const [y, m] = monthFilter.split('-').map(Number)
-                  return new Date(y, m, 0).toISOString().slice(0, 10)
-                })()}
-                onChange={e => setDateFilter(e.target.value)}
-                className="py-2 px-3 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all cursor-pointer"
-                style={{
-                  backgroundColor: inputBg,
-                  borderColor: dateFilter ? '#10B981' : inputBorder,
-                  color: dateFilter ? textPrimary : textMuted,
-                  minWidth: 130
-                }}
-                aria-label="Filter by Date"
-              />
-            </div>
-          )}
-
-          {/* Clear date filters chip */}
-          {hasDateFilter && (
-            <button
-              type="button"
-              onClick={clearDateFilters}
-              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold border transition-all hover:bg-red-50 dark:hover:bg-red-900/20"
-              style={{ borderColor: '#EF4444', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.07)' }}
-              title="Clear date filters"
-            >
-              <X size={12} /> Clear
-            </button>
-          )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0 md:justify-end">
