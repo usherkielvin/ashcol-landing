@@ -86,6 +86,7 @@ export default function Login() {
       if (rememberMe) {
         localStorage.setItem('ashcol-token', appToken)
         localStorage.setItem('ashcol-user', JSON.stringify({
+          id: appUser.id,
           name: appUser.name || email,
           email: appUser.email || email,
           personalEmail: appUser.personalEmail ?? null,
@@ -104,6 +105,7 @@ export default function Login() {
       }
 
       setUser({
+        id: appUser.id,
         name: appUser.name || email,
         email: appUser.email || email,
         personalEmail: appUser.personalEmail ?? null,
@@ -155,6 +157,7 @@ export default function Login() {
         if (rememberMe) {
           localStorage.setItem('ashcol-token', appToken)
           localStorage.setItem('ashcol-user', JSON.stringify({
+            id: appUser.id,
             name: appUser.name || profile.name || profile.email,
             email: appUser.email || profile.email,
             personalEmail: appUser.personalEmail ?? null,
@@ -173,6 +176,7 @@ export default function Login() {
         }
 
         setUser({
+          id: appUser.id,
           name: appUser.name || profile.name || profile.email,
           email: appUser.email || profile.email,
           personalEmail: appUser.personalEmail ?? null,

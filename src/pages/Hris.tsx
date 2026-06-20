@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import {
   FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
@@ -12,6 +13,7 @@ interface User {
   name: string
   email: string
   role: string
+  branchId?: string
 }
 
 interface LeaveRequest {
@@ -48,6 +50,7 @@ interface CashAdvance {
   repaymentTermMonths: number
   monthlyDeduction: number
   purpose: string
+  notes?: string
   status: string
   approvedBy?: string
   approvedAt?: string
@@ -58,6 +61,7 @@ interface CashAdvance {
 
 export default function Hris() {
   const { theme } = useTheme()
+  const { user } = useAuth()
   const isLight = theme === 'light'
 
   // Theme Colors
@@ -73,6 +77,16 @@ export default function Hris() {
   const [activeTab, setActiveTab] = useState<'leaves' | 'advances' | 'drivers'>('leaves')
 
   const [error, setError] = useState<string | null>(null)
+
+  // Global branch selection
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
+  useEffect(() => {
+    const sync = () => setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    window.addEventListener('ashcol-global-branch-change', sync)
+    return () => window.removeEventListener('ashcol-global-branch-change', sync)
+  }, [])
 
   // Driver Route Sheets States
   const [driverSheets, setDriverSheets] = useState<any[]>([])
@@ -95,8 +109,8 @@ export default function Hris() {
   // Modals state
   const [showLeaveModal, setShowLeaveModal] = useState(false)
   const [showAdvanceModal, setShowAdvanceModal] = useState(false)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedAdvance, setSelectedAdvance] = useState<CashAdvance | null>(null)
-  const [showRepaymentModal, setShowRepaymentModal] = useState(false)
 
   // Leave Form Fields
   const [leaveType, setLeaveType] = useState('VACATION')
@@ -106,13 +120,9 @@ export default function Hris() {
 
   // Cash Advance Form Fields
   const [advanceAmount, setAdvanceAmount] = useState('')
-  const [advanceTerms, setAdvanceTerms] = useState('3')
   const [advancePurpose, setAdvancePurpose] = useState('')
-
-  // Cash Advance Repayment Fields
-  const [repayAmount, setRepayAmount] = useState('')
-  const [repayMethod, setRepayMethod] = useState('CASH_PAYMENT')
-  const [repayRemarks, setRepayRemarks] = useState('')
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  const [employeeNameInput, setEmployeeNameInput] = useState('')
 
   // ── Helper: Get JWT Token ─────────────────────────────────────────
   const getToken = useCallback((): string => {
@@ -158,6 +168,23 @@ export default function Hris() {
   const getUserName = (userId: string) => {
     const found = users.find(u => u.id === userId)
     return found ? found.name : 'Unknown Employee'
+  }
+
+  const getBranchDisplayName = (id: string | null): string => {
+    if (!id || id === 'ALL_BRANCHES') return 'N/A'
+    const upper = id.toUpperCase()
+    if (upper === 'BR-TAGUIG-SALES-SALES' || upper === 'BR-TAGUIG-SALES') {
+      return 'TAGUIG - SALES'
+    }
+    if (upper === 'BR-TAGUIG-SALES-SERVICES' || upper === 'BR-TAGUIG-SERVICES' || upper === 'BR-TAGUIG-SERVICE') {
+      return 'TAGUIG - SERVICES'
+    }
+    return id.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').replace(/-/g, ' ').toUpperCase()
+  }
+
+  const getUserBranchName = (userId: string) => {
+    const found = users.find(u => u.id === userId)
+    return found ? getBranchDisplayName(found.branchId || null) : 'N/A'
   }
 
   // ── Action Handlers ───────────────────────────────────────────────
@@ -356,6 +383,22 @@ export default function Hris() {
   // Submit Cash Advance Request
   const handleAdvanceRequest = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    let targetEmployeeId = selectedEmployeeId
+    if (!targetEmployeeId && employeeNameInput) {
+      const found = employeeSuggestions.find(
+        u => u.name.toLowerCase() === employeeNameInput.trim().toLowerCase()
+      )
+      if (found) {
+        targetEmployeeId = found.id
+      }
+    }
+
+    if (!targetEmployeeId) {
+      alert("Please select or enter a valid employee name from the suggestions.")
+      return
+    }
+
     const token = getToken()
     try {
       const res = await fetch(`${API_BASE_URL}/hris/cash-advances`, {
@@ -365,8 +408,9 @@ export default function Hris() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          employeeId: targetEmployeeId,
           amount: parseFloat(advanceAmount),
-          repaymentTermMonths: parseInt(advanceTerms),
+          repaymentTermMonths: 1,
           purpose: advancePurpose
         })
       })
@@ -374,6 +418,8 @@ export default function Hris() {
         setShowAdvanceModal(false)
         setAdvanceAmount('')
         setAdvancePurpose('')
+        setEmployeeNameInput('')
+        setSelectedEmployeeId('')
         fetchData()
       }
     } catch (err) { /* ignore */ }
@@ -382,6 +428,10 @@ export default function Hris() {
   // Approve/Disburse Cash Advance
   const handleAdvanceApproval = async (id: string, status: 'APPROVED' | 'DISBURSED' | 'REJECTED') => {
     const token = getToken()
+    const verb = status === 'APPROVED' ? 'approve' : status === 'REJECTED' ? 'reject' : 'disburse'
+    const notes = prompt(`Enter comments/notes to ${verb} this cash advance (optional):`)
+    if (notes === null) return // user clicked cancel
+
     try {
       const res = await fetch(`${API_BASE_URL}/hris/cash-advances/${id}/approve`, {
         method: 'PUT',
@@ -389,36 +439,9 @@ export default function Hris() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, notes })
       })
       if (res.ok) {
-        fetchData()
-      }
-    } catch (err) { /* ignore */ }
-  }
-
-  // Log Repayment
-  const handleLogRepayment = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedAdvance) return
-    const token = getToken()
-    try {
-      const res = await fetch(`${API_BASE_URL}/hris/cash-advances/${selectedAdvance.id}/repayments`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          amount: parseFloat(repayAmount),
-          deductionMethod: repayMethod,
-          remarks: repayRemarks
-        })
-      })
-      if (res.ok) {
-        setShowRepaymentModal(false)
-        setRepayAmount('')
-        setRepayRemarks('')
         fetchData()
       }
     } catch (err) { /* ignore */ }
@@ -441,25 +464,55 @@ export default function Hris() {
   }, [filteredLeaves])
 
   // ── Cash Advances Computations (Excel Summary) ────────────────────
+  const activeBranchFilter = useMemo(() => {
+    const role = (user?.role || '').toLowerCase()
+    if (role === 'admin') {
+      return globalBranchId
+    } else {
+      return user?.branchId || null
+    }
+  }, [user, globalBranchId])
+
+  const employeeSuggestions = useMemo(() => {
+    return users.filter(u => {
+      if (u.role === 'CUSTOMER') return false
+      if (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
+        const cleanFilter = activeBranchFilter.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
+        const cleanEmpBranch = (u.branchId || '').replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
+        if (cleanFilter !== cleanEmpBranch) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [users, activeBranchFilter])
+
   const filteredAdvances = useMemo(() => {
     return advances.filter(a => {
+      const emp = users.find(u => u.id === a.employeeId)
+      const empBranch = emp?.branchId || ''
+
+      if (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
+        const cleanFilter = activeBranchFilter.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
+        const cleanEmpBranch = empBranch.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
+        if (cleanFilter !== cleanEmpBranch) {
+          return false
+        }
+      }
+
       const matchesSearch = getUserName(a.employeeId).toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter === 'ALL' ? true : a.status === statusFilter
       return matchesSearch && matchesStatus
     })
-  }, [advances, searchQuery, statusFilter, users])
+  }, [advances, searchQuery, statusFilter, users, activeBranchFilter])
 
   const advancesSummary = useMemo(() => {
     let originalSum = 0
-    let remainingSum = 0
     filteredAdvances.forEach(a => {
       originalSum += a.amount
-      remainingSum += a.remainingBalance
     })
     return {
-      originalSum,
-      remainingSum,
-      paidSum: originalSum - remainingSum
+      originalSum
     }
   }, [filteredAdvances])
 
@@ -606,7 +659,19 @@ export default function Hris() {
             )}
             {activeTab === 'advances' && (
               <button
-                onClick={() => setShowAdvanceModal(true)}
+                onClick={() => {
+                  const role = (user?.role || '').toLowerCase()
+                  if (role === 'admin') {
+                    setEmployeeNameInput('')
+                    setSelectedEmployeeId('')
+                  } else {
+                    setEmployeeNameInput(user?.name || '')
+                    setSelectedEmployeeId(user?.id || '')
+                  }
+                  setAdvanceAmount('')
+                  setAdvancePurpose('')
+                  setShowAdvanceModal(true)
+                }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all"
               >
                 <Plus className="w-4 h-4" /> Request Cash Advance
@@ -802,12 +867,11 @@ export default function Hris() {
                 <tr>
                   <th>Request ID</th>
                   <th>Employee Name</th>
+                  <th>Branch</th>
                   <th>Request Amount</th>
-                  <th>Term (Months)</th>
-                  <th>Monthly Deduction</th>
-                  <th>Remaining Balance</th>
+                  <th>Purpose / Reason</th>
                   <th>Status</th>
-                  <th>Created At</th>
+                  <th>Submitted At</th>
                   <th style={{ width: 150 }}>Actions</th>
                 </tr>
               </thead>
@@ -816,10 +880,9 @@ export default function Hris() {
                   <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
                     <td className="font-semibold">{getUserName(a.employeeId)}</td>
+                    <td className="text-xs font-semibold text-slate-500">{getUserBranchName(a.employeeId)}</td>
                     <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td>{a.repaymentTermMonths} mo</td>
-                    <td className="font-medium text-slate-500">₱{a.monthlyDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="font-black text-rose-500">₱{a.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
                     <td>
                       <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
                         style={{
@@ -830,7 +893,16 @@ export default function Hris() {
                         {a.status}
                       </span>
                     </td>
-                    <td>{new Date(a.createdAt).toLocaleDateString()}</td>
+                    <td className="text-xs text-slate-500 font-medium">
+                      {new Date(a.createdAt).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
+                    </td>
                     <td>
                       <div className="flex items-center gap-1.5">
                         {a.status === 'PENDING' && (
@@ -858,18 +930,10 @@ export default function Hris() {
                           </button>
                         )}
                         {a.status === 'DISBURSED' && (
-                          <button
-                            onClick={() => {
-                              setSelectedAdvance(a)
-                              setShowRepaymentModal(true)
-                            }}
-                            className="px-2 py-1 rounded bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 text-[10px] font-bold"
-                          >
-                            Repay Dues
-                          </button>
+                          <span className="text-[10px] text-slate-400 font-bold select-none">Disbursed (Deducts to Salary)</span>
                         )}
                         {a.status === 'FULLY_PAID' && (
-                          <span className="text-[10px] text-slate-400 font-bold select-none">Fully Paid Log</span>
+                          <span className="text-[10px] text-slate-400 font-bold select-none">Fully Paid</span>
                         )}
                       </div>
                     </td>
@@ -877,11 +941,9 @@ export default function Hris() {
                 ))}
                 {/* Excel Summary Row */}
                 <tr className="excel-total-row">
-                  <td colSpan={2}>Grand Totals:</td>
-                  <td>₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td colSpan={2}>Paid Back: ₱{advancesSummary.paidSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td className="text-rose-500">₱{advancesSummary.remainingSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td colSpan={3}>Remaining Balance Dues</td>
+                  <td colSpan={3}>Grand Total:</td>
+                  <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
                 </tr>
               </tbody>
             </table>
@@ -1032,136 +1094,107 @@ export default function Hris() {
       {showAdvanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAdvanceModal(false)} />
-          <div className="relative w-full max-w-md rounded-2xl overflow-hidden p-6" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <h3 className="text-lg font-black mb-4">Request Cash Advance</h3>
+          <div className="relative w-full max-w-md rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between mb-4 pb-2 border-b" style={{ borderColor: border }}>
+              <h3 className="text-base font-black flex items-center gap-2" style={{ color: textPrimary }}>
+                <CreditCard className="w-5 h-5 text-emerald-500" />
+                Request Cash Advance
+              </h3>
+              <button 
+                onClick={() => setShowAdvanceModal(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
             <form onSubmit={handleAdvanceRequest} className="space-y-4">
               <div>
-                <label className="text-xs font-bold mb-1.5 block">Advance Amount (PHP)</label>
+                <label className="text-xs font-bold mb-1.5 block text-slate-400">Employee Name</label>
                 <input
-                  type="number"
+                  type="text"
                   required
-                  min="1"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={advanceAmount}
-                  onChange={e => setAdvanceAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  placeholder="Type employee name…"
+                  value={employeeNameInput}
+                  onChange={e => {
+                    setEmployeeNameInput(e.target.value)
+                    const found = employeeSuggestions.find(
+                      u => u.name.toLowerCase() === e.target.value.toLowerCase()
+                    )
+                    if (found) {
+                      setSelectedEmployeeId(found.id)
+                    } else {
+                      setSelectedEmployeeId('')
+                    }
+                  }}
+                  list="employee-suggestions"
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
+                <datalist id="employee-suggestions">
+                  {employeeSuggestions.map(u => (
+                    <option key={u.id} value={u.name} />
+                  ))}
+                </datalist>
               </div>
+
               <div>
-                <label className="text-xs font-bold mb-1.5 block">Repayment Term (Months)</label>
-                <select
-                  value={advanceTerms}
-                  onChange={e => setAdvanceTerms(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                <label className="text-xs font-bold mb-1.5 block text-slate-400">Branch</label>
+                <div
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold select-none opacity-80 cursor-not-allowed border"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
                 >
-                  <option value="1">1 Month</option>
-                  <option value="2">2 Months</option>
-                  <option value="3">3 Months</option>
-                  <option value="6">6 Months</option>
-                  <option value="12">12 Months</option>
-                </select>
+                  {activeBranchFilter ? getBranchDisplayName(activeBranchFilter) : getUserBranchName(selectedEmployeeId || user?.id || '')}
+                </div>
               </div>
+
               <div>
-                <label className="text-xs font-bold mb-1.5 block">Purpose / Reason</label>
+                <label className="text-xs font-bold mb-1.5 block" style={{ color: textPrimary }}>Requested Amount (PHP)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₱</span>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={advanceAmount}
+                    onChange={e => setAdvanceAmount(e.target.value)}
+                    className="w-full pl-7 pr-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold mb-1.5 block" style={{ color: textPrimary }}>Purpose / Reason</label>
                 <textarea
                   required
                   rows={3}
                   value={advancePurpose}
                   onChange={e => setAdvancePurpose(e.target.value)}
-                  placeholder="State the reason/purpose of this cash advance…"
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  placeholder="State the reason or purpose of this cash advance request…"
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+
+              <div className="flex justify-end gap-2 pt-2 border-t mt-4" style={{ borderColor: border }}>
                 <button
                   type="button"
                   onClick={() => setShowAdvanceModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold"
-                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:bg-slate-200 dark:hover:bg-slate-700"
+                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 hover:brightness-110 active:scale-[0.98]"
                   style={{ backgroundColor: excelGreen }}
                 >
-                  Request Advance
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modals: Log Cash Advance Repayment ───────────────────── */}
-      {showRepaymentModal && selectedAdvance && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowRepaymentModal(false)} />
-          <div className="relative w-full max-w-md rounded-2xl overflow-hidden p-6" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <h3 className="text-lg font-black mb-2">Log Repayment Payment</h3>
-            <p className="text-xs mb-4" style={{ color: textMuted }}>
-              Log a payment for {getUserName(selectedAdvance.employeeId)}'s cash advance.
-              Remaining balance: <span className="font-bold text-rose-500">₱{selectedAdvance.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-            </p>
-            <form onSubmit={handleLogRepayment} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold mb-1.5 block">Repayment Amount paid (PHP)</label>
-                <input
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  max={selectedAdvance.remainingBalance.toString()}
-                  placeholder="0.00"
-                  value={repayAmount}
-                  onChange={e => setRepayAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold mb-1.5 block">Deduction / Payment Method</label>
-                <select
-                  value={repayMethod}
-                  onChange={e => setRepayMethod(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                >
-                  <option value="CASH_PAYMENT">Cash Payment (Over-the-counter)</option>
-                  <option value="SALARY_DEDUCTION">Salary Deduction (Payroll deduction)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold mb-1.5 block">Remarks</label>
-                <textarea
-                  rows={2}
-                  value={repayRemarks}
-                  onChange={e => setRepayRemarks(e.target.value)}
-                  placeholder="E.g., paid cash for June cycle installment…"
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowRepaymentModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold"
-                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white"
-                  style={{ backgroundColor: excelGreen }}
-                >
-                  Log Repayment
+                  Submit Request
                 </button>
               </div>
             </form>

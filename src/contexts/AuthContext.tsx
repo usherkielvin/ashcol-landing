@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 
 export interface AuthUser {
+  id?: string
   name: string
   email: string
   /** Personal contact email (editable for branch managers; work email stays fixed). */
