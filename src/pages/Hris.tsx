@@ -112,6 +112,11 @@ export default function Hris() {
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedAdvance, setSelectedAdvance] = useState<CashAdvance | null>(null)
 
+  // Status Confirmation State
+  const [confirmingAdvance, setConfirmingAdvance] = useState<CashAdvance | null>(null)
+  const [confirmingStatus, setConfirmingStatus] = useState<'APPROVED' | 'DISBURSED' | 'REJECTED' | null>(null)
+  const [approvalNotes, setApprovalNotes] = useState('')
+
   // Leave Form Fields
   const [leaveType, setLeaveType] = useState('VACATION')
   const [leaveStart, setLeaveStart] = useState('')
@@ -395,7 +400,7 @@ export default function Hris() {
     }
 
     if (!targetEmployeeId) {
-      alert("Please select or enter a valid employee name from the suggestions.")
+      alert("Please select or enter a valid employee name.")
       return
     }
 
@@ -426,12 +431,8 @@ export default function Hris() {
   }
 
   // Approve/Disburse Cash Advance
-  const handleAdvanceApproval = async (id: string, status: 'APPROVED' | 'DISBURSED' | 'REJECTED') => {
+  const handleAdvanceApproval = async (id: string, status: 'APPROVED' | 'DISBURSED' | 'REJECTED', notes: string) => {
     const token = getToken()
-    const verb = status === 'APPROVED' ? 'approve' : status === 'REJECTED' ? 'reject' : 'disburse'
-    const notes = prompt(`Enter comments/notes to ${verb} this cash advance (optional):`)
-    if (notes === null) return // user clicked cancel
-
     try {
       const res = await fetch(`${API_BASE_URL}/hris/cash-advances/${id}/approve`, {
         method: 'PUT',
@@ -474,25 +475,17 @@ export default function Hris() {
   }, [user, globalBranchId])
 
   const employeeSuggestions = useMemo(() => {
-    return users.filter(u => {
-      if (u.role === 'CUSTOMER') return false
-      if (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
-        const cleanFilter = activeBranchFilter.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
-        const cleanEmpBranch = (u.branchId || '').replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
-        if (cleanFilter !== cleanEmpBranch) {
-          return false
-        }
-      }
-      return true
-    })
-  }, [users, activeBranchFilter])
+    return users.filter(u => u.role !== 'CUSTOMER')
+  }, [users])
 
   const filteredAdvances = useMemo(() => {
     return advances.filter(a => {
       const emp = users.find(u => u.id === a.employeeId)
       const empBranch = emp?.branchId || ''
 
-      if (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
+      const isGlobalUser = !empBranch || empBranch.toUpperCase() === 'NONE' || empBranch.toUpperCase() === 'N/A'
+
+      if (!isGlobalUser && activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
         const cleanFilter = activeBranchFilter.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
         const cleanEmpBranch = empBranch.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
         if (cleanFilter !== cleanEmpBranch) {
@@ -872,7 +865,7 @@ export default function Hris() {
                   <th>Purpose / Reason</th>
                   <th>Status</th>
                   <th>Submitted At</th>
-                  <th style={{ width: 150 }}>Actions</th>
+                  <th style={{ width: 240 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -905,16 +898,33 @@ export default function Hris() {
                     </td>
                     <td>
                       <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedAdvance(a)
+                            setShowDetailsModal(true)
+                          }}
+                          className="px-2 py-1 rounded bg-slate-500/10 text-slate-500 hover:bg-slate-500/20 text-[10px] font-bold"
+                        >
+                          View Details
+                        </button>
                         {a.status === 'PENDING' && (
                           <>
                             <button
-                              onClick={() => handleAdvanceApproval(a.id, 'APPROVED')}
+                              onClick={() => {
+                                setConfirmingAdvance(a)
+                                setConfirmingStatus('APPROVED')
+                                setApprovalNotes('')
+                              }}
                               className="px-2 py-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-[10px] font-bold"
                             >
                               Approve
                             </button>
                             <button
-                              onClick={() => handleAdvanceApproval(a.id, 'REJECTED')}
+                              onClick={() => {
+                                setConfirmingAdvance(a)
+                                setConfirmingStatus('REJECTED')
+                                setApprovalNotes('')
+                              }}
                               className="px-2 py-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-bold"
                             >
                               Reject
@@ -923,7 +933,11 @@ export default function Hris() {
                         )}
                         {a.status === 'APPROVED' && (
                           <button
-                            onClick={() => handleAdvanceApproval(a.id, 'DISBURSED')}
+                            onClick={() => {
+                              setConfirmingAdvance(a)
+                              setConfirmingStatus('DISBURSED')
+                              setApprovalNotes('')
+                            }}
                             className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-bold"
                           >
                             Disburse
@@ -1198,6 +1212,211 @@ export default function Hris() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modals: Confirm Cash Advance Status Change ───────────── */}
+      {confirmingAdvance && confirmingStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setConfirmingAdvance(null); setConfirmingStatus(null); }} />
+          <div className="relative w-full max-w-md rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between mb-4 pb-2 border-b" style={{ borderColor: border }}>
+              <h3 className="text-base font-black flex items-center gap-2" style={{ color: textPrimary }}>
+                <AlertCircle className={`w-5 h-5 ${confirmingStatus === 'APPROVED' ? 'text-blue-500' : confirmingStatus === 'REJECTED' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                {confirmingStatus === 'APPROVED' ? 'Approve Request' : confirmingStatus === 'REJECTED' ? 'Reject Request' : 'Confirm Disbursement'}
+              </h3>
+              <button 
+                onClick={() => { setConfirmingAdvance(null); setConfirmingStatus(null); }}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="text-xs text-slate-400 font-semibold space-y-1">
+                <p>Employee: <span className="font-bold" style={{ color: textPrimary }}>{getUserName(confirmingAdvance.employeeId)}</span></p>
+                <p>Amount: <span className="font-bold" style={{ color: textPrimary }}>₱{confirmingAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold mb-1.5 block" style={{ color: textPrimary }}>Comments / Notes (Optional)</label>
+                <textarea
+                  rows={3}
+                  value={approvalNotes}
+                  onChange={e => setApprovalNotes(e.target.value)}
+                  placeholder={`Add a note for this ${confirmingStatus.toLowerCase()} action...`}
+                  className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t mt-4" style={{ borderColor: border }}>
+                <button
+                  type="button"
+                  onClick={() => { setConfirmingAdvance(null); setConfirmingStatus(null); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:bg-slate-200 dark:hover:bg-slate-700"
+                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleAdvanceApproval(confirmingAdvance.id, confirmingStatus, approvalNotes)
+                    setConfirmingAdvance(null)
+                    setConfirmingStatus(null)
+                    setApprovalNotes('')
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-md hover:brightness-110 active:scale-[0.98]"
+                  style={{
+                    backgroundColor: confirmingStatus === 'APPROVED' ? '#3B82F6' : confirmingStatus === 'REJECTED' ? '#EF4444' : '#10B981'
+                  }}
+                >
+                  Confirm {confirmingStatus === 'APPROVED' ? 'Approval' : confirmingStatus === 'REJECTED' ? 'Rejection' : 'Disbursement'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modals: View Cash Advance Details ────────────────────── */}
+      {showDetailsModal && selectedAdvance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDetailsModal(false); setSelectedAdvance(null); }} />
+          <div className="relative w-full max-w-lg rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex items-center justify-between mb-4 pb-2 border-b" style={{ borderColor: border }}>
+              <h3 className="text-base font-black flex items-center gap-2" style={{ color: textPrimary }}>
+                <Eye className="w-5 h-5 text-indigo-500" />
+                Cash Advance Details
+              </h3>
+              <button 
+                onClick={() => { setShowDetailsModal(false); setSelectedAdvance(null); }}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* General Grid */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/10 p-4 rounded-xl border" style={{ borderColor: border }}>
+                <div className="col-span-2 md:col-span-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Request ID</span>
+                  <span className="text-xs font-mono font-bold select-all break-all" style={{ color: textPrimary }}>{selectedAdvance.id}</span>
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase inline-block mt-0.5"
+                    style={{
+                      backgroundColor: selectedAdvance.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : selectedAdvance.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : selectedAdvance.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: selectedAdvance.status === 'PENDING' ? '#F59E0B' : selectedAdvance.status === 'APPROVED' ? '#3B82F6' : selectedAdvance.status === 'DISBURSED' ? '#10B981' : '#EF4444'
+                    }}
+                  >
+                    {selectedAdvance.status}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Employee Name</span>
+                  <span className="text-xs font-semibold" style={{ color: textPrimary }}>{getUserName(selectedAdvance.employeeId)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Branch</span>
+                  <span className="text-xs font-semibold text-slate-500">{getUserBranchName(selectedAdvance.employeeId)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Amount</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">₱{selectedAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Submitted At</span>
+                  <span className="text-xs font-medium" style={{ color: textPrimary }}>
+                    {new Date(selectedAdvance.createdAt).toLocaleString('en-US', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Purpose */}
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Purpose / Reason</span>
+                <div className="text-xs p-3 rounded-xl border font-medium leading-relaxed max-h-[100px] overflow-y-auto whitespace-pre-wrap" style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}>
+                  {selectedAdvance.purpose || 'No purpose stated.'}
+                </div>
+              </div>
+
+              {/* Reviewer / Approval Info */}
+              <div className="border-t pt-3 space-y-2" style={{ borderColor: border }}>
+                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Approval & Audit Trail</h4>
+                
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Reviewed By</span>
+                    <span className="font-semibold" style={{ color: textPrimary }}>
+                      {selectedAdvance.approvedBy ? getUserName(selectedAdvance.approvedBy) : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Action Timestamp</span>
+                    <span className="font-medium" style={{ color: textPrimary }}>
+                      {selectedAdvance.approvedAt ? new Date(selectedAdvance.approvedAt).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      }) : '—'}
+                    </span>
+                  </div>
+                  {selectedAdvance.disbursedAt && (
+                    <div className="col-span-2">
+                      <span className="text-[10px] font-bold text-slate-400 block">Disbursed At</span>
+                      <span className="font-medium" style={{ color: textPrimary }}>
+                        {new Date(selectedAdvance.disbursedAt).toLocaleString('en-US', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Reviewer Comments */}
+                <div className="mt-2">
+                  <span className="text-[10px] font-bold text-slate-400 block mb-1">Reviewer Comments / Notes</span>
+                  <div className="text-xs p-3 rounded-xl border font-medium italic" style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}>
+                    {selectedAdvance.notes || 'No reviewer comments left.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="flex justify-end pt-2 border-t mt-4" style={{ borderColor: border }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowDetailsModal(false); setSelectedAdvance(null); }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-md hover:brightness-110 active:scale-[0.98]"
+                  style={{ backgroundColor: excelGreen }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
