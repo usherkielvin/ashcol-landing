@@ -245,15 +245,44 @@ export default function ForCollections() {
   const [search, setSearch] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING')
-  const [branchFilter, setBranchFilter] = useState(() =>
-    (!( (user?.role || '').toLowerCase() === 'admin' ) && user?.branchId)
-      ? user.branchId.replace(/-(sales|services|service)$/i, '')
-      : ''
-  )
+  const [branchFilter, setBranchFilter] = useState(() => {
+    const role = (user?.role || '').toLowerCase()
+    if (role === 'admin') {
+      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
+      if (activeBranch && activeBranch !== 'ALL_BRANCHES') {
+        return activeBranch.replace(/-(sales|services|service)$/i, '')
+      }
+      return ''
+    } else {
+      return user?.branchId
+        ? user.branchId.replace(/-(sales|services|service)$/i, '')
+        : ''
+    }
+  })
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   // Date filters — monthFilter = 'YYYY-MM', dateFilter = 'YYYY-MM-DD'
-  const [monthFilter, setMonthFilter] = useState('')
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [dateFilter, setDateFilter] = useState('')
+
+  // Sync branchFilter for Admin from active branch
+  useEffect(() => {
+    const role = (user?.role || '').toLowerCase()
+    if (role !== 'admin') return
+
+    const sync = () => {
+      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
+      if (activeBranch && activeBranch !== 'ALL_BRANCHES') {
+        setBranchFilter(activeBranch.replace(/-(sales|services|service)$/i, ''))
+      } else {
+        setBranchFilter('')
+      }
+    }
+    window.addEventListener('ashcol-global-branch-change', sync)
+    return () => window.removeEventListener('ashcol-global-branch-change', sync)
+  }, [user])
 
   const [confirmItem, setConfirmItem] = useState<CollectionItem | null>(null)
   const [notesText, setNotesText] = useState('')
@@ -304,7 +333,7 @@ export default function ForCollections() {
   }
 
   const cacheKey = (tab: string) =>
-    `ashcol-fc-cache-${tab}-${branchFilter}-${statusFilter}`
+    `ashcol-fc-cache-${tab}-${branchFilter}-${statusFilter}-${monthFilter}`
 
   const fetchCollections = useCallback(async (silent = false) => {
     // ── Restore from cache instantly so there's no blank flash ──
@@ -322,6 +351,7 @@ export default function ForCollections() {
       const params = new URLSearchParams()
       if (branchFilter) params.append('branchId', branchFilter)
       if (statusFilter === 'PENDING') params.append('pendingOnly', 'true')
+      if (monthFilter) params.append('month', monthFilter)
 
       const endpoint = activeTab === 'collections' ? 'collections' : 'rebates'
       const res = await fetch(`${API_BASE_URL}/v1/reports/${endpoint}?${params.toString()}`, {
@@ -344,7 +374,7 @@ export default function ForCollections() {
       setInitialLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchFilter, statusFilter, activeTab])
+  }, [branchFilter, statusFilter, activeTab, monthFilter])
 
   // Parallel initial fetch — branches and collections at the same time
   useEffect(() => {
