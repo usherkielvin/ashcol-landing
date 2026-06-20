@@ -194,7 +194,10 @@ export default function DailyServiceReport() {
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
-  const [date, setDate] = useState(todayLocal)
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -246,7 +249,7 @@ export default function DailyServiceReport() {
       const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
       realBranchId = actualBranch ? actualBranch.id : null
     }
-    const newRow = blankRow(date, isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
+    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
     newRow.id = tempId
 
     setRows(prev => [newRow, ...prev])
@@ -314,7 +317,7 @@ export default function DailyServiceReport() {
           return {
             id: `scan-temp-${index}-${Date.now()}`,
             branchId: realBranchId,
-            reportDate: date,
+            reportDate: todayLocal(),
             customerName: row.customerName || '',
             customerAddress: row.customerAddress || '',
             customerPhone: row.customerPhone || '',
@@ -380,7 +383,7 @@ export default function DailyServiceReport() {
     }
     window.addEventListener('paste', handleGlobalPaste)
     return () => window.removeEventListener('paste', handleGlobalPaste)
-  }, [scanModalOpen, scanning, branchFilter, date])
+  }, [scanModalOpen, scanning, branchFilter])
 
   const handlePasteImageClick = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -505,14 +508,14 @@ export default function DailyServiceReport() {
 
   // ── Week helpers ──────────────────────────────────────────────────────────
   const weekRange = useMemo(() => {
-    const d = new Date(date + 'T00:00:00')
+    const d = new Date(todayLocal() + 'T00:00:00')
     const dow = d.getDay()
     const offsetToMonday = dow === 0 ? -6 : 1 - dow
     const monday = new Date(d); monday.setDate(d.getDate() + offsetToMonday)
     const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6)
     const pretty = (x: Date) => x.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
     return { label: `${pretty(monday)} – ${pretty(sunday)}, ${sunday.getFullYear()}` }
-  }, [date])
+  }, [])
 
   // ── Data loaders ──────────────────────────────────────────────────────────
   const fetchBranches = useCallback(async () => {
@@ -629,7 +632,12 @@ export default function DailyServiceReport() {
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ date, weekly: String(viewMode === 'weekly') })
+      const params = new URLSearchParams()
+      if (monthFilter) {
+        params.set('month', monthFilter)
+      } else {
+        params.set('date', todayLocal())
+      }
 
       // For TAGUIG virtual branches, preserve the -sales/-services suffix so the backend
       // can correctly distinguish TAGUIG-SALES vs TAGUIG-SERVICES archives.
@@ -656,7 +664,7 @@ export default function DailyServiceReport() {
     } finally {
       setLoading(false)
     }
-  }, [date, viewMode, branchFilter])
+  }, [monthFilter, branchFilter])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
@@ -1160,33 +1168,34 @@ export default function DailyServiceReport() {
     e.target.value = ''
     if (!file) return
 
-    // Auto-detect date from filename and update the date picker
+    // Auto-detect date from filename and update the month picker if needed
     const detectedDate = guessDateFromFilename(file.name)
-    if (detectedDate && detectedDate !== date) {
-      setDate(detectedDate)
+    const targetDate = detectedDate || todayLocal()
+    const detectedMonth = targetDate.slice(0, 7)
+    if (detectedMonth !== monthFilter) {
+      setMonthFilter(detectedMonth)
     }
 
     if (isBranchScoped) {
-      runImport(file, user?.branchId || '')
+      runImport(file, user?.branchId || '', targetDate)
     } else {
       const detectedId = guessBranchFromFilename(file.name)
       if (detectedId && detectedId !== branchFilter) setBranchFilter(detectedId)
       setPendingImport({
         file,
         branchId: detectedId || branchFilter || (branches[0]?.id || ''),
-        detectedDate: detectedDate || null,
+        detectedDate: targetDate,
       })
-      console.info(`[Import] "${file.name}" → branch: ${branches.find(b => b.id === detectedId)?.name || '?'}, date: ${detectedDate || 'not detected'}`)
+      console.info(`[Import] "${file.name}" → branch: ${branches.find(b => b.id === detectedId)?.name || '?'}, date: ${targetDate}`)
     }
   }
 
-
-  const runImport = async (file: File, branchId: string) => {
+  const runImport = async (file: File, branchId: string, targetDateArg?: string) => {
     if (!isBranchScoped && !branchId) {
       alert('Please pick a target branch')
       return
     }
-    const targetDate = date
+    const targetDate = targetDateArg || todayLocal()
     const branchName = branches.find(b => b.id === branchId)?.name
       || (isBranchScoped ? 'your branch' : 'the chosen branch')
     const pretty = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', {
@@ -1211,10 +1220,9 @@ export default function DailyServiceReport() {
       const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
       if (res.ok) {
         const result = await res.json()
-        const importedDate = (result?.date as string) || targetDate
         const sheetMsg = result?.sheet ? ` (sheet "${result.sheet}")` : ''
         alert(`${result.message || 'Import successful!'}${sheetMsg}`)
-        if (importedDate !== date) setDate(importedDate); else fetchRows()
+        fetchRows()
       } else {
         const err = await res.json().catch(() => ({}))
         alert(err.error || `Import failed (HTTP ${res.status})`)
@@ -1251,18 +1259,21 @@ export default function DailyServiceReport() {
       alert('Access denied: Only administrator accounts can clear all records.')
       return
     }
+    const targetDate = prompt("Enter specific date to clear (YYYY-MM-DD):", todayLocal())
+    if (!targetDate || !targetDate.trim()) return
+
     // Strip the -sales/-services virtual suffix to get the real branch UUID
     const realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : ''
     if (!realBranchId) { alert('No branch selected'); return }
     const branchLabel = branches.find(b => b.id === branchFilter)?.name || realBranchId
-    const prettyDate = new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const confirmed = window.confirm(
-      `⚠️ DANGER ZONE\n\nPermanently delete all ${visible.length} service record${visible.length !== 1 ? 's' : ''} for ${branchLabel} on ${prettyDate}?\n\nThis CANNOT be undone.`
+      `⚠️ DANGER ZONE\n\nPermanently delete all service records for ${branchLabel} on ${prettyDate}?\n\nThis CANNOT be undone.`
     )
     if (!confirmed) return
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ branchId: branchFilter, date })
+      const params = new URLSearchParams({ branchId: branchFilter, date: targetDate })
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -1330,6 +1341,25 @@ export default function DailyServiceReport() {
     { count: 0, qty: 0, amount: 0, completed: 0, cancelled: 0, freeInstalls: 0 }
   ), [visible])
 
+  // Build month options from current items (+ last 12 months always available)
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>()
+    rows.forEach(item => {
+      if (item.reportDate) seen.add(item.reportDate.slice(0, 7))
+    })
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    return Array.from(seen).sort((a, b) => b.localeCompare(a))
+  }, [rows])
+
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-5 pb-8" onClick={() => setContextMenu(null)}>
@@ -1379,23 +1409,23 @@ export default function DailyServiceReport() {
             </div>
           )}
 
-          {/* Date Picker inline */}
+          {/* Month Picker inline */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
             <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <div className="flex items-center gap-1.5">
-              {viewMode !== 'weekly' && (
-                <span className="uppercase tracking-wider text-[9px] font-black opacity-60 border-r pr-1.5" style={{ borderColor: border }}>
-                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
-                </span>
-              )}
-              {viewMode === 'weekly' ? (
-                <span className="tracking-tight">{weekRange.label}</span>
-              ) : (
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="bg-transparent outline-none cursor-pointer font-bold" style={{ color: textPrimary }} />
-              )}
-            </div>
+            <select
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
+              style={{ color: textPrimary }}
+            >
+              <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
+              {monthOptions.map(ym => (
+                <option key={ym} value={ym} style={{ backgroundColor: inputBg, color: textPrimary }}>
+                  {monthLabel(ym)}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -1642,14 +1672,9 @@ export default function DailyServiceReport() {
             <div className="flex flex-col">
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Clear Records</span>
               <span className="text-xs" style={{ color: textMuted }}>
-                Permanently deletes all{' '}
-                <strong style={{ color: textPrimary }}>{visible.length}</strong>{' '}
-                record{visible.length !== 1 ? 's' : ''} for{' '}
+                Permanently delete all service records for a specific date under{' '}
                 <strong style={{ color: textPrimary }}>
                   {branches.find(b => b.id === branchFilter)?.name || 'this branch'}
-                </strong>{' '}on{' '}
-                <strong style={{ color: textPrimary }}>
-                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </strong>. This cannot be undone.
               </span>
             </div>
@@ -1742,7 +1767,7 @@ export default function DailyServiceReport() {
               <p className="text-xs" style={{ color: textMuted }}>
                 Existing rows for the selected branch on{' '}
                 <span className="font-bold" style={{ color: textPrimary }}>
-                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  {new Date((pendingImport.detectedDate || todayLocal()) + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
                 </span>{' '}will be replaced. You can change the branch below if needed.
               </p>
               <Field label="Target Branch" required>
@@ -1925,7 +1950,7 @@ export default function DailyServiceReport() {
                       </span>
                       <span style={{ color: textMuted }}>Date:</span>
                       <span className="font-bold" style={{ color: textPrimary }}>
-                        {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {new Date((scannedRows[0]?.reportDate || todayLocal()) + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
                   </div>
@@ -2070,7 +2095,7 @@ export default function DailyServiceReport() {
                           const newRow = {
                             id: tempId,
                             branchId: realBranchId,
-                            reportDate: date,
+                            reportDate: scannedRows[0]?.reportDate || todayLocal(),
                             customerName: '',
                             customerAddress: '',
                             customerPhone: '',
