@@ -551,36 +551,7 @@ export default function DailyAuditReport() {
   return (
     <div className="flex flex-col gap-4 pb-8 md:pb-8">
 
-      {/* ── Tab Bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-0 rounded-xl overflow-hidden shrink-0 no-print self-start"
-        style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('summary')}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all"
-          style={{
-            backgroundColor: activeTab === 'summary' ? '#10B981' : 'transparent',
-            color: activeTab === 'summary' ? '#fff' : textMuted,
-          }}
-        >
-          <BarChart2 className="w-3.5 h-3.5" />
-          Summary
-        </button>
-        {canSubmitForm && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('submit')}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all"
-            style={{
-              backgroundColor: activeTab === 'submit' ? '#10B981' : 'transparent',
-              color: activeTab === 'submit' ? '#fff' : textMuted,
-            }}
-          >
-            <FileEdit className="w-3.5 h-3.5" />
-            Submit Report
-          </button>
-        )}
-      </div>
+
 
       {/* ── Submit Tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'submit' && <DailySalesForm onSwitchToSummary={() => setActiveTab('summary')} />}
@@ -619,6 +590,12 @@ export default function DailyAuditReport() {
                   <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
                     style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                     <div className="py-1">
+                      {canSubmitForm && (
+                        <button type="button" onClick={() => { setActiveTab('submit'); setMobileMenuOpen(false) }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-semibold" style={{ color: textPrimary }}>
+                          <FileEdit className="w-3.5 h-3.5 text-emerald-500" /> Submit Daily Report
+                        </button>
+                      )}
                       <button type="button" onClick={() => { handleExportExcel(); setMobileMenuOpen(false) }}
                         disabled={visibleRows.length === 0}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: textPrimary }}>
@@ -688,6 +665,16 @@ export default function DailyAuditReport() {
       {/* ── Desktop toolbar ─────────────────────────────────────────────────── */}
       <div className="hidden md:flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {canSubmitForm && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('submit')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-extrabold text-xs text-white transition-all hover:scale-105 hover:shadow-md focus:outline-none"
+              style={{ backgroundColor: '#10B981', boxShadow: '0 2px 8px rgba(16,185,129,0.2)' }}
+            >
+              <FileEdit className="w-3.5 h-3.5" /> Submit Daily Report
+            </button>
+          )}
           {hiddenBranches.length > 0 && (
             <button type="button" onClick={() => setHiddenBranches([])}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"

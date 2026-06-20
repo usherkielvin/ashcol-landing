@@ -1509,14 +1509,26 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     <div className="flex flex-col gap-4 pb-10 max-w-6xl mx-auto">
 
       {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="rounded-xl p-4 md:p-6 relative overflow-hidden bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-        <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-[0.03] pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
-        <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Daily Report</p>
-        <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-          {reportId ? 'Edit Daily Report' : 'Branch Daily Report'}
-        </h2>
-        <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Report</p>
+      <div className="rounded-xl p-4 md:p-6 relative overflow-hidden bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
+        <div>
+          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-[0.03] pointer-events-none"
+            style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Daily Report</p>
+          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
+            {reportId ? 'Edit Daily Report' : 'Branch Daily Report'}
+          </h2>
+          <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Report</p>
+        </div>
+        {onSwitchToSummary && !reviewMode && (
+          <button
+            type="button"
+            onClick={onSwitchToSummary}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900/50 focus:outline-none shrink-0"
+            style={{ borderColor: border, color: textMuted }}
+          >
+            ← Back to Summary
+          </button>
+        )}
       </div>
 
       {reviewMode && (
@@ -2391,7 +2403,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
               <button
                 type="button"
                 onClick={handleClearForm}
@@ -2409,6 +2421,18 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
               >
                 {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Daily Report</>}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSwitchToSummary) onSwitchToSummary()
+                  else window.location.href = '/audit-report'
+                }}
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+              >
+                Cancel
               </button>
             </div>
           )
