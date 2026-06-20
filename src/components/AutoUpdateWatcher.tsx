@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { RefreshCw, Sparkles, X, ArrowUpCircle } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
 
 // Helper to get loaded asset URLs (js/css) from the current document DOM
 const getAssetUrls = (): string[] => {
@@ -25,6 +26,9 @@ const getAssetUrls = (): string[] => {
 }
 
 export default function AutoUpdateWatcher() {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
+
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -158,7 +162,9 @@ export default function AutoUpdateWatcher() {
       <div 
         className="fixed bottom-4 right-4 z-[9998] max-w-sm w-[calc(100vw-32px)] sm:w-96 rounded-2xl p-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] border border-emerald-500/20 glass animate-slide-in no-print"
         style={{
-          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.03) 100%)',
+          background: isLight 
+            ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(240, 253, 250, 0.95) 100%)' 
+            : 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.03) 100%)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
         }}

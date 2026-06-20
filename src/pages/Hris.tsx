@@ -56,6 +56,7 @@ interface CashAdvance {
   approvedAt?: string
   disbursedAt?: string
   remainingBalance: number
+  branchId?: string
   createdAt: string;
 }
 
@@ -404,6 +405,12 @@ export default function Hris() {
       return
     }
 
+    const targetEmp = users.find(u => u.id === targetEmployeeId)
+    const empBranchId = targetEmp?.branchId || ''
+    const branchToSubmit = (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') 
+      ? activeBranchFilter 
+      : empBranchId;
+
     const token = getToken()
     try {
       const res = await fetch(`${API_BASE_URL}/hris/cash-advances`, {
@@ -416,7 +423,8 @@ export default function Hris() {
           employeeId: targetEmployeeId,
           amount: parseFloat(advanceAmount),
           repaymentTermMonths: 1,
-          purpose: advancePurpose
+          purpose: advancePurpose,
+          branchId: branchToSubmit
         })
       })
       if (res.ok) {
@@ -480,14 +488,13 @@ export default function Hris() {
 
   const filteredAdvances = useMemo(() => {
     return advances.filter(a => {
-      const emp = users.find(u => u.id === a.employeeId)
-      const empBranch = emp?.branchId || ''
+      const advBranch = a.branchId || ''
 
-      const isGlobalUser = !empBranch || empBranch.toUpperCase() === 'NONE' || empBranch.toUpperCase() === 'N/A'
+      const isGlobalUser = !advBranch || advBranch.toUpperCase() === 'NONE' || advBranch.toUpperCase() === 'N/A'
 
       if (!isGlobalUser && activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES') {
         const cleanFilter = activeBranchFilter.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
-        const cleanEmpBranch = empBranch.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
+        const cleanEmpBranch = advBranch.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').toLowerCase()
         if (cleanFilter !== cleanEmpBranch) {
           return false
         }
@@ -873,7 +880,7 @@ export default function Hris() {
                   <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
                     <td className="font-semibold">{getUserName(a.employeeId)}</td>
-                    <td className="text-xs font-semibold text-slate-500">{getUserBranchName(a.employeeId)}</td>
+                    <td className="text-xs font-semibold text-slate-500">{getBranchDisplayName(a.branchId || null)}</td>
                     <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
                     <td>
@@ -1159,7 +1166,11 @@ export default function Hris() {
                   className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold select-none opacity-80 cursor-not-allowed border"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
                 >
-                  {activeBranchFilter ? getBranchDisplayName(activeBranchFilter) : getUserBranchName(selectedEmployeeId || user?.id || '')}
+                  {selectedEmployeeId 
+                    ? getUserBranchName(selectedEmployeeId)
+                    : (activeBranchFilter && activeBranchFilter !== 'ALL_BRANCHES' 
+                        ? getBranchDisplayName(activeBranchFilter) 
+                        : getUserBranchName(user?.id || ''))}
                 </div>
               </div>
 
@@ -1326,7 +1337,7 @@ export default function Hris() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Branch</span>
-                  <span className="text-xs font-semibold text-slate-500">{getUserBranchName(selectedAdvance.employeeId)}</span>
+                  <span className="text-xs font-semibold text-slate-500">{getBranchDisplayName(selectedAdvance.branchId || null)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Amount</span>
