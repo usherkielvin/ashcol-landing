@@ -199,7 +199,7 @@ export default function DailyServiceReport() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
-  const [branchFilter, setBranchFilter] = useState<string>('')
+  const [branchFilter, setBranchFilter] = useState<string>(() => localStorage.getItem('ashcol-global-branch-id') || 'ALL_BRANCHES')
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
@@ -619,9 +619,7 @@ export default function DailyServiceReport() {
     if (!isAdmin) return
     const syncFromGlobal = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
-      if (gId) {
-        setBranchFilter(gId)
-      }
+      setBranchFilter(gId || 'ALL_BRANCHES')
     }
     syncFromGlobal()
     window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
@@ -1373,23 +1371,21 @@ export default function DailyServiceReport() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Branch Filter */}
           {isAdmin && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-sm cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder }}>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
               <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
               <select
                 value={branchFilter}
                 onChange={e => {
                   const val = e.target.value
                   setBranchFilter(val)
+                  localStorage.setItem('ashcol-global-branch-id', val)
+                  window.dispatchEvent(new Event('ashcol-global-branch-change'))
                 }}
-                disabled={true}
-                className="bg-transparent outline-none text-xs font-bold cursor-not-allowed pr-1"
+                className="bg-transparent outline-none cursor-pointer font-bold pr-2"
                 style={{
-                  color: textMuted,
+                  color: textPrimary,
                   backgroundColor: 'transparent',
-                  WebkitAppearance: 'none',
-                  MozAppearance: 'none',
-                  appearance: 'none',
                 }}
               >
                 {branches.map(b => (
@@ -1399,7 +1395,6 @@ export default function DailyServiceReport() {
                     style={{
                       backgroundColor: inputBg,
                       color: textPrimary,
-                      WebkitTextFillColor: textPrimary,
                     }}
                   >
                     {b.name}
