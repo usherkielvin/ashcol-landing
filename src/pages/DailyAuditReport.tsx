@@ -1376,8 +1376,8 @@ export default function DailyAuditReport() {
                 {showEditButton && (
                   <a
                     href={selectedRow.id
-                      ? `/daily-report?id=${selectedRow.id}`
-                      : `/daily-report?branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
+                      ? `/audit-report?tab=submit&id=${selectedRow.id}`
+                      : `/audit-report?tab=submit&branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
                     }
                     className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center"
                     style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}

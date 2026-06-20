@@ -1047,7 +1047,7 @@ export default function ForCollections() {
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
                   {canResolve && selectedRow.reportId && (
                     <a
-                      href={`/daily-report?id=${selectedRow.reportId}`}
+                      href={`/audit-report?tab=submit&id=${selectedRow.reportId}`}
                       className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center text-white bg-emerald-500"
                       style={{ border: 'none' }}
                     >

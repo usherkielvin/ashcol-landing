@@ -288,7 +288,7 @@ export default function Branches() {
   const editReportUrl = useMemo(() => {
     if (!selectedBranch) return ''
     if (branchPerfData?.id) {
-      return `/daily-report?id=${branchPerfData.id}`
+      return `/audit-report?tab=submit&id=${branchPerfData.id}`
     }
     
     // We are creating a new report
@@ -306,7 +306,7 @@ export default function Branches() {
       }
     }
     
-    return `/daily-report?branchId=${baseBranchId}&date=${today}&auditLine=${auditLine}`
+    return `/audit-report?tab=submit&branchId=${baseBranchId}&date=${today}&auditLine=${auditLine}`
   }, [selectedBranch, branchPerfData])
 
   // ── Colour tokens ──────────────────────────────────────────────

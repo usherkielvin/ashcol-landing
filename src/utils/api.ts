@@ -96,7 +96,7 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
 export function getPortalHomePath(user?: PortalUserLike | null) {
   const role = normalizeUserValue(user?.role)
   if (role === 'admin') return '/audit-report'
-  if (isSalesWorkspaceUser(user)) return '/daily-report'
+  if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
   if (isServiceWorkspaceUser(user)) return '/service-report'
-  return '/daily-report'
+  return '/audit-report?tab=submit'
 }
