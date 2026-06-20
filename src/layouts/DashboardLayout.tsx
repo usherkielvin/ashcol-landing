@@ -3,15 +3,15 @@ import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-d
 import { useTheme } from '../contexts/ThemeContext'
 import {
   LayoutDashboard, Ticket as TicketIcon,
-  Bell, Menu, Sun, Moon, LogOut, X,
-  ChevronRight, UserCircle, ChevronDown, CheckCheck,
+  Menu, Sun, Moon, LogOut, X,
+  ChevronRight, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList,
-  Radio, CalendarDays, UserCog, ArrowLeftRight, TrendingUp, MapPin, Archive,
-  Building2, Layers, Calendar, Landmark, Wifi
+  Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
+  Building2, Calendar, Landmark, Wifi
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
-import { useNotifications } from '../contexts/NotificationContext'
+
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
 
@@ -41,15 +41,12 @@ export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
-  const [notifOpen, setNotifOpen]               = useState(false)
   const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
-  const notifRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
@@ -178,7 +175,6 @@ export default function DashboardLayout() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -192,11 +188,9 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'DTR Submission',  path: '/daily-report',    icon: ArrowLeftRight,  roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Daily Audit Summary', path: '/audit-report',    icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
-    { name: 'Workflow Pipeline', path: '/admin-workflow',  icon: Layers,          roles: ['admin'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'manager'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'manager'] },
     { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'manager'] },
@@ -205,8 +199,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
-  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'DTR Submission', 'For Collections', 'Daily Audit Summary', 'Expense Records']
+  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -554,96 +548,26 @@ export default function DashboardLayout() {
               <button
                 onClick={toggleTheme}
                 title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                className="p-2.5 rounded-xl transition-all hover:scale-105"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
                 style={{
                   color: textMuted,
                   backgroundColor: hoverBg,
                   border: `1px solid ${inputBorder}`,
                 }}
               >
-                {isLight
-                  ? <Moon className="w-4 h-4" />
-                  : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />
-                }
-              </button>
-
-            {/* Notifications */}
-            <div ref={notifRef} className="relative">
-              <button
-                onClick={() => setNotifOpen(p => !p)}
-                className="relative p-2.5 rounded-xl transition-all hover:scale-105"
-                style={{ color: textMuted, backgroundColor: hoverBg, border: `1px solid ${inputBorder}` }}
-              >
-                <Bell className="w-4 h-4" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full border-2 flex items-center justify-center text-white font-bold"
-                    style={{ borderColor: headerBg, fontSize: '9px' }}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
+                {isLight ? (
+                  <>
+                    <Moon className="w-4 h-4" />
+                    <span className="text-xs font-semibold whitespace-nowrap">Dark Mode</span>
+                  </>
+                ) : (
+                  <>
+                    <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />
+                    <span className="text-xs font-semibold whitespace-nowrap">Light Mode</span>
+                  </>
                 )}
               </button>
-
-              {notifOpen && (
-                <div
-                  className="absolute right-0 top-[calc(100%+8px)] w-80 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col"
-                  style={{ backgroundColor: isLight ? '#ffffff' : '#0A1120', border: `1px solid ${inputBorder}`, maxHeight: '420px' }}
-                >
-                  {/* Header */}
-                  <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${inputBorder}` }}>
-                    <span className="text-sm font-bold" style={{ color: textPrimary }}>Notifications</span>
-                    {unreadCount > 0 && (
-                      <button
-                        onClick={() => markAllRead()}
-                        className="flex items-center gap-1 text-xs font-semibold text-[#10B981] hover:underline"
-                      >
-                        <CheckCheck className="w-3.5 h-3.5" /> Mark all read
-                      </button>
-                    )}
-                  </div>
-
-                  {/* List */}
-                  <div className="overflow-y-auto flex-1">
-                    {notifications.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-10 gap-2">
-                        <Bell className="w-8 h-8 opacity-20" style={{ color: textMuted }} />
-                        <p className="text-xs" style={{ color: textMuted }}>No notifications yet</p>
-                      </div>
-                    ) : (
-                      notifications.map(n => (
-                        <button
-                          key={n.id}
-                          className="w-full text-left px-4 py-3 flex gap-3 transition-colors hover:bg-[#10B981]/5"
-                          style={{ borderBottom: `1px solid ${inputBorder}`, opacity: n.isRead ? 0.6 : 1 }}
-                          onClick={async () => {
-                            if (!n.isRead) await markRead(n.id)
-                            if (n.ticketId) {
-                              setNotifOpen(false)
-                              navigate(`/tickets?id=${n.ticketId}`)
-                            }
-                          }}
-                        >
-                          <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.isRead ? 'bg-transparent' : 'bg-[#10B981]'}`} />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{n.title}</p>
-                            <p className="text-xs leading-relaxed mt-0.5" style={{ color: textMuted }}>{n.message}</p>
-                            <p className="text-[10px] mt-1" style={{ color: textMuted }}>
-                              {n.createdAt ? new Date(n.createdAt).toLocaleString(undefined, {
-                                month: 'short', day: 'numeric', year: 'numeric',
-                                hour: 'numeric', minute: '2-digit', hour12: true
-                              }) : ''}
-                            </p>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
-
-
-
-          </div>
           </div>
 
           {/* ── Page-injected toolbar slot ────────────────── */}

@@ -14,11 +14,10 @@ import Branches from './pages/Branches'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
-import DailySalesForm from './pages/DailySalesForm'
 import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
 import LineUp from './pages/LineUp'
-import WorkflowPipeline from './pages/WorkflowPipeline'
+
 import Hris from './pages/Hris'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
@@ -90,12 +89,13 @@ export default function App() {
 
           <Route path="/audit-report" element={<DailyAuditReport />} />
           <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
-          <Route path="/daily-report" element={<DailySalesForm />} />
+          {/* Redirect legacy /daily-report to the combined tab page */}
+          <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
           <Route path="/collections" element={<ForCollections />} />
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />
-          <Route path="/admin-workflow" element={<WorkflowPipeline />} />
+
           <Route path="/admin-hris" element={<Hris />} />
           <Route path="/admin-bills" element={<Bills />} />
           <Route path="/admin-telecom" element={<Telecom />} />

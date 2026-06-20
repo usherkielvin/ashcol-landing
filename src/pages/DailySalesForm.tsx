@@ -9,7 +9,7 @@ import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
 
 
 // DTR-specific row types
-interface CashTxRow    { id: string; name: string; amount: string }
+interface CashTxRow    { id: string; customer: string; installer: string; amount: string }
 interface CashRetRow   { id: string; name: string; amount: string }
 interface OnlineTxRow  { id: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
@@ -108,7 +108,7 @@ const normalizeTransactionBranch = (branchId?: string | null, email?: string | n
   }
 }
 
-const mkCash = (): CashTxRow   => ({ id: uid(), name: '', amount: '' })
+const mkCash = (): CashTxRow   => ({ id: uid(), customer: '', installer: '', amount: '' })
 const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
 const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
@@ -187,9 +187,74 @@ const getWorkerName = (p: any) => {
 const getDraftKey = (branchId: string, auditLine: string | null) =>
   `ashcol-dtr-draft-${branchId}-${auditLine || 'default'}`
 
+const hasMeaningfulData = (d: any) => {
+  if (!d) return false
+
+  // Helper to check if a row has any user-entered text or numbers
+  const rowHasData = (row: any) => {
+    if (!row) return false
+    return Object.keys(row).some(k => {
+      if (['id', 'receiptReturned', 'collectionResolved', 'resolvedExpenseId', 'receiptStatus'].includes(k)) {
+        return false
+      }
+      const val = row[k]
+      if (val === undefined || val === null) return false
+      
+      // If it's an amount/capital/salePrice field, check if non-zero
+      if (['amount', 'capital', 'salePrice'].includes(k)) {
+        const numVal = parseFloat(String(val))
+        return !isNaN(numVal) && numVal !== 0
+      }
+      
+      // Otherwise check if non-empty string
+      if (typeof val === 'string') {
+        return val.trim() !== ''
+      }
+      if (typeof val === 'number') {
+        return val !== 0
+      }
+      return false
+    })
+  }
+
+  // Check array fields
+  const arrayFields = [
+    d.cashTx, d.cashRet, d.onlineTx, d.checkRem, d.partsSales,
+    d.forColl, d.rebates, d.orders, d.expReceipt, d.expPurch
+  ]
+  for (const arr of arrayFields) {
+    if (Array.isArray(arr) && arr.some(rowHasData)) {
+      return true
+    }
+  }
+
+  // Check cash / fund fields
+  const cashFields = [d.cashOnHand, d.fundFromHo]
+  for (const val of cashFields) {
+    if (val !== undefined && val !== null) {
+      const numVal = parseFloat(String(val))
+      if (!isNaN(numVal) && numVal !== 0) return true
+    }
+  }
+
+  // Check unit counts
+  const unitFields = [
+    d.scheduledUnits, d.surveyOnlyUnits, d.rescheduledUnits,
+    d.installedUnits, d.servicedUnits, d.cancelledUnits, d.freeInstallUnits
+  ]
+  for (const val of unitFields) {
+    if (val !== undefined && val !== null) {
+      const numVal = parseFloat(String(val))
+      if (!isNaN(numVal) && numVal !== 0) return true
+    }
+  }
+
+  return false
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function DailySalesForm() {
+export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummary?: () => void } = {}) {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
@@ -698,7 +763,8 @@ export default function DailySalesForm() {
             } else {
               cashSales.push({
                 id: uid(),
-                name: formatDisplayUserLabel(desc),
+                customer: item.customer || '',
+                installer: formatDisplayUserLabel(desc),
                 amount: amt
               })
             }
@@ -929,7 +995,10 @@ export default function DailySalesForm() {
     if (urlParams.get('id')) return // editing existing report – skip draft
     const key = getDraftKey(selectedBranchId, selectedAuditLine)
     const raw = localStorage.getItem(key)
-    if (!raw) return
+    if (!raw) {
+      setDraftRestored(false)
+      return
+    }
     try {
       const d = JSON.parse(raw)
       skipNextDraftSave.current = true // don't immediately re-save right after restore
@@ -955,8 +1024,15 @@ export default function DailySalesForm() {
       if (d.servicedUnits !== undefined) setServicedUnits(d.servicedUnits)
       if (d.cancelledUnits !== undefined) setCancelledUnits(d.cancelledUnits)
       if (d.freeInstallUnits !== undefined) setFreeInstallUnits(d.freeInstallUnits)
-      setDraftRestored(true)
-    } catch { /* corrupted draft – ignore */ }
+      
+      if (hasMeaningfulData(d)) {
+        setDraftRestored(true)
+      } else {
+        setDraftRestored(false)
+      }
+    } catch {
+      setDraftRestored(false)
+    }
   // Only run when the branch is first resolved (not on every field change)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranchId, selectedAuditLine])
@@ -1048,11 +1124,12 @@ export default function DailySalesForm() {
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
       setCashTx(data.cashTransactions.map((scanned: any) => ({
         id: uid(),
-        name: cleanInstallerName(scanned.name || '', activeBranchName),
+        customer: scanned.customer || '',
+        installer: cleanInstallerName(scanned.name || scanned.installer || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
     } else if (data.totalCashCollection) {
-      setCashTx([{ id: uid(), name: '', amount: String(data.totalCashCollection) }])
+      setCashTx([{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }])
     } else {
       setCashTx([mkCash()])
     }
@@ -1247,8 +1324,8 @@ export default function DailySalesForm() {
 
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
-        ...cashTx.filter(r => r.name || r.amount).map(r => ({
-          type: 'CASH_SALE', description: r.name, amount: parseFloat(r.amount) || 0
+        ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
+          type: 'CASH_SALE', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
         })),
         ...cashRet.filter(r => r.name || r.amount).map(r => ({
           type: 'CASH_SALE', description: `RETURN|${r.name}`, amount: parseFloat(r.amount) || 0
@@ -1405,13 +1482,23 @@ export default function DailySalesForm() {
           >
             Submit Another
           </button>
-          <a
-            href="/audit-report"
-            className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
-            style={{ backgroundColor: '#10B981' }}
-          >
-            View Daily Audit Summary
-          </a>
+          {onSwitchToSummary ? (
+            <button
+              onClick={onSwitchToSummary}
+              className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
+              style={{ backgroundColor: '#10B981' }}
+            >
+              View Daily Transaction Summary
+            </button>
+          ) : (
+            <a
+              href="/audit-report"
+              className="px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105"
+              style={{ backgroundColor: '#10B981' }}
+            >
+              View Daily Transaction Summary
+            </a>
+          )}
         </div>
       </div>
     )
@@ -1631,7 +1718,8 @@ export default function DailySalesForm() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Name (Installer/Technician)</th>
+                    <th className={tableTh}>Customer Name</th>
+                    <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
@@ -1640,8 +1728,13 @@ export default function DailySalesForm() {
                   {cashTx.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Name" value={row.name}
-                          onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
                           list="tech-suggestions"
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
@@ -1916,41 +2009,43 @@ export default function DailySalesForm() {
           {/* For Collection */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="For Collection" total={totalForColl} />
-            <div className="p-3 flex flex-col gap-2">
-              {forColl.map(row => (
-                <div key={row.id} className="grid grid-cols-[1fr_1fr_auto] md:grid-cols-[2fr_2fr_1fr_auto] gap-2 items-center rounded-lg border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/20 px-3 py-2.5">
-                  {/* Customer */}
-                  <div className="flex flex-col gap-0.5">
-                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Customer</label>
-                    <input type="text" placeholder="Name" value={row.customer}
-                      onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      disabled={isFormDisabled} />
-                  </div>
-                  {/* Installer */}
-                  <div className="flex flex-col gap-0.5">
-                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Installer</label>
-                    <input type="text" placeholder="Name" value={row.installer}
-                      onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      disabled={isFormDisabled} />
-                  </div>
-                  {/* Amount */}
-                  <div className="flex flex-col gap-0.5">
-                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Amount</label>
-                    <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                      onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-right font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all ${reviewMode ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      disabled={isFormDisabled} />
-                  </div>
-                  {/* Delete */}
-                  {canSubmit && !reviewMode && (
-                    <div className="flex items-end pb-0.5">
-                      <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Customer</th>
+                    <th className={tableTh}>Installer</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {forColl.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                          onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
             </div>
           </div>
@@ -2285,7 +2380,8 @@ export default function DailySalesForm() {
               <button
                 type="button"
                 onClick={() => {
-                  window.location.href = '/audit-report'
+                  if (onSwitchToSummary) onSwitchToSummary()
+                  else window.location.href = '/audit-report'
                 }}
                 disabled={submitting}
                 className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"

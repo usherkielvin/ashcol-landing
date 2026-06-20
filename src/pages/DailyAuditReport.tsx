@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
   AlertTriangle, X, ChevronRight, Eye, Download,
   ArrowUp, ArrowDown,
-  Minimize2, Maximize2, MoreVertical,
+  MoreVertical,
   Loader2,
-  Trash2, ClipboardList, Upload, Check
+  Trash2, ClipboardList, Upload, Check, FileEdit
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
+import DailySalesForm from './DailySalesForm'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -129,7 +131,21 @@ const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean)
 export default function DailyAuditReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const isLight = theme === 'light'
+
+  // ── Tab state (driven by ?tab= query param) ───────────────────────────────
+  const activeTab = new URLSearchParams(location.search).get('tab') === 'submit' ? 'submit' : 'summary'
+  const setActiveTab = (tab: 'summary' | 'submit') => {
+    const params = new URLSearchParams(location.search)
+    if (tab === 'summary') {
+      params.delete('tab')
+    } else {
+      params.set('tab', tab)
+    }
+    navigate(`/audit-report${params.toString() ? '?' + params.toString() : ''}`, { replace: true })
+  }
 
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
@@ -198,7 +214,7 @@ export default function DailyAuditReport() {
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
-  const [compactView, setCompactView] = useState(false)
+  const compactView = false
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
 
@@ -260,6 +276,7 @@ export default function DailyAuditReport() {
   )
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
   const isAdmin = role === 'admin'
+  const canSubmitForm = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee' || role === 'oic'
 
   const showEditButton = useMemo(() => {
     if (!selectedRow) return false
@@ -534,13 +551,51 @@ export default function DailyAuditReport() {
   return (
     <div className="flex flex-col gap-4 pb-8 md:pb-8">
 
+      {/* ── Tab Bar ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-0 rounded-xl overflow-hidden shrink-0 no-print self-start"
+        style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('summary')}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all"
+          style={{
+            backgroundColor: activeTab === 'summary' ? '#10B981' : 'transparent',
+            color: activeTab === 'summary' ? '#fff' : textMuted,
+          }}
+        >
+          <BarChart2 className="w-3.5 h-3.5" />
+          Summary
+        </button>
+        {canSubmitForm && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('submit')}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all"
+            style={{
+              backgroundColor: activeTab === 'submit' ? '#10B981' : 'transparent',
+              color: activeTab === 'submit' ? '#fff' : textMuted,
+            }}
+          >
+            <FileEdit className="w-3.5 h-3.5" />
+            Submit Report
+          </button>
+        )}
+      </div>
+
+      {/* ── Submit Tab ──────────────────────────────────────────────────────── */}
+      {activeTab === 'submit' && <DailySalesForm onSwitchToSummary={() => setActiveTab('summary')} />}
+
+      {/* ── Summary Tab ─────────────────────────────────────────────────────── */}
+      {activeTab === 'summary' && <>
+
       {/* ── Mobile header ──────────────────────────────────────────────────── */}
       <div className="md:hidden rounded-xl no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+
         <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
               <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-              Daily Audit Summary
+              Daily Transaction Summary
             </h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
@@ -632,6 +687,16 @@ export default function DailyAuditReport() {
 
       {/* ── Desktop toolbar ─────────────────────────────────────────────────── */}
       <div className="hidden md:flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {hiddenBranches.length > 0 && (
+            <button type="button" onClick={() => setHiddenBranches([])}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
+              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
+              <Eye className="w-3.5 h-3.5" />Show {hiddenBranches.length} Hidden
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-2 flex-wrap">
           {/* View mode toggle */}
           <div id="audit-view-toggle" className="flex items-center rounded-lg text-xs font-bold overflow-hidden"
@@ -681,24 +746,6 @@ export default function DailyAuditReport() {
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <button type="button" onClick={handleExportExcel}
-            disabled={visibleRows.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
-            style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
-            <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
-          </button>
-
-          {hiddenBranches.length > 0 && (
-            <button type="button" onClick={() => setHiddenBranches([])}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
-              <Eye className="w-3.5 h-3.5" />Show {hiddenBranches.length} Hidden
-            </button>
           )}
         </div>
       </div>
@@ -764,7 +811,7 @@ export default function DailyAuditReport() {
         <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Daily Audit Summary —{' '}
+            Daily Transaction Summary —{' '}
             {viewMode === 'single'
               ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
               : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
@@ -774,16 +821,13 @@ export default function DailyAuditReport() {
             {logicalBranchCount} Branches
           </span>
           <button
-            id="audit-compact-toggle"
             type="button"
-            onClick={() => { setCompactView(v => !v) }}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all hover:scale-105 no-print"
-            style={compactView
-              ? { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }
-              : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+            onClick={handleExportExcel}
+            disabled={visibleRows.length === 0}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
+            style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}
           >
-            {compactView ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-            {compactView ? 'Full View' : 'Compact View'}
+            <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
           </button>
         </div>
 
@@ -1787,6 +1831,8 @@ export default function DailyAuditReport() {
           </div>
         </div>
       )}
+
+      </> /* end summary tab */}
 
     </div>
   )
