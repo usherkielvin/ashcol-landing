@@ -1526,22 +1526,6 @@ export default function DailyServiceReport() {
               <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
             ))}
           </div>
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
-            <p className="text-sm font-semibold" style={{ color: textMuted }}>
-              {searchQuery.trim()
-                ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
-                : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this date'}`}
-            </p>
-            {searchQuery.trim() ? (
-              <button type="button" onClick={() => setSearchQuery('')}
-                className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
-            ) : canEdit && (
-              <button onClick={handleAddRowInline}
-                className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
-            )}
-          </div>
         ) : (
           <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', position: 'relative' }}>
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
@@ -1576,8 +1560,8 @@ export default function DailyServiceReport() {
                         ...(col.freeze ? {
                           borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
                           boxShadow: isLight
-                            ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                            : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
+                             ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
+                             : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
                         } : {}),
                       }}>
                       <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : 'justify-between'}`}>
@@ -1591,7 +1575,28 @@ export default function DailyServiceReport() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r, idx) => {
+                {visible.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} style={{ padding: '40px 10px', textAlign: 'center' }}>
+                      <div className="flex flex-col items-center justify-center gap-3 py-6">
+                        <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
+                        <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                          {searchQuery.trim()
+                            ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
+                            : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
+                        </p>
+                        {searchQuery.trim() ? (
+                          <button type="button" onClick={() => setSearchQuery('')}
+                            className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
+                        ) : canEdit && (
+                          <button onClick={handleAddRowInline}
+                            className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  visible.map((r, idx) => {
                   const rowBaseBg = contextMenu?.row.id === r.id
                     ? (isLight ? '#f1f5f9' : '#111827')
                     : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
@@ -1659,7 +1664,7 @@ export default function DailyServiceReport() {
                       })}
                     </tr>
                   )
-                })}
+                }))}
               </tbody>
             </table>
           </div>
