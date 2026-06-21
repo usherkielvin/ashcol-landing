@@ -404,7 +404,7 @@ export default function LineUp() {
 
   }, [date])
 
-  const getVehiclePlate = useCallback((serviceName: string): string => {
+  const getVehiclePlate = useCallback((_serviceName: string): string => {
 
     return ''
 
