@@ -143,6 +143,7 @@ export default function Employees() {
     personalEmail: '', region: '', city: '',
     barangay: '', street: '', landmark: '',
     skills: '',
+    profileImage: '',
   })
   const [showPass, setShowPass] = useState(false)
   const [saving,   setSaving]   = useState(false)
@@ -155,6 +156,7 @@ export default function Employees() {
     phone: '', personalEmail: '', region: '',
     city: '', barangay: '', street: '',
     landmark: '', skills: '',
+    profileImage: '',
   })
   const [createSaving, setCreateSaving] = useState(false)
 
@@ -427,9 +429,11 @@ export default function Employees() {
       street: emp.street || '',
       landmark: emp.landmark || '',
       skills: parseSkills(emp.skills).join(', '),
+      profileImage: emp.profileImage || '',
     })
     setFormErr('')
     setShowPass(false)
+    setIsDrawerOpen(false)
     setEditTarget(emp)
   }
 
@@ -464,6 +468,7 @@ export default function Employees() {
         street: editForm.street.trim(),
         landmark: editForm.landmark.trim(),
         skills: skillsJson,
+        profileImage: editForm.profileImage,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
 
@@ -593,6 +598,7 @@ export default function Employees() {
             street: createForm.street.trim(),
             landmark: createForm.landmark.trim(),
             skills: skillsJson,
+            profileImage: createForm.profileImage,
           }),
         })
       }
@@ -602,7 +608,7 @@ export default function Employees() {
       setCreateForm({
         name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
         phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-        landmark: '', skills: '',
+        landmark: '', skills: '', profileImage: '',
       })
       fetchEmployees()
     } catch { setFormErr('Network error.') }
@@ -674,7 +680,7 @@ export default function Employees() {
           )}
           {(isAdmin || isManager) && (
             <button
-              onClick={() => { setShowCreate(true); setFormErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN', phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '', landmark: '', skills: '' }) }}
+              onClick={() => { setShowCreate(true); setFormErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN', phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '', landmark: '', skills: '', profileImage: '' }) }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:scale-105"
               style={{ backgroundColor: '#10B981' }}
             >
@@ -1192,7 +1198,7 @@ export default function Employees() {
                       {[
                         { label: 'Employee ID', value: selectedEmployee.id, icon: <User className="w-4 h-4" /> },
                         { label: 'Hire Date / Registration', value: selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Unknown', icon: <Calendar className="w-4 h-4" /> },
-                        { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString() : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
+                        { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
                       ].map(item => (
                         <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
                           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
@@ -1243,8 +1249,8 @@ export default function Employees() {
 
       {/* ── Edit Modal ── */}
       {editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
+          <div className="w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: border }}>
               <div className="flex items-center gap-3">
@@ -1262,22 +1268,89 @@ export default function Employees() {
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
-              {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
+            <div className="flex-1 overflow-y-auto p-8 flex flex-col md:flex-row gap-8">
+              {/* Left Column: Profile Pic Holder */}
+              <div className="w-full md:w-72 flex flex-col items-center gap-5 text-center shrink-0 border-b md:border-b-0 md:border-r pb-8 md:pb-0 pr-0 md:pr-8" style={{ borderColor: border }}>
+                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>Profile Photo</div>
+                
+                <div 
+                  onClick={() => document.getElementById('edit-modal-photo')?.click()}
+                  className="w-48 h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer transition-all hover:bg-slate-500/5 hover:border-emerald-500" 
+                  style={{ borderColor: border, backgroundColor: inputBg }}
+                >
+                  {editForm.profileImage ? (
+                    <>
+                      <img src={editForm.profileImage} alt="Profile Preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
+                        <Camera className="w-6 h-6 text-white" />
+                        <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-400 p-4">
+                      <div className="w-12 h-12 rounded-full bg-slate-500/10 flex items-center justify-center">
+                        <Plus className="w-6 h-6 text-slate-400" />
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: textMuted }}>Click to Upload</span>
+                      <span className="text-[9px]" style={{ color: textMuted }}>PNG, JPG or WEBP</span>
+                    </div>
+                  )}
+                </div>
 
-              {/* ── Section: General Info ── */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Information</h4>
-                <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2.5 w-full">
+                  <input
+                    type="file"
+                    id="edit-modal-photo"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (file.size > 2 * 1024 * 1024) {
+                        alert("Image must be smaller than 2MB")
+                        return
+                      }
+                      const reader = new FileReader()
+                      reader.onloadend = () => {
+                        setEditForm(p => ({ ...p, profileImage: reader.result as string }))
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => document.getElementById('edit-modal-photo')?.click()}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 w-full text-center"
+                    style={{ borderColor: border, color: textPrimary }}
+                  >
+                    Upload Photo
+                  </button>
+                  {editForm.profileImage && (
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(p => ({ ...p, profileImage: '' }))}
+                      className="text-xs text-red-500 font-bold hover:underline"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Input Fields Form */}
+              <div className="flex-1 flex flex-col gap-5">
+                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
+
+                {/* ── Section: General Info ── */}
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Information</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Full Name" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
                     </Field>
                     <Field label="Login Email" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
                     </Field>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <Field label="Phone Contact" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
                     </Field>
@@ -1286,13 +1359,11 @@ export default function Employees() {
                     </Field>
                   </div>
                 </div>
-              </div>
 
-              {/* ── Section: Job Details ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">System & Job Settings</h4>
-                <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
+                {/* ── Section: Job Details ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">System & Job Settings</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Branch Assignment" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
                         <option value="">— Unassigned —</option>
@@ -1309,54 +1380,48 @@ export default function Employees() {
                         <option value="ADMIN">Manager (Admin)</option>
                       </select>
                     </Field>
+                    {editForm.role === 'EMPLOYEE' && (
+                      <div className="col-span-1 sm:col-span-2">
+                        <Field label="Job Title" labelColor={textMuted}>
+                          <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
+                            {allJobTitles.map(title => (
+                              <option key={title} value={title}>{title}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    )}
                   </div>
-                  {editForm.role === 'EMPLOYEE' && (
-                    <div className="grid grid-cols-1 gap-3">
-                      <Field label="Job Title" labelColor={textMuted}>
-                        <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                          {allJobTitles.map(title => (
-                            <option key={title} value={title}>{title}</option>
-                          ))}
-                        </select>
-                      </Field>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              {/* ── Section: Address Details ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address & Location</h4>
-                <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
+                {/* ── Section: Address & Location ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address & Location</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Region" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.region} onChange={e => setEditForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
                     </Field>
                     <Field label="City" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.city} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Pasig" />
                     </Field>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <Field label="Barangay" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.barangay} onChange={e => setEditForm(p => ({ ...p, barangay: e.target.value }))} placeholder="e.g. San Jose" />
                     </Field>
                     <Field label="Street / House No." labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.street} onChange={e => setEditForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
                     </Field>
-                  </div>
-                  <div className="grid grid-cols-1">
-                    <Field label="Landmark Description" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.landmark} onChange={e => setEditForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
-                    </Field>
+                    <div className="col-span-1 sm:col-span-2">
+                      <Field label="Landmark Description" labelColor={textMuted}>
+                        <input className={inputCls} style={inputStyle} value={editForm.landmark} onChange={e => setEditForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
+                      </Field>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ── Section: Skills ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills (Comma Separated)</h4>
-                <div className="grid grid-cols-1">
-                  <Field label="Skills / Certifications" labelColor={textMuted}>
+                {/* ── Section: Skills & Status ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills & Certifications</h4>
+                  <Field label="Skills (Comma Separated)" labelColor={textMuted}>
                     <input
                       className={inputCls}
                       style={inputStyle}
@@ -1366,46 +1431,47 @@ export default function Employees() {
                     />
                   </Field>
                 </div>
-              </div>
 
-              {/* Active Status */}
-              <div className="flex items-center gap-3 p-3 rounded-xl border mt-2" style={{ borderColor: border }}>
-                <div className="flex-1">
-                  <div className="text-sm font-bold" style={{ color: textPrimary }}>Account Status</div>
-                  <div className="text-xs" style={{ color: textMuted }}>Toggle to enable or disable login access</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEditForm(p => ({ ...p, isActive: !p.isActive }))}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black border transition-all"
-                  style={editForm.isActive
-                    ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }
-                    : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
-                >
-                  {editForm.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                  {editForm.isActive ? 'Active' : 'Inactive'}
-                </button>
-              </div>
-
-              {/* New Password */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <Field label="New Password (leave blank to keep current)" labelColor={textMuted}>
-                  <div className="relative">
-                    <input
-                      className={inputCls}
-                      style={{ ...inputStyle, paddingRight: '2.75rem' }}
-                      type={showPass ? 'text' : 'password'}
-                      value={editForm.newPassword}
-                      onChange={e => setEditForm(p => ({ ...p, newPassword: e.target.value }))}
-                      placeholder="Enter new password to change…"
-                    />
-                    <button type="button" onClick={() => setShowPass(p => !p)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }}>
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                {/* Active Status */}
+                <div className="flex items-center gap-3 p-3 rounded-xl border mt-2" style={{ borderColor: border }}>
+                  <div className="flex-1">
+                    <div className="text-sm font-bold" style={{ color: textPrimary }}>Account Status</div>
+                    <div className="text-xs" style={{ color: textMuted }}>Toggle to enable or disable login access</div>
                   </div>
-                </Field>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm(p => ({ ...p, isActive: !p.isActive }))}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black border transition-all"
+                    style={editForm.isActive
+                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }
+                      : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
+                  >
+                    {editForm.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                    {editForm.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                </div>
+
+                {/* New Password */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <Field label="New Password (leave blank to keep current)" labelColor={textMuted}>
+                    <div className="relative">
+                      <input
+                        className={inputCls}
+                        style={{ ...inputStyle, paddingRight: '2.75rem' }}
+                        type={showPass ? 'text' : 'password'}
+                        value={editForm.newPassword}
+                        onChange={e => setEditForm(p => ({ ...p, newPassword: e.target.value }))}
+                        placeholder="Enter new password to change…"
+                      />
+                      <button type="button" onClick={() => setShowPass(p => !p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }}>
+                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </Field>
+                </div>
               </div>
+
             </div>
 
             {/* Footer */}
@@ -1423,108 +1489,177 @@ export default function Employees() {
 
       {/* ── Create Modal ── */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
+         <div className="w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
               <h3 className="font-black text-base" style={{ color: textPrimary }}>Add New Account</h3>
               <button onClick={() => setShowCreate(false)} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
-              {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
-
-              {/* ── General Info ── */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Credentials</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Full Name" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} placeholder="Juan Dela Cruz" />
-                  </Field>
-                  <Field label="Login Email" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} placeholder="juan@ashcol.com.ph" />
-                  </Field>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-8 flex flex-col md:flex-row gap-8">
+              {/* Left Column: Profile Pic Holder */}
+              <div className="w-full md:w-72 flex flex-col items-center gap-5 text-center shrink-0 border-b md:border-b-0 md:border-r pb-8 md:pb-0 pr-0 md:pr-8" style={{ borderColor: border }}>
+                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>Profile Photo</div>
+                
+                <div 
+                  onClick={() => document.getElementById('create-modal-photo')?.click()}
+                  className="w-48 h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer transition-all hover:bg-slate-500/5 hover:border-emerald-500" 
+                  style={{ borderColor: border, backgroundColor: inputBg }}
+                >
+                  {createForm.profileImage ? (
+                    <>
+                      <img src={createForm.profileImage} alt="Profile Preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
+                        <Camera className="w-6 h-6 text-white" />
+                        <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-400 p-4">
+                      <div className="w-12 h-12 rounded-full bg-slate-500/10 flex items-center justify-center">
+                        <Plus className="w-6 h-6 text-slate-400" />
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: textMuted }}>Click to Upload</span>
+                      <span className="text-[9px]" style={{ color: textMuted }}>PNG, JPG or WEBP</span>
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <Field label="Phone" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XXXXXXXXX" />
-                  </Field>
-                  <Field label="Personal Email" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} type="email" value={createForm.personalEmail} onChange={e => setCreateForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
-                  </Field>
+
+                <div className="flex flex-col gap-2.5 w-full">
+                  <input
+                    type="file"
+                    id="create-modal-photo"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (file.size > 2 * 1024 * 1024) {
+                        alert("Image must be smaller than 2MB")
+                        return
+                      }
+                      const reader = new FileReader()
+                      reader.onloadend = () => {
+                        setCreateForm(p => ({ ...p, profileImage: reader.result as string }))
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => document.getElementById('create-modal-photo')?.click()}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 w-full text-center"
+                    style={{ borderColor: border, color: textPrimary }}
+                  >
+                    Upload Photo
+                  </button>
+                  {createForm.profileImage && (
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm(p => ({ ...p, profileImage: '' }))}
+                      className="text-xs text-red-500 font-bold hover:underline"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* ── System Info ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role & Placement</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {isAdmin && (
-                    <Field label="Branch" labelColor={textMuted}>
-                      <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
-                        <option value="">— Select branch —</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
+              {/* Right Column: Input Fields Form */}
+              <div className="flex-1 flex flex-col gap-5">
+                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
+
+                {/* ── General Credentials ── */}
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Credentials</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Full Name" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} placeholder="Juan Dela Cruz" />
                     </Field>
-                  )}
-                  <Field label="System Role" labelColor={textMuted}>
-                    <select className={inputCls} style={inputStyle} value={createForm.role}
-                      onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}>
-                      <option value="EMPLOYEE">Employee</option>
-                      <option value="MANAGER">Office In Charge</option>
-                      {isAdmin && <option value="ADMIN">Manager (Admin)</option>}
-                    </select>
-                  </Field>
-                </div>
-                {createForm.role === 'EMPLOYEE' && (
-                  <div className="grid grid-cols-1 mt-3">
-                    <Field label="Job Title" labelColor={textMuted}>
-                      <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                        {allJobTitles.map(title => (
-                          <option key={title} value={title}>{title}</option>
-                        ))}
-                      </select>
+                    <Field label="Login Email" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} placeholder="juan@ashcol.com.ph" />
+                    </Field>
+                    <Field label="Phone" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XXXXXXXXX" />
+                    </Field>
+                    <Field label="Personal Email" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} type="email" value={createForm.personalEmail} onChange={e => setCreateForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
                     </Field>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* ── Address details ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address (Optional)</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Region" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.region} onChange={e => setCreateForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
-                  </Field>
-                  <Field label="City" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.city} onChange={e => setCreateForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Pasig" />
+                {/* ── Role & Placement ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role & Placement</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {isAdmin && (
+                      <Field label="Branch" labelColor={textMuted}>
+                        <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
+                          <option value="">— Select branch —</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </Field>
+                    )}
+                    <Field label="System Role" labelColor={textMuted}>
+                      <select className={inputCls} style={inputStyle} value={createForm.role}
+                        onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}>
+                        <option value="EMPLOYEE">Employee</option>
+                        <option value="MANAGER">Office In Charge</option>
+                        {isAdmin && <option value="ADMIN">Manager (Admin)</option>}
+                      </select>
+                    </Field>
+                    {createForm.role === 'EMPLOYEE' && (
+                      <div className="col-span-1 sm:col-span-2">
+                        <Field label="Job Title" labelColor={textMuted}>
+                          <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
+                            {allJobTitles.map(title => (
+                              <option key={title} value={title}>{title}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Address Details ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address Details</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Region" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.region} onChange={e => setCreateForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
+                    </Field>
+                    <Field label="City" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.city} onChange={e => setCreateForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Pasig" />
+                    </Field>
+                    <Field label="Barangay" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.barangay} onChange={e => setCreateForm(p => ({ ...p, barangay: e.target.value }))} placeholder="e.g. San Jose" />
+                    </Field>
+                    <Field label="Street" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={createForm.street} onChange={e => setCreateForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
+                    </Field>
+                    <div className="col-span-1 sm:col-span-2">
+                      <Field label="Landmark Description" labelColor={textMuted}>
+                        <input className={inputCls} style={inputStyle} value={createForm.landmark} onChange={e => setCreateForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Skills ── */}
+                <div className="border-t pt-4" style={{ borderColor: border }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills & Certifications</h4>
+                  <Field label="Skills (comma separated)" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} value={createForm.skills} onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))} placeholder="e.g. GENERAL, AC_INSTALLER" />
                   </Field>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <Field label="Barangay" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.barangay} onChange={e => setCreateForm(p => ({ ...p, barangay: e.target.value }))} placeholder="e.g. San Jose" />
-                  </Field>
-                  <Field label="Street" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.street} onChange={e => setCreateForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-1 mt-3">
-                  <Field label="Landmark Description" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.landmark} onChange={e => setCreateForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
-                  </Field>
-                </div>
+
+                <p className="text-xs rounded-xl p-3 border mt-2" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
+                  A temporary password will be auto-generated and emailed. You'll also see it here to copy immediately after creation.
+                </p>
               </div>
 
-              {/* ── Skills ── */}
-              <div className="border-t pt-4" style={{ borderColor: border }}>
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills (Optional)</h4>
-                <Field label="Skills (comma separated)" labelColor={textMuted}>
-                  <input className={inputCls} style={inputStyle} value={createForm.skills} onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))} placeholder="e.g. GENERAL, AC_INSTALLER" />
-                </Field>
-              </div>
-
-              <p className="text-xs rounded-xl p-3 border mt-2" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
-                A temporary password will be auto-generated and emailed. You'll also see it here to copy immediately after creation.
-              </p>
             </div>
 
             <div className="px-6 py-4 border-t flex gap-3 shrink-0" style={{ borderColor: border }}>
