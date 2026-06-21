@@ -1258,6 +1258,7 @@ export default function ForCollections() {
                     {/* Detailed Lists */}
                     {/* Cash Transactions */}
                     {renderItemTable('Cash Transactions', cashTxItems, [
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                       { label: 'Name (Installer/Technician)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                       { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
                     ])}
