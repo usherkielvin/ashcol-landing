@@ -10,6 +10,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import * as XLSX from 'xlsx'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 interface Ticket {
   id: string
@@ -3012,7 +3013,11 @@ export default function ClientMasterlist() {
                     <div>
                       <label className="text-[10px] text-slate-400 font-semibold block">Relayed By</label>
                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400" style={{ color: textPrimary }}>
-                        {selectedPreviewTicket.createdBy || selectedPreviewTicket.customerEmail || 'System'}
+                        {selectedPreviewTicket.createdBy ? (
+                          <EmployeeNameLink nameOrId={selectedPreviewTicket.createdBy} />
+                        ) : (
+                          selectedPreviewTicket.customerEmail || 'System'
+                        )}
                       </span>
                     </div>
                   </div>

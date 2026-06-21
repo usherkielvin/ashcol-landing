@@ -22,6 +22,9 @@ import { useAuth } from '../contexts/AuthContext'
 
 import { API_BASE_URL } from '../utils/api'
 
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
+
+
 import * as XLSX from 'xlsx'
 
 import html2canvas from 'html2canvas'
@@ -1550,7 +1553,15 @@ export default function LineUp() {
 
           ) : (
 
-            value || '—'
+            (field === 'driverName' || field === 'installerName') ? (
+
+              value ? <EmployeeNameLink nameOrId={value} /> : '—'
+
+            ) : (
+
+              value || '—'
+
+            )
 
           )}
 
@@ -1710,7 +1721,15 @@ export default function LineUp() {
 
         ) : (
 
-          value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
+          (field === 'driverName' || field === 'installerName') ? (
+
+            value ? <EmployeeNameLink nameOrId={value} /> : <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
+
+          ) : (
+
+            value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
+
+          )
 
         )}
 
@@ -1846,7 +1865,15 @@ export default function LineUp() {
 
         <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
 
-          {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>}
+          {(field === 'driverName' || field === 'installerName') ? (
+
+            value ? <EmployeeNameLink nameOrId={value} /> : <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>
+
+          ) : (
+
+            value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>
+
+          )}
 
           {field === 'service' && getVehiclePlate(value) && (
 

@@ -3,6 +3,7 @@ import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreads
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, formatDisplayUserLabel } from '../utils/api'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
@@ -1516,7 +1517,7 @@ export default function AuditFinanceExpenses() {
                       style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
                       <td className="px-3 py-2.5">
                         <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
-                        <div className="text-[10px]" style={{ color: textMuted }}>By: {row.incurredBy}</div>
+                        <div className="text-[10px]" style={{ color: textMuted }}>By: <EmployeeNameLink nameOrId={row.incurredBy} /></div>
                       </td>
                       <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
                         {row.company || '—'}
@@ -1766,7 +1767,13 @@ export default function AuditFinanceExpenses() {
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
                     <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>{label}</div>
-                    <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>{value}</div>
+                    <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>
+                      {['Submitted by', 'Incurred by'].includes(label) ? (
+                        <EmployeeNameLink nameOrId={value} />
+                      ) : (
+                        value
+                      )}
+                    </div>
                   </div>
                 ))}
                 <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
@@ -1786,7 +1793,7 @@ export default function AuditFinanceExpenses() {
                         <span style={{ color: textPrimary }}>
                           <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
                           {' by '}
-                          <span className="font-semibold">{formatDisplayUserLabel(entry.by)}</span>
+                          <span className="font-semibold"><EmployeeNameLink nameOrId={formatDisplayUserLabel(entry.by)} /></span>
                           {' at '}
                           <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
                         </span>

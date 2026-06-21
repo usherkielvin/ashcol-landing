@@ -13,6 +13,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
 import DailySalesForm from './DailySalesForm'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1487,7 +1488,7 @@ export default function DailyAuditReport() {
                       {rowExpenses?.createdAt ? (
                         <span style={{ color: textMuted }}>
                           Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
-                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></>}
+                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
                         </span>
                       ) : (
                         <>
@@ -1495,14 +1496,14 @@ export default function DailyAuditReport() {
                             <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
                           )}
                           {rowExpenses?.receivedBy && (
-                            <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></span>
+                            <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></span>
                           )}
                         </>
                       )}
                       {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
                         <span style={{ color: '#F59E0B' }}>
                           Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
-                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.updatedBy)}</span></>}
+                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
                         </span>
                       )}
                     </div>

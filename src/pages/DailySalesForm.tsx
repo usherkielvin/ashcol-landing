@@ -4,6 +4,7 @@ import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } fro
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1481,7 +1482,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               <div className="flex items-center gap-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Updated By:</span>
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  {lastUpdatedBy}
+                  <EmployeeNameLink nameOrId={lastUpdatedBy} />
                 </span>
               </div>
             )}
@@ -1556,10 +1557,16 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          list="tech-suggestions"
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.installer} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Installer" value={row.installer}
+                            onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                            list="tech-suggestions"
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
@@ -1595,20 +1602,26 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                   {cashRet.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Name" value={row.name}
-                          onChange={e => {
-                            const val = e.target.value
-                            const matched = refundablePurchases.find(p => getRefundOptionText(p) === val)
-                            if (matched) {
-                              const worker = getWorkerName(matched)
-                              const refundAmt = String((matched.amount - matched.actualAmount).toFixed(2))
-                              setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: worker, amount: refundAmt } : r))
-                            } else {
-                              setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: val } : r))
-                            }
-                          }}
-                          list="cash-return-suggestions"
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.name} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Name" value={row.name}
+                            onChange={e => {
+                              const val = e.target.value
+                              const matched = refundablePurchases.find(p => getRefundOptionText(p) === val)
+                              if (matched) {
+                                const worker = getWorkerName(matched)
+                                const refundAmt = String((matched.amount - matched.actualAmount).toFixed(2))
+                                setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: worker, amount: refundAmt } : r))
+                              } else {
+                                setCashRet(p => p.map(r => r.id === row.id ? { ...r, name: val } : r))
+                              }
+                            }}
+                            list="cash-return-suggestions"
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
@@ -1702,9 +1715,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.installer} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Installer" value={row.installer}
+                            onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Bank" value={row.bank}
@@ -1752,9 +1771,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.installer} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Installer" value={row.installer}
+                            onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Bank" value={row.bank}
@@ -1851,9 +1876,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <input type="text" placeholder="Installer" value={row.installer}
-                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.installer} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Installer" value={row.installer}
+                            onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
@@ -1939,9 +1970,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                   {expReceipt.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Name" value={row.name}
-                          onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.name} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Name" value={row.name}
+                            onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
@@ -1983,9 +2020,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                   {expPurch.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className={tableTd}>
-                        <input type="text" placeholder="Name" value={row.name}
-                          onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.name} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Name" value={row.name}
+                            onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}

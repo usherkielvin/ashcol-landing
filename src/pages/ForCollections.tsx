@@ -6,6 +6,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 interface CollectionItem {
   id: string
@@ -811,7 +812,7 @@ export default function ForCollections() {
 
                       {/* Submitted By */}
                       <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px' }}>
-                        {formatDisplayUserLabel(item.receivedBy) || '—'}
+                        <EmployeeNameLink nameOrId={formatDisplayUserLabel(item.receivedBy)} />
                       </td>
 
                       {/* Branch */}
@@ -830,7 +831,7 @@ export default function ForCollections() {
 
                           {/* Installer / Tech */}
                           <td className="px-3 py-3">
-                            {formatDisplayUserLabel(item.description) || <span style={{ color: textMuted }}>—</span>}
+                            <EmployeeNameLink nameOrId={formatDisplayUserLabel(item.description)} />
                           </td>
                         </>
                       ) : (
@@ -1084,13 +1085,13 @@ export default function ForCollections() {
                       {rowExpenses?.createdAt && (
                         <span style={{ color: textMuted }}>
                           Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
-                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.receivedBy)}</span></>}
+                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
                         </span>
                       )}
                       {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
                         <span style={{ color: '#F59E0B' }}>
                           Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
-                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}>{formatDisplayUserLabel(rowExpenses.updatedBy)}</span></>}
+                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
                         </span>
                       )}
                     </div>
@@ -1173,7 +1174,7 @@ export default function ForCollections() {
                               <>
                                 <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
                                   <span style={{ color: textMuted }}>Resolved By:</span>
-                                  <span className="font-bold" style={{ color: textPrimary }}>{selectedRow.collectionResolvedBy || '—'}</span>
+                                  <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={selectedRow.collectionResolvedBy} /></span>
                                 </div>
                                 <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
                                   <span style={{ color: textMuted }}>Resolved At:</span>
@@ -1184,7 +1185,7 @@ export default function ForCollections() {
 
                             <div className="flex justify-between border-b pb-1.5" style={{ borderColor: border }}>
                               <span style={{ color: textMuted }}>Last Updated By:</span>
-                              <span className="font-semibold" style={{ color: textPrimary }}>{selectedRow.collectionUpdatedBy || '—'}</span>
+                              <span className="font-semibold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={selectedRow.collectionUpdatedBy} /></span>
                             </div>
                             <div className="flex justify-between">
                               <span style={{ color: textMuted }}>Last Updated At:</span>

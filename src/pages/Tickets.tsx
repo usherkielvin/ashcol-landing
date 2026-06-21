@@ -7,6 +7,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Ticket {
@@ -1466,6 +1467,14 @@ export default function Tickets() {
       )
     }
 
+    if (label === 'INSTALLER') {
+      return (
+        <span style={{ ...truncStyle, ...editHint }} title={val}>
+          <EmployeeNameLink nameOrId={val} />
+        </span>
+      )
+    }
+
     return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
   }
 
@@ -1814,7 +1823,11 @@ export default function Tickets() {
               <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: textMuted }} />
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: textMuted }}>{label}</p>
-                <p className="text-xs font-semibold leading-relaxed break-words" style={{ color: color || textPrimary }}>{val}</p>
+                <p className="text-xs font-semibold leading-relaxed break-words" style={{ color: color || textPrimary }}>
+                  {['TECHNICIAN', 'INSTALLER', 'ASSIGNED', 'BY', 'CREATED BY'].includes(label.toUpperCase()) ? (
+                    <EmployeeNameLink nameOrId={val} />
+                  ) : val}
+                </p>
               </div>
             </div>
           ) : null
@@ -1946,7 +1959,7 @@ export default function Tickets() {
                                 
                                 <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
                                   <p className="text-[10px] font-semibold">
-                                    By: <span className="font-bold" style={{ color: textPrimary }}>{h.changedByUserName || 'System'}</span>
+                                    By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
                                   </p>
                                   {h.newStatus && h.newStatus !== h.previousStatus && (
                                     <p className="text-[10px]">
@@ -1960,7 +1973,7 @@ export default function Tickets() {
                                   )}
                                   {h.newAssignedToName && (
                                     <p className="text-[10px]">
-                                      Assigned: <span className="font-bold text-teal-500">{h.newAssignedToName}</span>
+                                      Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
                                     </p>
                                   )}
                                 </div>

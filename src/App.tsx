@@ -26,6 +26,7 @@ import ClientMasterlist from './pages/ClientMasterlist'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { EmployeeDetailsProvider } from './contexts/EmployeeDetailsContext'
 import { getPortalHomePath } from './utils/api'
 import AutoUpdateWatcher from './components/AutoUpdateWatcher'
 
@@ -108,12 +109,14 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <NotificationProvider>
-          <AutoUpdateWatcher />
-          {GOOGLE_OAUTH_ENABLED ? (
-            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
-          ) : (
-            routes
-          )}
+          <EmployeeDetailsProvider>
+            <AutoUpdateWatcher />
+            {GOOGLE_OAUTH_ENABLED ? (
+              <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
+            ) : (
+              routes
+            )}
+          </EmployeeDetailsProvider>
         </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>

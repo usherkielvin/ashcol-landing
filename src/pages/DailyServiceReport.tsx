@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
+import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1101,6 +1102,22 @@ export default function DailyServiceReport() {
 
     if (label === 'INSTALLATION CHARGES') {
       return <span style={{ ...truncStyle, fontWeight: 600 }}>{val ? parseFloat(val).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</span>
+    }
+
+    if (label === 'INSTALLER') {
+      return (
+        <span style={{ ...truncStyle, ...editHint }} title={val}>
+          <EmployeeNameLink nameOrId={val} />
+        </span>
+      )
+    }
+
+    if (label === 'SUBMITTED BY' || label === 'UPDATED BY') {
+      return (
+        <span style={{ ...truncStyle }} title={val}>
+          <EmployeeNameLink nameOrId={val} />
+        </span>
+      )
     }
 
     return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
@@ -2323,7 +2340,9 @@ export default function DailyServiceReport() {
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                     ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.technicianName || '—'}</span>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                        <EmployeeNameLink nameOrId={detailForm.technicianName} />
+                      </span>
                     )}
                   </Field>
                 </div>
@@ -2482,7 +2501,9 @@ export default function DailyServiceReport() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {detailForm.inputBy && (
                       <Field label="Created By">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.inputBy}</span>
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                          <EmployeeNameLink nameOrId={detailForm.inputBy} />
+                        </span>
                       </Field>
                     )}
                     {detailForm.createdAt && (
@@ -2494,7 +2515,9 @@ export default function DailyServiceReport() {
                     )}
                     {detailForm.updatedBy && (
                       <Field label="Updated By">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.updatedBy}</span>
+                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                          <EmployeeNameLink nameOrId={detailForm.updatedBy} />
+                        </span>
                       </Field>
                     )}
                     {detailForm.updatedAt && (
