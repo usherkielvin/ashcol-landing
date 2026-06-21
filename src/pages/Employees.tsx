@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
-  Check, Eye, EyeOff, ShieldCheck, Users, UserX,
+  Check, Eye, EyeOff, ShieldCheck,
   Camera, MapPin, Calendar, Tag, User,
   ChevronDown, ChevronUp, Map, Home, Mailbox, Globe
 } from 'lucide-react'
@@ -583,7 +583,7 @@ export default function Employees() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-5" style={{ minHeight: '100vh', backgroundColor: pageBg }}>
+    <div className="flex flex-col gap-3" style={{ minHeight: '100vh', backgroundColor: pageBg }}>
       
       {/* Hidden File Input for Profile Upload */}
       <input
@@ -594,142 +594,128 @@ export default function Employees() {
         onChange={handleImageUpload}
       />
 
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight" style={{ color: textPrimary }}>
-            {isManager ? 'Branch Team' : 'Employees'}
-          </h1>
-          <p className="text-sm mt-0.5" style={{ color: textMuted }}>
-            {isAdmin ? `${stats.total} accounts — ${stats.active} active, ${stats.inactive} inactive` : 'Manage your branch members'}
-          </p>
+      {/* ── Slim Toolbar Header ── */}
+      <div className="flex flex-wrap items-center gap-2 py-1">
+        {/* Title + stats chips */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm font-bold" style={{ color: textPrimary }}>
+            {isManager ? 'Branch Team' : 'Employee Directory'}
+          </span>
+          {isAdmin && (
+            <>
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6' }}>
+                {stats.total} total
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' }}>
+                {stats.active} active
+              </span>
+              {stats.inactive > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#F59E0B' }}>
+                  {stats.inactive} inactive
+                </span>
+              )}
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5">
           {isAdmin && (
             <button
               onClick={() => setShowRoleManager(!showRoleManager)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all"
-              style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+              style={{ backgroundColor: cardBg, borderColor: border, color: textMuted }}
             >
-              Role Manager {showRoleManager ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              <Tag className="w-3.5 h-3.5" />
+              Roles {showRoleManager ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             </button>
           )}
           {(isAdmin || isManager) && (
             <button
               onClick={() => { setShowCreate(true); setFormErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN', phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '', landmark: '', skills: '', profileImage: '' }) }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:scale-105"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
               style={{ backgroundColor: '#10B981' }}
             >
-              <Plus className="w-4 h-4" /> Add Account
+              <Plus className="w-3.5 h-3.5" /> Add Employee
             </button>
           )}
           <button
             onClick={fetchEmployees}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500"
+            className="p-1.5 rounded-lg border transition-all hover:border-emerald-500 hover:text-emerald-500"
             style={{ backgroundColor: cardBg, borderColor: border, color: textMuted }}
+            title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
       {/* ── Admin Custom Job Titles / Role Levels Panel ── */}
       {isAdmin && showRoleManager && (
-        <div className="rounded-2xl p-5 flex flex-col gap-4 transition-all" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div>
-            <h2 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>Job Title / Role Levels</h2>
-            <p className="text-xs" style={{ color: textMuted }}>Manage job titles used across Employee profiles and dropdown fields.</p>
+        <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold" style={{ color: textPrimary }}>Job Title / Role Levels</span>
+            <span className="text-[10px]" style={{ color: textMuted }}>Manage job titles for dropdown fields</span>
           </div>
           
-          <div className="flex flex-wrap gap-2 py-1">
-            <span className="text-xs font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border text-slate-400" style={{ borderColor: border }}>
-              Default Titles:
-            </span>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Default:</span>
             {DEFAULT_JOB_TITLES.map(title => (
-              <span key={title} className="text-xs font-bold uppercase px-2.5 py-1.5 rounded-lg text-emerald-500 bg-emerald-500/10 border border-emerald-500/20">
-                {title}
-              </span>
+              <span key={title} className="text-[10px] font-bold uppercase px-2 py-1 rounded text-emerald-500 bg-emerald-500/10 border border-emerald-500/20">{title}</span>
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-2 py-1">
-            <span className="text-xs font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border text-slate-400" style={{ borderColor: border }}>
-              Custom Titles:
-            </span>
-            {customJobTitles.length === 0 ? (
-              <span className="text-xs italic py-1.5" style={{ color: textMuted }}>No custom roles added yet</span>
-            ) : customJobTitles.map(title => (
-              <span key={title} className="inline-flex items-center gap-1.5 text-xs font-bold uppercase px-2.5 py-1.5 rounded-lg text-blue-500 bg-blue-500/10 border border-blue-500/20">
-                {title}
-                <button onClick={() => handleRemoveCustomRole(title)} className="hover:text-red-500 text-slate-400 transition-colors">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
+          {customJobTitles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Custom:</span>
+              {customJobTitles.map(title => (
+                <span key={title} className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 rounded text-blue-500 bg-blue-500/10 border border-blue-500/20">
+                  {title}
+                  <button onClick={() => handleRemoveCustomRole(title)} className="hover:text-red-500 transition-colors"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              ))}
+            </div>
+          )}
 
-          <form onSubmit={handleAddCustomRole} className="flex gap-2 max-w-sm">
+          <form onSubmit={handleAddCustomRole} className="flex gap-2 max-w-xs">
             <input
-              type="text"
-              placeholder="e.g. TECHNICAL MANAGER"
-              value={newRoleInput}
+              type="text" placeholder="New title…" value={newRoleInput}
               onChange={e => setNewRoleInput(e.target.value)}
-              className="flex-1 rounded-xl px-3 py-2 text-sm outline-none transition-all"
+              className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
               style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
             />
-            <button type="submit" className="px-4 py-2 rounded-xl text-xs font-black text-white" style={{ backgroundColor: '#10B981' }}>
-              Add Title
-            </button>
+            <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#10B981' }}>Add</button>
           </form>
         </div>
       )}
 
-      {/* ── Stats Row ── */}
-      {isAdmin && (
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Total',    value: stats.total,    icon: <Users className="w-4 h-4" />,    color: '#3B82F6' },
-            { label: 'Active',   value: stats.active,   icon: <CheckCircle className="w-4 h-4" />, color: '#10B981' },
-            { label: 'Inactive', value: stats.inactive, icon: <UserX className="w-4 h-4" />,    color: '#F59E0B' },
-          ].map(s => (
-            <div key={s.label} className="rounded-2xl p-4 flex items-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${s.color}18`, color: s.color }}>{s.icon}</div>
-              <div>
-                <div className="text-xl font-black" style={{ color: textPrimary }}>{s.value}</div>
-                <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{s.label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* ── Main Table Card ── */}
-      <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      <div className="rounded-xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 border-b" style={{ borderColor: border }}>
-          <div className="flex items-center gap-2 flex-1 max-w-sm rounded-xl px-3 py-2.5 border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+        {/* Compact Search + Filter Toolbar */}
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor: border }}>
+          <div className="flex items-center gap-2 flex-1 rounded-lg px-2.5 py-1.5 border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
               placeholder="Search name, email, level, branch…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-sm outline-none w-full"
+              className="bg-transparent text-xs outline-none w-full"
               style={{ color: textPrimary }}
             />
-            {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>}
+            {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3 h-3" /></button>}
           </div>
 
-          <div className="flex rounded-xl border overflow-hidden shrink-0" style={{ borderColor: border }}>
+          <div className="flex rounded-lg border overflow-hidden shrink-0" style={{ borderColor: border }}>
             {(['all', 'active', 'inactive'] as const).map(t => (
               <button
                 key={t}
                 onClick={() => setTabFilter(t)}
-                className="px-4 py-2 text-xs font-black uppercase tracking-wider transition-all"
+                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all"
                 style={{
                   backgroundColor: tabFilter === t
-                    ? t === 'active' ? '#10B981' : t === 'inactive' ? '#F59E0B' : '#1E2D48'
+                    ? t === 'active' ? '#10B981' : t === 'inactive' ? '#F59E0B' : (isLight ? '#334155' : '#1E2D48')
                     : 'transparent',
                   color: tabFilter === t ? '#fff' : textMuted,
                 }}
@@ -739,8 +725,8 @@ export default function Employees() {
             ))}
           </div>
 
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ backgroundColor: `rgba(16,185,129,0.1)`, color: '#10B981' }}>
-            {filtered.length} shown
+          <span className="text-[10px] font-semibold px-2 py-1 rounded" style={{ backgroundColor: 'rgba(16,185,129,0.08)', color: '#10B981' }}>
+            {filtered.length}
           </span>
         </div>
 
@@ -748,29 +734,28 @@ export default function Employees() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `2px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact Details', 'Role Level', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
+              <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
+                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Level', 'Status', ''].map(h => (
+                  <th key={h} className="px-4 py-2 text-left text-[9px] font-bold uppercase tracking-widest whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
+                Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
                     {[1,2,3,4,5,6,7].map(j => (
-                      <td key={j} className="px-4 py-4">
-                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '80%' : '60%' }} />
+                      <td key={j} className="px-4 py-2.5">
+                        <div className="h-3 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '70%' : '55%' }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-16 text-center">
-                    <Wrench className="w-10 h-10 mx-auto mb-3 opacity-20" style={{ color: textMuted }} />
-                    <p className="font-bold" style={{ color: textMuted }}>No accounts found</p>
-                    <p className="text-xs mt-1" style={{ color: textMuted }}>Try changing the filter or search term.</p>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <p className="text-sm font-medium" style={{ color: textMuted }}>No accounts found</p>
+                    <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
                   </td>
                 </tr>
               ) : filtered.map(e => {
@@ -785,126 +770,109 @@ export default function Employees() {
                     onMouseLeave={el => (el.currentTarget.style.backgroundColor = 'transparent')}
                   >
                     {/* Employee */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
                         {e.profileImage ? (
-                          <img src={e.profileImage} alt={e.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-500/20" referrerPolicy="no-referrer" />
+                          <img src={e.profileImage} alt={e.name} className="w-8 h-8 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
                         ) : (
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-black text-xs" style={{ backgroundColor: avatarColor(e.name) }}>
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white font-bold text-[10px]" style={{ backgroundColor: avatarColor(e.name) }}>
                             {initials(e.name)}
                           </div>
                         )}
                         <div className="min-w-0">
-                          <div className="font-bold truncate max-w-[160px]" style={{ color: textPrimary }}>{e.name}</div>
-                          <div className="text-[10px] tracking-wider truncate max-w-[160px]" style={{ color: textMuted }}>{e.id}</div>
+                          <div className="text-sm font-semibold truncate max-w-[150px]" style={{ color: textPrimary }}>{e.name}</div>
+                          <div className="text-[9px] truncate max-w-[150px] font-mono" style={{ color: textMuted }}>{e.email}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Role */}
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black whitespace-nowrap"
+                    <td className="px-4 py-2.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
                         style={{ backgroundColor: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
-                        <ShieldCheck className="w-3 h-3" />
                         {resolveLabel(e.role, e.jobTitle)}
                       </span>
                     </td>
 
                     {/* Branch */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2.5">
                       {e.branchName ? (
-                        <div className="flex items-center gap-1.5 text-xs font-bold whitespace-nowrap" style={{ color: textPrimary }}>
-                          <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                          {e.branchName}
+                        <div className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: textMuted }}>
+                          <Building2 className="w-3 h-3 shrink-0" style={{ color: '#10B981' }} />
+                          <span className="font-medium" style={{ color: textPrimary }}>{e.branchName}</span>
                         </div>
                       ) : (
-                        <span className="text-xs italic" style={{ color: textMuted }}>Unassigned</span>
+                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
                       )}
                     </td>
 
                     {/* Contact */}
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
-                          <Mail className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                          <span className="truncate max-w-[180px]">{e.email}</span>
+                    <td className="px-4 py-2.5">
+                      {e.phone ? (
+                        <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
+                          <Phone className="w-3 h-3 shrink-0" />
+                          {e.phone}
                         </div>
-                        {e.phone && (
-                          <div className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
-                            <Phone className="w-3.5 h-3.5 shrink-0" />
-                            {e.phone}
-                          </div>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
+                      )}
                     </td>
 
                     {/* Role Level */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2.5">
                       {e.skills && getRoleLevel(e.skills) !== '—' ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider text-blue-500 bg-blue-500/10 border border-blue-500/20 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase text-blue-500 bg-blue-500/10 border border-blue-500/15 whitespace-nowrap">
                           {getRoleLevel(e.skills)}
                         </span>
                       ) : (
-                        <span className="text-xs italic" style={{ color: textMuted }}>Not Set</span>
+                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
                       )}
                     </td>
 
                     {/* Status */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2.5">
                       <button
-                        onClick={evt => {
-                          evt.stopPropagation()
-                          handleToggleActive(e)
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all hover:scale-105"
+                        onClick={evt => { evt.stopPropagation(); handleToggleActive(e) }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border transition-all"
                         style={e.isActive
-                          ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.2)' }
-                          : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
-                        title="Click to toggle active status"
+                          ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }
+                          : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.06)', borderColor: 'rgba(148,163,184,0.15)' }}
+                        title="Toggle status"
                       >
-                        {e.isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                        {e.isActive ? <CheckCircle className="w-2.5 h-2.5" /> : <XCircle className="w-2.5 h-2.5" />}
                         {e.isActive ? 'Active' : 'Inactive'}
                       </button>
                     </td>
 
                     {/* Actions */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-0.5">
                         <button
-                          onClick={evt => {
-                            evt.stopPropagation()
-                            handleRowClick(e)
-                          }}
+                          onClick={evt => { evt.stopPropagation(); handleRowClick(e) }}
                           title="View Details"
-                          className="p-1.5 rounded-lg transition-all hover:bg-slate-500/10 hover:text-emerald-500"
+                          className="p-1.5 rounded transition-all hover:bg-slate-500/10"
                           style={{ color: textMuted }}
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
                         </button>
                         {(isAdmin || isManager) && (
                           <button
-                            onClick={evt => {
-                              evt.stopPropagation()
-                              openEdit(e)
-                            }}
+                            onClick={evt => { evt.stopPropagation(); openEdit(e) }}
                             title="Edit"
-                            className="p-1.5 rounded-lg transition-all hover:bg-emerald-500/10 hover:text-emerald-500"
+                            className="p-1.5 rounded transition-all hover:bg-emerald-500/10 hover:text-emerald-500"
                             style={{ color: textMuted }}
                           >
-                            <Pencil className="w-4 h-4" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
                         {isAdmin && (
                           <button
-                            onClick={evt => {
-                              evt.stopPropagation()
-                              setDeleteTarget(e)
-                            }}
+                            onClick={evt => { evt.stopPropagation(); setDeleteTarget(e) }}
                             title="Delete"
-                            className="p-1.5 rounded-lg transition-all hover:bg-red-500/10 hover:text-red-500"
+                            className="p-1.5 rounded transition-all hover:bg-red-500/10 hover:text-red-500"
                             style={{ color: textMuted }}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
