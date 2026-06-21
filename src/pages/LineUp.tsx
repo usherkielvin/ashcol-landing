@@ -406,15 +406,9 @@ export default function LineUp() {
 
   const getVehiclePlate = useCallback((serviceName: string): string => {
 
-    if (!serviceName) return ''
+    return ''
 
-    const clean = serviceName.trim().toUpperCase()
-
-    const found = vehicles.find(v => v.name.trim().toUpperCase() === clean)
-
-    return found ? found.plateNumber : ''
-
-  }, [vehicles])
+  }, [])
 
   const getVehicleCodingStatus = useCallback((serviceName: string, rowTime?: string) => {
 
@@ -666,45 +660,29 @@ export default function LineUp() {
 
     const branchServices = filterSystemKeys(suggestions.services)
 
-    if (isTaguig || branchDrivers.length === 0 || branchInstallers.length === 0) {
-
-      return [
-
-        { id: `local-pre-1-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'STRADA', driverName: 'ANGELO', driverTime: '8:00AM', installerName: 'RANIL', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 0 },
-
-        { id: `local-pre-2-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'JHUMAR', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 1 },
-
-        { id: `local-pre-3-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T3', driverName: 'JOJO', driverTime: '8:00AM', installerName: 'KENNAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 2 },
-
-        { id: `local-pre-4-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'CRIS', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 3 },
-
-        { id: `local-pre-5-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'FB19', driverName: 'ADAM', driverTime: '8:00AM', installerName: 'SONNY', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 4 },
-
-        { id: `local-pre-6-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'RYAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 5 },
-
-        { id: `local-pre-7-${dateStr}`, lineupDate: dateStr, branchId: bId, service: 'T2', driverName: 'DOMINIC', driverTime: '8:00AM', installerName: 'ALLAN', installerTime: '7:00AM', route: '', remarks: '', sortOrder: 6 },
-
-      ]
-
-    }
-
     const resRows: LineUpRow[] = []
 
-    const numRows = Math.max(7, branchDrivers.length)
+    const numRows = 3
 
     for (let i = 0; i < numRows; i++) {
 
-      const service = branchServices[i % branchServices.length] || 
+      const service = (!isTaguig && branchServices.length > 0)
 
-                      (i === 0 ? 'STRADA' : i === 1 || i === 2 ? 'T3' : i === 3 || i === 4 ? 'FB19' : 'T2')
+                      ? branchServices[i % branchServices.length]
 
-      
+                      : (i === 0 ? 'T2' : i === 1 ? 'T3' : 'STRADA');
 
-      const driver = branchDrivers[i % branchDrivers.length] || ''
+      const driver = (!isTaguig && branchDrivers.length > 0)
 
-      const installer = branchInstallers[i % branchInstallers.length] || ''
+                     ? branchDrivers[i % branchDrivers.length]
 
-      
+                     : (i === 0 ? 'ANGELO' : i === 1 ? 'JOJO' : 'ADAM');
+
+      const installer = (!isTaguig && branchInstallers.length > 0)
+
+                        ? branchInstallers[i % branchInstallers.length]
+
+                        : (i === 0 ? 'RANIL' : i === 1 ? 'JHUMAR' : 'KENNAN');
 
       resRows.push({
 
@@ -4120,7 +4098,7 @@ export default function LineUp() {
 
         {([
 
-          { id: 'field',  label: 'Field Schedule',  icon: <Truck className="w-3.5 h-3.5" /> },
+          { id: 'field',  label: 'Daily Schedule',  icon: <Truck className="w-3.5 h-3.5" /> },
 
           { id: 'weekly', label: 'Weekly Schedule', icon: <CalendarDays className="w-3.5 h-3.5" /> },
 
@@ -4368,7 +4346,7 @@ export default function LineUp() {
 
            <Truck className="w-4 h-4" style={{ color: currentTheme.accent }} />
 
-           Field Schedule
+           Daily Schedule
 
          </h2>
 
@@ -7504,7 +7482,7 @@ export default function LineUp() {
 
                 <div className="text-xs font-black uppercase tracking-widest" style={{ color: currentTheme.accent }}>
 
-                  {activeTab === 'weekly' ? 'Weekly Schedule Showcase' : 'Field Schedule Showcase'}
+                  {activeTab === 'weekly' ? 'Weekly Schedule Showcase' : 'Daily Schedule Showcase'}
 
                 </div>
 
