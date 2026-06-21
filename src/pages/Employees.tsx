@@ -985,50 +985,44 @@ export default function Employees() {
         </div>
       </div>
 
-      {/* ── Slide-in Detail Drawer ── */}
+      {/* ── Center Detail Modal ── */}
       {isDrawerOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-40 overflow-hidden">
-          {/* Overlay backdrop */}
-          <div
-            onClick={() => setIsDrawerOpen(false)}
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
-            style={{ animation: 'fadeIn 0.2s ease-out' }}
-          />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          {/* Backdrop click close */}
+          <div className="absolute inset-0" onClick={() => setIsDrawerOpen(false)} />
 
-          {/* Drawer container */}
+          {/* Modal Container */}
           <div
-            className="absolute inset-y-0 right-0 max-w-full flex"
+            className="w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
             style={{
-              animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-              width: '100%',
-              maxWidth: '460px',
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+              animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <div
-              className="h-full flex flex-col shadow-2xl overflow-y-auto"
-              style={{ backgroundColor: cardBg, borderLeft: `1px solid ${border}`, width: '100%' }}
-            >
-              {/* Drawer Header */}
-              <div className="p-6 border-b shrink-0 flex items-center justify-between" style={{ borderColor: border }}>
-                <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Employee Profile</h3>
-                <button
-                  onClick={() => setIsDrawerOpen(false)}
-                  className="p-2 rounded-xl transition-all hover:bg-slate-500/10"
-                  style={{ color: textMuted }}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+            {/* Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
+              <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Employee Profile Details</h3>
+              <button
+                onClick={() => setIsDrawerOpen(false)}
+                className="p-2 rounded-xl transition-all hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              {/* Profile Card Summary */}
-              <div className="p-6 flex flex-col items-center gap-4 text-center border-b" style={{ borderColor: border }}>
-                {/* Profile Pic Zone */}
+            {/* Content Body - Dual Column */}
+            <div className="flex-1 overflow-y-auto flex flex-col md:flex-row">
+              
+              {/* Left Column - Profile summary & status */}
+              <div className="w-full md:w-1/3 p-6 border-b md:border-b-0 md:border-r flex flex-col items-center gap-4 text-center shrink-0" style={{ borderColor: border }}>
                 <div className="relative group w-24 h-24">
                   {selectedEmployee.profileImage ? (
                     <img
                       src={selectedEmployee.profileImage}
                       alt={selectedEmployee.name}
-                      className="w-24 h-24 rounded-full object-cover border-2 border-emerald-500/20"
+                      className="w-24 h-24 rounded-full object-cover border border-slate-500/10"
                     />
                   ) : (
                     <div className="w-24 h-24 rounded-full flex items-center justify-center text-white font-black text-2xl" style={{ backgroundColor: avatarColor(selectedEmployee.name) }}>
@@ -1051,189 +1045,197 @@ export default function Employees() {
                 </div>
 
                 <div>
-                  <h4 className="text-lg font-black" style={{ color: textPrimary }}>{selectedEmployee.name}</h4>
-                  <div className="flex flex-wrap items-center justify-center gap-2 mt-1.5">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider"
-                      style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text }}>
-                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
+                  <h4 className="text-base font-bold" style={{ color: textPrimary }}>{selectedEmployee.name}</h4>
+                  <p className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>ID: {selectedEmployee.id}</p>
+                </div>
+
+                <div className="flex flex-col gap-1.5 w-full mt-2">
+                  <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold"
+                    style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text, border: `1px solid ${roleColor(selectedEmployee.role).border}` }}>
+                    {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
+                  </span>
+                  {selectedEmployee.branchName && (
+                    <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold border"
+                      style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}>
+                      <Building2 className="w-3.5 h-3.5 mr-1" /> {selectedEmployee.branchName}
                     </span>
-                    {selectedEmployee.branchName && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider"
-                        style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' }}>
-                        {selectedEmployee.branchName}
-                      </span>
-                    )}
-                  </div>
+                  )}
+                </div>
+
+                <div className="w-full border-t pt-4 flex flex-col gap-2 mt-2" style={{ borderColor: border }}>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-left" style={{ color: textMuted }}>Status</div>
+                  <button
+                    onClick={() => handleToggleActive(selectedEmployee)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all"
+                    style={selectedEmployee.isActive
+                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.2)' }
+                      : { color: textMuted, backgroundColor: inputBg, borderColor: border }}
+                  >
+                    {selectedEmployee.isActive ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <XCircle className="w-4 h-4" />}
+                    {selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}
+                  </button>
                 </div>
               </div>
 
-              {/* Drawer Tabs Navigation */}
-              <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
-                {(['overview', 'address', 'system'] as const).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveDrawerTab(tab)}
-                    className="flex-1 py-3 text-center border-b-2 transition-all"
-                    style={{
-                      borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
-                      color: activeDrawerTab === tab ? textPrimary : textMuted,
-                    }}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+              {/* Right Column - Categorized detail tables */}
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Tabs */}
+                <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
+                  {(['overview', 'address', 'system'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveDrawerTab(tab)}
+                      className="flex-1 py-3 text-center border-b-2 transition-all"
+                      style={{
+                        borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
+                        color: activeDrawerTab === tab ? textPrimary : textMuted,
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
 
-              {/* Tab Content */}
-              <div className="flex-1 p-6 flex flex-col gap-6">
-                
-                {/* ── Overview Tab ── */}
-                {activeDrawerTab === 'overview' && (
-                  <div className="flex flex-col gap-5">
-                    
-                    <div className="flex flex-col gap-1">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Account Status</div>
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <button
-                          onClick={() => handleToggleActive(selectedEmployee)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all"
-                          style={selectedEmployee.isActive
-                            ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.2)' }
-                            : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
-                        >
-                          {selectedEmployee.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                          {selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}
-                        </button>
-                        <span className="text-xs" style={{ color: textMuted }}>
-                          {selectedEmployee.isActive ? 'Can access and sign in' : 'Access blocked'}
-                        </span>
+                {/* Tab body */}
+                <div className="flex-1 p-6 overflow-y-auto">
+                  
+                  {/* Overview tab */}
+                  {activeDrawerTab === 'overview' && (
+                    <div className="flex flex-col gap-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {[
+                          { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-4 h-4" /> },
+                          { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-4 h-4" /> },
+                          { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-4 h-4" /> },
+                          { label: 'Job Role Level', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
+                        ].map(item => (
+                          <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
+                            <div className="min-w-0">
+                              <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
+                              <div className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{item.value}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t pt-4 flex flex-col gap-2.5" style={{ borderColor: border }}>
+                        <div className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: textMuted }}>
+                          <Tag className="w-3.5 h-3.5" /> Skills & Certifications
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {parseSkills(selectedEmployee.skills).map(skill => (
+                            <span key={skill} className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded border"
+                              style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}>
+                              {skill}
+                              <button onClick={() => handleRemoveSkill(skill)} className="hover:text-red-500 ml-1" style={{ color: textMuted }}>
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                          {parseSkills(selectedEmployee.skills).length === 0 && (
+                            <span className="text-xs italic py-1" style={{ color: textMuted }}>No skills tags listed. Add one below.</span>
+                          )}
+                        </div>
+
+                        <form onSubmit={handleAddSkill} className="flex gap-2 mt-1.5 max-w-sm">
+                          <input
+                            type="text"
+                            placeholder="e.g. AC_INSTALLER"
+                            value={newSkillInput}
+                            onChange={e => setNewSkillInput(e.target.value)}
+                            className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                          />
+                          <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-black text-white" style={{ backgroundColor: '#10B981' }}>
+                            Add Tag
+                          </button>
+                        </form>
                       </div>
                     </div>
+                  )}
 
-                    <hr style={{ borderColor: border }} />
-
-                    <div className="flex flex-col gap-3">
+                  {/* Address tab */}
+                  {activeDrawerTab === 'address' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {[
-                        { label: 'Work Email', value: selectedEmployee.email, icon: <Mail className="w-4 h-4 text-emerald-500" /> },
-                        { label: 'Personal Email', value: selectedEmployee.personalEmail || 'Not Provided', icon: <Mail className="w-4 h-4 text-blue-500" /> },
-                        { label: 'Phone Contact', value: selectedEmployee.phone || 'Not Provided', icon: <Phone className="w-4 h-4 text-purple-500" /> },
-                        { label: 'Job Role Level', value: selectedEmployee.role, icon: <ShieldCheck className="w-4 h-4 text-indigo-500" /> },
+                        { label: 'Region', value: selectedEmployee.region, icon: <Globe className="w-4 h-4" /> },
+                        { label: 'City', value: selectedEmployee.city, icon: <Map className="w-4 h-4" /> },
+                        { label: 'Barangay', value: selectedEmployee.barangay, icon: <Home className="w-4 h-4" /> },
+                        { label: 'Street', value: selectedEmployee.street, icon: <Mailbox className="w-4 h-4" /> },
                       ].map(item => (
-                        <div key={item.label} className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: inputBg }}>{item.icon}</div>
+                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
+                          <div className="min-w-0">
+                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
+                            <div className="text-sm font-semibold truncate" style={{ color: item.value ? textPrimary : textMuted }}>
+                              {item.value || 'Not Configured'}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="col-span-1 sm:col-span-2 p-3 rounded-xl border flex items-start gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}><MapPin className="w-4 h-4" /></div>
+                        <div className="min-w-0">
+                          <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Landmark Description</div>
+                          <div className="text-sm font-semibold mt-0.5" style={{ color: selectedEmployee.landmark ? textPrimary : textMuted }}>
+                            {selectedEmployee.landmark || 'No landmark description added'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* System tab */}
+                  {activeDrawerTab === 'system' && (
+                    <div className="flex flex-col gap-4">
+                      {[
+                        { label: 'Employee ID', value: selectedEmployee.id, icon: <User className="w-4 h-4" /> },
+                        { label: 'Hire Date / Registration', value: selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Unknown', icon: <Calendar className="w-4 h-4" /> },
+                        { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString() : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
+                      ].map(item => (
+                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
                           <div>
-                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
-                            <div className="text-sm font-bold truncate max-w-[280px]" style={{ color: textPrimary }}>{item.value}</div>
+                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
+                            <div className="text-sm font-semibold" style={{ color: textPrimary }}>{item.value}</div>
                           </div>
                         </div>
                       ))}
                     </div>
+                  )}
 
-                    <hr style={{ borderColor: border }} />
-
-                    {/* Live skills editor in drawer */}
-                    <div className="flex flex-col gap-2">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                        <Tag className="w-3.5 h-3.5" /> Skills & Certifications
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {parseSkills(selectedEmployee.skills).map(skill => (
-                          <span key={skill} className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            {skill}
-                            <button onClick={() => handleRemoveSkill(skill)} className="hover:text-red-500 text-emerald-500/60 ml-0.5">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                        {parseSkills(selectedEmployee.skills).length === 0 && (
-                          <span className="text-xs italic py-1" style={{ color: textMuted }}>No skills tags listed. Add one below.</span>
-                        )}
-                      </div>
-
-                      <form onSubmit={handleAddSkill} className="flex gap-2 mt-2">
-                        <input
-                          type="text"
-                          placeholder="e.g. AC_INSTALLER"
-                          value={newSkillInput}
-                          onChange={e => setNewSkillInput(e.target.value)}
-                          className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                        />
-                        <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-black text-white" style={{ backgroundColor: '#10B981' }}>
-                          Add
-                        </button>
-                      </form>
-                    </div>
-
-                  </div>
-                )}
-
-                {/* ── Address Tab ── */}
-                {activeDrawerTab === 'address' && (
-                  <div className="flex flex-col gap-4">
-                    {[
-                      { label: 'Region', value: selectedEmployee.region, icon: <Globe className="w-4 h-4 text-emerald-500" /> },
-                      { label: 'City', value: selectedEmployee.city, icon: <Map className="w-4 h-4 text-blue-500" /> },
-                      { label: 'Barangay', value: selectedEmployee.barangay, icon: <Home className="w-4 h-4 text-indigo-500" /> },
-                      { label: 'Street', value: selectedEmployee.street, icon: <Mailbox className="w-4 h-4 text-purple-500" /> },
-                      { label: 'Landmark', value: selectedEmployee.landmark, icon: <MapPin className="w-4 h-4 text-amber-500" /> },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-start gap-3 p-3 rounded-xl border" style={{ borderColor: border, backgroundColor: inputBg }}>
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg }}>{item.icon}</div>
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
-                          <div className="text-sm font-bold mt-0.5" style={{ color: selectedEmployee.region ? textPrimary : textMuted }}>
-                            {item.value || 'Not Configured'}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ── System Tab ── */}
-                {activeDrawerTab === 'system' && (
-                  <div className="flex flex-col gap-4">
-                    {[
-                      { label: 'Employee ID', value: selectedEmployee.id, icon: <User className="w-4 h-4" /> },
-                      { label: 'Hire Date', value: selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Unknown', icon: <Calendar className="w-4 h-4" /> },
-                      { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString() : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: inputBg }}>{item.icon}</div>
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
-                          <div className="text-sm font-bold" style={{ color: textPrimary }}>{item.value}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
+                </div>
               </div>
 
-              {/* Drawer Footer Actions */}
-              {(isAdmin || isManager) && (
-                <div className="p-6 border-t flex gap-3 shrink-0" style={{ borderColor: border }}>
-                  <button
-                    onClick={() => openEdit(selectedEmployee)}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center justify-center gap-2 hover:opacity-85"
-                    style={{ borderColor: border, color: textPrimary }}
-                  >
-                    <Pencil className="w-4 h-4" /> Edit Account
-                  </button>
-                  {isAdmin && (
-                    <button
-                      onClick={() => setDeleteTarget(selectedEmployee)}
-                      className="flex-1 py-2.5 rounded-xl text-sm font-black text-white bg-red-500 hover:bg-red-600 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4 text-white" /> Delete
-                    </button>
-                  )}
-                </div>
-              )}
+            </div>
 
+            {/* Footer */}
+            <div className="px-6 py-4 border-t flex items-center justify-end gap-3 shrink-0" style={{ borderColor: border }}>
+              <button
+                onClick={() => setIsDrawerOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10"
+                style={{ borderColor: border, color: textMuted }}
+              >
+                Close
+              </button>
+              {(isAdmin || isManager) && (
+                <button
+                  onClick={() => openEdit(selectedEmployee)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-85"
+                  style={{ borderColor: border, color: textPrimary }}
+                >
+                  Edit Profile
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => setDeleteTarget(selectedEmployee)}
+                  className="px-4 py-2 rounded-xl text-xs font-black text-white bg-red-500 hover:bg-red-600 transition-all"
+                >
+                  Delete Account
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1604,6 +1606,10 @@ export default function Employees() {
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
+        }
+        @keyframes modalFadeIn {
+          from { opacity: 0; transform: scale(0.96); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
 
