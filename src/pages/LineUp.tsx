@@ -4308,19 +4308,31 @@ export default function LineUp() {
 
           <button
 
-            type="button"
+                type="button"
 
-            onClick={() => setShowcaseOpen(false)}
+                onClick={() => setShowcaseOpen(!showcaseOpen)}
 
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black text-white transition-all bg-red-600 hover:bg-red-700 shadow-sm shrink-0 cursor-pointer"
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-sm"
 
-          >
+                style={{
 
-            <X className="w-3.5 h-3.5" />
+                  backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
 
-            Exit Showcase
+                  border: showcaseOpen ? `2px solid #16a34a` : '2px solid #16a34a',
 
-          </button>
+                  color: showcaseOpen ? '#16a34a' : '#ffffff',
+
+                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
+
+                }}
+
+              >
+
+                <Maximize2 className="w-3.5 h-3.5" />
+
+                {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
+
+              </button>
 
         </div>,
 
@@ -4384,15 +4396,17 @@ export default function LineUp() {
 
                onClick={() => setShowcaseOpen(!showcaseOpen)}
 
-               className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 shrink-0"
+               className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
 
                style={{
 
-                 backgroundColor: showcaseOpen ? currentTheme.accent : 'transparent',
+                 backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
 
-                 borderColor: showcaseOpen ? currentTheme.accentDark : border,
+                 border: '2px solid #16a34a',
 
-                 color: showcaseOpen ? '#FFFFFF' : textPrimary,
+                 color: showcaseOpen ? '#16a34a' : '#ffffff',
+
+                 boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
 
                }}
 
@@ -4400,7 +4414,7 @@ export default function LineUp() {
 
                <Maximize2 className="w-3.5 h-3.5" />
 
-               {showcaseOpen ? 'Edit Mode' : 'Showcase'}
+               {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
 
              </button>
 
@@ -5085,59 +5099,35 @@ export default function LineUp() {
 
             </div>
 
-            {/* View Switcher */}
+            {/* Showcase Button */}
 
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+            <button
 
-              <button
+              type="button"
 
-                type="button"
+              onClick={() => setShowcaseOpen(!showcaseOpen)}
 
-                onClick={() => setShowcaseOpen(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-bold transition-all"
 
-                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all"
+              style={{
 
-                style={{
+                backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
 
-                  backgroundColor: !showcaseOpen ? cardBg : 'transparent',
+                border: '2px solid #16a34a',
 
-                  color: !showcaseOpen ? currentTheme.accent : textMuted,
+                color: showcaseOpen ? '#16a34a' : '#ffffff',
 
-                  boxShadow: !showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
 
-                }}
+              }}
 
-              >
+            >
 
-                Edit
+              <Maximize2 className="w-3.5 h-3.5" />
 
-              </button>
+              {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
 
-              <button
-
-                type="button"
-
-                onClick={() => setShowcaseOpen(true)}
-
-                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all"
-
-                style={{
-
-                  backgroundColor: showcaseOpen ? cardBg : 'transparent',
-
-                  color: showcaseOpen ? currentTheme.accent : textMuted,
-
-                  boxShadow: showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-
-                }}
-
-              >
-
-                Showcase
-
-              </button>
-
-            </div>
+            </button>
 
             {/* Edit View Exclusive Actions */}
 
@@ -6900,59 +6890,35 @@ export default function LineUp() {
 
           <div className="flex flex-wrap items-center gap-2">
 
-            {/* View Switcher (Edit / Showcase) */}
+            {/* Showcase Button */}
 
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F172A', border: `1px solid ${border}` }}>
+            <button
 
-              <button
+              type="button"
 
-                type="button"
+              onClick={() => setShowcaseOpen(!showcaseOpen)}
 
-                onClick={() => setShowcaseOpen(false)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
 
-                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all cursor-pointer"
+              style={{
 
-                style={{
+                backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
 
-                  backgroundColor: !showcaseOpen ? cardBg : 'transparent',
+                border: '2px solid #16a34a',
 
-                  color: !showcaseOpen ? currentTheme.accent : textMuted,
+                color: showcaseOpen ? '#16a34a' : '#ffffff',
 
-                  boxShadow: !showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                boxShadow: showcaseOpen ? 'none' : '0 2px 10px rgba(22,163,74,0.4)',
 
-                }}
+              }}
 
-              >
+            >
 
-                Edit
+              <Maximize2 className="w-3.5 h-3.5" />
 
-              </button>
+              {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
 
-              <button
-
-                type="button"
-
-                onClick={() => setShowcaseOpen(true)}
-
-                className="px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold transition-all cursor-pointer"
-
-                style={{
-
-                  backgroundColor: showcaseOpen ? cardBg : 'transparent',
-
-                  color: showcaseOpen ? currentTheme.accent : textMuted,
-
-                  boxShadow: showcaseOpen ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-
-                }}
-
-              >
-
-                Showcase
-
-              </button>
-
-            </div>
+            </button>
 
             {/* Kind Toggle */}
 
