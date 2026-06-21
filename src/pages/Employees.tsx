@@ -74,6 +74,11 @@ const parseSkills = (skillsStr?: string): string[] => {
   return []
 }
 
+const getRoleLevel = (skillsStr?: string): string => {
+  const list = parseSkills(skillsStr)
+  return list[0] || '—'
+}
+
 // ── Input helper ────────────────────────────────────────────────────────────
 interface FieldProps {
   label: string
@@ -121,7 +126,6 @@ export default function Employees() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'address' | 'system'>('overview')
   const [imageUploading, setImageUploading] = useState(false)
-  const [newSkillInput, setNewSkillInput] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // UI Filters
@@ -337,75 +341,7 @@ export default function Employees() {
     reader.readAsDataURL(file)
   }
 
-  const handleAddSkill = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedEmployee) return
-    const clean = newSkillInput.trim().toUpperCase()
-    if (!clean) return
 
-    const currentSkills = parseSkills(selectedEmployee.skills)
-    if (currentSkills.includes(clean)) {
-      setNewSkillInput('')
-      return
-    }
-
-    const updatedSkills = [...currentSkills, clean]
-    const skillsJson = JSON.stringify(updatedSkills)
-
-    try {
-      const url = isAdmin
-        ? `${API_BASE_URL}/admin/users/${selectedEmployee.id}`
-        : `${API_BASE_URL}/manager/employees/${selectedEmployee.id}`
-
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token()}`
-        },
-        body: JSON.stringify({ skills: skillsJson })
-      })
-
-      if (res.ok) {
-        const updatedEmp = { ...selectedEmployee, skills: skillsJson }
-        setSelectedEmployee(updatedEmp)
-        setEmployees(prev => prev.map(emp => emp.id === selectedEmployee.id ? updatedEmp : emp))
-        setNewSkillInput('')
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const handleRemoveSkill = async (skillToRemove: string) => {
-    if (!selectedEmployee) return
-    const currentSkills = parseSkills(selectedEmployee.skills)
-    const updatedSkills = currentSkills.filter(s => s !== skillToRemove)
-    const skillsJson = JSON.stringify(updatedSkills)
-
-    try {
-      const url = isAdmin
-        ? `${API_BASE_URL}/admin/users/${selectedEmployee.id}`
-        : `${API_BASE_URL}/manager/employees/${selectedEmployee.id}`
-
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token()}`
-        },
-        body: JSON.stringify({ skills: skillsJson })
-      })
-
-      if (res.ok) {
-        const updatedEmp = { ...selectedEmployee, skills: skillsJson }
-        setSelectedEmployee(updatedEmp)
-        setEmployees(prev => prev.map(emp => emp.id === selectedEmployee.id ? updatedEmp : emp))
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
 
   // ── Drawer toggle ───────────────────────────────────────────────────────────
   const handleRowClick = (emp: Employee) => {
@@ -428,7 +364,7 @@ export default function Employees() {
       barangay: emp.barangay || '',
       street: emp.street || '',
       landmark: emp.landmark || '',
-      skills: parseSkills(emp.skills).join(', '),
+      skills: emp.skills ? (emp.skills.startsWith('[') ? parseSkills(emp.skills)[0] || '' : emp.skills) : '',
       profileImage: emp.profileImage || '',
     })
     setFormErr('')
@@ -776,7 +712,7 @@ export default function Employees() {
             <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="Search name, email, skills, branch…"
+              placeholder="Search name, email, level, branch…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-transparent text-sm outline-none w-full"
@@ -813,7 +749,7 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `2px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact Details', 'Skills / Tags', 'Status', 'Actions'].map(h => (
+                {['Employee', 'Role / Title', 'Branch', 'Contact Details', 'Role Level', 'Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
                 ))}
               </tr>
@@ -839,7 +775,6 @@ export default function Employees() {
                 </tr>
               ) : filtered.map(e => {
                 const rc = roleColor(e.role)
-                const employeeSkills = parseSkills(e.skills)
                 return (
                   <tr
                     key={e.id}
@@ -903,24 +838,15 @@ export default function Employees() {
                       </div>
                     </td>
 
-                    {/* Skills */}
+                    {/* Role Level */}
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1 max-w-[200px]">
-                        {employeeSkills.length === 0 ? (
-                          <span className="text-[10px] italic text-slate-400">None</span>
-                        ) : (
-                          employeeSkills.slice(0, 3).map(s => (
-                            <span key={s} className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/10">
-                              {s}
-                            </span>
-                          ))
-                        )}
-                        {employeeSkills.length > 3 && (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">
-                            +{employeeSkills.length - 3}
-                          </span>
-                        )}
-                      </div>
+                      {e.skills && getRoleLevel(e.skills) !== '—' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider text-blue-500 bg-blue-500/10 border border-blue-500/20 whitespace-nowrap">
+                          {getRoleLevel(e.skills)}
+                        </span>
+                      ) : (
+                        <span className="text-xs italic" style={{ color: textMuted }}>Not Set</span>
+                      )}
                     </td>
 
                     {/* Status */}
@@ -993,13 +919,13 @@ export default function Employees() {
 
       {/* ── Center Detail Modal ── */}
       {isDrawerOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
           {/* Backdrop click close */}
           <div className="absolute inset-0" onClick={() => setIsDrawerOpen(false)} />
 
           {/* Modal Container */}
           <div
-            className="w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
+            className="w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${border}`,
@@ -1097,7 +1023,7 @@ export default function Employees() {
                         color: activeDrawerTab === tab ? textPrimary : textMuted,
                       }}
                     >
-                      {tab}
+                      {tab.toUpperCase()}
                     </button>
                   ))}
                 </div>
@@ -1113,7 +1039,9 @@ export default function Employees() {
                           { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-4 h-4" /> },
                           { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-4 h-4" /> },
                           { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-4 h-4" /> },
-                          { label: 'Job Role Level', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
+                          { label: 'System Role', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
+                          { label: 'Job Title', value: selectedEmployee.jobTitle || '—', icon: <Wrench className="w-4 h-4" /> },
+                          { label: 'Role Level', value: getRoleLevel(selectedEmployee.skills), icon: <Tag className="w-4 h-4" /> },
                         ].map(item => (
                           <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
@@ -1123,40 +1051,6 @@ export default function Employees() {
                             </div>
                           </div>
                         ))}
-                      </div>
-
-                      <div className="border-t pt-4 flex flex-col gap-2.5" style={{ borderColor: border }}>
-                        <div className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: textMuted }}>
-                          <Tag className="w-3.5 h-3.5" /> Skills & Certifications
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {parseSkills(selectedEmployee.skills).map(skill => (
-                            <span key={skill} className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded border"
-                              style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}>
-                              {skill}
-                              <button onClick={() => handleRemoveSkill(skill)} className="hover:text-red-500 ml-1" style={{ color: textMuted }}>
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
-                          {parseSkills(selectedEmployee.skills).length === 0 && (
-                            <span className="text-xs italic py-1" style={{ color: textMuted }}>No skills tags listed. Add one below.</span>
-                          )}
-                        </div>
-
-                        <form onSubmit={handleAddSkill} className="flex gap-2 mt-1.5 max-w-sm">
-                          <input
-                            type="text"
-                            placeholder="e.g. AC_INSTALLER"
-                            value={newSkillInput}
-                            onChange={e => setNewSkillInput(e.target.value)}
-                            className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                            style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                          />
-                          <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-black text-white" style={{ backgroundColor: '#10B981' }}>
-                            Add Tag
-                          </button>
-                        </form>
                       </div>
                     </div>
                   )}
@@ -1250,7 +1144,7 @@ export default function Employees() {
       {/* ── Edit Modal ── */}
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div className="w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: border }}>
               <div className="flex items-center gap-3">
@@ -1418,17 +1312,24 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* ── Section: Skills & Status ── */}
+                {/* ── Section: Role Level ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills & Certifications</h4>
-                  <Field label="Skills (Comma Separated)" labelColor={textMuted}>
-                    <input
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role Level</h4>
+                  <Field label="Employee Role Level" labelColor={textMuted}>
+                    <select
                       className={inputCls}
                       style={inputStyle}
-                      value={editForm.skills}
+                      value={editForm.skills ? (editForm.skills.startsWith('[') ? parseSkills(editForm.skills)[0] || '' : editForm.skills) : ''}
                       onChange={e => setEditForm(p => ({ ...p, skills: e.target.value }))}
-                      placeholder="e.g. AC_INSTALLER, GENERAL, HELPER"
-                    />
+                    >
+                      <option value="">— Select Level —</option>
+                      <option value="JUNIOR LEVEL">JUNIOR LEVEL</option>
+                      <option value="MID LEVEL">MID LEVEL</option>
+                      <option value="SENIOR LEVEL">SENIOR LEVEL</option>
+                      <option value="LEAD LEVEL">LEAD LEVEL</option>
+                      <option value="SUPERVISOR LEVEL">SUPERVISOR LEVEL</option>
+                      <option value="EXECUTIVE LEVEL">EXECUTIVE LEVEL</option>
+                    </select>
                   </Field>
                 </div>
 
@@ -1490,7 +1391,7 @@ export default function Employees() {
       {/* ── Create Modal ── */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-         <div className="w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+         <div className="w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
               <h3 className="font-black text-base" style={{ color: textPrimary }}>Add New Account</h3>
               <button onClick={() => setShowCreate(false)} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
@@ -1647,11 +1548,24 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* ── Skills ── */}
+                {/* ── Role Level ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Skills & Certifications</h4>
-                  <Field label="Skills (comma separated)" labelColor={textMuted}>
-                    <input className={inputCls} style={inputStyle} value={createForm.skills} onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))} placeholder="e.g. GENERAL, AC_INSTALLER" />
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role Level</h4>
+                  <Field label="Employee Role Level" labelColor={textMuted}>
+                    <select
+                      className={inputCls}
+                      style={inputStyle}
+                      value={createForm.skills}
+                      onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))}
+                    >
+                      <option value="">— Select Level —</option>
+                      <option value="JUNIOR LEVEL">JUNIOR LEVEL</option>
+                      <option value="MID LEVEL">MID LEVEL</option>
+                      <option value="SENIOR LEVEL">SENIOR LEVEL</option>
+                      <option value="LEAD LEVEL">LEAD LEVEL</option>
+                      <option value="SUPERVISOR LEVEL">SUPERVISOR LEVEL</option>
+                      <option value="EXECUTIVE LEVEL">EXECUTIVE LEVEL</option>
+                    </select>
                   </Field>
                 </div>
 
