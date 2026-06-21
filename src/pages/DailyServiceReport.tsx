@@ -46,6 +46,8 @@ interface ServiceRow {
   fifteenQuestions: string | null
   freeInstallation: boolean | null
   complainRequest: string | null
+  scheduledDate?: string | null
+  installedDate?: string | null
   createdAt?: string | null
   updatedAt?: string | null
   inputBy?: string | null
@@ -129,6 +131,8 @@ const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> =
   relayStatus: '',
   fifteenQuestions: '',
   freeInstallation: false,
+  scheduledDate: null,
+  installedDate: null,
 })
 
 const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNode => {
@@ -222,41 +226,46 @@ export default function DailyServiceReport() {
   const handleSaveDetailRow = async (updatedRow: ServiceRow) => {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const isNew = updatedRow.id.startsWith('temp-')
       const payload = {
         ...updatedRow,
+        id: isNew ? undefined : updatedRow.id,
         branchId: updatedRow.branchId ? updatedRow.branchId.replace(/-sales$|-services$/, '') : null
       }
-      const url = `${API_BASE_URL}/v1/service-reports/${updatedRow.id}`
+      const url = isNew
+        ? `${API_BASE_URL}/v1/service-reports`
+        : `${API_BASE_URL}/v1/service-reports/${updatedRow.id}`
+      const method = isNew ? 'POST' : 'PUT'
+
       const res = await fetch(url, {
-        method: 'PUT',
+        method,
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const updated = await res.json()
-      setRows(prev => prev.map(r => r.id === updatedRow.id ? { ...r, ...updated } : r))
+      const saved = await res.json()
+      if (isNew) {
+        setRows(prev => [saved, ...prev])
+      } else {
+        setRows(prev => prev.map(r => r.id === updatedRow.id ? { ...r, ...saved } : r))
+      }
       setDetailRow(null)
     } catch (e: any) {
       alert(`Could not save details: ${e?.message || 'Unknown error'}`)
     }
   }
 
-  const handleAddRowInline = () => {
+  const handleAddRow = () => {
     if (!canEdit) return
-    const tempId = `temp-${Date.now()}`
     let realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
     if (realBranchId === 'ALL_BRANCHES') {
       const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
       realBranchId = actualBranch ? actualBranch.id : null
     }
+    const tempId = `temp-${Date.now()}`
     const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
     newRow.id = tempId
-
-    setRows(prev => [newRow, ...prev])
-
-    setTimeout(() => {
-      startEdit(newRow, "CUSTOMER'S NAME")
-    }, 50)
+    setDetailRow(newRow)
   }
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
@@ -481,10 +490,6 @@ export default function DailyServiceReport() {
       { label: 'UPDATE', display: isServices ? "SERVICE STATUS" : "UPDATE REMARKS", defaultW: 180, expW: 360, sticky: false, freeze: false, right: false },
       { label: 'INSTALLATION CHARGES', display: "CHARGES (₱)", defaultW: 120, expW: 180, sticky: false, freeze: false, right: true },
       { label: 'MODE OF PAYMENT', display: "PAYMENT MODE", defaultW: 130, expW: 180, sticky: false, freeze: false, right: false },
-      { label: 'SUBMITTED BY', display: "CREATED BY", defaultW: 140, expW: 220, sticky: false, freeze: false, right: false },
-      { label: 'DATE SUBMITTED', display: "CREATED AT", defaultW: 155, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'UPDATED BY', display: "UPDATED BY", defaultW: 140, expW: 220, sticky: false, freeze: false, right: false },
-      { label: 'DATE UPDATED', display: "UPDATED AT", defaultW: 155, expW: 200, sticky: false, freeze: false, right: false },
     ]
 
     let accumulatedLeft = 0
@@ -1451,10 +1456,10 @@ export default function DailyServiceReport() {
             {canEdit && (
               <>
                 <button type="button"
-                  onClick={handleAddRowInline}
+                  onClick={handleAddRow}
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all"
                   style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Plus className="w-3.5 h-3.5" /> Add Row
+                  <Plus className="w-3.5 h-3.5" /> Add
                 </button>
                 <button type="button"
                   onClick={() => setScanModalOpen(true)}
@@ -1584,7 +1589,7 @@ export default function DailyServiceReport() {
                           <button type="button" onClick={() => setSearchQuery('')}
                             className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
                         ) : canEdit && (
-                          <button onClick={handleAddRowInline}
+                          <button onClick={handleAddRow}
                             className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
                         )}
                       </div>
@@ -2172,7 +2177,7 @@ export default function DailyServiceReport() {
             onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
               <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
-                {canEdit ? 'Edit Service Record Details' : 'Service Record Details'}
+                {detailForm.id.startsWith('temp-') ? 'Add Service Record Details' : (canEdit ? 'Edit Service Record Details' : 'Service Record Details')}
               </h3>
               <button onClick={() => setDetailRow(null)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
@@ -2370,6 +2375,26 @@ export default function DailyServiceReport() {
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.relayStatus || '—'}</span>
                     )}
                   </Field>
+                  <Field label="Scheduled Date">
+                    {canEdit ? (
+                      <input type="date" value={detailForm.scheduledDate || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, scheduledDate: e.target.value || null })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduledDate || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Installed Date">
+                    {canEdit ? (
+                      <input type="date" value={detailForm.installedDate || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, installedDate: e.target.value || null })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.installedDate || '—'}</span>
+                    )}
+                  </Field>
                   <Field label="15 Questions (15 Qs)" full>
                     {canEdit ? (
                       <input type="text" value={detailForm.fifteenQuestions || ''} 
@@ -2456,24 +2481,24 @@ export default function DailyServiceReport() {
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {detailForm.inputBy && (
-                      <Field label="Who Input / Submitted">
+                      <Field label="Created By">
                         <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.inputBy}</span>
                       </Field>
                     )}
                     {detailForm.createdAt && (
-                      <Field label="Date Submitted">
+                      <Field label="Created At">
                         <span className="text-xs font-semibold" style={{ color: textPrimary }}>
                           {formatDateTime(detailForm.createdAt)}
                         </span>
                       </Field>
                     )}
                     {detailForm.updatedBy && (
-                      <Field label="Who Last Updated">
+                      <Field label="Updated By">
                         <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.updatedBy}</span>
                       </Field>
                     )}
                     {detailForm.updatedAt && (
-                      <Field label="Date Last Updated">
+                      <Field label="Updated At">
                         <span className="text-xs font-semibold" style={{ color: textPrimary }}>
                           {formatDateTime(detailForm.updatedAt)}
                         </span>
