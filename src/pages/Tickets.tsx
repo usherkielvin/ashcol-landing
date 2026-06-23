@@ -3569,11 +3569,11 @@ export default function Tickets() {
 
       {addModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-             onClick={e => e.stopPropagation()}
-             onMouseDown={e => e.preventDefault()}>
+             onClick={e => e.stopPropagation()}>
           <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-               onClick={e => e.stopPropagation()}>
+               onClick={e => e.stopPropagation()}
+               onMouseDown={e => e.stopPropagation()}>
             <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
               <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
                 Add Ticket Details
@@ -3760,11 +3760,11 @@ export default function Tickets() {
 
         return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-             onClick={e => e.stopPropagation()}
-             onMouseDown={e => e.preventDefault()}>
+             onClick={e => e.stopPropagation()}>
           <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-               onClick={e => e.stopPropagation()}>
+               onClick={e => e.stopPropagation()}
+               onMouseDown={e => e.stopPropagation()}>
             <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
               <div>
                 <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
