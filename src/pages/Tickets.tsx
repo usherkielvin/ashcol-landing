@@ -260,7 +260,7 @@ function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
   )
 }
 
-function buildImportCreateRow(item: ImportUnmatchedRow): Record<string, unknown> {
+function buildImportCreateRow(item: ImportUnmatchedRow, importTargetDate?: string): Record<string, unknown> {
   const location = (item.location
     ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location)
     : '').trim() || 'No Address Provided'
@@ -273,8 +273,10 @@ function buildImportCreateRow(item: ImportUnmatchedRow): Record<string, unknown>
     unitType: item.brand || 'Split AC',
     location,
     sourceVendor: item.dlr || 'Direct',
-    status: 'PENDING',
+    status: importTargetDate ? 'SCHEDULED' : 'PENDING',
   }
+
+  if (importTargetDate) row.preferredDate = importTargetDate
 
   if (item.phone?.trim()) row.contactPhone = item.phone.trim()
   if (item.district?.trim()) row.district = item.district.trim()
@@ -293,6 +295,8 @@ function buildPatchImportBody(
   ticket: Ticket,
   updatedFields: Partial<Ticket>,
   importTargetDate?: string,
+  assignToUserId?: string,
+  branchId?: string,
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {}
 
@@ -314,7 +318,12 @@ function buildPatchImportBody(
   if (updatedFields.installationCharges != null) body.installationCharges = updatedFields.installationCharges
   if (updatedFields.modeOfPayment) body.modeOfPayment = updatedFields.modeOfPayment
   if (updatedFields.status) body.status = updatedFields.status
-  if (importTargetDate) body.preferredDate = importTargetDate
+  if (importTargetDate) {
+    body.preferredDate = importTargetDate
+    if (!body.status) body.status = 'SCHEDULED'
+  }
+  if (assignToUserId) body.assignedTo = assignToUserId
+  if (branchId) body.branchId = branchId
 
   let acBase: Ticket = ticket
   if (updatedFields.location) {
@@ -962,13 +971,19 @@ export default function Tickets() {
   }
 
   const resolveImportBranchId = useCallback((ticketBranchId?: string) => {
-    return resolveScopedBranchId(
-      ticketBranchId || globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id')
-    )
-  }, [globalBranchId, user?.branchId])
+    const branchEmployee = isEmployee && !isAdmin && !isManager
+    const branchSource = branchEmployee
+      ? (user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
+      : (globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
+    return resolveScopedBranchId(ticketBranchId || branchSource)
+  }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
 
   const handleApplyImport = async () => {
     if (!importResults) return
+    if (!importTargetDate?.trim()) {
+      alert('Select an import date first — tickets will be saved as SCHEDULED for that date.')
+      return
+    }
     setSaving(true)
     let successCount = 0
     let completeCount = 0
@@ -982,10 +997,14 @@ export default function Tickets() {
     })()
 
     const targetBranch = resolveImportBranchId()
+    const importerUserId = user?.id
+    const scheduleDate = importTargetDate?.trim() || ''
+    const isScheduleImport = scheduleDate.length > 0
+
     const normalUpdates = importResults.updates.filter(item => item.updatedFields.status !== 'COMPLETED')
     const completedUpdates = importResults.updates.filter(item => item.updatedFields.status === 'COMPLETED')
 
-    if (!targetBranch && (importResults.unmatched.length > 0 || completedUpdates.length > 0)) {
+    if (!targetBranch && (importResults.unmatched.length > 0 || (completedUpdates.length > 0 && !isScheduleImport))) {
       setSaving(false)
       alert('Select a branch before importing — use the branch selector in the sidebar.')
       return
@@ -993,9 +1012,19 @@ export default function Tickets() {
 
     const importErrors: string[] = []
 
-    for (const item of normalUpdates) {
+    const scheduleUpdates = isScheduleImport
+      ? [
+          ...normalUpdates,
+          ...completedUpdates.map(item => ({
+            ...item,
+            updatedFields: { ...item.updatedFields, status: 'SCHEDULED' as Ticket['status'] },
+          })),
+        ]
+      : normalUpdates
+
+    for (const item of scheduleUpdates) {
       const { ticket, updatedFields } = item
-      const body = buildPatchImportBody(ticket, updatedFields, importTargetDate || undefined)
+      const body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId, targetBranch || undefined)
       if (Object.keys(body).length === 0) continue
 
       try {
@@ -1016,7 +1045,42 @@ export default function Tickets() {
       }
     }
 
-    for (const item of completedUpdates) {
+    if (isScheduleImport) {
+      for (const item of importResults.needsConfirmation) {
+        const { ticket, value, amount, modeOfPayment, controlNumber } = item
+        const body = buildPatchImportBody(
+          ticket,
+          {
+            remarksUpdate: value,
+            installationCharges: parseFloat(amount) || undefined,
+            modeOfPayment: modeOfPayment,
+            controlNumber: controlNumber,
+            status: 'SCHEDULED',
+          },
+          scheduleDate,
+          importerUserId,
+          targetBranch || undefined,
+        )
+        if (Object.keys(body).length === 0) continue
+        try {
+          const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
+            body: JSON.stringify(body),
+          })
+          if (res.ok) successCount++
+          else {
+            failCount++
+            importErrors.push(await readApiError(res))
+          }
+        } catch (err: any) {
+          failCount++
+          importErrors.push(err?.message || 'Confirmation update failed')
+        }
+      }
+    }
+
+    if (!isScheduleImport) for (const item of completedUpdates) {
       const { ticket, updatedFields } = item
       const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
       const charges = updatedFields.installationCharges ?? ticket.installationCharges ?? ticket.amountCharged ?? 0
@@ -1071,7 +1135,7 @@ export default function Tickets() {
       }
     }
 
-    for (const item of importResults.needsConfirmation) {
+    if (!isScheduleImport) for (const item of importResults.needsConfirmation) {
       const { ticket, value, amount, modeOfPayment, controlNumber } = item
       const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
 
@@ -1121,9 +1185,13 @@ export default function Tickets() {
       }
     }
 
-    // Save unmatched rows as new tickets (or complete them directly if marked completed/installed)
-    const unmatchedToCreate = importResults.unmatched.filter(item => !isUnmatchedImportComplete(item))
-    const unmatchedToComplete = importResults.unmatched.filter(item => isUnmatchedImportComplete(item))
+    // Save unmatched rows as new tickets (schedule import keeps everything on tickets table)
+    const unmatchedToCreate = isScheduleImport
+      ? importResults.unmatched
+      : importResults.unmatched.filter(item => !isUnmatchedImportComplete(item))
+    const unmatchedToComplete = isScheduleImport
+      ? []
+      : importResults.unmatched.filter(item => isUnmatchedImportComplete(item))
 
     if (unmatchedToCreate.length > 0) {
       try {
@@ -1135,8 +1203,8 @@ export default function Tickets() {
           },
           body: JSON.stringify({
             branchId: targetBranch,
-            preferredDate: importTargetDate || undefined,
-            rows: unmatchedToCreate.map(buildImportCreateRow),
+            preferredDate: scheduleDate || undefined,
+            rows: unmatchedToCreate.map(item => buildImportCreateRow(item, scheduleDate || undefined)),
           }),
         })
         if (res.ok) {
