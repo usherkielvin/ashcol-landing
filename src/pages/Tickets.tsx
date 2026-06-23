@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
-  Eye, Phone, Mail, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2
+  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Archive, Pencil
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -54,8 +54,12 @@ interface Ticket {
   source_vendor?: string
   district?: string
   installerName?: string
+  negotiatorId?: string
+  negotiator_id?: string
   controlNumber?: string
   control_number?: string
+  ticketNumber?: string
+  ticket_number?: string
   installationCharges?: number
   installation_charges?: number
   modeOfPayment?: string
@@ -210,10 +214,109 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   return false
 }
 
+function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return false
+  if ((ticket.status || '').toUpperCase() !== 'COMPLETED') return false
+  const sched = getArchivedScheduleDate(ticket)
+  if (sched === dateKey) return true
+  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
+  return ticketMatchesDateKey(ticket, dateKey)
+}
+
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
+  if ((ticket.status || '').toUpperCase() === 'COMPLETED') return false
   if (ticketMatchesDateKey(ticket, dateKey)) return false
   return getPreviousScheduleDates(ticket).includes(dateKey)
+}
+
+function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | null {
+  if (!dateKey) return null
+  if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
+  if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
+  return null
+}
+
+function isInstalledRemarks(text?: string | null): boolean {
+  return (text || '').toLowerCase().includes('installed')
+}
+
+function ticketRemarksText(ticket: Partial<Ticket>, fields?: Partial<Ticket>): string {
+  return [
+    fields?.remarksUpdate,
+    fields?.remarks,
+    ticket.remarksUpdate,
+    ticket.remarks,
+    fields?.note,
+    ticket.note,
+  ].filter(Boolean).join(' ')
+}
+
+function hasInstallPayment(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
+  const mode = String(fields?.modeOfPayment ?? ticket.modeOfPayment ?? ticket.mode_of_payment ?? '').toUpperCase().trim()
+  if (!mode) return false
+  if (mode === 'FREE' || mode === 'FREE INSTALL') return true
+  const charges = fields?.installationCharges ?? ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
+  return charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0
+}
+
+function qualifiesForInstallComplete(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
+  const remarks = ticketRemarksText(ticket, fields)
+  const status = String(fields?.status ?? ticket.status ?? '').toUpperCase()
+  const installed = isInstalledRemarks(remarks) || status === 'COMPLETED'
+  return installed && hasInstallPayment(ticket, fields)
+}
+
+function getArchivedScheduleDate(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  if (typeof meta.archivedScheduleDate === 'string' && meta.archivedScheduleDate.trim()) {
+    return meta.archivedScheduleDate.split('T')[0].split(' ')[0].trim()
+  }
+  const prev = getPreviousScheduleDates(ticket)
+  if (prev.length) return prev[prev.length - 1]
+  return getPreferredDateKey(ticket)
+}
+
+function getInstalledDateKey(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  if (typeof meta.installedDate === 'string' && meta.installedDate.trim()) {
+    return meta.installedDate.split('T')[0].split(' ')[0].trim()
+  }
+  const raw = ticket.actualCompletion || (ticket as any).actual_completion || ticket.updatedAt || ticket.updated_at
+  if (!raw) return ''
+  return String(raw).split('T')[0].split(' ')[0].trim()
+}
+
+function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
+  return isRescheduledGhostOnDate(ticket, dateKey) || isCompletedGhostOnDate(ticket, dateKey)
+}
+
+function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string) {
+  const existing = parseAcMeta(ticket)
+  const prevDates: string[] = Array.isArray(existing.previousScheduleDates) ? [...existing.previousScheduleDates] : []
+  const sched = (scheduleDateKey || getPreferredDateKey(ticket)).split('T')[0].split(' ')[0].trim()
+  if (sched && !prevDates.includes(sched)) prevDates.push(sched)
+  return {
+    previousScheduleDates: prevDates,
+    archivedScheduleDate: sched,
+    installedDate: todayDateKey(),
+  }
+}
+
+function formatPaymentAmount(ticket: Ticket): string {
+  const amt = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
+  if (amt == null || Number.isNaN(Number(amt))) return ''
+  return `₱${Number(amt).toLocaleString('en-PH')}`
+}
+
+function getPaymentMode(ticket: Ticket): string {
+  return getF(ticket, 'modeOfPayment', 'mode_of_payment')
+}
+
+function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
+  const mode = (ticket.modeOfPayment ?? ticket.mode_of_payment ?? '').trim()
+  const charges = ticket.installationCharges ?? ticket.installation_charges
+  return Boolean(mode || (charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0))
 }
 
 function formatDateKeyLabel(key: string) {
@@ -221,6 +324,100 @@ function formatDateKeyLabel(key: string) {
   const d = new Date(`${key}T00:00:00`)
   if (isNaN(d.getTime())) return key
   return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function getCustomerDisplayName(ticket: Ticket): string {
+  return (getF(ticket, 'customerName', 'customer_name') || ticket.title || '').trim()
+}
+
+function normalizeCustomerKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function branchesMatch(a?: string, b?: string): boolean {
+  if (!a || !b) return false
+  const clean = (s: string) => s.toUpperCase().replace(/-(SALES|SERVICES|SERVICE)$/g, '').trim()
+  return clean(a) === clean(b)
+}
+
+function parseImportMoney(raw?: string | number | null): number | undefined {
+  if (raw == null) return undefined
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return raw
+  const text = String(raw).trim()
+  if (!text) return undefined
+  const numeric = parseFloat(text.replace(/[₱phpPHP,\s]/gi, ''))
+  return Number.isNaN(numeric) ? undefined : numeric
+}
+
+function normalizeImportPaymentMode(raw?: string | null): string {
+  const v = (raw || '').toUpperCase().trim()
+  if (!v) return ''
+  if (v === 'FREE' || v.includes('FREE INSTALL')) return 'FREE INSTALL'
+  if (v.includes('GCASH') || v === 'G-CASH') return 'GCASH'
+  if (v.includes('BANK') || v.includes('TRANSFER')) return 'BANK TRANSFER'
+  if (v.includes('CHEQUE') || v.includes('CHECK')) return 'CHEQUE'
+  if (v === 'CASH' || v.includes('CASH')) return 'CASH'
+  return v
+}
+
+function getInstallerDisplay(ticket: Ticket): string {
+  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
+  if (direct) return direct
+  const meta = parseAcMeta(ticket)
+  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
+  return fromMeta
+}
+
+function applyImportFieldsFromRow(row: Pick<
+  ImportUnmatchedRow,
+  'name' | 'phone' | 'location' | 'district' | 'brand' | 'dlr' | 'note' | 'commit' | 'update' |
+  'controlNo' | 'installer' | 'service' | 'charges' | 'paymentMode' | 'status'
+>): Partial<Ticket> {
+  const updatedFields: Partial<Ticket> = {}
+  const set = (field: keyof Ticket, val?: string) => {
+    if (val?.trim()) updatedFields[field] = val.trim() as any
+  }
+
+  set('customerName', row.name)
+  set('location', row.location)
+  set('district', row.district)
+  set('contactPhone', row.phone)
+  set('unitType', row.brand)
+  set('sourceVendor', row.dlr)
+  set('note', row.note)
+  set('commitType', row.commit)
+  set('remarksUpdate', row.update)
+  set('remarks', row.update)
+  set('controlNumber', row.controlNo)
+  if (row.installer?.trim()) updatedFields.installerName = row.installer.trim()
+  if (row.charges != null && !Number.isNaN(Number(row.charges))) {
+    updatedFields.installationCharges = Number(row.charges)
+  }
+  const mode = normalizeImportPaymentMode(row.paymentMode)
+  if (mode) updatedFields.modeOfPayment = mode
+  if (row.service?.trim()) {
+    updatedFields.serviceVehicle = row.service.trim()
+    updatedFields.serviceType = 'S/I'
+  }
+  let statusVal = (row.status || '').toUpperCase().trim().replace(/\s+/g, '_')
+  if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
+  if (statusVal && STATUS_OPTS.includes(statusVal)) updatedFields.status = statusVal
+  return updatedFields
+}
+
+function formatServiceDriver(ticket: Ticket): string {
+  const vehicle = getF(ticket, 'serviceVehicle', 'service_vehicle')
+  const type = getF(ticket, 'serviceType', 'service_type')
+  if (vehicle && type && !vehicle.toLowerCase().includes(type.toLowerCase())) {
+    return `${type} · ${vehicle}`
+  }
+  return vehicle || type || ''
+}
+
+function parseServiceDriverValue(raw?: string): { serviceType: string; serviceVehicle: string } {
+  const val = (raw || '').trim()
+  if (!val) return { serviceType: 'S/I', serviceVehicle: '' }
+  return { serviceType: 'S/I', serviceVehicle: val }
 }
 
 function getF(ticket: Ticket, ...keys: (keyof Ticket)[]): string {
@@ -333,7 +530,8 @@ function buildImportCreateRow(item: ImportUnmatchedRow, importTargetDate?: strin
   if (item.service?.trim()) row.serviceVehicle = item.service.trim()
   if (item.update?.trim()) row.remarksUpdate = item.update.trim()
   if (item.charges != null && !Number.isNaN(Number(item.charges))) row.installationCharges = item.charges
-  if (item.paymentMode?.trim()) row.modeOfPayment = item.paymentMode.trim()
+  const mode = normalizeImportPaymentMode(item.paymentMode)
+  if (mode) row.modeOfPayment = mode
   if (item.controlNo?.trim()) row.controlNumber = item.controlNo.trim()
 
   return row
@@ -362,7 +560,10 @@ function buildPatchImportBody(
   set('serviceVehicle', updatedFields.serviceVehicle)
   set('remarksUpdate', updatedFields.remarksUpdate ?? updatedFields.remarks)
   set('controlNumber', updatedFields.controlNumber)
+  set('ticketNumber', (updatedFields as Ticket).ticketNumber)
   set('installerName', updatedFields.installerName ?? updatedFields.assignedEmployeeName)
+  set('negotiatorId', (updatedFields as Ticket).negotiatorId)
+  if (updatedFields.serviceVehicle) body.serviceType = updatedFields.serviceType || 'S/I'
   if (updatedFields.installationCharges != null) body.installationCharges = updatedFields.installationCharges
   if (updatedFields.modeOfPayment) body.modeOfPayment = updatedFields.modeOfPayment
   if (updatedFields.status) body.status = updatedFields.status
@@ -397,12 +598,31 @@ function buildPatchImportBody(
   if (updatedFields.remarksUpdate || updatedFields.remarks) {
     const remark = updatedFields.remarksUpdate ?? updatedFields.remarks
     body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
+    acBase = { ...ticket, acDetails: body.acDetails as string }
+  }
+  if (updatedFields.installerName) {
+    body.acDetails = mergeAcMeta(acBase, {
+      installerName: updatedFields.installerName,
+      installer: updatedFields.installerName,
+      technicianName: updatedFields.installerName,
+    })
   }
 
   return body
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+function enrichCompletePatchBody(
+  body: Record<string, unknown>,
+  ticket: Ticket,
+  scheduleDateKey: string,
+): Record<string, unknown> {
+  return {
+    ...body,
+    status: 'COMPLETED',
+    actualCompletion: new Date().toISOString(),
+    acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey)),
+  }
+}
 export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
@@ -449,6 +669,7 @@ export default function Tickets() {
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
+  const [ticketsView, setTicketsView] = useState<'schedule' | 'archives'>('schedule')
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredHeader, setHoveredHeader] = useState<string | null>(null)
@@ -499,7 +720,7 @@ export default function Tickets() {
 
   // ── Manual Add Modal State ───────────────────────────────────────────────
   const [addModalOpen, setAddModalOpen] = useState(false)
-  const [addForm, setAddForm] = useState<Partial<Ticket>>({
+  const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string }>({
     preferredDate: '',
     customerName: '',
     contactPhone: '',
@@ -508,18 +729,22 @@ export default function Tickets() {
     commitTerms: '',
     unitType: '',
     sourceVendor: 'Direct',
-    serviceVehicle: '',
-    assignedTo: '',
-    serviceType: 'Installation',
+    serviceDriver: '',
+    installerName: '',
+    negotiatorId: '',
+    ticketNumber: '',
     controlNumber: '',
+    modeOfPayment: '',
+    installationCharges: undefined,
   })
-  const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
+  const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string }[]>([])
   const [savingManual, setSavingManual] = useState(false)
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket>>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string }>({})
   const [editOriginalDate, setEditOriginalDate] = useState('')
+  const [editInitialStatus, setEditInitialStatus] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   // ── Excel Import State ───────────────────────────────────────────────────
@@ -555,6 +780,118 @@ export default function Tickets() {
       const nextNeeds = [...prev.needsConfirmation]
       nextNeeds[idx] = { ...nextNeeds[idx], [field]: val }
       return { ...prev, needsConfirmation: nextNeeds }
+    })
+  }
+
+  const processImportSheetRows = (
+    sheetRows: ImportUnmatchedRow[],
+    fileName: string,
+    rowRangeLabel: string,
+    scanDate?: string,
+  ) => {
+    const updatesList: ImportUpdate[] = []
+    const needsConfirmationList: ImportPaymentConfirmation[] = []
+    const unmatchedList: ImportUnmatchedRow[] = []
+    const usedTicketIds = new Set<string>()
+
+    let matchedCount = 0
+    let autoCompletedCount = 0
+
+    for (const row of sheetRows) {
+      const rowName = row.name
+      const rowPhone = row.phone
+      const rowDest = row.location
+
+      const match = tickets.find(t => {
+        if (usedTicketIds.has(t.id)) return false
+        const tName = (t.customerName || t.customer_name || t.title || '').toLowerCase().trim()
+        const cleanRowName = rowName.toLowerCase().trim()
+
+        if (cleanRowName && tName) {
+          if (tName === cleanRowName || tName.includes(cleanRowName) || cleanRowName.includes(tName)) {
+            return true
+          }
+        }
+
+        const tPhone = (t.contactPhone || t.contact_phone || t.customer_phone || t.phone || '').replace(/\D/g, '')
+        const cleanRowPhone = rowPhone.replace(/\D/g, '')
+        if (cleanRowPhone && tPhone) {
+          if (tPhone === cleanRowPhone || tPhone.includes(cleanRowPhone) || cleanRowPhone.includes(tPhone)) {
+            return true
+          }
+        }
+
+        return false
+      })
+
+      if (match) {
+        usedTicketIds.add(match.id)
+        matchedCount++
+
+        const updatedFields = applyImportFieldsFromRow(row)
+        const statusVal = (updatedFields.status || '').toUpperCase()
+        const updateRemarks = (row.update || '').toLowerCase()
+        const isInstalled = updateRemarks.includes('installed') || statusVal === 'COMPLETED'
+
+        if (isInstalled) {
+          const charges = updatedFields.installationCharges ?? match.installationCharges ?? match.amountCharged
+          const mode = updatedFields.modeOfPayment ?? match.modeOfPayment ?? match.mode_of_payment
+          const ctrlVal = updatedFields.controlNumber ?? match.controlNumber ?? ''
+
+          const hasPayment = Boolean(
+            mode && (mode === 'FREE' || mode === 'FREE INSTALL' || (charges !== undefined && Number(charges) > 0)),
+          )
+
+          if (hasPayment) {
+            autoCompletedCount++
+            updatesList.push({
+              ticket: match,
+              updatedFields: { ...updatedFields, status: 'COMPLETED' },
+              originalTicket: match,
+              rowIdx: row.rowIdx,
+            })
+          } else {
+            needsConfirmationList.push({
+              ticket: match,
+              value: row.update || 'Installed',
+              amount: charges != null ? String(charges) : '',
+              modeOfPayment: mode || 'CASH',
+              controlNumber: ctrlVal,
+              rowIdx: row.rowIdx,
+            })
+          }
+        } else {
+          updatesList.push({
+            ticket: match,
+            updatedFields,
+            originalTicket: match,
+            rowIdx: row.rowIdx,
+          })
+        }
+      } else {
+        unmatchedList.push({
+          ...row,
+          paymentMode: normalizeImportPaymentMode(row.paymentMode) || row.paymentMode,
+        })
+      }
+    }
+
+    if (scanDate?.trim()) {
+      const dateKey = scanDate.split('T')[0].split(' ')[0].trim()
+      if (dateKey) setImportTargetDate(dateKey)
+    }
+
+    setImportResults({
+      isOpen: true,
+      fileName,
+      rowRangeLabel,
+      totalRows: sheetRows.length,
+      matchedCount,
+      unmatchedCount: unmatchedList.length,
+      autoCompletedCount,
+      updates: updatesList,
+      needsConfirmation: needsConfirmationList,
+      unmatched: unmatchedList,
     })
   }
 
@@ -616,24 +953,18 @@ export default function Tickets() {
         brand: findColIdx(["BRAND", "UNIT", "AC"]),
         dlr: findColIdx(["ENDORSED BY", "DLR", "DEALER", "VENDOR"]),
         status: findColIdx(["STATUS"]),
-        installer: findColIdx(["TECHNICIAN", "INSTALLER"]),
+        installer: findColIdx(["INSTALLER", "TECHNICIAN", "CREW", "INSTALLER NAME", "TECH", "INSTALLER/TECHNICIAN"]),
         note: findColIdx(["NOTE", "NOTES"]),
         confirmation: findColIdx(["CONFIRMATION"]),
-        service: findColIdx(["SERVICE", "SERVICE TYPE"]),
-        update: findColIdx(["SERVICE STATUS", "UPDATE", "REMARKS", "ADMIN REMARKS"]),
-        charges: findColIdx(["INSTALLATION CHARGES", "INSTALLATION CHARGE", "CHARGES", "AMOUNT"]),
-        paymentMode: findColIdx(["MOP", "MODE OF PAYMENT", "PAYMENT MODE", "PAYMENT"]),
-        controlNo: findColIdx(["PAPERS", "CONTROL# / SI", "CONTROL NUMBER", "CONTROL #", "SI NO", "SI NUMBER", "CONTROL"]),
+        service: findColIdx(["SERVICE", "SERVICE TYPE", "DRIVER", "VEHICLE"]),
+        update: findColIdx(["SERVICE STATUS", "UPDATE", "REMARKS", "ADMIN REMARKS", "INSTALLATION STATUS"]),
+        charges: findColIdx(["INSTALLATION CHARGES", "INSTALLATION CHARGE", "AMOUNT CHARGED", "CHARGES", "CHARGE", "AMOUNT", "AMT"]),
+        paymentMode: findColIdx(["MOP", "MODE OF PAYMENT", "PAYMENT MODE", "PAYMENT STATUS", "MODE OF PAYMENT (MOP)"]),
+        controlNo: findColIdx(["PAPERS", "CONTROL# / SI", "CONTROL NUMBER", "CONTROL #", "SI NO", "SI NUMBER", "CONTROL", "RCVD", "PR"]),
         commit: findColIdx(["COMMIT", "COMMIT TERMS"]),
       }
 
-      const updatesList: ImportUpdate[] = []
-      const needsConfirmationList: ImportPaymentConfirmation[] = []
-      const unmatchedList: ImportUnmatchedRow[] = []
-
-      let matchedCount = 0
-      let autoCompletedCount = 0
-      let parsedRowCount = 0
+      const sheetRows: ImportUnmatchedRow[] = []
 
       for (let r = startIdx; r <= endIdx; r++) {
         const row = grid[r]
@@ -644,161 +975,36 @@ export default function Tickets() {
         const rowName = val(colMap.name)
         const rowDest = val(colMap.destination)
         const rowPhone = val(colMap.phone)
-        
-        if (!rowName || 
-            ['closed', 'total', 'grand total', 'subtotal', 'online', 'cash'].includes(rowName.toLowerCase().trim()) || 
+
+        if (!rowName ||
+            ['closed', 'total', 'grand total', 'subtotal', 'online', 'cash'].includes(rowName.toLowerCase().trim()) ||
             (!rowDest && !rowPhone)) {
           continue
         }
-        parsedRowCount++
 
-        const match = tickets.find(t => {
-          const tName = (t.customerName || t.customer_name || t.title || '').toLowerCase().trim()
-          const cleanRowName = rowName.toLowerCase().trim()
-          
-          if (cleanRowName && tName) {
-            if (tName === cleanRowName || tName.includes(cleanRowName) || cleanRowName.includes(tName)) {
-              return true
-            }
-          }
-
-          const tPhone = (t.contactPhone || t.contact_phone || t.customer_phone || t.phone || '').replace(/\D/g, '')
-          const cleanRowPhone = rowPhone.replace(/\D/g, '')
-          if (cleanRowPhone && tPhone) {
-            if (tPhone === cleanRowPhone || tPhone.includes(cleanRowPhone) || cleanRowPhone.includes(tPhone)) {
-              return true
-            }
-          }
-
-          return false
+        const paymentModeRaw = val(colMap.paymentMode)
+        sheetRows.push({
+          name: rowName || 'Unknown Customer',
+          phone: rowPhone,
+          location: rowDest,
+          district: val(colMap.district),
+          brand: val(colMap.brand),
+          dlr: val(colMap.dlr),
+          status: val(colMap.status),
+          commit: val(colMap.commit),
+          installer: val(colMap.installer),
+          confirmation: val(colMap.confirmation),
+          note: val(colMap.note),
+          service: val(colMap.service),
+          update: val(colMap.update),
+          charges: parseImportMoney(val(colMap.charges)),
+          paymentMode: normalizeImportPaymentMode(paymentModeRaw) || paymentModeRaw,
+          controlNo: val(colMap.controlNo),
+          rowIdx: r + 1,
         })
-
-        if (match) {
-          matchedCount++
-          
-          const updatedFields: Partial<Ticket> = {}
-          const getFieldVal = (field: keyof Ticket, newVal: string) => {
-            if (newVal) updatedFields[field] = newVal as any
-          }
-
-          getFieldVal('customerName', rowName)
-          getFieldVal('location', rowDest)
-          getFieldVal('district', val(colMap.district))
-          getFieldVal('contactPhone', rowPhone)
-          getFieldVal('unitType', val(colMap.brand))
-          getFieldVal('sourceVendor', val(colMap.dlr))
-          getFieldVal('note', val(colMap.note))
-          getFieldVal('commitType', val(colMap.commit))
-          getFieldVal('serviceVehicle', val(colMap.service))
-          getFieldVal('remarksUpdate', val(colMap.update))
-          getFieldVal('remarks', val(colMap.update))
-          getFieldVal('controlNumber', val(colMap.controlNo))
-
-          const rawCharges = val(colMap.charges)
-          if (rawCharges) {
-            const numeric = parseFloat(rawCharges.replace(/[₱phpPHP,\s]/g, ''))
-            if (!isNaN(numeric)) {
-              updatedFields.installationCharges = numeric
-            }
-          }
-
-          const rawPaymentMode = val(colMap.paymentMode).toUpperCase()
-          if (rawPaymentMode) {
-            updatedFields.modeOfPayment = rawPaymentMode
-          }
-
-          const installer = val(colMap.installer)
-          if (installer) {
-            updatedFields.installerName = installer
-            updatedFields.assignedEmployeeName = installer
-          }
-
-          let statusVal = val(colMap.status).toUpperCase().trim().replace(/\s+/g, '_')
-          if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
-          if (statusVal && STATUS_OPTS.includes(statusVal)) {
-            updatedFields.status = statusVal
-          }
-
-          const updateRemarks = val(colMap.update).toLowerCase()
-          const isInstalled = updateRemarks.includes('installed') || statusVal === 'COMPLETED'
-
-          if (isInstalled) {
-            const charges = updatedFields.installationCharges ?? match.installationCharges ?? match.amountCharged
-            const mode = updatedFields.modeOfPayment ?? match.modeOfPayment
-            const ctrlVal = updatedFields.controlNumber ?? match.controlNumber ?? ''
-
-            const hasPayment = (mode && (mode === 'FREE' || mode === 'FREE INSTALL' || (charges !== undefined && charges > 0)))
-
-            if (hasPayment) {
-              autoCompletedCount++
-              updatesList.push({
-                ticket: match,
-                updatedFields: { ...updatedFields, status: 'COMPLETED' },
-                originalTicket: match,
-                rowIdx: r + 1,
-              })
-            } else {
-              needsConfirmationList.push({
-                ticket: match,
-                value: val(colMap.update) || 'Installed',
-                amount: charges ? String(charges) : '',
-                modeOfPayment: mode || 'CASH',
-                controlNumber: ctrlVal,
-                rowIdx: r + 1,
-              })
-            }
-          } else {
-            updatesList.push({
-              ticket: match,
-              updatedFields,
-              originalTicket: match,
-              rowIdx: r + 1,
-            })
-          }
-
-        } else {
-          const rawCharges = val(colMap.charges)
-          let chargesNum: number | undefined = undefined
-          if (rawCharges) {
-            const numeric = parseFloat(rawCharges.replace(/[₱phpPHP,\s]/g, ''))
-            if (!isNaN(numeric)) {
-              chargesNum = numeric
-            }
-          }
-          unmatchedList.push({
-            name: rowName || 'Unknown Customer',
-            phone: rowPhone,
-            location: rowDest,
-            district: val(colMap.district),
-            brand: val(colMap.brand),
-            dlr: val(colMap.dlr),
-            status: val(colMap.status),
-            commit: val(colMap.commit),
-            installer: val(colMap.installer),
-            confirmation: val(colMap.confirmation),
-            note: val(colMap.note),
-            service: val(colMap.service),
-            update: val(colMap.update),
-            charges: chargesNum,
-            paymentMode: val(colMap.paymentMode),
-            controlNo: val(colMap.controlNo),
-            rowIdx: r + 1,
-          })
-        }
       }
 
-      setImportResults({
-        isOpen: true,
-        fileName: file.name,
-        rowRangeLabel: rowRangeLabel,
-        totalRows: parsedRowCount,
-        matchedCount,
-        unmatchedCount: unmatchedList.length,
-        autoCompletedCount,
-        updates: updatesList,
-        needsConfirmation: needsConfirmationList,
-        unmatched: unmatchedList,
-      })
+      processImportSheetRows(sheetRows, file.name, rowRangeLabel)
 
     } catch (err: any) {
       console.error(err)
@@ -825,8 +1031,17 @@ export default function Tickets() {
     try {
       const tokenVal = token()
       const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch(`${API_BASE_URL}/v1/tickets/scan`, {
+      formData.append('image', file)
+
+      let targetBranchId = globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || ''
+      if (targetBranchId && /-(sales|services)$/i.test(targetBranchId)) {
+        targetBranchId = targetBranchId.replace(/-sales$|-services$/i, '')
+      }
+      if (targetBranchId && targetBranchId !== 'ALL_BRANCHES') {
+        formData.append('branchId', targetBranchId)
+      }
+
+      const res = await fetch(`${API_BASE_URL}/v1/service-reports/scan`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${tokenVal}` },
         body: formData,
@@ -837,10 +1052,58 @@ export default function Tickets() {
         alert(`Scan failed: ${data.error}`)
         return
       }
-      navigate('/tickets/create', { state: { scannedData: data } })
+
+      const rows = Array.isArray(data.rows) ? data.rows : []
+      if (rows.length === 0) {
+        alert('No table rows were detected in the image.')
+        return
+      }
+
+      const sheetRows: ImportUnmatchedRow[] = rows
+        .map((row: any, index: number) => {
+          const customerName = String(row.customerName || '').trim()
+          const customerAddress = String(row.customerAddress || '').trim()
+          const customerPhone = String(row.customerPhone || '').trim()
+          if (!customerName || (!customerAddress && !customerPhone)) return null
+
+          const remarks = String(row.remarks || row.scheduleStatus || '').trim()
+          const paymentRaw = row.paymentStatus || row.modeOfPayment || ''
+          return {
+            name: customerName,
+            phone: customerPhone,
+            location: customerAddress,
+            district: String(row.district || '').trim(),
+            brand: String(row.unitBrandModel || row.brand || '').trim(),
+            dlr: String(row.dealer || '').trim(),
+            status: String(row.statusCode || row.status || '').trim(),
+            commit: String(row.commitTerms || '').trim(),
+            installer: String(row.technicianName || row.installerName || row.installer || '').trim(),
+            confirmation: '',
+            note: String(row.note || '').trim(),
+            service: String(row.serviceColumn || row.service || '').trim(),
+            update: remarks,
+            charges: parseImportMoney(row.amountCharged ?? row.charges),
+            paymentMode: normalizeImportPaymentMode(paymentRaw) || String(paymentRaw).trim(),
+            controlNo: String(row.controlNumber || '').trim(),
+            rowIdx: index + 1,
+          } satisfies ImportUnmatchedRow
+        })
+        .filter((row: ImportUnmatchedRow | null): row is ImportUnmatchedRow => row !== null)
+
+      if (sheetRows.length === 0) {
+        alert('No valid customer rows were detected in the scanned image.')
+        return
+      }
+
+      processImportSheetRows(
+        sheetRows,
+        file.name,
+        `image rows 1-${sheetRows.length}`,
+        typeof data.date === 'string' ? data.date : undefined,
+      )
     } catch (err: any) {
       console.error(err)
-      alert(`Could not scan document: ${err.message || 'Unknown error'}`)
+      alert(`Could not scan schedule sheet: ${err.message || 'Unknown error'}`)
     } finally {
       setScanning(false)
       if (scanFileInputRef.current) scanFileInputRef.current.value = ''
@@ -870,14 +1133,15 @@ export default function Tickets() {
     setSavingManual(true)
     try {
       const tokenVal = token()
-      const titleVal = `${addForm.serviceType} service`
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver)
+      const titleVal = `${serviceType} service`
       const descVal = addForm.commitTerms?.trim() || 'No additional details provided.'
       
       const payload = {
         customerName: addForm.customerName.trim(),
         title: titleVal,
         description: descVal,
-        serviceType: addForm.serviceType,
+        serviceType,
         location: addForm.location.trim(),
         contactPhone: addForm.contactPhone.trim(),
         unitType: addForm.unitType?.trim() || undefined,
@@ -885,9 +1149,15 @@ export default function Tickets() {
         sourceVendor: addForm.sourceVendor?.trim() || 'Direct',
         district: addForm.district?.trim() || undefined,
         commitType: addForm.commitTerms?.trim() || undefined,
-        serviceVehicle: addForm.serviceVehicle?.trim() || undefined,
-        assignedTo: addForm.assignedTo || undefined,
+        serviceVehicle: serviceVehicle || undefined,
+        installerName: addForm.installerName?.trim() || undefined,
+        negotiatorId: addForm.negotiatorId || undefined,
+        ticketNumber: addForm.ticketNumber?.trim() || undefined,
         controlNumber: addForm.controlNumber?.trim() || undefined,
+        modeOfPayment: addForm.modeOfPayment?.trim() || undefined,
+        installationCharges: addForm.installationCharges != null && !Number.isNaN(Number(addForm.installationCharges))
+          ? Number(addForm.installationCharges)
+          : undefined,
         branchId: resolveScopedBranchId(globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id')),
       }
 
@@ -917,7 +1187,9 @@ export default function Tickets() {
 
   const openEditModal = (ticket: Ticket) => {
     const preferred = getPreferredDateKey(ticket)
+    const status = ticket.status || 'PENDING'
     setEditOriginalDate(preferred)
+    setEditInitialStatus(status)
     setEditForm({
       id: ticket.id,
       preferredDate: preferred,
@@ -928,20 +1200,30 @@ export default function Tickets() {
       commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
       unitType: ticket.unitType || ticket.unit_type || parseBrand(ticket) || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
-      serviceVehicle: ticket.serviceVehicle || ticket.service_vehicle || '',
-      assignedTo: ticket.assignedTo || '',
-      serviceType: ticket.serviceType || ticket.service_type || 'Installation',
+      serviceDriver: formatServiceDriver(ticket),
+      installerName: getInstallerDisplay(ticket) || ticket.installerName || getF(ticket, 'assignedEmployeeName', 'assigned_employee_name') || '',
+      negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
+      ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
-      status: ticket.status || 'PENDING',
+      status,
+      installationCharges: ticket.installationCharges ?? ticket.installation_charges,
+      modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment,
       remarks: ticket.remarks || ticket.remarksUpdate || '',
       acDetails: ticket.acDetails || ticket.ac_details,
+      rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' ? preferred : '',
     })
     setEditModalOpen(true)
   }
 
   const handleSaveEditTicket = async () => {
     if (!editForm.id) return
-    if (!editForm.preferredDate) {
+    const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
+    if (isReschedStatusEarly) {
+      if (!editForm.rescheduleToDate?.trim()) {
+        alert('Select a reschedule date beside the RESCHED status')
+        return
+      }
+    } else if (!editForm.preferredDate) {
       alert('Preferred Date is required')
       return
     }
@@ -957,22 +1239,30 @@ export default function Tickets() {
       alert('Destination/Address is required')
       return
     }
+    const isReschedStatus = isReschedStatusEarly
+    if (isReschedStatus && !editForm.rescheduleToDate?.trim()) {
+      alert('Select a reschedule date beside the RESCHED status')
+      return
+    }
 
     setSavingEdit(true)
     try {
       const tokenVal = token()
-      const titleVal = `${editForm.serviceType} service`
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(editForm.serviceDriver)
+      const titleVal = `${serviceType} service`
       const descVal = editForm.commitTerms?.trim() || 'No additional details provided.'
 
       const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
-      const newDateKey = editForm.preferredDate?.split('T')[0]?.trim() || ''
-      const isReschedule = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
+      const newDateKey = isReschedStatus
+        ? editForm.rescheduleToDate?.split('T')[0]?.trim() || ''
+        : editForm.preferredDate?.split('T')[0]?.trim() || ''
+      const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
 
       const body: Record<string, any> = {
         customerName: editForm.customerName.trim(),
         title: titleVal,
         description: descVal,
-        serviceType: editForm.serviceType,
+        serviceType,
         location: editForm.location.trim(),
         contactPhone: editForm.contactPhone.trim(),
         unitType: editForm.unitType?.trim() || undefined,
@@ -980,16 +1270,26 @@ export default function Tickets() {
         sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
         district: editForm.district?.trim() || undefined,
         commitType: editForm.commitTerms?.trim() || undefined,
-        serviceVehicle: editForm.serviceVehicle?.trim() || undefined,
-        assignedTo: editForm.assignedTo || undefined,
+        serviceVehicle: serviceVehicle || undefined,
+        installerName: editForm.installerName?.trim() || undefined,
+        negotiatorId: editForm.negotiatorId || undefined,
+        ticketNumber: editForm.ticketNumber?.trim() || undefined,
         controlNumber: editForm.controlNumber?.trim() || undefined,
-        status: isReschedule ? 'SCHEDULED' : (editForm.status || 'PENDING'),
+        status: isReschedStatus ? 'RESCHED' : (isDateMove ? 'SCHEDULED' : (editForm.status || 'PENDING')),
         remarks: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
       }
 
+      const originalTicket = tickets.find(t => t.id === editForm.id)
+      const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
+      const paymentMode = editForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
+      if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
+        body.installationCharges = Number(paymentCharges)
+      }
+      if (paymentMode) body.modeOfPayment = paymentMode
+
       const acMetaExtras: Record<string, any> = {}
-      if (isReschedule) {
+      if (isDateMove) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
           ? [...existing.previousScheduleDates]
@@ -1010,8 +1310,25 @@ export default function Tickets() {
         dlr: editForm.sourceVendor?.trim() || undefined,
         update: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
-        installerName: editForm.assignedTo ? technicians.find(t => t.id === editForm.assignedTo)?.name : undefined,
+        installerName: editForm.installerName?.trim() || undefined,
       })
+
+      const shouldComplete = Boolean(
+        originalTicket
+        && !isReschedStatus
+        && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
+        && qualifiesForInstallComplete(
+          { ...originalTicket, ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks },
+          { remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
+        ),
+      )
+
+      let finalBody: Record<string, any> = body
+      if (shouldComplete && originalTicket) {
+        const schedKey = oldDateKey || getPreferredDateKey(originalTicket)
+        const ticketWithEdits = { ...originalTicket, ...body, acDetails: body.acDetails }
+        finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
+      }
 
       const res = await fetch(`${API_BASE_URL}/tickets/${editForm.id}`, {
         method: 'PATCH',
@@ -1019,7 +1336,7 @@ export default function Tickets() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${tokenVal}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(finalBody),
       })
 
       if (!res.ok) {
@@ -1027,9 +1344,48 @@ export default function Tickets() {
         throw new Error(errorText || `Failed (HTTP ${res.status})`)
       }
 
-      showToast(isReschedule
-        ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
-        : 'Ticket updated successfully ✓')
+      if (shouldComplete && originalTicket) {
+        const reportDate = oldDateKey || newDateKey || todayDateKey()
+        const charges = finalBody.installationCharges ?? paymentCharges ?? 0
+        const mode = finalBody.modeOfPayment ?? paymentMode ?? 'CASH'
+        const remarks = finalBody.remarksUpdate || finalBody.remarks || 'Installed'
+        try {
+          const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
+            body: JSON.stringify({
+              branchId: resolveImportBranchId(originalTicket.branchId),
+              reportDate,
+              customerName: body.customerName,
+              customerAddress: body.location,
+              customerPhone: body.contactPhone,
+              district: body.district,
+              serviceType: String(mode).toUpperCase() === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+              statusCode: 'I',
+              commitTerms: body.commitType || '',
+              dealer: body.sourceVendor,
+              unitBrandModel: body.unitType,
+              technicianName: body.installerName,
+              amountCharged: parseFloat(String(charges)) || 0,
+              paymentStatus: mode,
+              jobStatus: 'COMPLETED',
+              remarks,
+              note: originalTicket.note || '',
+              controlNumber: body.controlNumber || originalTicket.controlNumber || '',
+              serviceColumn: body.serviceVehicle || originalTicket.serviceVehicle || '',
+            }),
+          })
+          if (!reportRes.ok) console.warn('Archive service report failed:', await reportRes.text())
+        } catch (err) {
+          console.warn('Archive service report failed:', err)
+        }
+      }
+
+      showToast(shouldComplete
+        ? 'Ticket completed — moved to Archives ✓'
+        : isDateMove
+          ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
+          : 'Ticket updated successfully ✓')
       await fetchTickets()
       setEditModalOpen(false)
     } catch (err: any) {
@@ -1083,19 +1439,65 @@ export default function Tickets() {
     const importErrors: string[] = []
 
     const scheduleUpdates = isScheduleImport
-      ? [
-          ...normalUpdates,
-          ...completedUpdates.map(item => ({
-            ...item,
-            updatedFields: { ...item.updatedFields, status: 'SCHEDULED' as Ticket['status'] },
-          })),
-        ]
+      ? importResults.updates.map(item => {
+          const merged = { ...item.ticket, ...item.updatedFields }
+          if (qualifiesForInstallComplete(merged, item.updatedFields)) {
+            return { ...item, updatedFields: { ...item.updatedFields, status: 'COMPLETED' as Ticket['status'] } }
+          }
+          if ((item.updatedFields.status || '').toUpperCase() === 'COMPLETED') {
+            return { ...item, updatedFields: { ...item.updatedFields, status: 'SCHEDULED' as Ticket['status'] } }
+          }
+          return item
+        })
       : normalUpdates
+
+    const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
+      const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
+      const charges = updatedFields.installationCharges ?? ticket.installationCharges ?? ticket.amountCharged ?? 0
+      const mode = updatedFields.modeOfPayment ?? ticket.modeOfPayment ?? 'CASH'
+      const remarks = (updatedFields.remarksUpdate ?? ticket.remarksUpdate ?? ticket.remarks) || 'Installed'
+      const controlNo = updatedFields.controlNumber ?? ticket.controlNumber ?? ''
+      const serviceReportPayload = {
+        branchId: resolveImportBranchId(ticket.branchId),
+        reportDate: reportDate || todayStr,
+        customerName: custName,
+        customerAddress: formatAddress(updatedFields.location ? updatedFields.location : ticket.location),
+        customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+        district: parseDistrict(updatedFields.location ? updatedFields.location : ticket.location, updatedFields.district || ticket.district),
+        serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+        statusCode: 'I',
+        commitTerms: getF(ticket, 'commitTerms', 'description') || ticket.description || '',
+        dealer: updatedFields.sourceVendor || getF(ticket, 'dealer'),
+        unitBrandModel: updatedFields.unitType || parseBrand(ticket),
+        technicianName: updatedFields.installerName || getF(ticket, 'assignedEmployeeName', 'assigned_employee_name'),
+        amountCharged: parseFloat(String(charges)) || 0,
+        paymentStatus: mode,
+        jobStatus: 'COMPLETED',
+        remarks,
+        note: updatedFields.note || ticket.note || '',
+        controlNumber: controlNo,
+        serviceColumn: updatedFields.serviceVehicle || ticket.serviceVehicle || ticket.service_vehicle || '',
+      }
+      const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
+        body: JSON.stringify(serviceReportPayload),
+      })
+      if (!reportRes.ok) throw new Error(await readApiError(reportRes))
+    }
 
     for (const item of scheduleUpdates) {
       const { ticket, updatedFields } = item
-      const body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId, targetBranch || undefined)
-      if (Object.keys(body).length === 0) continue
+      const merged = { ...ticket, ...updatedFields }
+      const shouldComplete = qualifiesForInstallComplete(merged, updatedFields)
+        || (updatedFields.status || '').toUpperCase() === 'COMPLETED'
+
+      let body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId, targetBranch || undefined)
+      if (Object.keys(body).length === 0 && !shouldComplete) continue
+
+      if (shouldComplete && isScheduleImport) {
+        body = enrichCompletePatchBody({ ...body }, ticket, scheduleDate || getPreferredDateKey(ticket))
+      }
 
       try {
         const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
@@ -1105,6 +1507,14 @@ export default function Tickets() {
         })
         if (res.ok) {
           successCount++
+          if (shouldComplete && isScheduleImport) {
+            try {
+              await postCompletedServiceReport(ticket, updatedFields, scheduleDate || todayStr)
+              completeCount++
+            } catch (err: any) {
+              importErrors.push(`Completed ticket but archive report failed: ${err?.message || 'unknown'}`)
+            }
+          }
         } else {
           failCount++
           importErrors.push(await readApiError(res))
@@ -1374,8 +1784,9 @@ export default function Tickets() {
       .finally(() => setLoadingHistory(false))
   }, [detailTicket])
 
-  // ── Expand cols ───────────────────────────────────────────────────────────
+  // ── Expand cols / cells ───────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
@@ -1385,17 +1796,27 @@ export default function Tickets() {
 
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
-    const raw = [
-      { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
-      { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
-    ]
+    const raw = ticketsView === 'archives'
+      ? [
+          { label: "CUSTOMER'S NAME", display: 'CUSTOMER', w: 180, expW: 300, sticky: true, freeze: false, align: 'left' as const },
+          { label: 'SCHEDULED DATE', display: 'SCHEDULED', w: 120, expW: 160, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'INSTALLED DATE', display: 'INSTALLED', w: 120, expW: 160, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'PAYMENT', display: 'AMOUNT', w: 100, expW: 140, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'MOP', display: 'MODE', w: 90, expW: 120, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'INSTALLER', display: isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', w: 140, expW: 220, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'UPDATE', display: isTaguigServices ? 'SERVICE STATUS' : 'REMARKS', w: 180, expW: 320, sticky: false, freeze: false, align: 'right' as const },
+        ]
+      : [
+          { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
+          { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
+          { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+          { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
+        ]
     let left = 0
     return raw.map(c => {
       const isExpanded = !!expandedCols[c.label]
@@ -1404,7 +1825,7 @@ export default function Tickets() {
       if (c.sticky) left += width
       return { ...c, isExpanded, width, left: l }
     })
-  }, [expandedCols, isTaguigServices])
+  }, [expandedCols, isTaguigServices, ticketsView])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -1432,22 +1853,39 @@ export default function Tickets() {
   useEffect(() => {
     if (canEdit) {
       const headers = { Authorization: `Bearer ${token()}` }
+      const branchSource = resolveScopedBranchId(globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || '')
       fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
         .then(res => res.json())
         .then(data => {
-          if (Array.isArray(data)) {
-            setTechnicians(data.map((u: any) => ({ id: u.id, name: u.name })))
-          }
+          const list = Array.isArray(data) ? data : (data?.data || [])
+          if (!Array.isArray(list)) return
+          const mapped = list.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            branchId: u.branchId || u.branch_id,
+          }))
+          const filtered = branchSource
+            ? mapped.filter((u: { branchId?: string }) => branchesMatch(u.branchId, branchSource))
+            : mapped
+          setBranchEmployees(filtered.length > 0 ? filtered : mapped)
         })
-        .catch(err => console.error('Failed to load technicians:', err))
+        .catch(err => console.error('Failed to load branch employees:', err))
     }
-  }, [canEdit, token])
+  }, [canEdit, token, globalBranchId, user?.branchId])
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
     let list = tickets.filter(t => {
       const stat = (t.status || '').toUpperCase()
-      
+
+      if (ticketsView === 'archives') {
+        return stat === 'COMPLETED'
+      }
+
+      if (stat === 'COMPLETED') {
+        return ticketsView === 'schedule' && Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
+      }
+
       let hasFinalDate = false
       if (t.acDetails) {
         try {
@@ -1476,25 +1914,50 @@ export default function Tickets() {
       })
     }
     if (dateFilter) {
-      list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isRescheduledGhostOnDate(t, dateFilter))
-      list = [...list].sort((a, b) => {
-        const aGhost = isRescheduledGhostOnDate(a, dateFilter)
-        const bGhost = isRescheduledGhostOnDate(b, dateFilter)
-        if (aGhost === bGhost) return 0
-        return aGhost ? 1 : -1
-      })
+      if (ticketsView === 'archives') {
+        list = list.filter(t => {
+          const installed = getInstalledDateKey(t)
+          const scheduled = getArchivedScheduleDate(t)
+          return installed === dateFilter || scheduled === dateFilter
+        })
+        list = [...list].sort((a, b) => getInstalledDateKey(b).localeCompare(getInstalledDateKey(a)))
+      } else {
+        list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
+        list = [...list].sort((a, b) => {
+          const aGhost = isScheduleGhostOnDate(a, dateFilter)
+          const bGhost = isScheduleGhostOnDate(b, dateFilter)
+          if (aGhost === bGhost) return 0
+          return aGhost ? 1 : -1
+        })
+      }
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       list = list.filter(t =>
         [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
          t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-         t.remarks, t.note, t.id].some(v => v?.toLowerCase().includes(q))
+         t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
         || formatAddress(t.location).toLowerCase().includes(q)
       )
     }
     return list
-  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
+  }, [tickets, ticketsView, isAdmin, globalBranchId, dateFilter, searchQuery])
+
+  const archiveCount = useMemo(() => {
+    return tickets.filter(t => (t.status || '').toUpperCase() === 'COMPLETED').length
+  }, [tickets])
+
+  const duplicateNameKeys = useMemo(() => {
+    const counts = new Map<string, number>()
+    visible.forEach(t => {
+      const key = normalizeCustomerKey(getCustomerDisplayName(t))
+      if (!key) return
+      counts.set(key, (counts.get(key) || 0) + 1)
+    })
+    return new Set(
+      [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key)
+    )
+  }, [visible])
 
   const counts = useMemo(() => {
     let scheduledOrRescheduled = 0
@@ -1502,7 +1965,7 @@ export default function Tickets() {
     let forQuotationOrForApproval = 0
 
     visible.forEach(t => {
-      if (dateFilter && isRescheduledGhostOnDate(t, dateFilter)) return
+      if (dateFilter && ticketsView === 'schedule' && isScheduleGhostOnDate(t, dateFilter)) return
       const stat = (t.status || '').toUpperCase()
       const category = (t.serviceType || t.title || '').toLowerCase()
       const isSurvey = category.includes('survey') || stat === 'SURVEY'
@@ -1533,7 +1996,7 @@ export default function Tickets() {
       survey,
       forQuotationOrForApproval
     }
-  }, [visible])
+  }, [visible, dateFilter, ticketsView])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -1545,10 +2008,14 @@ export default function Tickets() {
       case 'BRAND':           return parseBrand(ticket)
       case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
       case 'STATUS':          return ticket.status
+      case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
+      case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
+      case 'PAYMENT':         return formatPaymentAmount(ticket)
+      case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-      case 'INSTALLER':       return getF(ticket, 'installerName', 'assignedEmployeeName', 'assigned_employee_name')
+      case 'INSTALLER':       return getInstallerDisplay(ticket)
       case 'NOTE':            return ticket.note || ''
-      case 'SERVICE':         return getF(ticket, 'serviceVehicle', 'service_vehicle')
+      case 'SERVICE':         return formatServiceDriver(ticket)
       case 'UPDATE':          return ticket.remarksUpdate || ticket.remarks || ''
       default: return ''
     }
@@ -1611,95 +2078,147 @@ export default function Tickets() {
   }
 
   // ── Render cell content ───────────────────────────────────────────────────
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean) {
+  function withEditPencil(
+    content: React.ReactNode,
+    isCellExpanded: boolean,
+    ticket: Ticket,
+    rowGhost?: boolean,
+  ) {
+    if (!isCellExpanded || !canEdit || rowGhost) return content
+    return (
+      <div className="relative">
+        <div style={{ paddingRight: 18 }}>{content}</div>
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+          onClick={e => { e.stopPropagation(); openEditModal(ticket) }}
+          title="Edit ticket"
+          className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15 transition-colors"
+          style={{ color: textMuted, lineHeight: 1 }}
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+      </div>
+    )
+  }
+
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null) {
     const { label } = col
 
     // ── DISPLAY STATE ──
     const val = getCellDisplay(ticket, label)
-    const ghostMuted = rowGhost ? textMuted : textPrimary
-    const truncStyle: React.CSSProperties = col.isExpanded
+    const ghostMuted = rowGhost
+      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
+      : textPrimary
+    const isCellExpanded = !!expandedCells[`${ticket.id}:${label}`]
+    const showExpanded = col.isExpanded || isCellExpanded
+    const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
       if (rowGhost) {
+        if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
+          const installed = getInstalledDateKey(ticket)
+          return (
+            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${formatDateKeyLabel(installed)} — see Archives`}>
+              INSTALLED → {formatDateKeyLabel(installed)}
+            </span>
+          )
+        }
         const movedTo = getPreferredDateKey(ticket)
         return (
-          <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic' }} title={`Rescheduled to ${formatDateKeyLabel(movedTo)}`}>
+          <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#a16207' : '#fbbf24' }} title={`Rescheduled to ${formatDateKeyLabel(movedTo)}`}>
             RESCHED → {formatDateKeyLabel(movedTo)}
           </span>
         )
       }
-      return (
+      return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 700 }} title={val}>
           {val ? val.replace(/_/g, ' ') : '—'}
-        </span>
+        </span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === 'SERVICE') {
-      return (
+      return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
-        </span>
+        </span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === 'CONTACT NO.') {
       const formatted = val ? fmtPhone(val) || val : ''
-      return (
+      return withEditPencil(
         <a href={val ? `tel:${val.replace(/\D/g,'').replace(/^0/,'+63')}` : '#'}
            style={{ color: '#10B981', ...truncStyle }}
            onClick={e => { e.stopPropagation(); }}
            title={val}>
           {formatted}
-        </a>
+        </a>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === 'NOTE') {
-      return (
+      return withEditPencil(
         <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
+              title={val} className={showExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
-        </span>
+        </span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === 'UPDATE') {
       if (rowGhost) {
+        if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
+          return (
+            <span style={{ ...truncStyle, color: isLight ? '#15803d' : '#86efac', fontWeight: 600, fontStyle: 'italic' }}
+                  title="Moved to Archives">
+              Archived
+            </span>
+          )
+        }
         const movedTo = getPreferredDateKey(ticket)
         return (
-          <span style={{ ...truncStyle, color: textMuted, fontWeight: 600, fontStyle: 'italic' }}
+          <span style={{ ...truncStyle, color: isLight ? '#a16207' : '#fbbf24', fontWeight: 600, fontStyle: 'italic' }}
                 title={`Moved to ${formatDateKeyLabel(movedTo)}`}>
             Moved to {formatDateKeyLabel(movedTo)}
           </span>
         )
       }
-      return (
+      return withEditPencil(
         <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
+              title={val} className={showExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
-        </span>
+        </span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === "CUSTOMER'S NAME") {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
-      return (
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
     if (label === 'INSTALLER') {
-      return (
-        <span style={{ ...truncStyle }} title={val}>
-          <EmployeeNameLink nameOrId={val} />
-        </span>
+      return withEditPencil(
+        <span style={{ ...truncStyle }} title={val}>{val}</span>,
+        isCellExpanded, ticket, rowGhost,
       )
     }
 
-    return <span style={truncStyle} title={val}>{val}</span>
+    return withEditPencil(
+      <span style={truncStyle} title={val}>{val}</span>,
+      isCellExpanded, ticket, rowGhost,
+    )
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1737,6 +2256,42 @@ export default function Tickets() {
               <span>{getBranchDisplayName(globalBranchId)}</span>
             </div>
           )}
+          <div className="flex items-center rounded-xl border p-0.5 shrink-0"
+               style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
+            <button
+              type="button"
+              onClick={() => setTicketsView('schedule')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={{
+                backgroundColor: ticketsView === 'schedule' ? green : 'transparent',
+                color: ticketsView === 'schedule' ? '#ffffff' : textPrimary,
+              }}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              Schedule
+            </button>
+            <button
+              type="button"
+              onClick={() => setTicketsView('archives')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={{
+                backgroundColor: ticketsView === 'archives' ? green : 'transparent',
+                color: ticketsView === 'archives' ? '#ffffff' : textPrimary,
+              }}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Archives
+              {archiveCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                      style={{
+                        backgroundColor: ticketsView === 'archives' ? 'rgba(255,255,255,0.25)' : 'rgba(22,163,74,0.15)',
+                        color: ticketsView === 'archives' ? '#ffffff' : green,
+                      }}>
+                  {archiveCount}
+                </span>
+              )}
+            </button>
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 max-w-full overflow-x-auto no-scrollbar py-0.5">
             {/* Weekly Tabs */}
             {weeklyTabs.map(tab => {
@@ -1860,10 +2415,13 @@ export default function Tickets() {
                         commitTerms: '',
                         unitType: '',
                         sourceVendor: 'Direct',
-                        serviceVehicle: '',
-                        assignedTo: '',
-                        serviceType: 'Installation',
+                        serviceDriver: '',
+                        installerName: '',
+                        negotiatorId: '',
+                        ticketNumber: '',
                         controlNumber: '',
+                        modeOfPayment: '',
+                        installationCharges: undefined,
                       })
                       setAddModalOpen(true)
                     }}
@@ -1880,7 +2438,7 @@ export default function Tickets() {
                     style={{ color: textPrimary }}
                   >
                     <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                    Scan Image
+                    Scan Schedule Sheet
                   </button>
                   <button
                     type="button"
@@ -1923,7 +2481,7 @@ export default function Tickets() {
               <input
                 ref={scanFileInputRef}
                 type="file"
-                accept="image/*,application/pdf"
+                accept="image/*"
                 className="hidden"
                 onChange={handleScanFilePicked}
               />
@@ -1954,7 +2512,7 @@ export default function Tickets() {
       </div>
 
       {/* Stats bar */}
-      {!loading && tickets.length > 0 && (
+      {!loading && tickets.length > 0 && ticketsView === 'schedule' && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
@@ -1970,6 +2528,22 @@ export default function Tickets() {
             <span style={{ color: textMuted }}>For Quotation / For Approval</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
           </div>
+        </div>
+      )}
+      {!loading && ticketsView === 'archives' && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
+             style={{ backgroundColor: cardBg, borderColor: border }}>
+          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Archives:</span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: textMuted }}>Completed Installations</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(22,163,74,0.15)', color: green }}>{archiveCount}</span>
+          </div>
+          {dateFilter && (
+            <div className="flex items-center gap-1">
+              <span style={{ color: textMuted }}>On {formatDateKeyLabel(dateFilter)}</span>
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(100,116,139,0.15)', color: textMuted }}>{visible.length}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -2038,7 +2612,7 @@ export default function Tickets() {
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${border}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                          No records
+                          {ticketsView === 'archives' ? 'No archived installations' : 'No records'}
                         </p>
                         {searchQuery && (
                           <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
@@ -2049,16 +2623,25 @@ export default function Tickets() {
                 ) : (
                   visible.map((ticket, idx) => {
                     const isHovered = hoveredRow === ticket.id
-                    const isGhost = Boolean(dateFilter && isRescheduledGhostOnDate(ticket, dateFilter))
-                    const baseBg   = isGhost
-                      ? (isLight ? '#e2e8f0' : '#141c2e')
-                      : (idx % 2 === 0 ? rowEven : rowOdd)
+                    const ghostKind = ticketsView === 'schedule' && dateFilter
+                      ? getScheduleGhostKind(ticket, dateFilter)
+                      : null
+                    const isGhost = Boolean(ghostKind)
+                    const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
+                    const baseBg = ghostKind === 'completed'
+                      ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)')
+                      : ghostKind === 'resched'
+                        ? (isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)')
+                        : isDuplicateName
+                          ? (isLight ? '#fef9c3' : '#3d3418')
+                          : (idx % 2 === 0 ? rowEven : rowOdd)
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
+                    const ghostAccent = ghostKind === 'completed' ? green : ghostKind === 'resched' ? '#fbbf24' : undefined
                   return (
-                    <tr key={`${ticket.id}${isGhost ? '-ghost' : ''}`}
+                    <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                         style={{
                           borderBottom: `1px solid ${border}`,
-                          opacity: isGhost ? 0.78 : 1,
+                          boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
                         }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
                         onMouseLeave={() => setHoveredRow(null)}
@@ -2075,14 +2658,10 @@ export default function Tickets() {
                           <td key={col.label}
                               onClick={e => {
                                 e.stopPropagation()
-                                const isExpanding = !expandedCols[col.label]
-                                toggleCol(col.label)
-                                if (isExpanding) {
-                                  const td = e.currentTarget
-                                  setTimeout(() => {
-                                    td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-                                  }, 80)
-                                }
+                                setExpandedCells(prev => ({
+                                  ...prev,
+                                  [`${ticket.id}:${col.label}`]: !prev[`${ticket.id}:${col.label}`],
+                                }))
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
@@ -2104,7 +2683,7 @@ export default function Tickets() {
                                 textAlign: col.align || 'left',
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
                               }}>
-                            {renderCell(ticket, col, idx, isGhost)}
+                            {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
                         )
                       })}
@@ -2190,16 +2769,23 @@ export default function Tickets() {
         const district = parseDistrict(t.location, t.district)
         const brand = parseBrand(t)
         const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-        const installer = getF(t, 'assignedEmployeeName', 'assigned_employee_name')
-        const serviceType = getF(t, 'serviceType', 'service_type')
-        const vehicle = getF(t, 'serviceVehicle', 'service_vehicle')
+        const installer = getInstallerDisplay(t)
+        const serviceDriver = formatServiceDriver(t)
         const update = t.remarks || ''
         const note = t.note || ''
         const commit = getF(t, 'commitType', 'commitTerms', 'description')
-        const custName = getF(t, 'customerName', 'customer_name') || t.title
-        const email = getF(t, 'customerEmail', 'customer_email', 'email')
+        const custName = getCustomerDisplayName(t) || t.title
+        const negotiatorId = t.negotiatorId || t.negotiator_id || ''
+        const negotiatorName = branchEmployees.find(e => e.id === negotiatorId)?.name || ''
         const preferredDate = t.preferredDate || t.preferred_date
         const dealer = getF(t, 'dealer')
+        const isCompleted = (t.status || '').toUpperCase() === 'COMPLETED'
+        const hasPayment = ticketHasPaymentInfo(t)
+        const paymentAmt = formatPaymentAmount(t)
+        const paymentMode = getPaymentMode(t)
+        const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
+        const installedDate = formatDateKeyLabel(getInstalledDateKey(t))
+        const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(custName))
 
         const Row = ({ icon: Icon, label, val, color }: { icon: any; label: string; val: string; color?: string }) =>
           val ? (
@@ -2230,6 +2816,15 @@ export default function Tickets() {
                 <div className="flex flex-col gap-1.5 min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Ticket Details</p>
                   <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
+                  <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
+                    Ticket No: {t.ticketNumber || t.ticket_number || '—'}
+                  </p>
+                  <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>ID: {t.id}</p>
+                  {isDuplicateName && (
+                    <p className="text-[10px] font-bold" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
+                      Duplicate customer name on this date — each row has its own ticket ID.
+                    </p>
+                  )}
                   <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
                         style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
                     <Clock className="w-3 h-3" />{t.status.replace(/_/g, ' ')}
@@ -2248,16 +2843,29 @@ export default function Tickets() {
                 {/* Left Column: Details */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-1">
                   <Row icon={User}    label="Customer"   val={custName} />
+                  <Row icon={Wrench}  label="Ticket No." val={t.ticketNumber || t.ticket_number || ''} />
+                  <Row icon={Wrench}  label="Control No. / SI (Aircon)" val={t.controlNumber || t.control_number || ''} />
                   <Row icon={Phone}   label="Contact"    val={phone ? (fmtPhone(phone) || phone) : ''} />
-                  <Row icon={Mail}    label="Email"      val={email} />
                   <Row icon={MapPin}  label="Address"    val={addr} />
                   <Row icon={MapPin}  label="District"   val={district} />
-                  <Row icon={Wrench}  label="Service Type" val={serviceType} />
-                  <Row icon={Wrench}  label="Service Vehicle" val={vehicle} />
+                  <Row icon={Wrench}  label="Service / Driver" val={serviceDriver} />
                   <Row icon={Wrench}  label="Brand / Unit" val={brand} />
                   <Row icon={Wrench}  label={isTaguigServices ? "Endorsed By" : "Dealer"}     val={dealer} />
                   <Row icon={User}    label={isTaguigServices ? "Technician" : "Installer"}  val={installer} />
+                  <Row icon={User}    label="Negotiator" val={negotiatorName} />
                   <Row icon={Clock}   label="Preferred Date" val={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''} />
+                  {isCompleted && archivedSched && (
+                    <Row icon={Clock} label="Scheduled Date" val={archivedSched} />
+                  )}
+                  {isCompleted && installedDate && (
+                    <Row icon={Clock} label="Installed Date" val={installedDate} />
+                  )}
+                  {hasPayment && paymentAmt && (
+                    <Row icon={Wrench} label="Payment Amount" val={paymentAmt} color={green} />
+                  )}
+                  {hasPayment && paymentMode && (
+                    <Row icon={Wrench} label="Mode of Payment" val={paymentMode} />
+                  )}
                   
                   {commit && (
                     <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
@@ -2554,7 +3162,7 @@ export default function Tickets() {
                   Excel Import: {importResults.fileName}
                 </h3>
                 <p className="text-[10px] font-semibold mt-0.5" style={{ color: textMuted }}>
-                  Review parsed updates from {importResults.rowRangeLabel} and confirm payment completion before saving.
+                  Review parsed updates from {importResults.rowRangeLabel} (Excel or scanned image) and confirm payment completion before saving.
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -2870,39 +3478,82 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Service Vehicle">
-                    <input type="text" value={addForm.serviceVehicle || ''} 
-                      onChange={e => setAddForm({ ...addForm, serviceVehicle: e.target.value })}
+                  <Field label={isTaguigServices ? 'Service / Driver' : 'Service / Driver'}>
+                    <input type="text" value={addForm.serviceDriver || ''}
+                      placeholder="e.g. T3 (DOMINIC) - 1"
+                      onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Installer / Technician">
-                    <select value={addForm.assignedTo || ''}
-                      onChange={e => setAddForm({ ...addForm, assignedTo: e.target.value })}
+                  <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
+                    <input type="text" value={addForm.installerName || ''}
+                      placeholder="e.g. RYAN - 1"
+                      onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Negotiator">
+                    <select value={addForm.negotiatorId || ''}
+                      onChange={e => setAddForm({ ...addForm, negotiatorId: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      <option value="">-- Unassigned --</option>
-                      {technicians.map(tech => (
-                        <option key={tech.id} value={tech.id}>{tech.name}</option>
+                      <option value="">-- Select negotiator --</option>
+                      {branchEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
                       ))}
                     </select>
                   </Field>
-                  <Field label="Service Type" required>
-                    <select value={addForm.serviceType || 'Installation'}
-                      onChange={e => setAddForm({ ...addForm, serviceType: e.target.value })}
+                  <Field label="Ticket No.">
+                    <input type="text" value={addForm.ticketNumber || ''}
+                      placeholder="Auto-generated if left blank (e.g. TKT-00001)"
+                      onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      <option value="Installation">Installation</option>
-                      <option value="Cleaning">Cleaning</option>
-                      <option value="Maintenance">Maintenance</option>
-                      <option value="Repair">Repair</option>
-                      <option value="Survey">Survey</option>
-                    </select>
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Control No. / SI">
-                    <input type="text" value={addForm.controlNumber || ''} 
+                  <Field label="Control No. / SI (Aircon)">
+                    <input type="text" value={addForm.controlNumber || ''}
+                      placeholder="From import only — aircon papers / SI"
                       onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Payment (optional)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Mode of Payment">
+                    <select value={addForm.modeOfPayment || ''}
+                      onChange={e => {
+                        const nextMode = e.target.value
+                        setAddForm(prev => ({
+                          ...prev,
+                          modeOfPayment: nextMode,
+                          installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
+                            ? 0
+                            : prev.installationCharges,
+                        }))
+                      }}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      <option value="">-- Select --</option>
+                      <option value="CASH">CASH</option>
+                      <option value="BANK TRANSFER">BANK TRANSFER</option>
+                      <option value="GCASH">GCASH</option>
+                      <option value="CHEQUE">CHEQUE</option>
+                      <option value="FREE INSTALL">FREE INSTALL</option>
+                    </select>
+                  </Field>
+                  <Field label="Payment Amount (₱)">
+                    <input type="number" step="0.01" min="0"
+                      placeholder="0.00"
+                      value={addForm.installationCharges ?? ''}
+                      disabled={addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL'}
+                      onChange={e => setAddForm({ ...addForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                 </div>
@@ -2926,53 +3577,44 @@ export default function Tickets() {
         </div>
       )}
 
-      {editModalOpen && (
+      {editModalOpen && (() => {
+        const isReschedStatus = (editForm.status || '').toUpperCase() === 'RESCHED'
+        const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
+        const showPaymentSection = ticketHasPaymentInfo(editForm) || Boolean(editForm.modeOfPayment || editForm.installationCharges != null)
+        const reschedFieldStyle = {
+          backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)',
+          border: `2px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.55)'}`,
+          boxShadow: isLight ? '0 0 0 3px rgba(251,191,36,0.2)' : '0 0 0 3px rgba(251,191,36,0.15)',
+        }
+
+        return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
              onClick={() => setEditModalOpen(false)}>
           <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
                onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
-                Edit Ticket Details
-              </h3>
+              <div>
+                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
+                  Edit Ticket Details
+                </h3>
+                {editForm.id && (
+                  <p className="text-[10px] font-mono font-semibold mt-1" style={{ color: textMuted }}>
+                    Ticket No: {editForm.ticketNumber || 'Auto on create'}
+                  </p>
+                )}
+                {editOriginalDate && !isReschedStatus && (
+                  <p className="text-[10px] font-semibold mt-1" style={{ color: textMuted }}>
+                    Scheduled: <span style={{ color: textPrimary }}>{formatDateKeyLabel(editOriginalDate)}</span>
+                  </p>
+                )}
+              </div>
               <button onClick={() => setEditModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-              {(editForm.status === 'SCHEDULED' || editForm.status === 'RESCHED' || editOriginalDate) && (
-                <div className="rounded-xl border p-4 flex flex-col gap-3"
-                     style={{ borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)' }}>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: isLight ? '#b45309' : '#fbbf24' }}>
-                      Reschedule
-                    </p>
-                    {editOriginalDate && (
-                      <p className="text-[11px] font-semibold mt-1" style={{ color: textMuted }}>
-                        Currently scheduled: <span style={{ color: textPrimary }}>{formatDateKeyLabel(editOriginalDate)}</span>
-                      </p>
-                    )}
-                  </div>
-                  <Field label="Reschedule To" required>
-                    <input
-                      type="date"
-                      value={editForm.preferredDate || ''}
-                      onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                    />
-                  </Field>
-                  {editOriginalDate && editForm.preferredDate && editForm.preferredDate !== editOriginalDate && (
-                    <p className="text-[11px] font-semibold leading-relaxed" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
-                      Saving will gray out this row on {formatDateKeyLabel(editOriginalDate)} and show the ticket on {formatDateKeyLabel(editForm.preferredDate)}.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Customer Info Section */}
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
                   Customer Information
@@ -3039,51 +3681,85 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Service Vehicle">
-                    <input type="text" value={editForm.serviceVehicle || ''} 
-                      onChange={e => setEditForm({ ...editForm, serviceVehicle: e.target.value })}
+                  <Field label="Service / Driver">
+                    <input type="text" value={editForm.serviceDriver || ''}
+                      placeholder="e.g. T3 (DOMINIC) - 1"
+                      onChange={e => setEditForm({ ...editForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Installer / Technician">
-                    <select value={editForm.assignedTo || ''}
-                      onChange={e => setEditForm({ ...editForm, assignedTo: e.target.value })}
+                  <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
+                    <input type="text" value={editForm.installerName || ''}
+                      placeholder="e.g. RYAN - 1"
+                      onChange={e => setEditForm({ ...editForm, installerName: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Negotiator">
+                    <select value={editForm.negotiatorId || ''}
+                      onChange={e => setEditForm({ ...editForm, negotiatorId: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      <option value="">-- Unassigned --</option>
-                      {technicians.map(tech => (
-                        <option key={tech.id} value={tech.id}>{tech.name}</option>
+                      <option value="">-- Select negotiator --</option>
+                      {branchEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
                       ))}
                     </select>
                   </Field>
-                  <Field label="Service Type" required>
-                    <select value={editForm.serviceType || 'Installation'}
-                      onChange={e => setEditForm({ ...editForm, serviceType: e.target.value })}
+                  <Field label="Ticket No.">
+                    <input type="text" value={editForm.ticketNumber || ''}
+                      placeholder="e.g. TKT-00001"
+                      onChange={e => setEditForm({ ...editForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      <option value="Installation">Installation</option>
-                      <option value="Cleaning">Cleaning</option>
-                      <option value="Maintenance">Maintenance</option>
-                      <option value="Repair">Repair</option>
-                      <option value="Survey">Survey</option>
-                    </select>
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Control No. / SI">
-                    <input type="text" value={editForm.controlNumber || ''} 
+                  <Field label="Control No. / SI (Aircon)">
+                    <input type="text" value={editForm.controlNumber || ''}
+                      placeholder="Aircon papers / SI — leave empty if N/A"
                       onChange={e => setEditForm({ ...editForm, controlNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Status" required>
-                    <select value={editForm.status || 'PENDING'}
-                      onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      {STATUS_OPTS.map(opt => (
-                        <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
-                      ))}
-                    </select>
-                  </Field>
+                  <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
+                    <Field label="Status" required>
+                      <select value={editForm.status || 'PENDING'}
+                        onChange={e => {
+                          const next = e.target.value
+                          setEditForm({
+                            ...editForm,
+                            status: next,
+                            rescheduleToDate: next === 'RESCHED'
+                              ? (editForm.rescheduleToDate || editForm.preferredDate || editOriginalDate || '')
+                              : '',
+                          })
+                        }}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        {STATUS_OPTS.map(opt => (
+                          <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    {isReschedStatus && (
+                      <Field label="Reschedule To" required>
+                        <input
+                          type="date"
+                          autoFocus={justChangedToResched}
+                          value={editForm.rescheduleToDate || ''}
+                          onChange={e => setEditForm({ ...editForm, rescheduleToDate: e.target.value })}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full"
+                          style={reschedFieldStyle}
+                        />
+                      </Field>
+                    )}
+                  </div>
+                  {isReschedStatus && editOriginalDate && (
+                    <p className="text-[11px] font-semibold leading-relaxed md:col-span-2" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
+                      {editForm.rescheduleToDate && editForm.rescheduleToDate !== editOriginalDate
+                        ? `Row will gray out on ${formatDateKeyLabel(editOriginalDate)} and appear on ${formatDateKeyLabel(editForm.rescheduleToDate)}.`
+                        : `Currently on ${formatDateKeyLabel(editOriginalDate)} — pick a new date beside RESCHED.`}
+                    </p>
+                  )}
                   <Field label="Remarks / Update" full>
                     <textarea value={editForm.remarks || ''} 
                       onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
@@ -3092,6 +3768,69 @@ export default function Tickets() {
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                 </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <h4 className="text-[10px] font-black uppercase tracking-wider opacity-60 text-slate-400">
+                    Payment
+                  </h4>
+                  {!showPaymentSection && (
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({ ...prev, modeOfPayment: prev.modeOfPayment || 'CASH' }))}
+                      className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80"
+                      style={{ borderColor: inputBorder, color: green }}>
+                      + Add payment
+                    </button>
+                  )}
+                </div>
+                {showPaymentSection && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl p-4"
+                       style={{
+                         border: `1px solid ${ticketHasPaymentInfo(editForm) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
+                         backgroundColor: ticketHasPaymentInfo(editForm)
+                           ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)')
+                           : inputBg,
+                       }}>
+                    <Field label="Mode of Payment">
+                      <select value={editForm.modeOfPayment || ''}
+                        onChange={e => {
+                          const nextMode = e.target.value
+                          setEditForm(prev => ({
+                            ...prev,
+                            modeOfPayment: nextMode,
+                            installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
+                              ? 0
+                              : prev.installationCharges,
+                          }))
+                        }}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        <option value="">-- Select --</option>
+                        <option value="CASH">CASH</option>
+                        <option value="BANK TRANSFER">BANK TRANSFER</option>
+                        <option value="GCASH">GCASH</option>
+                        <option value="CHEQUE">CHEQUE</option>
+                        <option value="FREE INSTALL">FREE INSTALL</option>
+                      </select>
+                    </Field>
+                    <Field label="Payment Amount (₱)">
+                      <input type="number" step="0.01" min="0"
+                        placeholder="0.00"
+                        value={editForm.installationCharges ?? ''}
+                        disabled={editForm.modeOfPayment === 'FREE' || editForm.modeOfPayment === 'FREE INSTALL'}
+                        onChange={e => setEditForm({ ...editForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
+                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    </Field>
+                    {qualifiesForInstallComplete(editForm, { remarksUpdate: editForm.remarks, remarks: editForm.remarks, installationCharges: editForm.installationCharges, modeOfPayment: editForm.modeOfPayment }) && (editForm.status || '').toUpperCase() !== 'COMPLETED' && (
+                      <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
+                        Installed remarks + payment detected — saving will complete this ticket and move it to Archives.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3110,7 +3849,8 @@ export default function Tickets() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
