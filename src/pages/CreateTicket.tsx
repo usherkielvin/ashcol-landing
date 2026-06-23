@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 
@@ -335,12 +336,15 @@ export default function CreateTicket() {
       const fullLoc = [address.region, address.city, address.barangay, address.street]
         .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const branchId = resolveScopedBranchId(
+        localStorage.getItem('ashcol-global-branch-id') || user?.branchId
+      ) || undefined
 
-      const res = await fetch(`${apiUrl}/tickets`, {
+      const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          customerName: fullName.trim(),
           title: `${selectedService} service`,
           description: fullDesc,
           serviceType: selectedService,
@@ -350,9 +354,13 @@ export default function CreateTicket() {
           preferredDate: selectedDate || undefined,
           location: fullLoc.trim(),
           sourceVendor: sourceVendor,
+          branchId,
         })
       })
-      if (!res.ok) throw new Error('Failed')
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(errText || `Failed (HTTP ${res.status})`)
+      }
       navigate('/tickets')
     } catch (err) {
       console.error(err)

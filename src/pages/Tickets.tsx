@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -236,8 +237,20 @@ function formatDateTriggerLabel(value: string) {
   return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
 }
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-
+async function readApiError(res: Response): Promise<string> {
+  try {
+    const data = await res.json()
+    if (typeof data === 'string') return data
+    return data.error || data.message || JSON.stringify(data)
+  } catch {
+    try {
+      const text = await res.text()
+      return text || `HTTP ${res.status}`
+    } catch {
+      return `HTTP ${res.status}`
+    }
+  }
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Tickets() {
@@ -662,12 +675,12 @@ export default function Tickets() {
       const tokenVal = token()
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch(`${API_URL}/tickets/scan`, {
+      const res = await fetch(`${API_BASE_URL}/v1/tickets/scan`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${tokenVal}` },
         body: formData,
       })
-      if (!res.ok) throw new Error(`Scan failed (HTTP ${res.status})`)
+      if (!res.ok) throw new Error(await readApiError(res))
       const data = await res.json()
       if (data.error) {
         alert(`Scan failed: ${data.error}`)
@@ -724,10 +737,10 @@ export default function Tickets() {
         serviceVehicle: addForm.serviceVehicle?.trim() || undefined,
         assignedTo: addForm.assignedTo || undefined,
         controlNumber: addForm.controlNumber?.trim() || undefined,
-        branchId: globalBranchId || user?.branchId || undefined,
+        branchId: resolveScopedBranchId(globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id')),
       }
 
-      const res = await fetch(`${API_URL}/tickets`, {
+      const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -830,7 +843,7 @@ export default function Tickets() {
         installerName: editForm.assignedTo ? technicians.find(t => t.id === editForm.assignedTo)?.name : undefined,
       })
 
-      const res = await fetch(`${API_URL}/tickets/${editForm.id}`, {
+      const res = await fetch(`${API_BASE_URL}/tickets/${editForm.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -855,6 +868,12 @@ export default function Tickets() {
     }
   }
 
+  const resolveImportBranchId = useCallback((ticketBranchId?: string) => {
+    return resolveScopedBranchId(
+      ticketBranchId || globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id')
+    )
+  }, [globalBranchId, user?.branchId])
+
   const handleApplyImport = async () => {
     if (!importResults) return
     setSaving(true)
@@ -869,10 +888,17 @@ export default function Tickets() {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     })()
 
-    const targetBranch = (globalBranchId || user?.branchId || '').replace(/-(sales|services)$/i, '')
-
+    const targetBranch = resolveImportBranchId()
     const normalUpdates = importResults.updates.filter(item => item.updatedFields.status !== 'COMPLETED')
     const completedUpdates = importResults.updates.filter(item => item.updatedFields.status === 'COMPLETED')
+
+    if (!targetBranch && (importResults.unmatched.length > 0 || completedUpdates.length > 0)) {
+      setSaving(false)
+      alert('Select a branch before importing — use the branch selector in the sidebar.')
+      return
+    }
+
+    const importErrors: string[] = []
 
     for (const item of normalUpdates) {
       const { ticket, updatedFields } = item
@@ -902,7 +928,7 @@ export default function Tickets() {
       }
 
       try {
-        const res = await fetch(`${API_URL}/tickets/${ticket.id}`, {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
           body: JSON.stringify(body),
@@ -911,9 +937,11 @@ export default function Tickets() {
           successCount++
         } else {
           failCount++
+          importErrors.push(await readApiError(res))
         }
-      } catch {
+      } catch (err: any) {
         failCount++
+        importErrors.push(err?.message || 'Update failed')
       }
     }
 
@@ -926,7 +954,7 @@ export default function Tickets() {
       const controlNo = updatedFields.controlNumber ?? ticket.controlNumber ?? ''
 
       const serviceReportPayload = {
-        branchId: (ticket.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
+        branchId: resolveImportBranchId(ticket.branchId),
         reportDate: importTargetDate || todayStr,
         customerName: custName,
         customerAddress: formatAddress(updatedFields.location ? updatedFields.location : ticket.location),
@@ -948,14 +976,14 @@ export default function Tickets() {
       }
 
       try {
-        const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+        const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
           body: JSON.stringify(serviceReportPayload)
         })
-        if (!reportRes.ok) throw new Error('Report save failed')
+        if (!reportRes.ok) throw new Error(await readApiError(reportRes))
 
-        const deleteRes = await fetch(`${API_URL}/tickets/${ticket.id}`, {
+        const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${tokenVal}` }
         })
@@ -963,10 +991,12 @@ export default function Tickets() {
           completeCount++
         } else {
           failCount++
+          importErrors.push(await readApiError(deleteRes))
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error completing ticket:', err)
         failCount++
+        importErrors.push(err?.message || 'Complete failed')
       }
     }
 
@@ -975,7 +1005,7 @@ export default function Tickets() {
       const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
 
       const serviceReportPayload = {
-        branchId: (ticket.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
+        branchId: resolveImportBranchId(ticket.branchId),
         reportDate: importTargetDate || todayStr,
         customerName: custName,
         customerAddress: formatAddress(ticket.location),
@@ -996,14 +1026,14 @@ export default function Tickets() {
       }
 
       try {
-        const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+        const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
           body: JSON.stringify(serviceReportPayload)
         })
-        if (!reportRes.ok) throw new Error('Report save failed')
+        if (!reportRes.ok) throw new Error(await readApiError(reportRes))
 
-        const deleteRes = await fetch(`${API_URL}/tickets/${ticket.id}`, {
+        const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${tokenVal}` }
         })
@@ -1011,10 +1041,12 @@ export default function Tickets() {
           completeCount++
         } else {
           failCount++
+          importErrors.push(await readApiError(deleteRes))
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error completing ticket:', err)
         failCount++
+        importErrors.push(err?.message || 'Complete failed')
       }
     }
 
@@ -1052,7 +1084,7 @@ export default function Tickets() {
         }
 
         try {
-          const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+          const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
             body: JSON.stringify(serviceReportPayload)
@@ -1061,10 +1093,12 @@ export default function Tickets() {
             completeCount++
           } else {
             failCount++
+            importErrors.push(await readApiError(reportRes))
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('Error completing unmatched ticket:', err)
           failCount++
+          importErrors.push(err?.message || 'Unmatched complete failed')
         }
       } else {
         const body: Record<string, any> = {
@@ -1076,14 +1110,11 @@ export default function Tickets() {
           contactPhone: item.phone,
           location: (item.location ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location) : '').trim() || 'No Address Provided',
           sourceVendor: item.dlr || 'Direct',
-          priorityTag: '',
           district: item.district,
           commitType: item.commit,
           installerName: item.installer,
-          assignedEmployeeName: item.installer,
           serviceVehicle: item.service,
           remarksUpdate: item.update,
-          remarks: item.update,
           installationCharges: item.charges,
           modeOfPayment: item.paymentMode,
           controlNumber: item.controlNo,
@@ -1093,7 +1124,7 @@ export default function Tickets() {
         }
 
         try {
-          const res = await fetch(`${API_URL}/tickets`, {
+          const res = await fetch(`${API_BASE_URL}/tickets`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1105,17 +1136,20 @@ export default function Tickets() {
             createdCount++
           } else {
             failCount++
+            importErrors.push(await readApiError(res))
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('Failed to create unmatched ticket:', err)
           failCount++
+          importErrors.push(err?.message || 'Create failed')
         }
       }
     }
 
     setSaving(false)
     setImportResults(null)
-    showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})` : ''}`)
+    const failHint = failCount > 0 && importErrors.length > 0 ? ` First error: ${importErrors[0]}` : ''
+    showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})${failHint}` : ''}`)
     fetchTickets()
   }
 
@@ -1126,7 +1160,7 @@ export default function Tickets() {
     }
     setLoadingHistory(true)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-    fetch(`${API_URL}/tickets/${detailTicket.id}/history`, {
+    fetch(`${API_BASE_URL}/tickets/${detailTicket.id}/history`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -1183,7 +1217,7 @@ export default function Tickets() {
     try {
       const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
       const size = isAdmin ? 300 : 200
-      const res  = await fetch(`${API_URL}${ep}?page=0&size=${size}`, {
+      const res  = await fetch(`${API_BASE_URL}${ep}?page=0&size=${size}`, {
         headers: { Authorization: `Bearer ${token()}` }
       })
       if (!res.ok) throw new Error('fetch failed')
@@ -1199,7 +1233,7 @@ export default function Tickets() {
   useEffect(() => {
     if (canEdit) {
       const headers = { Authorization: `Bearer ${token()}` }
-      fetch(`${API_URL}/user/all?role=EMPLOYEE`, { headers })
+      fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -1343,7 +1377,7 @@ export default function Tickets() {
     if (!confirm('Delete this ticket?')) return
     setContextMenu(null)
     try {
-      const res = await fetch(`${API_URL}/tickets/${ticketId}`, {
+      const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token()}` }
       })
       if (!res.ok) throw new Error('Failed')
@@ -1368,7 +1402,7 @@ export default function Tickets() {
     try {
       const ids = visible.map(t => t.id)
       const results = await Promise.allSettled(ids.map(id =>
-        fetch(`${API_URL}/tickets/${id}`, {
+        fetch(`${API_BASE_URL}/tickets/${id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token()}` },
         })
@@ -2184,7 +2218,7 @@ export default function Tickets() {
                controlNumber: t.controlNumber || ''
              }
 
-            const reportRes = await fetch(`${API_URL}/v1/service-reports`, {
+            const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -2195,7 +2229,7 @@ export default function Tickets() {
             if (!reportRes.ok) throw new Error('Failed to create Service Report')
 
             // 2. Delete the ticket from the active list
-            const deleteRes = await fetch(`${API_URL}/tickets/${t.id}`, {
+            const deleteRes = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
               method: 'DELETE',
               headers: {
                 'Authorization': `Bearer ${token()}`

@@ -4,6 +4,18 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PROD_API_BASE_URL : 'http://localhost:8080/api')
 export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '')
 
+/** Normalize branch id for API writes (mirrors backend scopedBranchId). */
+export function resolveScopedBranchId(branchId?: string | null): string {
+  const raw = (branchId || '').trim()
+  if (!raw) return ''
+  const upper = raw.toUpperCase()
+  if (upper.startsWith('BR-TAGUIG') || upper.startsWith('2880C29E-581C-11F1-BF8C-74D4DD6DFC0B')) {
+    if (upper.includes('SERVICE')) return 'BR-TAGUIG-SERVICES'
+    return 'BR-TAGUIG-SALES'
+  }
+  return raw.replace(/-(sales|services|service)$/i, '')
+}
+
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
   if (path.startsWith('http') || path.startsWith('data:')) return path

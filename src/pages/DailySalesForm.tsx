@@ -497,7 +497,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         const isEditing = !!(reportId || urlParams.get('id'))
         if (!isEditing && !ignoreNextCohFetch.current) {
           const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
-          const resAudit = await fetch(`${API_BASE_URL}/reports/audit-summary?date=${yesterday}`, { headers })
+          const resAudit = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${yesterday}`, { headers })
           if (resAudit.ok) {
             const data = await resAudit.json()
             const myRow = data.find((r: any) => {
