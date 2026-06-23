@@ -99,7 +99,7 @@ type ImportUnmatchedRow = {
 
 
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR APPROVAL', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatAddress(loc: any): string {
@@ -549,7 +549,8 @@ export default function Tickets() {
             updatedFields.assignedEmployeeName = installer
           }
 
-          const statusVal = val(colMap.status).toUpperCase()
+          let statusVal = val(colMap.status).toUpperCase().trim().replace(/\s+/g, '_')
+          if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
           if (statusVal && STATUS_OPTS.includes(statusVal)) {
             updatedFields.status = statusVal
           }
