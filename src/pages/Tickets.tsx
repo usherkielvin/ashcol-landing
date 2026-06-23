@@ -241,7 +241,8 @@ async function readApiError(res: Response): Promise<string> {
   try {
     const data = await res.json()
     if (typeof data === 'string') return data
-    return data.error || data.message || JSON.stringify(data)
+    if (data?.message) return data.message
+    return data.error || JSON.stringify(data)
   } catch {
     try {
       const text = await res.text()
@@ -250,6 +251,98 @@ async function readApiError(res: Response): Promise<string> {
       return `HTTP ${res.status}`
     }
   }
+}
+
+function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
+  return Boolean(
+    (item.status && item.status.toUpperCase() === 'COMPLETED') ||
+    (item.update && item.update.toLowerCase().includes('installed'))
+  )
+}
+
+function buildImportCreateRow(item: ImportUnmatchedRow): Record<string, unknown> {
+  const location = (item.location
+    ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location)
+    : '').trim() || 'No Address Provided'
+
+  const row: Record<string, unknown> = {
+    title: `${item.service || 'S/I'} service`.trim(),
+    description: (item.note || item.update || 'Excel imported ticket').trim(),
+    customerName: (item.name || 'Unknown Customer').trim(),
+    serviceType: item.service || 'S/I',
+    unitType: item.brand || 'Split AC',
+    location,
+    sourceVendor: item.dlr || 'Direct',
+    status: 'PENDING',
+  }
+
+  if (item.phone?.trim()) row.contactPhone = item.phone.trim()
+  if (item.district?.trim()) row.district = item.district.trim()
+  if (item.commit?.trim()) row.commitType = item.commit.trim()
+  if (item.installer?.trim()) row.installerName = item.installer.trim()
+  if (item.service?.trim()) row.serviceVehicle = item.service.trim()
+  if (item.update?.trim()) row.remarksUpdate = item.update.trim()
+  if (item.charges != null && !Number.isNaN(Number(item.charges))) row.installationCharges = item.charges
+  if (item.paymentMode?.trim()) row.modeOfPayment = item.paymentMode.trim()
+  if (item.controlNo?.trim()) row.controlNumber = item.controlNo.trim()
+
+  return row
+}
+
+function buildPatchImportBody(
+  ticket: Ticket,
+  updatedFields: Partial<Ticket>,
+  importTargetDate?: string,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+
+  const set = (key: string, val: unknown) => {
+    if (val !== undefined && val !== null && val !== '') body[key] = val
+  }
+
+  set('customerName', updatedFields.customerName)
+  set('location', updatedFields.location)
+  set('district', updatedFields.district)
+  set('contactPhone', updatedFields.contactPhone)
+  set('unitType', updatedFields.unitType)
+  set('sourceVendor', updatedFields.sourceVendor)
+  set('commitType', updatedFields.commitType ?? updatedFields.commitTerms)
+  set('serviceVehicle', updatedFields.serviceVehicle)
+  set('remarksUpdate', updatedFields.remarksUpdate ?? updatedFields.remarks)
+  set('controlNumber', updatedFields.controlNumber)
+  set('installerName', updatedFields.installerName ?? updatedFields.assignedEmployeeName)
+  if (updatedFields.installationCharges != null) body.installationCharges = updatedFields.installationCharges
+  if (updatedFields.modeOfPayment) body.modeOfPayment = updatedFields.modeOfPayment
+  if (updatedFields.status) body.status = updatedFields.status
+  if (importTargetDate) body.preferredDate = importTargetDate
+
+  let acBase: Ticket = ticket
+  if (updatedFields.location) {
+    const acDetails = mergeAcMeta(acBase, { destination: updatedFields.location, address: updatedFields.location })
+    body.acDetails = acDetails
+    acBase = { ...ticket, acDetails }
+  }
+  if (updatedFields.district) {
+    const acDetails = mergeAcMeta(acBase, { district: updatedFields.district })
+    body.acDetails = acDetails
+    acBase = { ...ticket, acDetails }
+  }
+  if (updatedFields.unitType) {
+    const acDetails = mergeAcMeta(acBase, { brand: updatedFields.unitType, unitType: updatedFields.unitType })
+    body.acDetails = acDetails
+    acBase = { ...ticket, acDetails }
+  }
+  if (updatedFields.sourceVendor) {
+    const acDetails = mergeAcMeta(acBase, { dealer: updatedFields.sourceVendor, dlr: updatedFields.sourceVendor })
+    body.acDetails = acDetails
+    acBase = { ...ticket, acDetails }
+  }
+  if (updatedFields.remarksUpdate || updatedFields.remarks) {
+    const remark = updatedFields.remarksUpdate ?? updatedFields.remarks
+    body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
+  }
+
+  return body
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -902,30 +995,8 @@ export default function Tickets() {
 
     for (const item of normalUpdates) {
       const { ticket, updatedFields } = item
-      if (Object.keys(updatedFields).length === 0) continue
-
-      const body: Record<string, any> = { ...updatedFields }
-      if (importTargetDate) {
-        body.preferredDate = importTargetDate
-        if (!body.status) {
-          body.status = 'SCHEDULED'
-        }
-      }
-      if (updatedFields.location) {
-        body.acDetails = mergeAcMeta(ticket, { destination: updatedFields.location, address: updatedFields.location })
-      }
-      if (updatedFields.district) {
-        body.acDetails = mergeAcMeta(ticket, { district: updatedFields.district })
-      }
-      if (updatedFields.unitType) {
-        body.acDetails = mergeAcMeta(ticket, { brand: updatedFields.unitType, unitType: updatedFields.unitType })
-      }
-      if (updatedFields.sourceVendor) {
-        body.acDetails = mergeAcMeta(ticket, { dealer: updatedFields.sourceVendor, dlr: updatedFields.sourceVendor })
-      }
-      if (updatedFields.remarksUpdate) {
-        body.acDetails = mergeAcMeta(ticket, { update: updatedFields.remarksUpdate, remarksUpdate: updatedFields.remarksUpdate })
-      }
+      const body = buildPatchImportBody(ticket, updatedFields, importTargetDate || undefined)
+      if (Object.keys(body).length === 0) continue
 
       try {
         const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
@@ -1051,11 +1122,45 @@ export default function Tickets() {
     }
 
     // Save unmatched rows as new tickets (or complete them directly if marked completed/installed)
-    for (const item of importResults.unmatched) {
-      const isComplete = (item.status && item.status.toUpperCase() === 'COMPLETED') ||
-                         (item.update && item.update.toLowerCase().includes('installed'))
+    const unmatchedToCreate = importResults.unmatched.filter(item => !isUnmatchedImportComplete(item))
+    const unmatchedToComplete = importResults.unmatched.filter(item => isUnmatchedImportComplete(item))
 
-      if (isComplete) {
+    if (unmatchedToCreate.length > 0) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/tickets/import`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokenVal}`,
+          },
+          body: JSON.stringify({
+            branchId: targetBranch,
+            preferredDate: importTargetDate || undefined,
+            rows: unmatchedToCreate.map(buildImportCreateRow),
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const result = data?.data
+          createdCount += result?.created ?? 0
+          if (result?.failed) {
+            failCount += result.failed
+            if (Array.isArray(result.errors) && result.errors.length > 0) {
+              importErrors.push(...result.errors)
+            }
+          }
+        } else {
+          failCount += unmatchedToCreate.length
+          importErrors.push(await readApiError(res))
+        }
+      } catch (err: any) {
+        console.error('Failed to bulk import unmatched tickets:', err)
+        failCount += unmatchedToCreate.length
+        importErrors.push(err?.message || 'Bulk create failed')
+      }
+    }
+
+    for (const item of unmatchedToComplete) {
         const charges = item.charges ?? 0
         const mode = item.paymentMode || 'CASH'
         const remarks = item.update || 'Installed'
@@ -1100,50 +1205,6 @@ export default function Tickets() {
           failCount++
           importErrors.push(err?.message || 'Unmatched complete failed')
         }
-      } else {
-        const body: Record<string, any> = {
-          title: `${item.service || 'S/I'} service`,
-          description: item.note || item.update || 'Excel imported ticket',
-          customerName: item.name,
-          serviceType: item.service || 'S/I',
-          unitType: item.brand || 'Split AC',
-          contactPhone: item.phone,
-          location: (item.location ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location) : '').trim() || 'No Address Provided',
-          sourceVendor: item.dlr || 'Direct',
-          district: item.district,
-          commitType: item.commit,
-          installerName: item.installer,
-          serviceVehicle: item.service,
-          remarksUpdate: item.update,
-          installationCharges: item.charges,
-          modeOfPayment: item.paymentMode,
-          controlNumber: item.controlNo,
-          branchId: targetBranch,
-          preferredDate: importTargetDate || undefined,
-          status: 'SCHEDULED'
-        }
-
-        try {
-          const res = await fetch(`${API_BASE_URL}/tickets`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${tokenVal}`
-            },
-            body: JSON.stringify(body)
-          })
-          if (res.ok) {
-            createdCount++
-          } else {
-            failCount++
-            importErrors.push(await readApiError(res))
-          }
-        } catch (err: any) {
-          console.error('Failed to create unmatched ticket:', err)
-          failCount++
-          importErrors.push(err?.message || 'Create failed')
-        }
-      }
     }
 
     setSaving(false)
@@ -2198,7 +2259,7 @@ export default function Tickets() {
 
              // 1. Post to Daily Service Report
              const serviceReportPayload = {
-               branchId: (t.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
+               branchId: resolveScopedBranchId(t.branchId || localStorage.getItem('ashcol-global-branch-id')),
                reportDate: todayStr,
                customerName: custName,
                customerAddress: formatAddress(t.location),
