@@ -97,26 +97,7 @@ type ImportUnmatchedRow = {
   rowIdx: number
 }
 
-// ── Column → ticket field mapping ─────────────────────────────────────────────
-const COL_FIELD: Record<string, keyof Ticket> = {
-  "CUSTOMER'S NAME": 'customerName',
-  'DESTINATION':     'location',
-  'DISTRICT':        'district',
-  'CONTACT NO.':     'contactPhone',
-  'BRAND':           'unitType',
-  'DLR':             'dealer',
-  'STATUS':          'status',
-  'COMMIT':          'commitType',
-  'INSTALLER':       'assignedEmployeeName',
-  'NOTE':            'note',
-  'SERVICE':         'serviceVehicle',
-  'UPDATE':          'remarks',
-}
 
-const EDITABLE_COLS = [
-  "CUSTOMER'S NAME", 'DESTINATION', 'BRAND', 'DLR',
-  'STATUS', 'COMMIT', 'INSTALLER', 'SERVICE', 'UPDATE',
-]
 
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR APPROVAL', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
 
@@ -135,7 +116,6 @@ function formatAddress(loc: any): string {
           ? `${addr}, ${region}` : addr || region || s
       } catch { /* fall through */ }
     }
-    if (/lat|lng|long|latitude|longitude/i.test(s)) return ''
     return s
   }
   const addr = (loc.address ?? '').trim()
@@ -298,7 +278,6 @@ export default function Tickets() {
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
   const rowOdd      = isLight ? '#f9fafb' : '#0d1626'
   const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
-  const editCellBg  = isLight ? '#fffbeb' : '#1a2800'
   const green       = '#16A34A'
 
   // ── Data state ────────────────────────────────────────────────────────────
@@ -330,10 +309,6 @@ export default function Tickets() {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
   }, [dateFilter, weeklyTabs])
 
-  // ── Cell editing state ────────────────────────────────────────────────────
-  // editingCell: { rowId, col } — which cell is being edited
-  const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
-  const [cellValue, setCellValue]     = useState('')
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
 
@@ -377,6 +352,11 @@ export default function Tickets() {
   })
   const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
   const [savingManual, setSavingManual] = useState(false)
+
+  // ── Manual Edit Modal State ──────────────────────────────────────────────
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editForm, setEditForm] = useState<Partial<Ticket>>({})
+  const [savingEdit, setSavingEdit] = useState(false)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -770,6 +750,110 @@ export default function Tickets() {
     }
   }
 
+  const openEditModal = (ticket: Ticket) => {
+    setEditForm({
+      id: ticket.id,
+      preferredDate: ticket.preferredDate || ticket.preferred_date || '',
+      customerName: ticket.customerName || ticket.customer_name || ticket.title || '',
+      contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
+      location: formatAddress(ticket.location),
+      district: ticket.district || parseDistrict(ticket.location) || '',
+      commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
+      unitType: ticket.unitType || ticket.unit_type || parseBrand(ticket) || '',
+      sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
+      serviceVehicle: ticket.serviceVehicle || ticket.service_vehicle || '',
+      assignedTo: ticket.assignedTo || '',
+      serviceType: ticket.serviceType || ticket.service_type || 'Installation',
+      controlNumber: ticket.controlNumber || ticket.control_number || '',
+      status: ticket.status || 'PENDING',
+      remarks: ticket.remarks || ticket.remarksUpdate || '',
+    })
+    setEditModalOpen(true)
+  }
+
+  const handleSaveEditTicket = async () => {
+    if (!editForm.id) return
+    if (!editForm.preferredDate) {
+      alert('Preferred Date is required')
+      return
+    }
+    if (!editForm.customerName || !editForm.customerName.trim()) {
+      alert('Customer Name is required')
+      return
+    }
+    if (!editForm.contactPhone || !editForm.contactPhone.trim()) {
+      alert('Contact No. is required')
+      return
+    }
+    if (!editForm.location || !editForm.location.trim()) {
+      alert('Destination/Address is required')
+      return
+    }
+
+    setSavingEdit(true)
+    try {
+      const tokenVal = token()
+      const titleVal = `${editForm.serviceType} service`
+      const descVal = editForm.commitTerms?.trim() || 'No additional details provided.'
+
+      const body: Record<string, any> = {
+        customerName: editForm.customerName.trim(),
+        title: titleVal,
+        description: descVal,
+        serviceType: editForm.serviceType,
+        location: editForm.location.trim(),
+        contactPhone: editForm.contactPhone.trim(),
+        unitType: editForm.unitType?.trim() || undefined,
+        preferredDate: editForm.preferredDate,
+        sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
+        district: editForm.district?.trim() || undefined,
+        commitType: editForm.commitTerms?.trim() || undefined,
+        serviceVehicle: editForm.serviceVehicle?.trim() || undefined,
+        assignedTo: editForm.assignedTo || undefined,
+        controlNumber: editForm.controlNumber?.trim() || undefined,
+        status: editForm.status || 'PENDING',
+        remarks: editForm.remarks?.trim() || undefined,
+        remarksUpdate: editForm.remarks?.trim() || undefined,
+      }
+
+      body.acDetails = mergeAcMeta(editForm as Ticket, {
+        destination: editForm.location.trim(),
+        address: editForm.location.trim(),
+        district: editForm.district?.trim() || undefined,
+        brand: editForm.unitType?.trim() || undefined,
+        unitType: editForm.unitType?.trim() || undefined,
+        dealer: editForm.sourceVendor?.trim() || undefined,
+        dlr: editForm.sourceVendor?.trim() || undefined,
+        update: editForm.remarks?.trim() || undefined,
+        remarksUpdate: editForm.remarks?.trim() || undefined,
+        installerName: editForm.assignedTo ? technicians.find(t => t.id === editForm.assignedTo)?.name : undefined,
+      })
+
+      const res = await fetch(`${API_URL}/tickets/${editForm.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokenVal}`,
+        },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || `Failed (HTTP ${res.status})`)
+      }
+
+      showToast('Ticket updated successfully ✓')
+      await fetchTickets()
+      setEditModalOpen(false)
+    } catch (err: any) {
+      console.error(err)
+      alert(`Could not update ticket: ${err.message || 'Unknown error'}`)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const handleApplyImport = async () => {
     if (!importResults) return
     setSaving(true)
@@ -989,7 +1073,7 @@ export default function Tickets() {
           serviceType: item.service || 'S/I',
           unitType: item.brand || 'Split AC',
           contactPhone: item.phone,
-          location: typeof item.location === 'object' ? JSON.stringify(item.location) : item.location,
+          location: (item.location ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location) : '').trim() || 'No Address Provided',
           sourceVendor: item.dlr || 'Direct',
           priorityTag: '',
           district: item.district,
@@ -1061,7 +1145,7 @@ export default function Tickets() {
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>(null)
+
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
 
@@ -1240,7 +1324,7 @@ export default function Tickets() {
       case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
       case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
       case 'BRAND':           return parseBrand(ticket)
-      case 'DLR':             return getF(ticket, 'dealer', 'serviceType', 'service_type')
+      case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
       case 'STATUS':          return ticket.status
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
       case 'INSTALLER':       return getF(ticket, 'installerName', 'assignedEmployeeName', 'assigned_employee_name')
@@ -1251,214 +1335,7 @@ export default function Tickets() {
     }
   }
 
-  // ── Cell click → start editing ─────────────────────────────────────────────
-  const startEdit = (ticket: Ticket, col: string) => {
-    if (!canEdit || !EDITABLE_COLS.includes(col)) return
-    const val = getCellDisplay(ticket, col)
-    setEditingCell({ rowId: ticket.id, col })
-    setCellValue(val)
-    setContextMenu(null)
-  }
-
-  // Focus the input after entering edit mode
-  useEffect(() => {
-    if (editingCell && inputRef.current) {
-      inputRef.current.focus()
-      if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
-        try {
-          const length = inputRef.current.value.length
-          inputRef.current.setSelectionRange(length, length)
-        } catch (e) {
-          // Fallback if setSelectionRange is not supported on this input type (e.g., number)
-        }
-      }
-    }
-  }, [editingCell])
-
-  // ── Save current cell ─────────────────────────────────────────────────────
-  const saveCell = useCallback(async (rowId: string, col: string, value: string, silent = false) => {
-    console.log(`[saveCell] ENTER - rowId: ${rowId}, col: ${col}, value: "${value}", active editingCell:`, editingCell);
-
-    // Safety: ignore the save call if we are no longer editing this specific cell
-    // (prevents double-save race conditions, e.g., Enter key followed by native input unmount blur)
-    if (!editingCell || editingCell.rowId !== rowId || editingCell.col !== col) {
-      console.log(`[saveCell] BYPASSED - editingCell does not match active cell. Active:`, editingCell, `Requested:`, { rowId, col });
-      return
-    }
-
-    const field = COL_FIELD[col]
-    if (!field) { setEditingCell(null); return }
-    const current = tickets.find(t => t.id === rowId)
-    if (!current) {
-      console.log(`[saveCell] ERROR - Ticket not found in state: ${rowId}`);
-      setEditingCell(null);
-      return
-    }
-
-    if (col === 'UPDATE' && value.toLowerCase().includes('installed')) {
-      console.log(`[saveCell] INTERCEPTED "installed" for rowId: ${rowId}`);
-      setCompletionPrompt({
-        ticket: current,
-        value,
-        modeOfPayment: 'CASH',
-        amount: ''
-      })
-      setEditingCell(null)
-      setCellValue('')
-      return
-    }
-
-    const normalized = col === 'STATUS' ? value.toUpperCase() : value
-    const localPatch: Partial<Ticket> = { [field]: normalized } as Partial<Ticket>
-    const body: Record<string, any> = { [field]: normalized }
-
-    if (col === 'DESTINATION') {
-      localPatch.location = normalized
-      body.location = normalized
-      body.acDetails = mergeAcMeta(current, { destination: normalized, address: normalized })
-    } else if (col === 'DISTRICT') {
-      body.acDetails = mergeAcMeta(current, { district: normalized })
-    } else if (col === 'BRAND') {
-      localPatch.unitType = normalized
-      localPatch.acDetails = mergeAcMeta(current, { brand: normalized, unitType: normalized })
-      body.unitType = normalized
-      body.acDetails = localPatch.acDetails
-    } else if (col === 'DLR') {
-      body.dealer = normalized
-      body.sourceVendor = normalized
-      body.acDetails = mergeAcMeta(current, { dealer: normalized, dlr: normalized })
-    } else if (col === 'COMMIT') {
-      localPatch.commitType = normalized
-      body.commitType = normalized
-      body.description = normalized
-    } else if (col === 'INSTALLER') {
-      localPatch.installerName = normalized
-      localPatch.assignedEmployeeName = normalized
-      body.installerName = normalized
-      body.assignedEmployeeName = normalized
-      body.acDetails = mergeAcMeta(current, { installerName: normalized, negotiator: normalized })
-    } else if (col === 'NOTE') {
-      body.note = normalized
-      body.description = normalized
-    } else if (col === 'UPDATE') {
-      localPatch.remarksUpdate = normalized
-      localPatch.remarks = normalized
-      body.remarksUpdate = normalized
-      body.remarks = normalized
-      body.acDetails = mergeAcMeta(current, { update: normalized, remarksUpdate: normalized })
-    } else if (col === 'SERVICE') {
-      localPatch.serviceVehicle = normalized
-      body.serviceVehicle = normalized
-    } else if (col === "CUSTOMER'S NAME") {
-      body.customerName = normalized
-    } else if (col === 'CONTACT NO.') {
-      body.contactPhone = normalized
-    }
-
-    // Optimistic UI update immediately
-    setTickets(prev => prev.map(t => {
-      if (t.id !== rowId) return t
-      return { ...t, ...localPatch }
-    }))
-    setEditingCell(null)
-    setCellValue('')
-
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_URL}/tickets/${rowId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const payload = await res.json()
-      const updated = payload?.data || payload
-      if (updated && updated.id) {
-        setTickets(prev => prev.map(t => t.id === rowId ? { ...t, ...updated, ...localPatch } : t))
-      }
-      if (!silent) showToast('Saved ✓')
-    } catch (e: any) {
-      // Revert optimistic update on failure
-      await fetchTickets()
-      if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
-    } finally { setSaving(false) }
-  }, [token, fetchTickets, tickets, editingCell])
-
-  // ── Cancel editing ────────────────────────────────────────────────────────
-  const cancelEdit = () => { setEditingCell(null); setCellValue('') }
-
-  // ── Get next/prev editable cell in the visible list ───────────────────────
-  function getAdjacentCell(rowId: string, col: string, dir: 'next' | 'prev' | 'down' | 'up') {
-    const rowIdx = visible.findIndex(t => t.id === rowId)
-    const colIdx = EDITABLE_COLS.indexOf(col)
-    if (rowIdx === -1 || colIdx === -1) return null
-
-    if (dir === 'next') {
-      const nextCol = colIdx + 1
-      if (nextCol < EDITABLE_COLS.length) return { rowId, col: EDITABLE_COLS[nextCol] }
-      const nextRow = rowIdx + 1
-      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col: EDITABLE_COLS[0] }
-    }
-    if (dir === 'prev') {
-      const prevCol = colIdx - 1
-      if (prevCol >= 0) return { rowId, col: EDITABLE_COLS[prevCol] }
-      const prevRow = rowIdx - 1
-      if (prevRow >= 0) return { rowId: visible[prevRow].id, col: EDITABLE_COLS[EDITABLE_COLS.length - 1] }
-    }
-    if (dir === 'down') {
-      const nextRow = rowIdx + 1
-      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col }
-    }
-    if (dir === 'up') {
-      const prevRow = rowIdx - 1
-      if (prevRow >= 0) return { rowId: visible[prevRow].id, col }
-    }
-    return null
-  }
-
-  // ── Keyboard handler for editing ──────────────────────────────────────────
-  const handleKeyDown = (e: React.KeyboardEvent, rowId: string, col: string) => {
-    const multiline = ['COMMIT', 'NOTE', 'DESTINATION'].includes(col)
-
-    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return }
-
-    if (e.key === 'Enter' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'down')
-      saveCell(rowId, col, cellValue, true).then(() => {
-        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
-      })
-      return
-    }
-
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const dir = e.shiftKey ? 'prev' : 'next'
-      const next = getAdjacentCell(rowId, col, dir)
-      saveCell(rowId, col, cellValue, true).then(() => {
-        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
-      })
-      return
-    }
-
-    if (e.key === 'ArrowDown' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'down')
-      saveCell(rowId, col, cellValue, true).then(() => {
-        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
-      })
-      return
-    }
-
-    if (e.key === 'ArrowUp' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'up')
-      saveCell(rowId, col, cellValue, true).then(() => {
-        if (next) { const t = visible.find(x => x.id === next.rowId); if (t) startEdit(t, next.col) }
-      })
-      return
-    }
-  }
+  const cancelEdit = () => {}
 
   // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = async (ticketId: string) => {
@@ -1517,69 +1394,16 @@ export default function Tickets() {
   // ── Render cell content ───────────────────────────────────────────────────
   function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number) {
     const { label } = col
-    const isThisEditing = editingCell?.rowId === ticket.id && editingCell?.col === label
-    const isEditable    = EDITABLE_COLS.includes(label)
-
-    // ── EDITING STATE ──
-    if (isThisEditing) {
-      const inputClass = 'w-full text-xs rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-green-500 font-medium'
-      const inputSt    = { backgroundColor: editCellBg, border: `1.5px solid ${green}`, color: textPrimary, textAlign: col.align }
-
-      if (label === 'STATUS') {
-        // Click cycles through STATUS_OPTS — no dropdown needed
-        const currentIdx = STATUS_OPTS.indexOf(cellValue)
-        const nextVal = STATUS_OPTS[(currentIdx + 1) % STATUS_OPTS.length]
-        return (
-          <span
-            className="text-[11px] font-black uppercase inline-block cursor-pointer select-none transition-all hover:opacity-80"
-            style={{ color: textPrimary }}
-            title={`Click to set: ${nextVal.replace(/_/g, ' ')}`}
-            onClick={e => { e.stopPropagation(); setCellValue(nextVal); saveCell(ticket.id, label, nextVal) }}
-          >
-            {cellValue.replace(/_/g, ' ')}
-          </span>
-        )
-      }
-
-      const multiline = ['COMMIT', 'NOTE'].includes(label)
-      if (multiline) {
-        return (
-          <textarea
-            ref={el => { inputRef.current = el as any }}
-            value={cellValue}
-            onChange={e => setCellValue(e.target.value)}
-            onBlur={() => saveCell(ticket.id, label, cellValue)}
-            onKeyDown={e => handleKeyDown(e as any, ticket.id, label)}
-            rows={3}
-            className={`${inputClass} resize-none`}
-            style={inputSt} />
-        )
-      }
-
-      return (
-        <input
-          ref={el => { inputRef.current = el }}
-          type={label === 'CONTACT NO.' ? 'tel' : 'text'}
-          value={cellValue}
-          onChange={e => setCellValue(e.target.value)}
-          onBlur={() => saveCell(ticket.id, label, cellValue)}
-          onKeyDown={e => handleKeyDown(e, ticket.id, label)}
-          className={inputClass} style={inputSt} />
-      )
-    }
 
     // ── DISPLAY STATE ──
     const val = getCellDisplay(ticket, label)
     const truncStyle: React.CSSProperties = col.isExpanded
-      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.5 }
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px' }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
-
-    const editHint: React.CSSProperties = isEditable && canEdit
-      ? { cursor: 'text' } : {}
 
     if (label === 'STATUS') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontWeight: 700 }} title={val}>
+        <span style={{ ...truncStyle, fontWeight: 700 }} title={val}>
           {val ? val.replace(/_/g, ' ') : '—'}
         </span>
       )
@@ -1587,7 +1411,7 @@ export default function Tickets() {
 
     if (label === 'SERVICE') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontWeight: 500 }} title={val}>
+        <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
         </span>
       )
@@ -1597,8 +1421,8 @@ export default function Tickets() {
       const formatted = val ? fmtPhone(val) || val : ''
       return (
         <a href={val ? `tel:${val.replace(/\D/g,'').replace(/^0/,'+63')}` : '#'}
-           style={{ color: '#10B981', ...truncStyle, ...editHint }}
-           onClick={e => { if (canEdit) { e.preventDefault(); startEdit(ticket, label) } }}
+           style={{ color: '#10B981', ...truncStyle }}
+           onClick={e => { e.stopPropagation(); }}
            title={val}>
           {formatted}
         </a>
@@ -1607,7 +1431,7 @@ export default function Tickets() {
 
     if (label === 'NOTE') {
       return (
-        <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400, ...editHint }}
+        <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400 }}
               title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
         </span>
@@ -1616,7 +1440,7 @@ export default function Tickets() {
 
     if (label === 'UPDATE') {
       return (
-        <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400, ...editHint }}
+        <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
               title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
         </span>
@@ -1626,19 +1450,19 @@ export default function Tickets() {
     if (label === "CUSTOMER'S NAME") {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return (
-        <span style={{ ...truncStyle, fontWeight: 600, ...editHint }} title={`${prefix}${val}`}>{prefix}{val}</span>
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>
       )
     }
 
     if (label === 'INSTALLER') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val}>
+        <span style={{ ...truncStyle }} title={val}>
           <EmployeeNameLink nameOrId={val} />
         </span>
       )
     }
 
-    return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
+    return <span style={truncStyle} title={val}>{val}</span>
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1937,7 +1761,16 @@ export default function Tickets() {
                     <th key={col.label}
                         onMouseEnter={() => setHoveredHeader(col.label)}
                         onMouseLeave={() => setHoveredHeader(null)}
-                        onClick={() => toggleCol(col.label)}
+                        onClick={e => {
+                          const isExpanding = !expandedCols[col.label]
+                          toggleCol(col.label)
+                          if (isExpanding) {
+                            const th = e.currentTarget
+                            setTimeout(() => {
+                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                            }, 80)
+                          }
+                        }}
                         style={{
                           padding: '12px 14px',
                           color: (col.isExpanded || hoveredHeader === col.label) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
@@ -1995,24 +1828,35 @@ export default function Tickets() {
 
                       {/* Data cells */}
                       {columns.map((col) => {
-                        const isThisEditing = editingCell?.rowId === ticket.id && editingCell?.col === col.label
-                        const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
                         return (
                           <td key={col.label}
                               onClick={e => {
                                 e.stopPropagation()
-                                if (isEditable && !isThisEditing) startEdit(ticket, col.label)
+                                const isExpanding = !expandedCols[col.label]
+                                toggleCol(col.label)
+                                if (isExpanding) {
+                                  const td = e.currentTarget
+                                  setTimeout(() => {
+                                    td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                                  }, 80)
+                                }
+                              }}
+                              onDoubleClick={e => {
+                                e.stopPropagation()
+                                if (canEdit) {
+                                  openEditModal(ticket)
+                                }
                               }}
                               style={{
-                                padding: isThisEditing ? '6px 8px' : '10px 14px',
+                                padding: '10px 14px',
                                 color: textPrimary,
                                 fontSize: '11px', fontWeight: 500,
-                                backgroundColor: isThisEditing ? editCellBg : bg,
+                                backgroundColor: bg,
                                 borderRight: `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.width, minWidth: col.width, maxWidth: col.width,
                                 transition: 'background-color 0.1s ease',
-                                cursor: isEditable && !isThisEditing ? 'text' : 'default',
+                                cursor: canEdit ? 'pointer' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
@@ -2032,62 +1876,68 @@ export default function Tickets() {
       </div>
 
       {/* ── Right-click context menu ── */}
-      {contextMenu && (
-        <div className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}
-             onClick={e => e.stopPropagation()}>
-          <div className="rounded-2xl shadow-2xl overflow-hidden"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
+      {contextMenu && (() => {
+        const menuW = 220
+        const menuH = 180
+        const leftPos = contextMenu.x + menuW > window.innerWidth ? Math.max(10, window.innerWidth - menuW - 10) : contextMenu.x
+        const topPos = contextMenu.y + menuH > window.innerHeight ? Math.max(10, window.innerHeight - menuH - 10) : contextMenu.y
+        return (
+          <div className="fixed z-[200]" style={{ top: topPos, left: leftPos }}
+               onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl shadow-2xl overflow-hidden"
+                 style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
 
-            {/* Current status label */}
-            <div className="px-4 py-2.5 flex items-center gap-2"
-                 style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-              {(() => { const sc = statusColor(contextMenu.ticket.status, isLight); return (
-                <span className="px-2 py-0.5 rounded text-[10px] font-black border"
-                      style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
-                  {statusCode(contextMenu.ticket.status)}
+              {/* Current status label */}
+              <div className="px-4 py-2.5 flex items-center gap-2"
+                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                {(() => { const sc = statusColor(contextMenu.ticket.status, isLight); return (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black border"
+                        style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
+                    {statusCode(contextMenu.ticket.status)}
+                  </span>
+                ) })()}
+                <span className="text-[11px] font-bold truncate" style={{ color: textMuted }}>
+                  {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0,3).join(' ')}
                 </span>
-              ) })()}
-              <span className="text-[11px] font-bold truncate" style={{ color: textMuted }}>
-                {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0,3).join(' ')}
-              </span>
-            </div>
+              </div>
 
-            {/* View full details */}
-            <button onClick={() => { setDetailTicket(contextMenu.ticket); setContextMenu(null) }}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                    style={{ color: textPrimary }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-              <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
-              View Full Details
-            </button>
-
-            {/* Edit update note */}
-            {canEdit && (
-              <button onClick={() => { startEdit(contextMenu.ticket, 'UPDATE'); setContextMenu(null) }}
+              {/* View full details */}
+              <button onClick={() => { setDetailTicket(contextMenu.ticket); setContextMenu(null) }}
                       className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
                       style={{ color: textPrimary }}
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
                       onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
-                {isTaguigServices ? "Edit Service Status" : "Edit Update"}
+                <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+                View Full Details
               </button>
-            )}
 
-            {/* Delete — admin only */}
-            {isAdmin && (
-              <button onClick={() => handleDelete(contextMenu.ticket.id)}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                      style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.06)'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                Delete
-              </button>
-            )}
+              {/* Edit Details */}
+              {canEdit && (
+                <button onClick={() => { openEditModal(contextMenu.ticket); setContextMenu(null) }}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                  <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
+                  Edit Details
+                </button>
+              )}
+
+              {/* Delete — admin only */}
+              {isAdmin && (
+                <button onClick={() => handleDelete(contextMenu.ticket.id)}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                        style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.06)'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Full Details Modal ── */}
       {detailTicket && (() => {
@@ -2282,7 +2132,7 @@ export default function Tickets() {
               <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
                 {canEdit && (
-                  <button onClick={() => { startEdit(t, 'UPDATE'); setDetailTicket(null) }}
+                  <button onClick={() => { openEditModal(t); setDetailTicket(null) }}
                           className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
                           style={{ borderColor: inputBorder, color: textPrimary }}>
                     <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
@@ -2827,6 +2677,160 @@ export default function Tickets() {
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: green }}>
                 {savingManual ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+             onClick={() => setEditModalOpen(false)}>
+          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+               onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
+                Edit Ticket Details
+              </h3>
+              <button onClick={() => setEditModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              {/* Customer Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Customer Information
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Preferred Date" required>
+                    <input type="date" value={editForm.preferredDate || ''} 
+                      onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Customer Name" required>
+                    <input type="text" value={editForm.customerName || ''} 
+                      onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Contact No." required>
+                    <input type="text" value={editForm.contactPhone || ''} 
+                      onChange={e => setEditForm({ ...editForm, contactPhone: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Destination/Address" required full>
+                    <textarea value={editForm.location || ''} 
+                      onChange={e => setEditForm({ ...editForm, location: e.target.value })}
+                      rows={2}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="District">
+                    <input type="text" value={editForm.district || ''} 
+                      onChange={e => setEditForm({ ...editForm, district: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Commit Terms">
+                    <textarea value={editForm.commitTerms || ''} 
+                      onChange={e => setEditForm({ ...editForm, commitTerms: e.target.value })}
+                      rows={1}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Service & Unit Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Service & Unit Details
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Brand / Unit Type">
+                    <input type="text" value={editForm.unitType || ''} 
+                      onChange={e => setEditForm({ ...editForm, unitType: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Dealer (DLR)">
+                    <input type="text" value={editForm.sourceVendor || ''} 
+                      onChange={e => setEditForm({ ...editForm, sourceVendor: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Service Vehicle">
+                    <input type="text" value={editForm.serviceVehicle || ''} 
+                      onChange={e => setEditForm({ ...editForm, serviceVehicle: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Installer / Technician">
+                    <select value={editForm.assignedTo || ''}
+                      onChange={e => setEditForm({ ...editForm, assignedTo: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      <option value="">-- Unassigned --</option>
+                      {technicians.map(tech => (
+                        <option key={tech.id} value={tech.id}>{tech.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Service Type" required>
+                    <select value={editForm.serviceType || 'Installation'}
+                      onChange={e => setEditForm({ ...editForm, serviceType: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      <option value="Installation">Installation</option>
+                      <option value="Cleaning">Cleaning</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Repair">Repair</option>
+                      <option value="Survey">Survey</option>
+                    </select>
+                  </Field>
+                  <Field label="Control No. / SI">
+                    <input type="text" value={editForm.controlNumber || ''} 
+                      onChange={e => setEditForm({ ...editForm, controlNumber: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Status" required>
+                    <select value={editForm.status || 'PENDING'}
+                      onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      {STATUS_OPTS.map(opt => (
+                        <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Remarks / Update" full>
+                    <textarea value={editForm.remarks || ''} 
+                      onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
+                      rows={2}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
+              <button onClick={() => setEditModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                Cancel
+              </button>
+              <button onClick={handleSaveEditTicket}
+                disabled={savingEdit}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: green }}>
+                {savingEdit ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
