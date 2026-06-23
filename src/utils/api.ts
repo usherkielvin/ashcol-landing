@@ -1,4 +1,4 @@
-const PROD_API_BASE_URL = 'https://ashcol-service-api-production.up.railway.app/api'
+const PROD_API_BASE_URL = 'https://ashcol.up.railway.app/api'
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PROD_API_BASE_URL : 'http://localhost:8080/api')
