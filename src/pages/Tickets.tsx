@@ -175,6 +175,54 @@ function mergeAcMeta(ticket: Ticket, updates: Record<string, any>) {
   return JSON.stringify({ ...(parsed || {}), ...updates })
 }
 
+function getPreferredDateKey(ticket: Ticket): string {
+  const dateStr = ticket.preferredDate || ticket.preferred_date || ''
+  if (!dateStr) return ''
+  return dateStr.split('T')[0].split(' ')[0].trim()
+}
+
+function getPreviousScheduleDates(ticket: Ticket): string[] {
+  const meta = parseAcMeta(ticket)
+  const raw = meta.previousScheduleDates
+  if (!Array.isArray(raw)) return []
+  return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+}
+
+function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return true
+  const dateStr = ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
+  if (!dateStr) return false
+
+  const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
+  if (parsedDate === dateKey) return true
+
+  if (dateStr.includes('T') || dateStr.includes(':')) {
+    try {
+      const d = new Date(dateStr)
+      if (!isNaN(d.getTime())) {
+        const localY = d.getFullYear()
+        const localM = String(d.getMonth() + 1).padStart(2, '0')
+        const localD = String(d.getDate()).padStart(2, '0')
+        if (`${localY}-${localM}-${localD}` === dateKey) return true
+      }
+    } catch { /* ignore */ }
+  }
+  return false
+}
+
+function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return false
+  if (ticketMatchesDateKey(ticket, dateKey)) return false
+  return getPreviousScheduleDates(ticket).includes(dateKey)
+}
+
+function formatDateKeyLabel(key: string) {
+  if (!key) return ''
+  const d = new Date(`${key}T00:00:00`)
+  if (isNaN(d.getTime())) return key
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function getF(ticket: Ticket, ...keys: (keyof Ticket)[]): string {
   for (const k of keys) {
     const v = ticket[k]
@@ -471,6 +519,7 @@ export default function Tickets() {
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket>>({})
+  const [editOriginalDate, setEditOriginalDate] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   // ── Excel Import State ───────────────────────────────────────────────────
@@ -867,9 +916,11 @@ export default function Tickets() {
   }
 
   const openEditModal = (ticket: Ticket) => {
+    const preferred = getPreferredDateKey(ticket)
+    setEditOriginalDate(preferred)
     setEditForm({
       id: ticket.id,
-      preferredDate: ticket.preferredDate || ticket.preferred_date || '',
+      preferredDate: preferred,
       customerName: ticket.customerName || ticket.customer_name || ticket.title || '',
       contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
       location: formatAddress(ticket.location),
@@ -883,6 +934,7 @@ export default function Tickets() {
       controlNumber: ticket.controlNumber || ticket.control_number || '',
       status: ticket.status || 'PENDING',
       remarks: ticket.remarks || ticket.remarksUpdate || '',
+      acDetails: ticket.acDetails || ticket.ac_details,
     })
     setEditModalOpen(true)
   }
@@ -912,6 +964,10 @@ export default function Tickets() {
       const titleVal = `${editForm.serviceType} service`
       const descVal = editForm.commitTerms?.trim() || 'No additional details provided.'
 
+      const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
+      const newDateKey = editForm.preferredDate?.split('T')[0]?.trim() || ''
+      const isReschedule = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
+
       const body: Record<string, any> = {
         customerName: editForm.customerName.trim(),
         title: titleVal,
@@ -920,19 +976,31 @@ export default function Tickets() {
         location: editForm.location.trim(),
         contactPhone: editForm.contactPhone.trim(),
         unitType: editForm.unitType?.trim() || undefined,
-        preferredDate: editForm.preferredDate,
+        preferredDate: newDateKey,
         sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
         district: editForm.district?.trim() || undefined,
         commitType: editForm.commitTerms?.trim() || undefined,
         serviceVehicle: editForm.serviceVehicle?.trim() || undefined,
         assignedTo: editForm.assignedTo || undefined,
         controlNumber: editForm.controlNumber?.trim() || undefined,
-        status: editForm.status || 'PENDING',
+        status: isReschedule ? 'SCHEDULED' : (editForm.status || 'PENDING'),
         remarks: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
       }
 
+      const acMetaExtras: Record<string, any> = {}
+      if (isReschedule) {
+        const existing = parseAcMeta(editForm as Ticket)
+        const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
+          ? [...existing.previousScheduleDates]
+          : []
+        if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
+        acMetaExtras.previousScheduleDates = prevDates
+        acMetaExtras.rescheduledTo = newDateKey
+      }
+
       body.acDetails = mergeAcMeta(editForm as Ticket, {
+        ...acMetaExtras,
         destination: editForm.location.trim(),
         address: editForm.location.trim(),
         district: editForm.district?.trim() || undefined,
@@ -959,7 +1027,9 @@ export default function Tickets() {
         throw new Error(errorText || `Failed (HTTP ${res.status})`)
       }
 
-      showToast('Ticket updated successfully ✓')
+      showToast(isReschedule
+        ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
+        : 'Ticket updated successfully ✓')
       await fetchTickets()
       setEditModalOpen(false)
     } catch (err: any) {
@@ -1406,28 +1476,12 @@ export default function Tickets() {
       })
     }
     if (dateFilter) {
-      list = list.filter(t => {
-        const dateStr = t.preferredDate || t.preferred_date || t.createdAt || t.created_at
-        if (!dateStr) return false
-        
-        // 1. Direct string match (handles simple date format or YYYY-MM-DD prefix)
-        const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
-        if (parsedDate === dateFilter) return true
-        
-        // 2. Timezone-aware check for ISO/timestamp strings
-        if (dateStr.includes('T') || dateStr.includes(':')) {
-          try {
-            const d = new Date(dateStr)
-            if (!isNaN(d.getTime())) {
-              const localY = d.getFullYear()
-              const localM = String(d.getMonth() + 1).padStart(2, '0')
-              const localD = String(d.getDate()).padStart(2, '0')
-              const localDateKey = `${localY}-${localM}-${localD}`
-              if (localDateKey === dateFilter) return true
-            }
-          } catch {}
-        }
-        return false
+      list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isRescheduledGhostOnDate(t, dateFilter))
+      list = [...list].sort((a, b) => {
+        const aGhost = isRescheduledGhostOnDate(a, dateFilter)
+        const bGhost = isRescheduledGhostOnDate(b, dateFilter)
+        if (aGhost === bGhost) return 0
+        return aGhost ? 1 : -1
       })
     }
     if (searchQuery.trim()) {
@@ -1448,6 +1502,7 @@ export default function Tickets() {
     let forQuotationOrForApproval = 0
 
     visible.forEach(t => {
+      if (dateFilter && isRescheduledGhostOnDate(t, dateFilter)) return
       const stat = (t.status || '').toUpperCase()
       const category = (t.serviceType || t.title || '').toLowerCase()
       const isSurvey = category.includes('survey') || stat === 'SURVEY'
@@ -1556,16 +1611,25 @@ export default function Tickets() {
   }
 
   // ── Render cell content ───────────────────────────────────────────────────
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean) {
     const { label } = col
 
     // ── DISPLAY STATE ──
     const val = getCellDisplay(ticket, label)
+    const ghostMuted = rowGhost ? textMuted : textPrimary
     const truncStyle: React.CSSProperties = col.isExpanded
-      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px' }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
+      if (rowGhost) {
+        const movedTo = getPreferredDateKey(ticket)
+        return (
+          <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic' }} title={`Rescheduled to ${formatDateKeyLabel(movedTo)}`}>
+            RESCHED → {formatDateKeyLabel(movedTo)}
+          </span>
+        )
+      }
       return (
         <span style={{ ...truncStyle, fontWeight: 700 }} title={val}>
           {val ? val.replace(/_/g, ' ') : '—'}
@@ -1603,6 +1667,15 @@ export default function Tickets() {
     }
 
     if (label === 'UPDATE') {
+      if (rowGhost) {
+        const movedTo = getPreferredDateKey(ticket)
+        return (
+          <span style={{ ...truncStyle, color: textMuted, fontWeight: 600, fontStyle: 'italic' }}
+                title={`Moved to ${formatDateKeyLabel(movedTo)}`}>
+            Moved to {formatDateKeyLabel(movedTo)}
+          </span>
+        )
+      }
       return (
         <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
               title={val} className={col.isExpanded ? '' : 'line-clamp-2'}>
@@ -1976,11 +2049,17 @@ export default function Tickets() {
                 ) : (
                   visible.map((ticket, idx) => {
                     const isHovered = hoveredRow === ticket.id
-                  const baseBg   = idx % 2 === 0 ? rowEven : rowOdd
-                  const bg       = isHovered ? rowHover : baseBg
+                    const isGhost = Boolean(dateFilter && isRescheduledGhostOnDate(ticket, dateFilter))
+                    const baseBg   = isGhost
+                      ? (isLight ? '#e2e8f0' : '#141c2e')
+                      : (idx % 2 === 0 ? rowEven : rowOdd)
+                    const bg       = isHovered && !isGhost ? rowHover : baseBg
                   return (
-                    <tr key={ticket.id}
-                        style={{ borderBottom: `1px solid ${border}` }}
+                    <tr key={`${ticket.id}${isGhost ? '-ghost' : ''}`}
+                        style={{
+                          borderBottom: `1px solid ${border}`,
+                          opacity: isGhost ? 0.78 : 1,
+                        }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
                         onMouseLeave={() => setHoveredRow(null)}
                         onContextMenu={e => {
@@ -2007,25 +2086,25 @@ export default function Tickets() {
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
-                                if (canEdit) {
+                                if (canEdit && !isGhost) {
                                   openEditModal(ticket)
                                 }
                               }}
                               style={{
                                 padding: '10px 14px',
-                                color: textPrimary,
-                                fontSize: '11px', fontWeight: 500,
+                                color: isGhost ? textMuted : textPrimary,
+                                fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                 backgroundColor: bg,
                                 borderRight: `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.width, minWidth: col.width, maxWidth: col.width,
                                 transition: 'background-color 0.1s ease',
-                                cursor: canEdit ? 'pointer' : 'default',
+                                cursor: canEdit && !isGhost ? 'pointer' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
                               }}>
-                            {renderCell(ticket, col, idx)}
+                            {renderCell(ticket, col, idx, isGhost)}
                           </td>
                         )
                       })}
@@ -2863,18 +2942,50 @@ export default function Tickets() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              {(editForm.status === 'SCHEDULED' || editForm.status === 'RESCHED' || editOriginalDate) && (
+                <div className="rounded-xl border p-4 flex flex-col gap-3"
+                     style={{ borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)' }}>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: isLight ? '#b45309' : '#fbbf24' }}>
+                      Reschedule
+                    </p>
+                    {editOriginalDate && (
+                      <p className="text-[11px] font-semibold mt-1" style={{ color: textMuted }}>
+                        Currently scheduled: <span style={{ color: textPrimary }}>{formatDateKeyLabel(editOriginalDate)}</span>
+                      </p>
+                    )}
+                  </div>
+                  <Field label="Reschedule To" required>
+                    <input
+                      type="date"
+                      value={editForm.preferredDate || ''}
+                      onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    />
+                  </Field>
+                  {editOriginalDate && editForm.preferredDate && editForm.preferredDate !== editOriginalDate && (
+                    <p className="text-[11px] font-semibold leading-relaxed" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
+                      Saving will gray out this row on {formatDateKeyLabel(editOriginalDate)} and show the ticket on {formatDateKeyLabel(editForm.preferredDate)}.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Customer Info Section */}
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
                   Customer Information
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Preferred Date" required>
-                    <input type="date" value={editForm.preferredDate || ''} 
-                      onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
+                  {!(editForm.status === 'SCHEDULED' || editForm.status === 'RESCHED' || editOriginalDate) && (
+                    <Field label="Preferred Date" required>
+                      <input type="date" value={editForm.preferredDate || ''}
+                        onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    </Field>
+                  )}
                   <Field label="Customer Name" required>
                     <input type="text" value={editForm.customerName || ''} 
                       onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
