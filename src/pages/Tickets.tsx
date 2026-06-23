@@ -795,6 +795,7 @@ export default function Tickets() {
 
   // ── Manual Add Modal State ───────────────────────────────────────────────
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [addFormSnapshot, setAddFormSnapshot] = useState('')
   const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string }>({
     preferredDate: '',
     customerName: '',
@@ -818,6 +819,7 @@ export default function Tickets() {
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string }>({})
+  const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
@@ -1265,7 +1267,7 @@ export default function Tickets() {
     const status = ticket.status || 'PENDING'
     setEditOriginalDate(preferred)
     setEditInitialStatus(status)
-    setEditForm({
+    const form = {
       id: ticket.id,
       preferredDate: preferred,
       customerName: ticket.customerName || ticket.customer_name || ticket.title || '',
@@ -1286,8 +1288,47 @@ export default function Tickets() {
       remarks: ticket.remarks || ticket.remarksUpdate || '',
       acDetails: ticket.acDetails || ticket.ac_details,
       rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' ? preferred : '',
-    })
+    }
+    setEditForm(form)
+    setEditFormSnapshot(JSON.stringify(form))
     setEditModalOpen(true)
+  }
+
+  const isEditFormDirty = () => JSON.stringify(editForm) !== editFormSnapshot
+
+  const requestCloseEditModal = () => {
+    if (isEditFormDirty() && !confirm('Discard unsaved changes to this ticket?')) return
+    setEditModalOpen(false)
+  }
+
+  const openAddModal = () => {
+    const form = {
+      preferredDate: todayDateKey(),
+      customerName: '',
+      contactPhone: '',
+      location: '',
+      district: '',
+      commitTerms: '',
+      unitType: '',
+      sourceVendor: 'Direct',
+      serviceDriver: '',
+      installerName: '',
+      negotiatorId: '',
+      ticketNumber: '',
+      controlNumber: '',
+      modeOfPayment: '',
+      installationCharges: undefined as number | undefined,
+    }
+    setAddForm(form)
+    setAddFormSnapshot(JSON.stringify(form))
+    setAddModalOpen(true)
+  }
+
+  const isAddFormDirty = () => JSON.stringify(addForm) !== addFormSnapshot
+
+  const requestCloseAddModal = () => {
+    if (isAddFormDirty() && !confirm('Discard unsaved ticket details?')) return
+    setAddModalOpen(false)
   }
 
   const handleSaveEditTicket = async () => {
@@ -1486,11 +1527,6 @@ export default function Tickets() {
       alert('Select an import date first — tickets will be saved as SCHEDULED for that date.')
       return
     }
-    const updateCount = importResults.updates.length
-    const newCount = importResults.unmatched.length
-    if (!confirm(
-      `Apply import for ${importTargetDate}?\n\n${updateCount} update(s) and ${newCount} new ticket(s) will be saved.`,
-    )) return
     setSaving(true)
     let successCount = 0
     let completeCount = 0
@@ -1868,13 +1904,9 @@ export default function Tickets() {
   // ── Expand cols / cells ───────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
-  const [editingCell, setEditingCell] = useState<{
-    ticketId: string
-    colLabel: string
-    value: string
-    originalValue: string
-  } | null>(null)
+  const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
+  const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
@@ -2083,48 +2115,16 @@ export default function Tickets() {
   }
 
   const cancelEdit = () => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setEditingCell(null)
   }
 
   const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
 
-  const requestCancelCellEdit = () => {
-    if (!editingCell) return
-    if (editingCell.value.trim() !== editingCell.originalValue.trim()) {
-      if (!confirm('Discard unsaved changes to this cell?')) return
-    }
-    cancelEdit()
-  }
-
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
-    if (editingCell && (editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel)) {
-      alert('Finish or cancel the current cell edit first.')
-      return
-    }
-    const raw = getCellRawValue(ticket, colLabel)
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCells(prev => ({ ...prev, [cellEditKey(ticket.id, colLabel)]: true }))
-    setEditingCell({
-      ticketId: ticket.id,
-      colLabel,
-      value: raw,
-      originalValue: raw,
-    })
-  }
-
-  const requestSaveCellEdit = (ticket: Ticket, colLabel: string) => {
-    if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel) return
-    const next = editingCell.value.trim()
-    const prev = editingCell.originalValue.trim()
-    if (next === prev) {
-      cancelEdit()
-      return
-    }
-    const cust = getCustomerDisplayName(ticket) || ticket.title
-    const preview = (s: string) => (s.length > 80 ? `${s.slice(0, 80)}…` : s) || '—'
-    if (!confirm(
-      `Save ${colLabel} for ${cust}?\n\nWas: ${preview(prev)}\nNow: ${preview(next)}`,
-    )) return
-    void saveCellEdit(ticket, colLabel, editingCell.value)
+    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel) })
   }
 
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
@@ -2217,31 +2217,6 @@ export default function Tickets() {
     }
   }
 
-  function renderCellEditActions(ticket: Ticket, colLabel: string, isSaving: boolean) {
-    return (
-      <div className="flex items-center gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={() => requestSaveCellEdit(ticket, colLabel)}
-          className="px-2 py-0.5 rounded text-[10px] font-bold text-white disabled:opacity-50"
-          style={{ backgroundColor: green }}
-        >
-          {isSaving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={requestCancelCellEdit}
-          className="px-2 py-0.5 rounded text-[10px] font-bold border disabled:opacity-50"
-          style={{ borderColor: inputBorder, color: textMuted }}
-        >
-          Cancel
-        </button>
-      </div>
-    )
-  }
-
   function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowGhost?: boolean) {
     if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
 
@@ -2254,36 +2229,40 @@ export default function Tickets() {
       padding: '4px 6px',
       borderRadius: 6,
       outline: 'none',
-      backgroundColor: cardBg,
+      backgroundColor: inputBg,
       border: `1px solid ${green}`,
       color: textPrimary,
-      boxShadow: '0 0 0 2px rgba(22,163,74,0.2)',
+      boxShadow: '0 0 0 2px rgba(22,163,74,0.15)',
+    }
+
+    const commit = () => {
+      if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+      void saveCellEdit(ticket, colLabel, editingCell.value)
+    }
+
+    const onBlur = () => {
+      cellEditBlurTimer.current = setTimeout(commit, 120)
     }
 
     const onKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        requestCancelCellEdit()
-      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        cancelEdit()
+      } else if (e.key === 'Enter' && !e.shiftKey && colLabel !== 'DESTINATION' && colLabel !== 'COMMIT' && colLabel !== 'UPDATE') {
         e.preventDefault()
-        requestSaveCellEdit(ticket, colLabel)
+        commit()
       }
     }
 
-    const wrap = (control: React.ReactNode) => (
-      <div className="relative" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
-        {control}
-        {renderCellEditActions(ticket, colLabel, isSaving)}
-      </div>
-    )
-
     if (colLabel === 'STATUS') {
-      return wrap(
+      return (
         <select
           autoFocus
           disabled={isSaving}
           value={editingCell.value}
           onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={onBlur}
+          onClick={e => e.stopPropagation()}
           onKeyDown={onKeyDown}
           className="w-full text-xs font-semibold rounded-md outline-none"
           style={inputStyle}
@@ -2291,36 +2270,40 @@ export default function Tickets() {
           {STATUS_OPTS.map(opt => (
             <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
           ))}
-        </select>,
+        </select>
       )
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
-      return wrap(
+      return (
         <textarea
           autoFocus
           disabled={isSaving}
           rows={3}
           value={editingCell.value}
           onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={onBlur}
+          onClick={e => e.stopPropagation()}
           onKeyDown={onKeyDown}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
-        />,
+        />
       )
     }
 
-    return wrap(
+    return (
       <input
         autoFocus
         disabled={isSaving}
         type="text"
         value={editingCell.value}
         onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+        onBlur={onBlur}
+        onClick={e => e.stopPropagation()}
         onKeyDown={onKeyDown}
         className="w-full rounded-md outline-none"
         style={inputStyle}
-      />,
+      />
     )
   }
 
@@ -2334,7 +2317,6 @@ export default function Tickets() {
     if (!isCellExpanded || !canEdit || rowGhost) return content
     const isEditing = editingCell?.ticketId === ticket.id && editingCell?.colLabel === colLabel
     if (isEditing) return content
-    if (editingCell) return content
     return (
       <div className="relative">
         <div style={{ paddingRight: 18 }}>{content}</div>
@@ -2478,24 +2460,9 @@ export default function Tickets() {
   return (
     <div className="flex flex-col gap-4 pb-8" onClick={() => {
       setContextMenu(null)
-      if (!saving && !editingCell) cancelEdit()
+      if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
       setAddMenuOpen(false)
     }}>
-
-      {editingCell && (
-        <div
-          className="fixed inset-0 z-[9990] flex items-start justify-center pt-24 px-4 pointer-events-auto"
-          style={{ backgroundColor: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(2px)' }}
-          onClick={e => e.stopPropagation()}
-          onMouseDown={e => e.preventDefault()}
-          aria-hidden
-        >
-          <p className="text-xs font-bold text-white/90 px-4 py-2 rounded-xl shadow-lg"
-             style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
-            Editing cell — use Save or Cancel on the highlighted field (background is locked)
-          </p>
-        </div>
-      )}
 
       {/* Toast */}
       {toast && (
@@ -2642,24 +2609,8 @@ export default function Tickets() {
                   <button
                     type="button"
                     onClick={() => {
-                      setAddForm({
-                        preferredDate: todayDateKey(),
-                        customerName: '',
-                        contactPhone: '',
-                        location: '',
-                        district: '',
-                        commitTerms: '',
-                        unitType: '',
-                        sourceVendor: 'Direct',
-                        serviceDriver: '',
-                        installerName: '',
-                        negotiatorId: '',
-                        ticketNumber: '',
-                        controlNumber: '',
-                        modeOfPayment: '',
-                        installationCharges: undefined,
-                      })
-                      setAddModalOpen(true)
+                      setAddMenuOpen(false)
+                      openAddModal()
                     }}
                     className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
                     style={{ color: textPrimary }}
@@ -2872,12 +2823,11 @@ export default function Tickets() {
 
                       {/* Data cells */}
                       {columns.map((col) => {
-                        const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         return (
                           <td key={col.label}
                               onClick={e => {
                                 e.stopPropagation()
-                                if (isEditingCell) return
+                                if (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label) return
                                 setExpandedCells(prev => ({
                                   ...prev,
                                   [`${ticket.id}:${col.label}`]: !prev[`${ticket.id}:${col.label}`],
@@ -2885,7 +2835,7 @@ export default function Tickets() {
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
-                                if (canEdit && !isGhost && !editingCell) {
+                                if (canEdit && !isGhost) {
                                   openEditModal(ticket)
                                 }
                               }}
@@ -2898,12 +2848,10 @@ export default function Tickets() {
                                 borderBottom: `1px solid ${border}`,
                                 width: col.width, minWidth: col.width, maxWidth: col.width,
                                 transition: 'background-color 0.1s ease',
-                                cursor: canEdit && !isGhost && !editingCell ? 'pointer' : 'default',
+                                cursor: canEdit && !isGhost ? 'pointer' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
-                                ...(isEditingCell ? { position: 'relative' as const, zIndex: 9995, boxShadow: `0 0 0 2px ${green}` } : {}),
-                                ...(col.sticky && !isEditingCell ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
-                                ...(col.sticky && isEditingCell ? { position: 'sticky' as const, left: col.left } : {}),
+                                ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
@@ -3227,7 +3175,6 @@ export default function Tickets() {
 
         const handleSubmitCompletion = async (e: React.FormEvent) => {
           e.preventDefault()
-          if (!confirm(`Mark ${custName} as completed and save to service report?`)) return
           setCompletionPrompt(null)
           setSaving(true)
           
@@ -3622,7 +3569,8 @@ export default function Tickets() {
 
       {addModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-             onClick={() => setAddModalOpen(false)}>
+             onClick={e => e.stopPropagation()}
+             onMouseDown={e => e.preventDefault()}>
           <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
                onClick={e => e.stopPropagation()}>
@@ -3630,7 +3578,7 @@ export default function Tickets() {
               <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
                 Add Ticket Details
               </h3>
-              <button onClick={() => setAddModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
+              <button onClick={requestCloseAddModal} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3784,7 +3732,7 @@ export default function Tickets() {
             </div>
 
             <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
-              <button onClick={() => setAddModalOpen(false)}
+              <button onClick={requestCloseAddModal}
                 className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
@@ -3812,7 +3760,8 @@ export default function Tickets() {
 
         return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-             onClick={() => setEditModalOpen(false)}>
+             onClick={e => e.stopPropagation()}
+             onMouseDown={e => e.preventDefault()}>
           <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
                onClick={e => e.stopPropagation()}>
@@ -3832,7 +3781,7 @@ export default function Tickets() {
                   </p>
                 )}
               </div>
-              <button onClick={() => setEditModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
+              <button onClick={requestCloseEditModal} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -4058,7 +4007,7 @@ export default function Tickets() {
             </div>
 
             <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
-              <button onClick={() => setEditModalOpen(false)}
+              <button onClick={requestCloseEditModal}
                 className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
