@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
-  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Archive, Pencil
+  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -38,6 +38,10 @@ interface Ticket {
   created_at?: string
   preferredDate?: string
   preferred_date?: string
+  actualCompletion?: string
+  actual_completion?: string
+  updatedAt?: string
+  updated_at?: string
   assignedTo?: string
   assigned_employee_name?: string
   assignedEmployeeName?: string
@@ -669,7 +673,6 @@ export default function Tickets() {
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
-  const [ticketsView, setTicketsView] = useState<'schedule' | 'archives'>('schedule')
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredHeader, setHoveredHeader] = useState<string | null>(null)
@@ -800,7 +803,6 @@ export default function Tickets() {
     for (const row of sheetRows) {
       const rowName = row.name
       const rowPhone = row.phone
-      const rowDest = row.location
 
       const match = tickets.find(t => {
         if (usedTicketIds.has(t.id)) return false
@@ -1382,7 +1384,7 @@ export default function Tickets() {
       }
 
       showToast(shouldComplete
-        ? 'Ticket completed — moved to Archives ✓'
+        ? 'Ticket completed — see Archives tab ✓'
         : isDateMove
           ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
           : 'Ticket updated successfully ✓')
@@ -1796,27 +1798,17 @@ export default function Tickets() {
 
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
-    const raw = ticketsView === 'archives'
-      ? [
-          { label: "CUSTOMER'S NAME", display: 'CUSTOMER', w: 180, expW: 300, sticky: true, freeze: false, align: 'left' as const },
-          { label: 'SCHEDULED DATE', display: 'SCHEDULED', w: 120, expW: 160, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'INSTALLED DATE', display: 'INSTALLED', w: 120, expW: 160, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'PAYMENT', display: 'AMOUNT', w: 100, expW: 140, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'MOP', display: 'MODE', w: 90, expW: 120, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'INSTALLER', display: isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', w: 140, expW: 220, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'UPDATE', display: isTaguigServices ? 'SERVICE STATUS' : 'REMARKS', w: 180, expW: 320, sticky: false, freeze: false, align: 'right' as const },
-        ]
-      : [
-          { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
-          { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
-          { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-          { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
-        ]
+    const raw = [
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
+      { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
+    ]
     let left = 0
     return raw.map(c => {
       const isExpanded = !!expandedCols[c.label]
@@ -1825,7 +1817,7 @@ export default function Tickets() {
       if (c.sticky) left += width
       return { ...c, isExpanded, width, left: l }
     })
-  }, [expandedCols, isTaguigServices, ticketsView])
+  }, [expandedCols, isTaguigServices])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -1878,12 +1870,8 @@ export default function Tickets() {
     let list = tickets.filter(t => {
       const stat = (t.status || '').toUpperCase()
 
-      if (ticketsView === 'archives') {
-        return stat === 'COMPLETED'
-      }
-
       if (stat === 'COMPLETED') {
-        return ticketsView === 'schedule' && Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
+        return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
 
       let hasFinalDate = false
@@ -1914,22 +1902,13 @@ export default function Tickets() {
       })
     }
     if (dateFilter) {
-      if (ticketsView === 'archives') {
-        list = list.filter(t => {
-          const installed = getInstalledDateKey(t)
-          const scheduled = getArchivedScheduleDate(t)
-          return installed === dateFilter || scheduled === dateFilter
-        })
-        list = [...list].sort((a, b) => getInstalledDateKey(b).localeCompare(getInstalledDateKey(a)))
-      } else {
-        list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
-        list = [...list].sort((a, b) => {
-          const aGhost = isScheduleGhostOnDate(a, dateFilter)
-          const bGhost = isScheduleGhostOnDate(b, dateFilter)
-          if (aGhost === bGhost) return 0
-          return aGhost ? 1 : -1
-        })
-      }
+      list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
+      list = [...list].sort((a, b) => {
+        const aGhost = isScheduleGhostOnDate(a, dateFilter)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter)
+        if (aGhost === bGhost) return 0
+        return aGhost ? 1 : -1
+      })
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -1941,11 +1920,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, ticketsView, isAdmin, globalBranchId, dateFilter, searchQuery])
-
-  const archiveCount = useMemo(() => {
-    return tickets.filter(t => (t.status || '').toUpperCase() === 'COMPLETED').length
-  }, [tickets])
+  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
 
   const duplicateNameKeys = useMemo(() => {
     const counts = new Map<string, number>()
@@ -1965,7 +1940,7 @@ export default function Tickets() {
     let forQuotationOrForApproval = 0
 
     visible.forEach(t => {
-      if (dateFilter && ticketsView === 'schedule' && isScheduleGhostOnDate(t, dateFilter)) return
+      if (dateFilter && isScheduleGhostOnDate(t, dateFilter)) return
       const stat = (t.status || '').toUpperCase()
       const category = (t.serviceType || t.title || '').toLowerCase()
       const isSurvey = category.includes('survey') || stat === 'SURVEY'
@@ -1996,7 +1971,7 @@ export default function Tickets() {
       survey,
       forQuotationOrForApproval
     }
-  }, [visible, dateFilter, ticketsView])
+  }, [visible, dateFilter])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -2121,7 +2096,7 @@ export default function Tickets() {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
           const installed = getInstalledDateKey(ticket)
           return (
-            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${formatDateKeyLabel(installed)} — see Archives`}>
+            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${formatDateKeyLabel(installed)} — see Archives tab`}>
               INSTALLED → {formatDateKeyLabel(installed)}
             </span>
           )
@@ -2178,7 +2153,7 @@ export default function Tickets() {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
           return (
             <span style={{ ...truncStyle, color: isLight ? '#15803d' : '#86efac', fontWeight: 600, fontStyle: 'italic' }}
-                  title="Moved to Archives">
+                  title="Completed — see Archives tab">
               Archived
             </span>
           )
@@ -2256,42 +2231,6 @@ export default function Tickets() {
               <span>{getBranchDisplayName(globalBranchId)}</span>
             </div>
           )}
-          <div className="flex items-center rounded-xl border p-0.5 shrink-0"
-               style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
-            <button
-              type="button"
-              onClick={() => setTicketsView('schedule')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-              style={{
-                backgroundColor: ticketsView === 'schedule' ? green : 'transparent',
-                color: ticketsView === 'schedule' ? '#ffffff' : textPrimary,
-              }}
-            >
-              <CalendarDays className="w-3.5 h-3.5" />
-              Schedule
-            </button>
-            <button
-              type="button"
-              onClick={() => setTicketsView('archives')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-              style={{
-                backgroundColor: ticketsView === 'archives' ? green : 'transparent',
-                color: ticketsView === 'archives' ? '#ffffff' : textPrimary,
-              }}
-            >
-              <Archive className="w-3.5 h-3.5" />
-              Archives
-              {archiveCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black"
-                      style={{
-                        backgroundColor: ticketsView === 'archives' ? 'rgba(255,255,255,0.25)' : 'rgba(22,163,74,0.15)',
-                        color: ticketsView === 'archives' ? '#ffffff' : green,
-                      }}>
-                  {archiveCount}
-                </span>
-              )}
-            </button>
-          </div>
           <div className="flex flex-wrap items-center gap-1.5 max-w-full overflow-x-auto no-scrollbar py-0.5">
             {/* Weekly Tabs */}
             {weeklyTabs.map(tab => {
@@ -2512,7 +2451,7 @@ export default function Tickets() {
       </div>
 
       {/* Stats bar */}
-      {!loading && tickets.length > 0 && ticketsView === 'schedule' && (
+      {!loading && tickets.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
@@ -2528,22 +2467,6 @@ export default function Tickets() {
             <span style={{ color: textMuted }}>For Quotation / For Approval</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
           </div>
-        </div>
-      )}
-      {!loading && ticketsView === 'archives' && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
-             style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Archives:</span>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Completed Installations</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(22,163,74,0.15)', color: green }}>{archiveCount}</span>
-          </div>
-          {dateFilter && (
-            <div className="flex items-center gap-1">
-              <span style={{ color: textMuted }}>On {formatDateKeyLabel(dateFilter)}</span>
-              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(100,116,139,0.15)', color: textMuted }}>{visible.length}</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -2612,7 +2535,7 @@ export default function Tickets() {
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${border}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                          {ticketsView === 'archives' ? 'No archived installations' : 'No records'}
+                          No records
                         </p>
                         {searchQuery && (
                           <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
@@ -2623,9 +2546,7 @@ export default function Tickets() {
                 ) : (
                   visible.map((ticket, idx) => {
                     const isHovered = hoveredRow === ticket.id
-                    const ghostKind = ticketsView === 'schedule' && dateFilter
-                      ? getScheduleGhostKind(ticket, dateFilter)
-                      : null
+                    const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                     const isGhost = Boolean(ghostKind)
                     const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                     const baseBg = ghostKind === 'completed'
@@ -3826,7 +3747,7 @@ export default function Tickets() {
                     </Field>
                     {qualifiesForInstallComplete(editForm, { remarksUpdate: editForm.remarks, remarks: editForm.remarks, installationCharges: editForm.installationCharges, modeOfPayment: editForm.modeOfPayment }) && (editForm.status || '').toUpperCase() !== 'COMPLETED' && (
                       <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
-                        Installed remarks + payment detected — saving will complete this ticket and move it to Archives.
+                        Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
                       </p>
                     )}
                   </div>
