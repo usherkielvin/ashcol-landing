@@ -3,7 +3,7 @@
  * Mirrors the native app's create-ticket screen, adapted for the web portal.
  */
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Minus, Camera,
   Search, Check, DollarSign, ChevronDown, ChevronUp, Trash2,
@@ -195,6 +195,87 @@ export default function CreateTicket() {
   const [images, setImages] = useState<{ file: File; url: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const location = useLocation()
+  const scannedData = location.state?.scannedData
+
+  useEffect(() => {
+    if (scannedData) {
+      if (scannedData.customerName) setFullName(scannedData.customerName)
+      if (scannedData.contactPhone) setContactPhone(scannedData.contactPhone)
+      if (scannedData.description) setDescription(scannedData.description)
+      
+      // Parse service type if valid
+      if (scannedData.serviceType) {
+        const mappedService = SERVICE_TYPES.find(
+          s => s.toLowerCase() === scannedData.serviceType.toLowerCase()
+        )
+        if (mappedService) {
+          setSelectedService(mappedService)
+        }
+      }
+      
+      // Format preferredDate (YYYY-MM-DD)
+      if (scannedData.preferredDate) {
+        try {
+          const d = new Date(scannedData.preferredDate)
+          if (!isNaN(d.getTime())) {
+            setSelectedDate(d.toISOString().split('T')[0])
+          }
+        } catch (e) {}
+      }
+      
+      // Set sourceVendor if valid
+      if (scannedData.sourceVendor) {
+        setSourceVendor(scannedData.sourceVendor)
+      }
+      
+      // Parse address details
+      if (scannedData.location) {
+        const addrStr = scannedData.location
+        setAddress(prev => ({
+          ...prev,
+          street: addrStr,
+          landmark: scannedData.landmarks || ''
+        }))
+      }
+
+      // Pre-fill unitType details if brand/capacity are detected
+      const brandVal = scannedData.brand || ''
+      const capacityVal = scannedData.capacity || ''
+      if (brandVal || capacityVal) {
+        let matchedHp = ''
+        if (capacityVal) {
+          const cleanedCap = capacityVal.toUpperCase().replace(/\s/g, '')
+          matchedHp = Object.keys(HP_MOD).find(
+            hp => hp.toUpperCase().replace(/\s/g, '') === cleanedCap || cleanedCap.includes(hp.toUpperCase().replace(/\s/g, ''))
+          ) || ''
+        }
+
+        setUnitTypes(prev => prev.map(u => {
+          if (u.name === 'Split AC') {
+            return {
+              ...u,
+              selected: true,
+              details: [{
+                brand: brandVal,
+                hp: matchedHp,
+                technology: '',
+                subtype: '',
+                feature: '',
+                issueType: '',
+                refrigerant: '',
+                voltage: '',
+                ageRange: '',
+                expandedMore: false
+              }]
+            }
+          }
+          return u
+        }))
+      }
+    }
+  }, [scannedData])
 
 
   const emptyDetail = (): UnitDetail => ({ brand: '', hp: '', technology: '', subtype: '', feature: '', issueType: '', refrigerant: '', voltage: '', ageRange: '', expandedMore: false })

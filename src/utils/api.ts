@@ -4,10 +4,9 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PROD_API_BASE_URL : 'http://localhost:8080/api')
 export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '')
 
-/** Resolves a potentially relative image path to a full URL using the configured server base */
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
-  if (path.startsWith('http')) return path
+  if (path.startsWith('http') || path.startsWith('data:')) return path
   return `${SERVER_BASE_URL}${path}`
 }
 

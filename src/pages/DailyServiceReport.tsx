@@ -3,7 +3,7 @@ import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
   Scan, Loader2, ClipboardPaste, Save,
-  Check,
+  Check, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -219,6 +219,8 @@ export default function DailyServiceReport() {
   // Details Modal States
   const [detailRow, setDetailRow] = useState<ServiceRow | null>(null)
   const [detailForm, setDetailForm] = useState<ServiceRow | null>(null)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const green = '#16A34A'
 
   useEffect(() => {
     setDetailForm(detailRow)
@@ -1382,7 +1384,7 @@ export default function DailyServiceReport() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-5 pb-8" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col gap-5 pb-8" onClick={() => { setContextMenu(null); setAddMenuOpen(false); }}>
 
       {/* Thinner, simple design header controls */}
       <div
@@ -1470,34 +1472,70 @@ export default function DailyServiceReport() {
 
           {/* Action buttons wrapper */}
           <div className="flex items-center gap-2 shrink-0">
-            {canEdit && (
-              <>
-                <button type="button"
-                  onClick={handleAddRow}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Plus className="w-3.5 h-3.5" /> Add
+            {(canEdit || canImport) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddMenuOpen(!addMenuOpen);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
+                  style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Record</span>
+                  <ChevronDown className="w-3 h-3 ml-0.5" />
                 </button>
-                <button type="button"
-                  onClick={() => setScanModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all animate-pulse-subtle"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Scan className="w-3.5 h-3.5 text-emerald-500" /> Scan Image
-                </button>
-              </>
+
+                {addMenuOpen && (
+                  <div
+                    className="absolute right-0 mt-1.5 rounded-xl shadow-2xl overflow-hidden z-[100] w-48 border"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                    onClick={() => setAddMenuOpen(false)}
+                  >
+                    {canEdit && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleAddRow}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                          style={{ color: textPrimary }}
+                        >
+                          <Plus className="w-3.5 h-3.5" style={{ color: green }} />
+                          Manual Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScanModalOpen(true)}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                          style={{ color: textPrimary }}
+                        >
+                          <Scan className="w-3.5 h-3.5 text-emerald-500" />
+                          Scan Image
+                        </button>
+                      </>
+                    )}
+
+                    {canImport && (
+                      <button
+                        type="button"
+                        disabled={importing || viewMode === 'weekly'}
+                        onClick={() => document.getElementById('svc-import-input')?.click()}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                        style={{ color: textPrimary }}
+                      >
+                        <Upload className="w-3.5 h-3.5 text-amber-500" />
+                        Import Excel
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {canImport && (
-              <>
-                <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
-                <button id="svc-import-btn" type="button" disabled={importing || viewMode === 'weekly'}
-                  onClick={() => document.getElementById('svc-import-input')?.click()}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Upload className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} style={{ color: textMuted }} />
-                  {importing ? 'Importing…' : 'Import'}
-                </button>
-              </>
+              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
             )}
           </div>
         </div>
@@ -1795,12 +1833,22 @@ export default function DailyServiceReport() {
               <Field label="Target Branch" required>
                 <select value={pendingImport.branchId}
                   onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
-                  disabled={true}
-                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
+                  disabled={isBranchScoped}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                   <option value="">— Choose branch —</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
+              </Field>
+
+              <Field label="Target Date" required>
+                <input
+                  type="date"
+                  value={pendingImport.detectedDate || todayLocal()}
+                  onChange={e => setPendingImport({ ...pendingImport, detectedDate: e.target.value })}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
               </Field>
             </div>
             <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
@@ -1809,7 +1857,7 @@ export default function DailyServiceReport() {
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
               </button>
-              <button onClick={() => runImport(pendingImport.file, pendingImport.branchId)}
+              <button onClick={() => runImport(pendingImport.file, pendingImport.branchId, pendingImport.detectedDate || undefined)}
                 disabled={!pendingImport.branchId || importing}
                 className="px-4 py-2 rounded-xl text-xs font-bold border"
                 style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
@@ -1970,10 +2018,17 @@ export default function DailyServiceReport() {
                       <span className="font-bold" style={{ color: textPrimary }}>
                         {branches.find(b => b.id === branchFilter)?.name || 'None'}
                       </span>
-                      <span style={{ color: textMuted }}>Date:</span>
-                      <span className="font-bold" style={{ color: textPrimary }}>
-                        {new Date((scannedRows[0]?.reportDate || todayLocal()) + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
+                      <span style={{ color: textMuted }}>Target Date:</span>
+                      <input
+                        type="date"
+                        value={scannedRows[0]?.reportDate || todayLocal()}
+                        onChange={e => {
+                          const newDate = e.target.value || todayLocal()
+                          setScannedRows(prev => prev.map(r => ({ ...r, reportDate: newDate })))
+                        }}
+                        className="rounded-lg px-2.5 py-1 outline-none border text-xs font-bold transition-all focus:ring-2 focus:ring-slate-400"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
                     </div>
                   </div>
 
@@ -2208,6 +2263,16 @@ export default function DailyServiceReport() {
                   Customer Information
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Report Date" required>
+                    {canEdit ? (
+                      <input type="date" value={detailForm.reportDate || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, reportDate: e.target.value || null })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.reportDate || '—'}</span>
+                    )}
+                  </Field>
                   <Field label="Customer Name">
                     {canEdit ? (
                       <input type="text" value={detailForm.customerName || ''} 

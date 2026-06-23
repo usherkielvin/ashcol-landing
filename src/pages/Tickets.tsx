@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
-  Eye, Phone, Mail, MapPin, User, Wrench, Clock, Upload
+  Eye, Phone, Mail, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -114,8 +114,8 @@ const COL_FIELD: Record<string, keyof Ticket> = {
 }
 
 const EDITABLE_COLS = [
-  "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND', 'DLR',
-  'STATUS', 'COMMIT', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
+  "CUSTOMER'S NAME", 'DESTINATION', 'BRAND', 'DLR',
+  'STATUS', 'COMMIT', 'INSTALLER', 'SERVICE', 'UPDATE',
 ]
 
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR APPROVAL', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
@@ -247,6 +247,10 @@ function todayDateKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function formatDateToKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function formatDateTriggerLabel(value: string) {
   const [year, month, day] = value.split('-')
   return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
@@ -285,7 +289,7 @@ export default function Tickets() {
 
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#e2e8f0' : '#1A2740'
+  const border      = isLight ? '#cbd5e1' : '#334155'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
@@ -302,9 +306,29 @@ export default function Tickets() {
   const [loading, setLoading]         = useState(true)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter]   = useState(() => isTaguig ? todayDateKey() : '')
+  const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
+  const [hoveredHeader, setHoveredHeader] = useState<string | null>(null)
+
+  // ── Weekly Tabs Calculation ───────────────────────────────────────────────
+  const weeklyTabs = useMemo(() => {
+    const list = []
+    const start = new Date()
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      const key = formatDateToKey(d)
+      const dayName = i === 0 ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
+      const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+      list.push({ key, dayName, dateLabel })
+    }
+    return list
+  }, [])
+
+  const isCustomSelected = useMemo(() => {
+    return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
+  }, [dateFilter, weeklyTabs])
 
   // ── Cell editing state ────────────────────────────────────────────────────
   // editingCell: { rowId, col } — which cell is being edited
@@ -335,8 +359,30 @@ export default function Tickets() {
     amount: string
   } | null>(null)
 
+  // ── Manual Add Modal State ───────────────────────────────────────────────
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [addForm, setAddForm] = useState<Partial<Ticket>>({
+    preferredDate: '',
+    customerName: '',
+    contactPhone: '',
+    location: '',
+    district: '',
+    commitTerms: '',
+    unitType: '',
+    sourceVendor: 'Direct',
+    serviceVehicle: '',
+    assignedTo: '',
+    serviceType: 'Installation',
+    controlNumber: '',
+  })
+  const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
+  const [savingManual, setSavingManual] = useState(false)
+
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const scanFileInputRef = useRef<HTMLInputElement>(null)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
     isOpen: boolean
@@ -350,6 +396,14 @@ export default function Tickets() {
     needsConfirmation: ImportPaymentConfirmation[]
     unmatched: ImportUnmatchedRow[]
   } | null>(null)
+
+  const [importTargetDate, setImportTargetDate] = useState('')
+
+  useEffect(() => {
+    if (importResults?.isOpen) {
+      setImportTargetDate(dateFilter || todayDateKey())
+    }
+  }, [importResults?.isOpen, dateFilter])
 
   const handlePaymentFieldChange = (idx: number, field: 'amount' | 'modeOfPayment' | 'controlNumber', val: string) => {
     setImportResults(prev => {
@@ -619,6 +673,103 @@ export default function Tickets() {
     }
   }
 
+  const handleScanFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setScanning(true)
+    try {
+      const tokenVal = token()
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`${API_URL}/tickets/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenVal}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Scan failed (HTTP ${res.status})`)
+      const data = await res.json()
+      if (data.error) {
+        alert(`Scan failed: ${data.error}`)
+        return
+      }
+      navigate('/tickets/create', { state: { scannedData: data } })
+    } catch (err: any) {
+      console.error(err)
+      alert(`Could not scan document: ${err.message || 'Unknown error'}`)
+    } finally {
+      setScanning(false)
+      if (scanFileInputRef.current) scanFileInputRef.current.value = ''
+    }
+  }
+
+
+
+  const handleSaveManualTicket = async () => {
+    if (!addForm.preferredDate) {
+      alert('Preferred Date is required')
+      return
+    }
+    if (!addForm.customerName || !addForm.customerName.trim()) {
+      alert('Customer Name is required')
+      return
+    }
+    if (!addForm.contactPhone || !addForm.contactPhone.trim()) {
+      alert('Contact No. is required')
+      return
+    }
+    if (!addForm.location || !addForm.location.trim()) {
+      alert('Destination/Address is required')
+      return
+    }
+
+    setSavingManual(true)
+    try {
+      const tokenVal = token()
+      const titleVal = `${addForm.serviceType} service`
+      const descVal = addForm.commitTerms?.trim() || 'No additional details provided.'
+      
+      const payload = {
+        customerName: addForm.customerName.trim(),
+        title: titleVal,
+        description: descVal,
+        serviceType: addForm.serviceType,
+        location: addForm.location.trim(),
+        contactPhone: addForm.contactPhone.trim(),
+        unitType: addForm.unitType?.trim() || undefined,
+        preferredDate: addForm.preferredDate,
+        sourceVendor: addForm.sourceVendor?.trim() || 'Direct',
+        district: addForm.district?.trim() || undefined,
+        commitType: addForm.commitTerms?.trim() || undefined,
+        serviceVehicle: addForm.serviceVehicle?.trim() || undefined,
+        assignedTo: addForm.assignedTo || undefined,
+        controlNumber: addForm.controlNumber?.trim() || undefined,
+        branchId: globalBranchId || user?.branchId || undefined,
+      }
+
+      const res = await fetch(`${API_URL}/tickets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokenVal}`,
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || `Failed (HTTP ${res.status})`)
+      }
+
+      await fetchTickets()
+      setAddModalOpen(false)
+    } catch (err: any) {
+      console.error(err)
+      alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
+    } finally {
+      setSavingManual(false)
+    }
+  }
+
   const handleApplyImport = async () => {
     if (!importResults) return
     setSaving(true)
@@ -643,6 +794,12 @@ export default function Tickets() {
       if (Object.keys(updatedFields).length === 0) continue
 
       const body: Record<string, any> = { ...updatedFields }
+      if (importTargetDate) {
+        body.preferredDate = importTargetDate
+        if (!body.status) {
+          body.status = 'SCHEDULED'
+        }
+      }
       if (updatedFields.location) {
         body.acDetails = mergeAcMeta(ticket, { destination: updatedFields.location, address: updatedFields.location })
       }
@@ -685,7 +842,7 @@ export default function Tickets() {
 
       const serviceReportPayload = {
         branchId: (ticket.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
-        reportDate: todayStr,
+        reportDate: importTargetDate || todayStr,
         customerName: custName,
         customerAddress: formatAddress(updatedFields.location ? updatedFields.location : ticket.location),
         customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
@@ -734,7 +891,7 @@ export default function Tickets() {
 
       const serviceReportPayload = {
         branchId: (ticket.branchId || localStorage.getItem('ashcol-global-branch-id') || '').replace(/-(sales|services)$/i, ''),
-        reportDate: todayStr,
+        reportDate: importTargetDate || todayStr,
         customerName: custName,
         customerAddress: formatAddress(ticket.location),
         customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
@@ -789,7 +946,7 @@ export default function Tickets() {
 
         const serviceReportPayload = {
           branchId: targetBranch,
-          reportDate: todayStr,
+          reportDate: importTargetDate || todayStr,
           customerName: item.name,
           customerAddress: formatAddress(item.location),
           customerPhone: item.phone,
@@ -846,13 +1003,8 @@ export default function Tickets() {
           modeOfPayment: item.paymentMode,
           controlNumber: item.controlNo,
           branchId: targetBranch,
-          status: (item.status && STATUS_OPTS.includes(item.status.toUpperCase())) ? item.status.toUpperCase() : 'PENDING'
-        }
-
-        if (!body.status || body.status === 'PENDING') {
-          if (body.installerName) {
-            body.status = 'ASSIGNED'
-          }
+          preferredDate: importTargetDate || undefined,
+          status: 'SCHEDULED'
         }
 
         try {
@@ -916,18 +1068,15 @@ export default function Tickets() {
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     const raw = [
-      { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", w: 180, expW: 300, sticky: true,  freeze: false },
-      { label: 'DESTINATION',     display: "DESTINATION ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true  },
-      { label: 'DISTRICT',        display: "DISTRICT", w: 120, expW: 200, sticky: false, freeze: false },
-      { label: 'CONTACT NO.',     display: "CONTACT NO.", w: 130, expW: 200, sticky: false, freeze: false },
-      { label: 'BRAND',           display: "AC UNIT / BRAND", w: 150, expW: 260, sticky: false, freeze: false },
-      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER / VENDOR", w: 130, expW: 200, sticky: false, freeze: false },
-      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false },
-      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT (AMOUNT)" : "COMMIT TERMS", w: 160, expW: 300, sticky: false, freeze: false },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER NAME", w: 150, expW: 260, sticky: false, freeze: false },
-      { label: 'NOTE',            display: isTaguigServices ? "CONFIRMATION" : "NOTES / REMARKS", w: 160, expW: 300, sticky: false, freeze: false },
-      { label: 'SERVICE',         display: "SERVICE VEHICLE", w: 120, expW: 200, sticky: false, freeze: false },
-      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "UPDATE REMARKS", w: 180, expW: 360, sticky: false, freeze: false },
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
+      { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
     ]
     let left = 0
     return raw.map(c => {
@@ -961,6 +1110,20 @@ export default function Tickets() {
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
   useEffect(() => { if (isAdmin) fetchTickets() }, [globalBranchId, isAdmin])
+
+  useEffect(() => {
+    if (canEdit) {
+      const headers = { Authorization: `Bearer ${token()}` }
+      fetch(`${API_URL}/user/all?role=EMPLOYEE`, { headers })
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setTechnicians(data.map((u: any) => ({ id: u.id, name: u.name })))
+          }
+        })
+        .catch(err => console.error('Failed to load technicians:', err))
+    }
+  }, [canEdit, token])
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
@@ -1360,7 +1523,7 @@ export default function Tickets() {
     // ── EDITING STATE ──
     if (isThisEditing) {
       const inputClass = 'w-full text-xs rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-green-500 font-medium'
-      const inputSt    = { backgroundColor: editCellBg, border: `1.5px solid ${green}`, color: textPrimary }
+      const inputSt    = { backgroundColor: editCellBg, border: `1.5px solid ${green}`, color: textPrimary, textAlign: col.align }
 
       if (label === 'STATUS') {
         // Click cycles through STATUS_OPTS — no dropdown needed
@@ -1480,7 +1643,7 @@ export default function Tickets() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4 pb-8" onClick={() => { setContextMenu(null); if (!saving) cancelEdit() }}>
+    <div className="flex flex-col gap-4 pb-8" onClick={() => { setContextMenu(null); if (!saving) cancelEdit(); setAddMenuOpen(false) }}>
 
       {/* Toast */}
       {toast && (
@@ -1495,6 +1658,12 @@ export default function Tickets() {
           ⏳ Saving…
         </div>
       )}
+      {scanning && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <Loader2 className="w-10 h-10 animate-spin text-[#10B981] mb-2" />
+          <span className="text-sm font-bold text-white">AI OCR scanning voucher/receipt...</span>
+        </div>
+      )}
 
       {/* ── Header bar ── */}
       <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm"
@@ -1507,47 +1676,168 @@ export default function Tickets() {
               <span>{getBranchDisplayName(globalBranchId)}</span>
             </div>
           )}
-          <div
-               onClick={() => {
-                 dateFilterInputRef.current?.showPicker?.()
-               }}
-               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm cursor-pointer"
-               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
-            {dateFilter && (
-              <span className="uppercase tracking-wider text-[9px] font-black opacity-60 border-r pr-1.5" style={{ borderColor: border }}>
-                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
-              </span>
-            )}
-            <input ref={dateFilterInputRef} type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-                   tabIndex={-1}
-                   className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
-                   aria-label="Ticket date filter" />
-            <span className="select-none" style={{ color: textPrimary }}>
-              {formatDateTriggerLabel(dateFilter)}
-            </span>
-            {dateFilter && (
-              <button onClick={e => { e.stopPropagation(); setDateFilter('') }} style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
+          <div className="flex flex-wrap items-center gap-1.5 max-w-full overflow-x-auto no-scrollbar py-0.5">
+            {/* Weekly Tabs */}
+            {weeklyTabs.map(tab => {
+              const isActive = dateFilter === tab.key
+              return (
+                <button
+                  type="button"
+                  key={tab.key}
+                  onClick={() => setDateFilter(tab.key)}
+                  className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[75px] cursor-pointer transition-all hover:scale-105"
+                  style={{
+                    backgroundColor: isActive ? green : inputBg,
+                    borderColor: isActive ? green : inputBorder,
+                    color: isActive ? '#ffffff' : textPrimary,
+                    boxShadow: isActive ? '0 4px 12px rgba(22, 163, 74, 0.2)' : 'none'
+                  }}
+                >
+                  <span className="text-[9px] uppercase tracking-wider font-black opacity-80">{tab.dayName}</span>
+                  <span className="text-xs font-bold">{tab.dateLabel}</span>
+                </button>
+              )
+            })}
+
+            {/* Custom Tab if selected date is outside weekly tabs */}
+            {isCustomSelected && (
+              <button
+                type="button"
+                onClick={() => dateFilterInputRef.current?.showPicker?.()}
+                className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[75px] cursor-pointer transition-all hover:scale-105"
+                style={{
+                  backgroundColor: green,
+                  borderColor: green,
+                  color: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.2)'
+                }}
+              >
+                <span className="text-[9px] uppercase tracking-wider font-black opacity-80">Custom</span>
+                <span className="text-xs font-bold">
+                  {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                </span>
               </button>
             )}
+
+            {/* Calendar Picker Trigger */}
+            {!isCustomSelected && (
+              <div
+                onClick={() => dateFilterInputRef.current?.showPicker?.()}
+                className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl text-center border min-w-[45px] cursor-pointer transition-all hover:scale-105"
+                style={{
+                  backgroundColor: inputBg,
+                  borderColor: inputBorder,
+                  color: textPrimary
+                }}
+              >
+                <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+                <span className="text-[9px] uppercase tracking-wider font-black mt-0.5 opacity-60">Pick</span>
+              </div>
+            )}
+
+            {/* Hidden date input */}
+            <input
+              ref={dateFilterInputRef}
+              type="date"
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value)}
+              tabIndex={-1}
+              className="absolute opacity-0 pointer-events-none w-0 h-0"
+              aria-label="Ticket date filter"
+            />
+
+            {/* All Tab */}
+            <button
+              type="button"
+              onClick={() => setDateFilter('')}
+              className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[60px] cursor-pointer transition-all hover:scale-105"
+              style={{
+                backgroundColor: dateFilter === '' ? green : inputBg,
+                borderColor: dateFilter === '' ? green : inputBorder,
+                color: dateFilter === '' ? '#ffffff' : textPrimary,
+                boxShadow: dateFilter === '' ? '0 4px 12px rgba(22, 163, 74, 0.2)' : 'none'
+              }}
+            >
+              <span className="text-[9px] uppercase tracking-wider font-black opacity-80">View</span>
+              <span className="text-xs font-bold">All</span>
+            </button>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           {canEdit && (
-            <>
-              {isTaguigServices && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/tickets/create')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
-                  style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAddMenuOpen(!addMenuOpen);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
+                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Ticket</span>
+                <ChevronDown className="w-3 h-3 ml-0.5" />
+              </button>
+
+              {addMenuOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 rounded-xl shadow-2xl overflow-hidden z-[100] w-48 border"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                  onClick={() => setAddMenuOpen(false)}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Row</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddForm({
+                        preferredDate: todayDateKey(),
+                        customerName: '',
+                        contactPhone: '',
+                        location: '',
+                        district: '',
+                        commitTerms: '',
+                        unitType: '',
+                        sourceVendor: 'Direct',
+                        serviceVehicle: '',
+                        assignedTo: '',
+                        serviceType: 'Installation',
+                        controlNumber: '',
+                      })
+                      setAddModalOpen(true)
+                    }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                    style={{ color: textPrimary }}
+                  >
+                    <Plus className="w-3.5 h-3.5" style={{ color: green }} />
+                    Manual Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scanFileInputRef.current?.click()}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                    style={{ color: textPrimary }}
+                  >
+                    <Camera className="w-3.5 h-3.5 text-emerald-500" />
+                    Scan Image
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importing}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                    style={{ color: textPrimary }}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-amber-500" />
+                    Import Excel
+                  </button>
+                </div>
               )}
+            </div>
+          )}
+
+          {canEdit && (
+            <>
               {isAdmin && (
                 <button
                   type="button"
@@ -1560,22 +1850,21 @@ export default function Tickets() {
                   <span>Clear All</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              >
-                <Upload className="w-3.5 h-3.5" style={{ color: green }} />
-                <span>{importing ? 'Importing...' : 'Import Excel'}</span>
-              </button>
+
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={handleImport}
+              />
+
+              <input
+                ref={scanFileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={handleScanFilePicked}
               />
             </>
           )}
@@ -1646,23 +1935,28 @@ export default function Tickets() {
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
                   {columns.map(col => (
                     <th key={col.label}
+                        onMouseEnter={() => setHoveredHeader(col.label)}
+                        onMouseLeave={() => setHoveredHeader(null)}
                         onClick={() => toggleCol(col.label)}
                         style={{
-                          padding: '9px 10px',
-                          color: col.isExpanded ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          padding: '12px 14px',
+                          color: (col.isExpanded || hoveredHeader === col.label) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
                           fontWeight: 700, whiteSpace: 'nowrap',
-                          borderRight: col.freeze ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}` : `1px solid ${border}`,
+                          borderRight: `1px solid ${border}`,
+                          borderBottom: `2px solid ${border}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.width, minWidth: col.width, maxWidth: col.width,
                           backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
+                          transition: 'color 0.15s ease',
+                          textAlign: col.align || 'left',
                           ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 15 } : {}),
-                          ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                         }}>
-                      <div className="flex items-center justify-between gap-1">
-                        <span>
-                          {col.display}
-                        </span>
-                        <span className="opacity-40 text-[9px]">{col.isExpanded ? '◀' : '▶'}</span>
+                      <div className={`flex items-center gap-1 w-full ${
+                        col.align === 'center' ? 'justify-center text-center' :
+                        col.align === 'right' ? 'justify-end text-right' :
+                        'justify-start text-left'
+                      }`}>
+                        <span>{col.display}</span>
                       </div>
                     </th>
                   ))}
@@ -1673,9 +1967,8 @@ export default function Tickets() {
                   <tr>
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${border}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3">
-                        <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                          {tickets.length === 0 ? 'No active tickets' : 'No tickets match filters'}
+                          No records
                         </p>
                         {searchQuery && (
                           <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
@@ -1711,20 +2004,18 @@ export default function Tickets() {
                                 if (isEditable && !isThisEditing) startEdit(ticket, col.label)
                               }}
                               style={{
-                                padding: isThisEditing ? '4px 6px' : '7px 10px',
+                                padding: isThisEditing ? '6px 8px' : '10px 14px',
                                 color: textPrimary,
                                 fontSize: '11px', fontWeight: 500,
                                 backgroundColor: isThisEditing ? editCellBg : bg,
-                                borderRight: col.freeze
-                                  ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
-                                  : `1px solid ${border}`,
+                                borderRight: `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.width, minWidth: col.width, maxWidth: col.width,
                                 transition: 'background-color 0.1s ease',
                                 cursor: isEditable && !isThisEditing ? 'text' : 'default',
                                 verticalAlign: 'top',
+                                textAlign: col.align || 'left',
                                 ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
-                                ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                               }}>
                             {renderCell(ticket, col, idx)}
                           </td>
@@ -2225,7 +2516,7 @@ export default function Tickets() {
                           {importResults.needsConfirmation.map((item, idx) => {
                             const custName = getF(item.ticket, 'customerName', 'customer_name') || item.ticket.title
                             return (
-                              <tr key={item.ticket.id} className="hover:bg-slate-500/5">
+                              <tr key={`${item.ticket.id}-row-${item.rowIdx}`} className="hover:bg-slate-500/5">
                                 <td className="px-3 py-2 font-semibold" style={{ color: textPrimary }}>{custName}</td>
                                 <td className="px-3 py-2 italic opacity-85" style={{ color: textMuted }}>{item.value}</td>
                                 <td className="px-3 py-2">
@@ -2288,7 +2579,7 @@ export default function Tickets() {
                       const fields = Object.keys(item.updatedFields).filter(k => item.updatedFields[k as keyof Ticket] !== undefined)
                       const isComplete = item.updatedFields.status === 'COMPLETED'
                       return (
-                        <div key={item.ticket.id} className="flex items-start justify-between text-xs py-1 border-b last:border-b-0" style={{ borderColor: border }}>
+                        <div key={`${item.ticket.id}-row-${item.rowIdx}`} className="flex items-start justify-between text-xs py-1 border-b last:border-b-0" style={{ borderColor: border }}>
                           <div>
                             <span className="font-bold" style={{ color: textPrimary }}>{custName}</span>
                             <span className="ml-2 text-[10px] opacity-70" style={{ color: textMuted }}>
@@ -2377,6 +2668,16 @@ export default function Tickets() {
             {/* Footer */}
             <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0 border-t"
                  style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+              <div className="flex items-center gap-2 mr-auto">
+                <span className="text-xs font-bold" style={{ color: textMuted }}>Scheduled Target Date:</span>
+                <input
+                  type="date"
+                  value={importTargetDate}
+                  onChange={e => setImportTargetDate(e.target.value)}
+                  className="rounded-xl px-2.5 py-1.5 outline-none border text-xs font-bold transition-all focus:ring-2 focus:ring-green-500"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </div>
               <button onClick={() => setImportResults(null)}
                       disabled={saving}
                       className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
@@ -2394,6 +2695,159 @@ export default function Tickets() {
           </div>
         </div>
       )}
+
+      {addModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+             onClick={() => setAddModalOpen(false)}>
+          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+               onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
+                Add Ticket Details
+              </h3>
+              <button onClick={() => setAddModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              {/* Customer Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Customer Information
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Preferred Date" required>
+                    <input type="date" value={addForm.preferredDate || ''} 
+                      onChange={e => setAddForm({ ...addForm, preferredDate: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Customer Name" required>
+                    <input type="text" value={addForm.customerName || ''} 
+                      onChange={e => setAddForm({ ...addForm, customerName: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Contact No." required>
+                    <input type="text" value={addForm.contactPhone || ''} 
+                      onChange={e => setAddForm({ ...addForm, contactPhone: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Destination/Address" required full>
+                    <textarea value={addForm.location || ''} 
+                      onChange={e => setAddForm({ ...addForm, location: e.target.value })}
+                      rows={2}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="District">
+                    <input type="text" value={addForm.district || ''} 
+                      onChange={e => setAddForm({ ...addForm, district: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Commit Terms">
+                    <textarea value={addForm.commitTerms || ''} 
+                      onChange={e => setAddForm({ ...addForm, commitTerms: e.target.value })}
+                      rows={1}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Service & Unit Info Section */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Service & Unit Details
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Brand / Unit Type">
+                    <input type="text" value={addForm.unitType || ''} 
+                      onChange={e => setAddForm({ ...addForm, unitType: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Dealer (DLR)">
+                    <input type="text" value={addForm.sourceVendor || ''} 
+                      onChange={e => setAddForm({ ...addForm, sourceVendor: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Service Vehicle">
+                    <input type="text" value={addForm.serviceVehicle || ''} 
+                      onChange={e => setAddForm({ ...addForm, serviceVehicle: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Installer / Technician">
+                    <select value={addForm.assignedTo || ''}
+                      onChange={e => setAddForm({ ...addForm, assignedTo: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      <option value="">-- Unassigned --</option>
+                      {technicians.map(tech => (
+                        <option key={tech.id} value={tech.id}>{tech.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Service Type" required>
+                    <select value={addForm.serviceType || 'Installation'}
+                      onChange={e => setAddForm({ ...addForm, serviceType: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      <option value="Installation">Installation</option>
+                      <option value="Cleaning">Cleaning</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Repair">Repair</option>
+                      <option value="Survey">Survey</option>
+                    </select>
+                  </Field>
+                  <Field label="Control No. / SI">
+                    <input type="text" value={addForm.controlNumber || ''} 
+                      onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
+              <button onClick={() => setAddModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                Cancel
+              </button>
+              <button onClick={handleSaveManualTicket}
+                disabled={savingManual}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: green }}>
+                {savingManual ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function Field({ label, required, full, children }: {
+  label: string
+  required?: boolean
+  full?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <label className={`flex flex-col gap-1.5 ${full ? 'md:col-span-2' : ''}`}>
+      <span className="text-[10px] font-black uppercase tracking-wider opacity-70">
+        {label}{required && <span className="text-red-500"> *</span>}
+      </span>
+      {children}
+    </label>
   )
 }

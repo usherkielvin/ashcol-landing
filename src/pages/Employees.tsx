@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl } from '../utils/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Employee {
@@ -773,7 +773,7 @@ export default function Employees() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
                         {e.profileImage ? (
-                          <img src={e.profileImage} alt={e.name} className="w-8 h-8 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
+                          <img src={resolveImageUrl(e.profileImage)} alt={e.name} className="w-8 h-8 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white font-bold text-[10px]" style={{ backgroundColor: avatarColor(e.name) }}>
                             {initials(e.name)}
@@ -920,7 +920,7 @@ export default function Employees() {
                 <div className="relative group w-24 h-24">
                   {selectedEmployee.profileImage ? (
                     <img
-                      src={selectedEmployee.profileImage}
+                      src={resolveImageUrl(selectedEmployee.profileImage)}
                       alt={selectedEmployee.name}
                       className="w-24 h-24 rounded-full object-cover border border-slate-500/10"
                     />
@@ -1142,7 +1142,7 @@ export default function Employees() {
                 >
                   {editForm.profileImage ? (
                     <>
-                      <img src={editForm.profileImage} alt="Profile Preview" className="w-full h-full object-cover" />
+                      <img src={resolveImageUrl(editForm.profileImage)} alt="Profile Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
                         <Camera className="w-6 h-6 text-white" />
                         <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
@@ -1378,7 +1378,7 @@ export default function Employees() {
                 >
                   {createForm.profileImage ? (
                     <>
-                      <img src={createForm.profileImage} alt="Profile Preview" className="w-full h-full object-cover" />
+                      <img src={resolveImageUrl(createForm.profileImage)} alt="Profile Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
                         <Camera className="w-6 h-6 text-white" />
                         <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
