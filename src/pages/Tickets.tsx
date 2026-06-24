@@ -2911,7 +2911,7 @@ export default function Tickets() {
               onChange={e => {
                 const val = e.target.value
                 setInstallerFilter(val)
-                if (val) setSortConfig({ column: 'INSTALLER', direction: 'asc' })
+                if (val) setSortConfig(DEFAULT_TICKET_SORT)
               }}
               className="bg-transparent outline-none text-xs font-semibold max-w-[140px] cursor-pointer"
               style={{ color: textPrimary }}
@@ -3115,8 +3115,7 @@ export default function Tickets() {
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
                     const ghostAccent = ghostKind === 'completed' ? green : ghostKind === 'resched' ? '#fbbf24' : undefined
                     const rowIsActive = columns.some(col =>
-                      (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
-                      || (hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === col.label),
+                      editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label,
                     )
                   return (
                     <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
@@ -3139,9 +3138,7 @@ export default function Tickets() {
                       {columns.map((col) => {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
-                        const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === col.label
-                        const isActiveCell = isEditingCell || isHoveredCell
-                        const cellWidth = isActiveCell ? (col.expWidth ?? col.width) : col.width
+                        const cellWidth = isEditingCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
                               data-cell-key={`${ticket.id}:${col.label}`}
@@ -3169,8 +3166,8 @@ export default function Tickets() {
                                 borderBottom: `1px solid ${border}`,
                                 width: cellWidth,
                                 minWidth: cellWidth,
-                                maxWidth: isActiveCell ? 'none' : cellWidth,
-                                overflow: isActiveCell ? 'visible' : 'hidden',
+                                maxWidth: isEditingCell ? 'none' : cellWidth,
+                                overflow: isEditingCell ? 'visible' : 'hidden',
                                 transition: 'background-color 0.1s ease, width 0.15s ease, min-height 0.15s ease',
                                 cursor: canEdit && !isGhost ? 'default' : 'default',
                                 verticalAlign: 'top',
@@ -3178,8 +3175,8 @@ export default function Tickets() {
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : isHoveredCell ? 8 : 5 }
-                                  : isActiveCell ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
+                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : 5 }
+                                  : isEditingCell ? { position: 'relative' as const, zIndex: 10 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
