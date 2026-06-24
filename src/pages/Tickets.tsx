@@ -2034,10 +2034,13 @@ export default function Tickets() {
   }, [detailTicket])
 
   // ── Cell edit / expand ────────────────────────────────────────────────────
+  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
+  const toggleCol = useCallback((label: string) =>
+    setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
   const activeCellOverlay = Boolean(editingCell || expandedCell)
 
@@ -2072,12 +2075,13 @@ export default function Tickets() {
     ]
     let left = 0
     return raw.map(c => {
-      const width = c.w
+      const isExpanded = !!expandedCols[c.label]
+      const width = isExpanded ? c.expW : c.w
       const l = c.sticky ? left : 0
       if (c.sticky) left += width
-      return { ...c, width, baseWidth: c.w, expWidth: c.expW, left: l }
+      return { ...c, isExpanded, width, baseWidth: c.w, expWidth: c.expW, left: l }
     })
-  }, [isTaguigServices])
+  }, [expandedCols, isTaguigServices])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -2574,7 +2578,8 @@ export default function Tickets() {
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
       : textPrimary
     const showExpanded =
-      expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === label
+      col.isExpanded ||
+      (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === label)
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
@@ -3024,20 +3029,26 @@ export default function Tickets() {
                       : ArrowUpDown
                     return (
                     <th key={col.label}
-                        onClick={canSort ? (e => {
-                          if (e.detail > 1) return
-                          handleColumnSort(col.label)
-                        }) : undefined}
-                        title={canSort ? 'Click to sort' : undefined}
+                        onClick={e => {
+                          const isExpanding = !expandedCols[col.label]
+                          toggleCol(col.label)
+                          if (isExpanding) {
+                            const th = e.currentTarget
+                            setTimeout(() => {
+                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                            }, 80)
+                          }
+                        }}
+                        title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                         style={{
                           padding: '12px 14px',
-                          color: isSorted ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          color: (col.isExpanded || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
                           fontWeight: 700, whiteSpace: 'nowrap',
                           borderRight: `1px solid ${border}`,
                           borderBottom: `2px solid ${border}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.width, minWidth: col.width, maxWidth: col.width,
-                          backgroundColor: theadBg, cursor: canSort ? 'pointer' : 'default', userSelect: 'none',
+                          backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
                           ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 15 } : {}),
@@ -3049,10 +3060,21 @@ export default function Tickets() {
                       }`}>
                         <span>{col.display}</span>
                         {canSort && (
-                          <SortIcon
-                            className="w-3 h-3 shrink-0 opacity-70"
-                            style={{ color: isSorted ? green : textMuted }}
-                          />
+                          <button
+                            type="button"
+                            data-sort-trigger
+                            onClick={e => {
+                              e.stopPropagation()
+                              handleColumnSort(col.label)
+                            }}
+                            className="flex items-center justify-center rounded hover:bg-emerald-500/10"
+                            title="Sort column"
+                          >
+                            <SortIcon
+                              className="w-3 h-3 shrink-0 opacity-70"
+                              style={{ color: isSorted ? green : textMuted }}
+                            />
+                          </button>
                         )}
                       </div>
                     </th>
@@ -3115,7 +3137,7 @@ export default function Tickets() {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
-                        const isActiveCell = isEditingCell || isExpandedCell
+                        const isActiveCell = isEditingCell || isExpandedCell || col.isExpanded
                         const cellWidth = isActiveCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
