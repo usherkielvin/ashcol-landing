@@ -2067,8 +2067,8 @@ export default function Tickets() {
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
     ]
     let left = 0
@@ -3014,7 +3014,8 @@ export default function Tickets() {
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
                   {columns.map(col => {
-                    const isSorted = sortConfig?.column === col.label
+                    const canSort = 'sortable' in col && col.sortable
+                    const isSorted = canSort && sortConfig?.column === col.label
                     const SortIcon = isSorted
                       ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
                       : ArrowUpDown
@@ -3023,10 +3024,21 @@ export default function Tickets() {
                         onMouseEnter={() => setHoveredHeader(col.label)}
                         onMouseLeave={() => setHoveredHeader(null)}
                         onClick={e => {
-                          if (e.detail > 1) return
-                          handleColumnSort(col.label)
+                          if (canSort) {
+                            if (e.detail > 1) return
+                            handleColumnSort(col.label)
+                            return
+                          }
+                          const isExpanding = !expandedCols[col.label]
+                          toggleCol(col.label)
+                          if (isExpanding) {
+                            const th = e.currentTarget
+                            setTimeout(() => {
+                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                            }, 80)
+                          }
                         }}
-                        onDoubleClick={e => {
+                        onDoubleClick={canSort ? (e => {
                           e.preventDefault()
                           e.stopPropagation()
                           const isExpanding = !expandedCols[col.label]
@@ -3037,8 +3049,8 @@ export default function Tickets() {
                               th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
                             }, 80)
                           }
-                        }}
-                        title="Click to sort · Double-click to widen column"
+                        }) : undefined}
+                        title={canSort ? 'Click to sort · Double-click to widen column' : 'Click to widen column'}
                         style={{
                           padding: '12px 14px',
                           color: (col.isExpanded || hoveredHeader === col.label || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
@@ -3058,10 +3070,12 @@ export default function Tickets() {
                         'justify-start text-left'
                       }`}>
                         <span>{col.display}</span>
-                        <SortIcon
-                          className="w-3 h-3 shrink-0 opacity-70"
-                          style={{ color: isSorted ? green : textMuted }}
-                        />
+                        {canSort && (
+                          <SortIcon
+                            className="w-3 h-3 shrink-0 opacity-70"
+                            style={{ color: isSorted ? green : textMuted }}
+                          />
+                        )}
                       </div>
                     </th>
                     )
