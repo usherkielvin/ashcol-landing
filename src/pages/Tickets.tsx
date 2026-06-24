@@ -481,6 +481,8 @@ function compareTicketsByColumn(a: Ticket, b: Ticket, colLabel: string): number 
   return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
 }
 
+const DEFAULT_TICKET_SORT = { column: 'INSTALLER', direction: 'asc' as const }
+
 function parseServiceDriverValue(
   raw?: string,
   category: TicketCategoryValue = 'INSTALLATION',
@@ -810,7 +812,7 @@ export default function Tickets() {
   const [loading, setLoading]         = useState(true)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null)
+  const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
   const [installerFilter, setInstallerFilter] = useState('')
   const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
@@ -2040,19 +2042,18 @@ export default function Tickets() {
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
-  const activeCellOverlay = Boolean(editingCell || hoveredCell)
+  const activeCellOverlay = Boolean(editingCell)
 
   useEffect(() => {
-    const target = editingCell || hoveredCell
-    if (!target) return
+    if (!editingCell) return
     const timer = setTimeout(() => {
       const el = tableScrollRef.current?.querySelector(
-        `[data-cell-key="${target.ticketId}:${target.colLabel}"]`,
+        `[data-cell-key="${editingCell.ticketId}:${editingCell.colLabel}"]`,
       )
       el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
     }, 40)
     return () => clearTimeout(timer)
-  }, [editingCell, hoveredCell])
+  }, [editingCell])
 
 
 
@@ -2209,11 +2210,14 @@ export default function Tickets() {
     return list
   }, [filtered, installerFilter, sortConfig])
 
+  const sortDiffersFromDefault =
+    sortConfig.column !== DEFAULT_TICKET_SORT.column || sortConfig.direction !== DEFAULT_TICKET_SORT.direction
+
   const handleColumnSort = useCallback((colLabel: string) => {
     setSortConfig(prev => {
-      if (prev?.column !== colLabel) return { column: colLabel, direction: 'asc' }
+      if (prev.column !== colLabel) return { column: colLabel, direction: 'asc' }
       if (prev.direction === 'asc') return { column: colLabel, direction: 'desc' }
-      return null
+      return DEFAULT_TICKET_SORT
     })
   }, [])
 
@@ -2571,8 +2575,7 @@ export default function Tickets() {
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
       : textPrimary
-    const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === label
-    const showExpanded = col.isExpanded || (canEdit && !rowGhost && label !== 'STATUS' && isHoveredCell)
+    const showExpanded = col.isExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
@@ -2971,10 +2974,10 @@ export default function Tickets() {
             <span style={{ color: textMuted }}>For Quotation / For Approval</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
           </div>
-          {(sortConfig || installerFilter) && (
+          {(sortDiffersFromDefault || installerFilter) && (
             <button
               type="button"
-              onClick={() => { setSortConfig(null); setInstallerFilter('') }}
+              onClick={() => { setSortConfig(DEFAULT_TICKET_SORT); setInstallerFilter('') }}
               className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
               style={{ color: green }}
             >
