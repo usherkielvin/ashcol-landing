@@ -306,6 +306,25 @@ function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return isRescheduledGhostOnDate(ticket, dateKey) || isCompletedGhostOnDate(ticket, dateKey)
 }
 
+function formatGhostRemarks(
+  ticket: Ticket,
+  ghostKind: 'completed' | 'resched' | null,
+  dateKey?: string,
+): string {
+  const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  if (ghostKind === 'completed' || (dateKey && isCompletedGhostOnDate(ticket, dateKey))) {
+    const installed = formatDateKeyLabel(getInstalledDateKey(ticket))
+    const suffix = installed ? `Archived · ${installed}` : 'Archived'
+    return base ? `${base} · ${suffix}` : suffix
+  }
+  if (ghostKind === 'resched') {
+    const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
+    const suffix = movedTo ? `Moved to ${movedTo}` : 'Rescheduled'
+    return base ? `${base} · ${suffix}` : suffix
+  }
+  return base
+}
+
 function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string) {
   const existing = parseAcMeta(ticket)
   const prevDates: string[] = Array.isArray(existing.previousScheduleDates) ? [...existing.previousScheduleDates] : []
@@ -2065,7 +2084,7 @@ export default function Tickets() {
       { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'UPDATE',          display: isTaguigServices ? "SERVICE STATUS" : "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
+      { label: 'UPDATE',          display: "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
     ]
     let left = 0
     return raw.map(c => {
@@ -2585,17 +2604,15 @@ export default function Tickets() {
     if (label === 'STATUS') {
       if (rowGhost) {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
-          const installed = getInstalledDateKey(ticket)
           return (
-            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${formatDateKeyLabel(installed)} — see Archives tab`}>
-              INSTALLED → {formatDateKeyLabel(installed)}
+            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
+              INSTALLED
             </span>
           )
         }
-        const movedTo = getPreferredDateKey(ticket)
         return (
-          <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#a16207' : '#fbbf24' }} title={`Rescheduled to ${formatDateKeyLabel(movedTo)}`}>
-            RESCHED → {formatDateKeyLabel(movedTo)}
+          <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#a16207' : '#fbbf24' }} title="Rescheduled">
+            RESCHED
           </span>
         )
       }
@@ -2640,19 +2657,20 @@ export default function Tickets() {
 
     if (label === 'UPDATE') {
       if (rowGhost) {
-        if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
-          return (
-            <span style={{ ...truncStyle, color: isLight ? '#15803d' : '#86efac', fontWeight: 600, fontStyle: 'italic' }}
-                  title="Completed — see Archives tab">
-              Archived
-            </span>
-          )
-        }
-        const movedTo = getPreferredDateKey(ticket)
+        const ghostRemarks = formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
+        const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
         return (
-          <span style={{ ...truncStyle, color: isLight ? '#a16207' : '#fbbf24', fontWeight: 600, fontStyle: 'italic' }}
-                title={`Moved to ${formatDateKeyLabel(movedTo)}`}>
-            Moved to {formatDateKeyLabel(movedTo)}
+          <span
+            style={{
+              ...truncStyle,
+              color: isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'),
+              fontWeight: 600,
+              fontStyle: 'italic',
+            }}
+            title={ghostRemarks}
+            className={showExpanded ? '' : 'line-clamp-2'}
+          >
+            {ghostRemarks || '—'}
           </span>
         )
       }
@@ -3827,7 +3845,7 @@ export default function Tickets() {
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'}</th>
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'CONFIRMATION' : 'NOTE'}</th>
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>SERVICE</th>
-                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>{isTaguigServices ? 'SERVICE STATUS' : 'UPDATE'}</th>
+                            <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>REMARKS</th>
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>CHARGES</th>
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>PAYMENT MODE</th>
                             <th className="px-3 py-2 font-bold" style={{ backgroundColor: theadBg, color: textMuted, whiteSpace: 'nowrap', borderBottom: `1px solid ${border}` }}>CONTROL #</th>
