@@ -200,7 +200,7 @@ export default function GlobalSearch({ onResultClick }: GlobalSearchProps) {
     : results
 
   const filterOptions = [
-    { value: 'ticket', label: 'Tickets', count: results.filter(r => r.type === 'ticket').length },
+    { value: 'ticket', label: 'Schedules', count: results.filter(r => r.type === 'ticket').length },
     { value: 'service', label: 'Service Reports', count: results.filter(r => r.type === 'service').length },
   ]
 

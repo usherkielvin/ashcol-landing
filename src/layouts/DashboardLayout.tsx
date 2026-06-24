@@ -183,10 +183,10 @@ export default function DashboardLayout() {
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Relays',          path: '/schedules',        icon: Radio,           roles: ['admin'] },
-    { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
+    { name: 'Schedules',       path: '/tickets',          icon: TicketIcon },
     { name: 'Office Tasks',    path: '/office-tasks',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Schedules',       path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Lineup',          path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -200,8 +200,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Office Tasks', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
-  const serviceWorkspaceLinks = ['Tickets', 'Office Tasks', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const salesWorkspaceLinks = ['Schedules', 'Office Tasks', 'Lineup', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const serviceWorkspaceLinks = ['Schedules', 'Office Tasks', 'Lineup', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 

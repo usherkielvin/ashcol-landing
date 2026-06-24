@@ -56,6 +56,7 @@ interface ServiceRow {
 }
 
 const COL_FIELD: Record<string, keyof ServiceRow> = {
+  'DATE INSTALLED':       'installedDate',
   "CUSTOMER'S NAME":      'customerName',
   'DESTINATION':          'customerAddress',
   'DISTRICT':             'district',
@@ -72,7 +73,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 }
 
 const EDITABLE_COLS = [
-  "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
+  'DATE INSTALLED', "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
   'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
   'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
@@ -88,6 +89,25 @@ const todayLocal = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+const toDateKey = (raw: string | null | undefined): string => {
+  if (!raw) return ''
+  const s = raw.trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const formatDateKeyLabel = (key: string) => {
+  if (!key) return ''
+  const d = new Date(`${key}T00:00:00`)
+  if (isNaN(d.getTime())) return key
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+const getInstalledDateKey = (row: ServiceRow) =>
+  toDateKey(row.installedDate) || toDateKey(row.reportDate) || ''
 
 const formatDateTime = (isoStr: string | null | undefined) => {
   if (!isoStr) return '—'
@@ -480,6 +500,7 @@ export default function DailyServiceReport() {
   const columns = useMemo(() => {
     const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
+      { label: 'DATE INSTALLED', display: 'DATE INSTALLED', defaultW: 110, expW: 140, sticky: true, freeze: false, right: false },
       { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", defaultW: 180, expW: 300, sticky: true, freeze: false, right: false },
       { label: 'DESTINATION', display: "DESTINATION ADDRESS", defaultW: 250, expW: 450, sticky: true, freeze: true, right: false },
       { label: 'DISTRICT', display: "DISTRICT", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
@@ -748,6 +769,7 @@ export default function DailyServiceReport() {
 
   function getCellDisplay(row: ServiceRow, colLabel: string): string {
     switch (colLabel) {
+      case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
       case 'DESTINATION':     return row.customerAddress || ''
       case 'DISTRICT':        return row.district || ''
@@ -771,7 +793,9 @@ export default function DailyServiceReport() {
 
   const startEdit = (row: ServiceRow, col: string) => {
     if (!canEdit || !EDITABLE_COLS.includes(col)) return
-    const val = getCellDisplay(row, col)
+    const val = col === 'DATE INSTALLED'
+      ? getInstalledDateKey(row)
+      : getCellDisplay(row, col)
     setEditingCell({ rowId: row.id, col })
     setCellValue(val)
     setContextMenu(null)
@@ -822,6 +846,11 @@ export default function DailyServiceReport() {
         localPatch.freeInstallation = true
         localPatch.jobStatus = 'COMPLETED'
       }
+    }
+
+    if (col === 'DATE INSTALLED') {
+      finalValue = value.trim() ? value.trim().slice(0, 10) : null
+      localPatch.installedDate = finalValue
     }
 
     // If it's a temp row and Customer Name is still not set, update locally but do not save to DB yet
@@ -1023,7 +1052,7 @@ export default function DailyServiceReport() {
       return (
         <input
           ref={el => { inputRef.current = el }}
-          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : 'text'}
+          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
           list={label === 'INSTALLER' ? 'installer-options' : undefined}
           value={cellValue}
           onChange={e => setCellValue(e.target.value)}
@@ -1041,6 +1070,14 @@ export default function DailyServiceReport() {
 
     const editHint: React.CSSProperties = isEditable && canEdit
       ? { cursor: 'pointer' } : {}
+
+    if (label === 'DATE INSTALLED') {
+      return (
+        <span style={{ ...truncStyle, ...editHint }} title={val} className="whitespace-nowrap text-[10px] font-semibold">
+          {val || '—'}
+        </span>
+      )
+    }
 
     if (label === "CUSTOMER'S NAME") {
       return (
@@ -1325,7 +1362,7 @@ export default function DailyServiceReport() {
       r.paymentStatus, r.jobStatus, r.remarks, r.note, r.controlNumber,
       r.serviceColumn, r.papers, r.costing, r.relayStatus, r.fifteenQuestions,
       r.freeInstallation ? 'free installation' : '',
-      r.reportDate, amt, amtPeso,
+      r.reportDate, r.installedDate, r.scheduledDate, amt, amtPeso,
     ].filter(Boolean).join(' ').toLowerCase()
   }
 
@@ -2407,6 +2444,18 @@ export default function DailyServiceReport() {
                     ) : (
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>
                         <EmployeeNameLink nameOrId={detailForm.technicianName} />
+                      </span>
+                    )}
+                  </Field>
+                  <Field label="Negotiator">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.negotiator || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, negotiator: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                        <EmployeeNameLink nameOrId={detailForm.negotiator} />
                       </span>
                     )}
                   </Field>

@@ -710,6 +710,20 @@ function wantsTicketArchive(ticket: Partial<Ticket>, fields?: Partial<Ticket>): 
   return qualifiesForInstallComplete(ticket, fields)
 }
 
+function resolveNegotiatorName(
+  ticket: Ticket,
+  employees: { id: string; name: string }[],
+  negotiatorId?: string,
+): string {
+  const id = (negotiatorId ?? ticket.negotiatorId ?? ticket.negotiator_id ?? '').trim()
+  if (id) {
+    const match = employees.find(e => e.id === id)
+    if (match?.name) return match.name.trim()
+  }
+  const meta = parseAcMeta(ticket)
+  return String(meta.negotiatorName || meta.negotiator || '').trim()
+}
+
 function buildArchiveServiceReportPayload(
   ticket: Ticket,
   branchId: string,
@@ -728,12 +742,20 @@ function buildArchiveServiceReportPayload(
     remarks?: string
     remarksUpdate?: string
     controlNumber?: string
+    ticketNumber?: string
     note?: string
+    negotiatorName?: string
+    serviceType?: string
+    unitSerial?: string
+    quantity?: number
+    scheduleStatus?: string
+    complainRequest?: string
   } = {},
   scheduleDateKey?: string,
 ): Record<string, unknown> | null {
   if (!branchId) return null
   const merged = { ...ticket, ...fields } as Ticket
+  const meta = parseAcMeta(merged)
   const scheduleKey =
     scheduleDateKey ||
     getArchivedScheduleDate(merged) ||
@@ -755,6 +777,36 @@ function buildArchiveServiceReportPayload(
     ticket.remarksUpdate ??
     ticket.remarks ??
     'Installed'
+  const commitTerms =
+    fields.commitType ??
+    getF(merged, 'commitType', 'commitTerms', 'description') ??
+    merged.description ??
+    ''
+  const freeInstall =
+    mode === 'FREE INSTALL' ||
+    mode === 'FREE' ||
+    /FREE/i.test(commitTerms)
+  const serviceType =
+    fields.serviceType ??
+    (freeInstall ? 'FREE_INSTALLATION' : 'INSTALLATION')
+  const negotiator =
+    (fields.negotiatorName || '').trim() ||
+    String(meta.negotiatorName || meta.negotiator || '').trim() ||
+    ''
+  const controlNo =
+    fields.controlNumber ??
+    ticket.controlNumber ??
+    ticket.control_number ??
+    fields.ticketNumber ??
+    ticket.ticketNumber ??
+    ticket.ticket_number ??
+    ''
+  const unitSerial =
+    fields.unitSerial ??
+    (String(meta.serialNumber || meta.unitSerial || meta.si || '').trim() || '')
+  const quantity =
+    fields.quantity ??
+    (typeof meta.quantity === 'number' ? meta.quantity : parseInt(String(meta.quantity || ''), 10) || 1)
 
   return {
     branchId,
@@ -765,19 +817,29 @@ function buildArchiveServiceReportPayload(
     customerAddress: formatAddress(fields.location ?? ticket.location),
     customerPhone: fields.contactPhone ?? getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
     district: fields.district ?? parseDistrict(ticket.location, ticket.district),
-    serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+    serviceType,
     statusCode: 'I',
-    commitTerms: fields.commitType ?? getF(ticket, 'commitType', 'commitTerms', 'description') ?? ticket.description ?? '',
+    commitTerms,
     dealer: fields.sourceVendor ?? getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') ?? '',
     unitBrandModel: fields.unitType ?? parseBrand(ticket),
+    unitSerial: unitSerial || undefined,
+    quantity: quantity > 0 ? quantity : 1,
     technicianName: fields.installerName ?? getInstallerDisplay(ticket),
+    negotiator: negotiator || undefined,
+    serviceColumn: formatServiceDriver({
+      ...ticket,
+      serviceVehicle: fields.serviceVehicle ?? ticket.serviceVehicle ?? ticket.service_vehicle,
+      serviceType: ticket.serviceType ?? ticket.service_type,
+    }),
     amountCharged: parseFloat(String(charges)) || 0,
     paymentStatus: mode,
     jobStatus: 'COMPLETED',
     remarks,
     note: fields.note ?? ticket.note ?? '',
-    controlNumber: fields.controlNumber ?? ticket.controlNumber ?? ticket.control_number ?? '',
-    serviceColumn: fields.serviceVehicle ?? ticket.serviceVehicle ?? ticket.service_vehicle ?? '',
+    controlNumber: controlNo || undefined,
+    scheduleStatus: fields.scheduleStatus ?? String(meta.scheduleStatus || 'COMPLETED'),
+    complainRequest: fields.complainRequest ?? (String(meta.complainRequest || meta.complain || '').trim() || undefined),
+    freeInstallation: freeInstall,
   }
 }
 
@@ -1657,6 +1719,12 @@ export default function Tickets() {
         update: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
         installerName: editForm.installerName?.trim() || undefined,
+        negotiatorId: editForm.negotiatorId || undefined,
+        negotiatorName: resolveNegotiatorName(
+          (originalTicket || editForm) as Ticket,
+          branchEmployees,
+          editForm.negotiatorId,
+        ) || undefined,
       })
 
       const shouldComplete = Boolean(
@@ -1710,7 +1778,9 @@ export default function Tickets() {
             remarks: finalBody.remarksUpdate as string | undefined,
             remarksUpdate: finalBody.remarksUpdate as string | undefined,
             controlNumber: body.controlNumber,
+            ticketNumber: body.ticketNumber,
             note: originalTicket.note,
+            negotiatorName: resolveNegotiatorName(originalTicket, branchEmployees, editForm.negotiatorId),
           },
           schedKey,
         )
@@ -1798,9 +1868,13 @@ export default function Tickets() {
 
     const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
       const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+      const merged = { ...ticket, ...updatedFields }
       const payload = buildArchiveServiceReportPayload(ticket, branchId, {
+        customerName: updatedFields.customerName,
         location: updatedFields.location,
+        contactPhone: updatedFields.contactPhone,
         district: updatedFields.district,
+        commitType: updatedFields.commitType,
         sourceVendor: updatedFields.sourceVendor,
         unitType: updatedFields.unitType,
         installerName: updatedFields.installerName,
@@ -1810,7 +1884,9 @@ export default function Tickets() {
         remarksUpdate: updatedFields.remarksUpdate,
         remarks: updatedFields.remarks,
         controlNumber: updatedFields.controlNumber,
+        ticketNumber: updatedFields.ticketNumber,
         note: updatedFields.note,
+        negotiatorName: resolveNegotiatorName(merged, branchEmployees, updatedFields.negotiatorId),
       }, reportDate)
       if (!payload) throw new Error('No branch selected for archive')
       await postArchiveServiceReport(payload, tokenVal)
@@ -1892,41 +1968,28 @@ export default function Tickets() {
 
     if (!isScheduleImport) for (const item of completedUpdates) {
       const { ticket, updatedFields } = item
-      const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
-      const charges = updatedFields.installationCharges ?? ticket.installationCharges ?? ticket.amountCharged ?? 0
-      const mode = updatedFields.modeOfPayment ?? ticket.modeOfPayment ?? 'CASH'
-      const remarks = (updatedFields.remarksUpdate ?? ticket.remarks) || 'Installed'
-      const controlNo = updatedFields.controlNumber ?? ticket.controlNumber ?? ''
-
-      const serviceReportPayload = {
-        branchId: resolveImportBranchId(ticket.branchId),
-        reportDate: importTargetDate || todayStr,
-        customerName: custName,
-        customerAddress: formatAddress(updatedFields.location ? updatedFields.location : ticket.location),
-        customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-        district: parseDistrict(updatedFields.location ? updatedFields.location : ticket.location, updatedFields.district || ticket.district),
-        serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
-        statusCode: 'I',
-        commitTerms: getF(ticket, 'commitTerms', 'description') || ticket.description || '',
-        dealer: updatedFields.sourceVendor || getF(ticket, 'dealer'),
-        unitBrandModel: updatedFields.unitType || parseBrand(ticket),
-        technicianName: updatedFields.installerName || getF(ticket, 'assignedEmployeeName', 'assigned_employee_name'),
-        amountCharged: parseFloat(String(charges)) || 0,
-        paymentStatus: mode,
-        jobStatus: 'COMPLETED',
-        remarks: remarks,
-        note: updatedFields.note || ticket.note || '',
-        controlNumber: controlNo,
-        serviceColumn: updatedFields.serviceVehicle || ticket.serviceVehicle || ticket.service_vehicle || ''
-      }
+      const merged = { ...ticket, ...updatedFields }
+      const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+      const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
+        location: updatedFields.location,
+        district: updatedFields.district,
+        sourceVendor: updatedFields.sourceVendor,
+        unitType: updatedFields.unitType,
+        installerName: updatedFields.installerName,
+        serviceVehicle: updatedFields.serviceVehicle,
+        installationCharges: updatedFields.installationCharges,
+        modeOfPayment: updatedFields.modeOfPayment,
+        remarksUpdate: updatedFields.remarksUpdate,
+        remarks: updatedFields.remarks,
+        controlNumber: updatedFields.controlNumber,
+        ticketNumber: updatedFields.ticketNumber,
+        note: updatedFields.note,
+        negotiatorName: resolveNegotiatorName(merged, branchEmployees, updatedFields.negotiatorId),
+      }, importTargetDate || todayStr)
 
       try {
-        const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-          body: JSON.stringify(serviceReportPayload)
-        })
-        if (!reportRes.ok) throw new Error(await readApiError(reportRes))
+        if (!archivePayload) throw new Error('No branch selected for archive')
+        await postArchiveServiceReport(archivePayload, tokenVal)
 
         const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
           method: 'DELETE',
@@ -1947,36 +2010,24 @@ export default function Tickets() {
 
     if (!isScheduleImport) for (const item of importResults.needsConfirmation) {
       const { ticket, value, amount, modeOfPayment, controlNumber } = item
-      const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
 
-      const serviceReportPayload = {
-        branchId: resolveImportBranchId(ticket.branchId),
-        reportDate: importTargetDate || todayStr,
-        customerName: custName,
-        customerAddress: formatAddress(ticket.location),
-        customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-        district: parseDistrict(ticket.location, ticket.district),
-        serviceType: modeOfPayment === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
-        statusCode: 'I',
-        commitTerms: getF(ticket, 'commitTerms', 'description') || ticket.description || '',
-        dealer: getF(ticket, 'dealer'),
-        unitBrandModel: parseBrand(ticket),
-        technicianName: getF(ticket, 'assignedEmployeeName', 'assigned_employee_name'),
-        amountCharged: parseFloat(amount) || 0,
-        paymentStatus: modeOfPayment,
-        jobStatus: 'COMPLETED',
-        remarks: value || 'Installed',
-        note: ticket.note || '',
-        controlNumber: controlNumber
-      }
+      const archivePayload = buildArchiveServiceReportPayload(
+        ticket,
+        resolveImportBranchId(ticket.branchId || ticket.branch_id),
+        {
+          installationCharges: parseFloat(amount) || 0,
+          modeOfPayment: modeOfPayment,
+          remarks: value || 'Installed',
+          remarksUpdate: value || 'Installed',
+          controlNumber,
+          negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
+        },
+        importTargetDate || todayStr,
+      )
 
       try {
-        const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-          body: JSON.stringify(serviceReportPayload)
-        })
-        if (!reportRes.ok) throw new Error(await readApiError(reportRes))
+        if (!archivePayload) throw new Error('No branch selected for archive')
+        await postArchiveServiceReport(archivePayload, tokenVal)
 
         const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
           method: 'DELETE',
@@ -2416,7 +2467,18 @@ export default function Tickets() {
       if ((finalBody.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
         const schedKey = getPreferredDateKey(ticket) || todayDateKey()
         const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
-        const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {}, schedKey)
+        const archivePayload = buildArchiveServiceReportPayload(
+          ticket,
+          branchId,
+          {
+            installationCharges: finalBody.installationCharges as number | undefined,
+            modeOfPayment: finalBody.modeOfPayment as string | undefined,
+            remarks: finalBody.remarksUpdate as string | undefined,
+            remarksUpdate: finalBody.remarksUpdate as string | undefined,
+            negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
+          },
+          schedKey,
+        )
         if (!archivePayload) {
           alert('Ticket completed but not added to Archives — select a branch in the sidebar.')
         } else {
@@ -2928,7 +2990,7 @@ export default function Tickets() {
                 style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Ticket</span>
+                <span>Add Schedule</span>
                 <ChevronDown className="w-3 h-3 ml-0.5" />
               </button>
 
@@ -3054,7 +3116,7 @@ export default function Tickets() {
             <button onClick={() => navigate('/tickets/create')}
                     className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm"
                     style={{ backgroundColor: green }}>
-              <Plus className="w-3.5 h-3.5" /> New Ticket
+              <Plus className="w-3.5 h-3.5" /> New Schedule
             </button>
           )}
         </div>
@@ -3064,7 +3126,7 @@ export default function Tickets() {
       {!loading && tickets.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
              style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
+          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Schedules:</span>
           <div className="flex items-center gap-1">
             <span style={{ color: textMuted }}>Scheduled / Rescheduled</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.scheduledOrRescheduled}</span>
@@ -3413,7 +3475,7 @@ export default function Tickets() {
               <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
                 <div className="flex flex-col gap-1.5 min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Ticket Details</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Schedule Details</p>
                   <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
                     Ticket No: {t.ticketNumber || t.ticket_number || '—'}
@@ -3617,6 +3679,8 @@ export default function Tickets() {
                 installationCharges: parseFloat(cp.amount) || 0,
                 modeOfPayment: cp.modeOfPayment,
                 remarks: cp.value || 'Installed',
+                remarksUpdate: cp.value || 'Installed',
+                negotiatorName: resolveNegotiatorName(t, branchEmployees),
               },
               schedKey,
             )

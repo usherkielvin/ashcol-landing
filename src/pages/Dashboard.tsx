@@ -276,7 +276,7 @@ export default function Dashboard() {
   ]
 
   const adminStats = [
-    { label: 'Total Tickets',   value: statsData?.total_tickets      ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
+    { label: 'Total Schedules', value: statsData?.total_tickets      ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
     { label: 'Pending',         value: statsData?.pending_tickets    ?? 0, color: '#F59E0B', icon: Clock,       status: 'PENDING' },
     { label: 'In Progress',     value: statsData?.in_progress_tickets ?? 0, color: '#3B82F6', icon: RefreshCw,  status: 'IN_PROGRESS' },
     { label: 'Completed',       value: statsData?.completed_tickets  ?? 0, color: '#8B5CF6', icon: CheckCircle, status: 'COMPLETED' },
@@ -330,7 +330,7 @@ export default function Dashboard() {
       { key: 'assigned', label: 'Assigned', desc: 'Queued by your branch' },
       { key: 'otw', label: 'On the way', desc: 'Travel to the service pin' },
       { key: 'site', label: 'On site', desc: 'Mark In progress when you arrive' },
-      { key: 'done', label: 'Done', desc: 'Complete in Tickets' },
+      { key: 'done', label: 'Done', desc: 'Complete in Schedules' },
     ] as const
 
     let activeIdx = 0
@@ -374,7 +374,7 @@ export default function Dashboard() {
         </div>
         {st === 'ASSIGNED' && (
           <p className="text-xs mt-3 rounded-xl px-3 py-2" style={{ backgroundColor: inputBg, color: textMuted }}>
-            In <strong style={{ color: textPrimary }}>Tickets</strong>, set <strong style={{ color: '#06B6D4' }}>On the way</strong> when you head out, then <strong style={{ color: '#10B981' }}>In progress</strong> when you arrive.
+            In <strong style={{ color: textPrimary }}>Schedules</strong>, set <strong style={{ color: '#06B6D4' }}>On the way</strong> when you head out, then <strong style={{ color: '#10B981' }}>In progress</strong> when you arrive.
           </p>
         )}
         {st === 'ON_THE_WAY' && (
@@ -418,7 +418,7 @@ export default function Dashboard() {
             onClick={() => navigate(ticketsLink(undefined, 'ALL'))}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 transition-all"
           >
-            <ClipboardList className="w-4 h-4" /> All Tickets
+            <ClipboardList className="w-4 h-4" /> All Schedules
           </button>
         </div>
 
@@ -695,17 +695,17 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Main Grid: Recent Tickets & Today's Schedule */}
+      {/* Main Grid: Recent Schedules & Today's Schedule */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         
-        {/* Left Column: Recent Tickets */}
+        {/* Left Column: Recent Schedules */}
         <div className="lg:col-span-2 rounded-3xl shadow-sm flex flex-col overflow-hidden" 
              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4" 
                style={{ borderBottom: `1px solid ${border}` }}>
             <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-              {isCustomer ? 'My Service Requests' : 'Recent Tickets'}
+              {isCustomer ? 'My Service Requests' : 'Recent Schedules'}
             </h3>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex flex-wrap gap-1">
@@ -886,7 +886,7 @@ export default function Dashboard() {
           
           <div className="flex items-center justify-between">
             <h3 className="font-black text-sm" style={{ color: textPrimary }}>Today's Schedule</h3>
-            <Link to="/schedules" className="text-xs font-bold text-[#10B981] hover:underline">
+            <Link to="/tickets" className="text-xs font-bold text-[#10B981] hover:underline">
               View all
             </Link>
           </div>
@@ -955,7 +955,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
              <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
-                 <h3 className="font-black text-base" style={{ color: textPrimary }}>Pending Tickets</h3>
+                 <h3 className="font-black text-base" style={{ color: textPrimary }}>Pending Schedules</h3>
                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>
                    {tickets.filter(t => t.status.toUpperCase() === 'PENDING' && isFieldCategory(inferCategoryFromTicket(t))).length} unassigned
                  </span>
