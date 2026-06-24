@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveScopedBranchId } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -683,6 +683,11 @@ function buildPatchImportBody(
   return body
 }
 
+function toApiDateTime(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 function enrichCompletePatchBody(
   body: Record<string, unknown>,
   ticket: Ticket,
@@ -691,9 +696,15 @@ function enrichCompletePatchBody(
   return {
     ...body,
     status: 'COMPLETED',
-    actualCompletion: new Date().toISOString(),
+    actualCompletion: toApiDateTime(),
     acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey)),
   }
+}
+
+function wantsTicketArchive(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
+  const status = String(fields?.status ?? ticket.status ?? '').toUpperCase()
+  if (status === 'COMPLETED') return true
+  return qualifiesForInstallComplete(ticket, fields)
 }
 
 function getCellRawValue(ticket: Ticket, colLabel: string): string {
@@ -1566,9 +1577,9 @@ export default function Tickets() {
         originalTicket
         && !isReschedStatus
         && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
-        && qualifiesForInstallComplete(
+        && wantsTicketArchive(
           { ...originalTicket, ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks },
-          { remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
+          { ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
         ),
       )
 
@@ -1589,8 +1600,7 @@ export default function Tickets() {
       })
 
       if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(errorText || `Failed (HTTP ${res.status})`)
+        throw new Error(await readApiError(res))
       }
 
       if (shouldComplete && originalTicket) {
@@ -1637,9 +1647,9 @@ export default function Tickets() {
           : 'Ticket updated successfully ✓')
       await fetchTickets()
       setEditModalOpen(false)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      alert(`Could not update ticket: ${err.message || 'Unknown error'}`)
+      alert(`Could not update ticket: ${formatFetchError(err)}`)
     } finally {
       setSavingEdit(false)
     }
@@ -2317,6 +2327,10 @@ export default function Tickets() {
       cancelEdit()
       return
     }
+    let finalBody: Record<string, unknown> = body
+    if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
+      finalBody = enrichCompletePatchBody(body, ticket, getPreferredDateKey(ticket))
+    }
     setSavingCellKey(key)
     try {
       const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
@@ -2325,21 +2339,21 @@ export default function Tickets() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token()}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(finalBody),
       })
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) throw new Error(await readApiError(res))
       setTickets(prev => prev.map(t => {
         if (t.id !== ticket.id) return t
         return {
           ...t,
-          ...(body as Partial<Ticket>),
-          acDetails: typeof body.acDetails === 'string' ? body.acDetails : t.acDetails,
+          ...(finalBody as Partial<Ticket>),
+          acDetails: typeof finalBody.acDetails === 'string' ? finalBody.acDetails : t.acDetails,
         }
       }))
       showToast('Cell updated ✓')
       cancelEdit()
-    } catch (err: any) {
-      alert(`Could not save cell: ${err.message || 'Unknown error'}`)
+    } catch (err: unknown) {
+      alert(`Could not save cell: ${formatFetchError(err)}`)
     } finally {
       setSavingCellKey(null)
     }

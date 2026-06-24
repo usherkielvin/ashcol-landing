@@ -146,3 +146,24 @@ export async function fetchTicketsPage(
 
   throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
 }
+
+export async function readApiError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '')
+  if (!text) return `Request failed (HTTP ${res.status})`
+  try {
+    const json = JSON.parse(text)
+    if (typeof json.message === 'string' && json.message.trim()) return json.message
+    if (typeof json.error === 'string' && json.error.trim()) return json.error
+    return text
+  } catch {
+    return text
+  }
+}
+
+export function formatFetchError(err: unknown): string {
+  if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
+    return 'Could not reach the server. Check your connection and try again.'
+  }
+  if (err instanceof Error && err.message.trim()) return err.message
+  return 'Unknown error'
+}
