@@ -818,7 +818,7 @@ export default function Tickets() {
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
-  const [hoveredHeader, setHoveredHeader] = useState<string | null>(null)
+  const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -2033,27 +2033,25 @@ export default function Tickets() {
       .finally(() => setLoadingHistory(false))
   }, [detailTicket])
 
-  // ── Expand cols / cells ───────────────────────────────────────────────────
-  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  // ── Cell edit / expand ────────────────────────────────────────────────────
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
-  const toggleCol = useCallback((label: string) =>
-    setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
-  const activeCellOverlay = Boolean(editingCell)
+  const activeCellOverlay = Boolean(editingCell || expandedCell)
 
   useEffect(() => {
-    if (!editingCell) return
+    const target = editingCell || expandedCell
+    if (!target) return
     const timer = setTimeout(() => {
       const el = tableScrollRef.current?.querySelector(
-        `[data-cell-key="${editingCell.ticketId}:${editingCell.colLabel}"]`,
+        `[data-cell-key="${target.ticketId}:${target.colLabel}"]`,
       )
       el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
     }, 40)
     return () => clearTimeout(timer)
-  }, [editingCell])
+  }, [editingCell, expandedCell])
 
 
 
@@ -2074,13 +2072,12 @@ export default function Tickets() {
     ]
     let left = 0
     return raw.map(c => {
-      const isExpanded = !!expandedCols[c.label]
-      const width = isExpanded ? c.expW : c.w
+      const width = c.w
       const l = c.sticky ? left : 0
       if (c.sticky) left += width
-      return { ...c, isExpanded, width, baseWidth: c.w, expWidth: c.expW, left: l }
+      return { ...c, width, baseWidth: c.w, expWidth: c.expW, left: l }
     })
-  }, [expandedCols, isTaguigServices])
+  }, [isTaguigServices])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -2304,6 +2301,7 @@ export default function Tickets() {
 
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    setExpandedCell(null)
     setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel) })
   }
 
@@ -2575,7 +2573,8 @@ export default function Tickets() {
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
       : textPrimary
-    const showExpanded = col.isExpanded
+    const showExpanded =
+      expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === label
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
@@ -2690,6 +2689,7 @@ export default function Tickets() {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
       setHoveredCell(null)
+      setExpandedCell(null)
       setAddMenuOpen(false)
     }}>
 
@@ -3024,45 +3024,20 @@ export default function Tickets() {
                       : ArrowUpDown
                     return (
                     <th key={col.label}
-                        onMouseEnter={() => setHoveredHeader(col.label)}
-                        onMouseLeave={() => setHoveredHeader(null)}
-                        onClick={e => {
-                          if (canSort) {
-                            if (e.detail > 1) return
-                            handleColumnSort(col.label)
-                            return
-                          }
-                          const isExpanding = !expandedCols[col.label]
-                          toggleCol(col.label)
-                          if (isExpanding) {
-                            const th = e.currentTarget
-                            setTimeout(() => {
-                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-                            }, 80)
-                          }
-                        }}
-                        onDoubleClick={canSort ? (e => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          const isExpanding = !expandedCols[col.label]
-                          toggleCol(col.label)
-                          if (isExpanding) {
-                            const th = e.currentTarget
-                            setTimeout(() => {
-                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-                            }, 80)
-                          }
+                        onClick={canSort ? (e => {
+                          if (e.detail > 1) return
+                          handleColumnSort(col.label)
                         }) : undefined}
-                        title={canSort ? 'Click to sort · Double-click to widen column' : 'Click to widen column'}
+                        title={canSort ? 'Click to sort' : undefined}
                         style={{
                           padding: '12px 14px',
-                          color: (col.isExpanded || hoveredHeader === col.label || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          color: isSorted ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
                           fontWeight: 700, whiteSpace: 'nowrap',
                           borderRight: `1px solid ${border}`,
                           borderBottom: `2px solid ${border}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.width, minWidth: col.width, maxWidth: col.width,
-                          backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
+                          backgroundColor: theadBg, cursor: canSort ? 'pointer' : 'default', userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
                           ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 15 } : {}),
@@ -3115,7 +3090,8 @@ export default function Tickets() {
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
                     const ghostAccent = ghostKind === 'completed' ? green : ghostKind === 'resched' ? '#fbbf24' : undefined
                     const rowIsActive = columns.some(col =>
-                      editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label,
+                      (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
+                      || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
                     )
                   return (
                     <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
@@ -3137,8 +3113,10 @@ export default function Tickets() {
                       {/* Data cells */}
                       {columns.map((col) => {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
+                        const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
-                        const cellWidth = isEditingCell ? (col.expWidth ?? col.width) : col.width
+                        const isActiveCell = isEditingCell || isExpandedCell
+                        const cellWidth = isActiveCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
                               data-cell-key={`${ticket.id}:${col.label}`}
@@ -3151,7 +3129,13 @@ export default function Tickets() {
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
                                   startCellEdit(ticket, 'STATUS')
+                                  return
                                 }
+                                setExpandedCell(prev =>
+                                  prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                    ? null
+                                    : { ticketId: ticket.id, colLabel: col.label },
+                                )
                               }}
                               onDoubleClick={e => {
                                 e.preventDefault()
@@ -3166,8 +3150,8 @@ export default function Tickets() {
                                 borderBottom: `1px solid ${border}`,
                                 width: cellWidth,
                                 minWidth: cellWidth,
-                                maxWidth: isEditingCell ? 'none' : cellWidth,
-                                overflow: isEditingCell ? 'visible' : 'hidden',
+                                maxWidth: isActiveCell ? 'none' : cellWidth,
+                                overflow: isActiveCell ? 'visible' : 'hidden',
                                 transition: 'background-color 0.1s ease, width 0.15s ease, min-height 0.15s ease',
                                 cursor: canEdit && !isGhost ? 'default' : 'default',
                                 verticalAlign: 'top',
@@ -3175,8 +3159,8 @@ export default function Tickets() {
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : 5 }
-                                  : isEditingCell ? { position: 'relative' as const, zIndex: 10 } : {}),
+                                  ? { position: 'sticky' as const, left: col.left, zIndex: isActiveCell ? 12 : 5 }
+                                  : isActiveCell ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
