@@ -1979,7 +1979,6 @@ export default function Tickets() {
 
   // ── Expand cols / cells ───────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
-  const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2189,13 +2188,7 @@ export default function Tickets() {
 
   const cancelEdit = () => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    setEditingCell(prev => {
-      if (prev) {
-        const key = cellEditKey(prev.ticketId, prev.colLabel)
-        setExpandedCells(cells => ({ ...cells, [key]: false }))
-      }
-      return null
-    })
+    setEditingCell(null)
   }
 
   const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
@@ -2365,6 +2358,7 @@ export default function Tickets() {
       backgroundColor: 'transparent',
       border: 'none',
       color: textPrimary,
+      userSelect: 'text',
     }
 
     const commit = () => {
@@ -2454,22 +2448,14 @@ export default function Tickets() {
     const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === colLabel
     if (!isHovered) return content
     return (
-      <div
-        className="relative rounded-md transition-all"
-        style={{
-          border: `1px solid ${green}`,
-          backgroundColor: isLight ? '#ffffff' : inputBg,
-          padding: '4px 8px',
-          minHeight: 28,
-        }}
-      >
+      <div className="relative">
         <div style={{ paddingRight: 18 }}>{content}</div>
         <button
           type="button"
           onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
           onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
           title="Edit in cell"
-          className="absolute top-0.5 right-0.5 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15"
+          className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15"
           style={{ color: textMuted, lineHeight: 1 }}
         >
           <Pencil className="w-3 h-3" />
@@ -2489,8 +2475,8 @@ export default function Tickets() {
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
       : textPrimary
-    const isCellExpanded = !!expandedCells[`${ticket.id}:${label}`]
-    const showExpanded = col.isExpanded || isCellExpanded
+    const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === label
+    const showExpanded = col.isExpanded || (canEdit && !rowGhost && label !== 'STATUS' && isHoveredCell)
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
@@ -2604,7 +2590,6 @@ export default function Tickets() {
     <div className="flex flex-col gap-4 pb-8" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
-      setExpandedCells({})
       setHoveredCell(null)
       setAddMenuOpen(false)
     }}>
@@ -2970,6 +2955,7 @@ export default function Tickets() {
                       {columns.map((col) => {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
+                        const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === col.label
                         const cellWidth = isEditingCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
@@ -2982,23 +2968,11 @@ export default function Tickets() {
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
                                   startCellEdit(ticket, 'STATUS')
-                                  return
                                 }
-                                const key = `${ticket.id}:${col.label}`
-                                setExpandedCells(prev => {
-                                  if (prev[key]) {
-                                    const next = { ...prev }
-                                    delete next[key]
-                                    return next
-                                  }
-                                  return { [key]: true }
-                                })
                               }}
                               onDoubleClick={e => {
+                                e.preventDefault()
                                 e.stopPropagation()
-                                if (canEdit && !isGhost && !isStatusCol) {
-                                  openEditModal(ticket)
-                                }
                               }}
                               style={{
                                 padding: isEditingCell ? '0px' : '10px 14px',
@@ -3010,11 +2984,13 @@ export default function Tickets() {
                                 width: cellWidth,
                                 minWidth: cellWidth,
                                 maxWidth: isEditingCell ? 'none' : cellWidth,
-                                overflow: isEditingCell ? 'visible' : 'hidden',
+                                overflow: isEditingCell || isHoveredCell ? 'visible' : 'hidden',
                                 transition: 'background-color 0.1s ease, width 0.15s ease',
-                                cursor: canEdit && !isGhost ? 'pointer' : 'default',
+                                cursor: canEdit && !isGhost ? 'default' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
+                                userSelect: canEdit && !isGhost ? 'none' : undefined,
+                                WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
                                   ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : 5 }
                                   : isEditingCell ? { position: 'relative' as const, zIndex: 10 } : {}),
