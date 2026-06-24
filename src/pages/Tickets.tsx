@@ -1982,8 +1982,23 @@ export default function Tickets() {
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
+
+  const activeCellOverlay = Boolean(editingCell || hoveredCell)
+
+  useEffect(() => {
+    const target = editingCell || hoveredCell
+    if (!target) return
+    const timer = setTimeout(() => {
+      const el = tableScrollRef.current?.querySelector(
+        `[data-cell-key="${target.ticketId}:${target.colLabel}"]`,
+      )
+      el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    }, 40)
+    return () => clearTimeout(timer)
+  }, [editingCell, hoveredCell])
 
 
 
@@ -2320,22 +2335,13 @@ export default function Tickets() {
       <div
         className="rounded-md"
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
           minWidth: expW,
-          width: 'max(100%, ' + expW + 'px)',
-          minHeight: isTall ? 72 : '100%',
-          height: '100%',
-          zIndex: 20,
+          width: '100%',
+          minHeight: isTall ? 72 : 36,
           backgroundColor: isLight ? '#ffffff' : inputBg,
           border: `2px solid ${green}`,
-          padding: '4px 8px',
+          padding: '6px 8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
-          display: 'flex',
-          alignItems: isTall ? 'stretch' : 'center',
         }}
       >
         {editor}
@@ -2478,7 +2484,7 @@ export default function Tickets() {
     const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === label
     const showExpanded = col.isExpanded || (canEdit && !rowGhost && label !== 'STATUS' && isHoveredCell)
     const truncStyle: React.CSSProperties = showExpanded
-      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.4, maxHeight: '110px', overflowY: 'auto', display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
@@ -2858,14 +2864,22 @@ export default function Tickets() {
       )}
 
       {/* ── Table card ── */}
-      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+      <div className="rounded-2xl shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, overflow: 'visible' }}
            onClick={e => e.stopPropagation()}>
         {loading ? (
           <div className="flex flex-col gap-2 p-5">
             {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
           </div>
         ) : (
-          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+          <div
+            ref={tableScrollRef}
+            className="overflow-x-auto rounded-2xl"
+            style={{
+              maxHeight: 'calc(100vh - 280px)',
+              overflowY: 'auto',
+              paddingBottom: activeCellOverlay ? 72 : 12,
+            }}
+          >
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
@@ -2936,11 +2950,17 @@ export default function Tickets() {
                           : (idx % 2 === 0 ? rowEven : rowOdd)
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
                     const ghostAccent = ghostKind === 'completed' ? green : ghostKind === 'resched' ? '#fbbf24' : undefined
+                    const rowIsActive = columns.some(col =>
+                      (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
+                      || (hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === col.label),
+                    )
                   return (
                     <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                         style={{
                           borderBottom: `1px solid ${border}`,
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
+                          position: rowIsActive ? 'relative' : undefined,
+                          zIndex: rowIsActive ? 6 : undefined,
                         }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
                         onMouseLeave={() => setHoveredRow(null)}
@@ -2956,9 +2976,11 @@ export default function Tickets() {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
                         const isHoveredCell = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === col.label
-                        const cellWidth = isEditingCell ? (col.expWidth ?? col.width) : col.width
+                        const isActiveCell = isEditingCell || isHoveredCell
+                        const cellWidth = isActiveCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
+                              data-cell-key={`${ticket.id}:${col.label}`}
                               onMouseEnter={() => setHoveredCell({ ticketId: ticket.id, colLabel: col.label })}
                               onMouseLeave={() => setHoveredCell(prev =>
                                 prev?.ticketId === ticket.id && prev?.colLabel === col.label ? null : prev
@@ -2975,7 +2997,7 @@ export default function Tickets() {
                                 e.stopPropagation()
                               }}
                               style={{
-                                padding: isEditingCell ? '0px' : '10px 14px',
+                                padding: isEditingCell ? '6px' : '10px 14px',
                                 color: isGhost ? textMuted : textPrimary,
                                 fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                 backgroundColor: bg,
@@ -2983,17 +3005,17 @@ export default function Tickets() {
                                 borderBottom: `1px solid ${border}`,
                                 width: cellWidth,
                                 minWidth: cellWidth,
-                                maxWidth: isEditingCell ? 'none' : cellWidth,
-                                overflow: isEditingCell || isHoveredCell ? 'visible' : 'hidden',
-                                transition: 'background-color 0.1s ease, width 0.15s ease',
+                                maxWidth: isActiveCell ? 'none' : cellWidth,
+                                overflow: isActiveCell ? 'visible' : 'hidden',
+                                transition: 'background-color 0.1s ease, width 0.15s ease, min-height 0.15s ease',
                                 cursor: canEdit && !isGhost ? 'default' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : 5 }
-                                  : isEditingCell ? { position: 'relative' as const, zIndex: 10 } : {}),
+                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : isHoveredCell ? 8 : 5 }
+                                  : isActiveCell ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
