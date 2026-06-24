@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext'
 import FleetMap from '../components/FleetMap'
 import GlobalSearch from '../components/GlobalSearch'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
+import { inferCategoryFromTicket, isFieldCategory } from '../constants/ticketCategories'
 
 interface Ticket {
   id: string
@@ -956,18 +957,18 @@ export default function Dashboard() {
              <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: `1px solid ${border}` }}>
                  <h3 className="font-black text-base" style={{ color: textPrimary }}>Pending Tickets</h3>
                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>
-                   {tickets.filter(t => t.status.toUpperCase() === 'PENDING').length} unassigned
+                   {tickets.filter(t => t.status.toUpperCase() === 'PENDING' && isFieldCategory(inferCategoryFromTicket(t))).length} unassigned
                  </span>
              </div>
              <div className="flex-1 overflow-y-auto max-h-[300px]">
-               {tickets.filter(t => t.status.toUpperCase() === 'PENDING').length === 0 ? (
+               {tickets.filter(t => t.status.toUpperCase() === 'PENDING' && isFieldCategory(inferCategoryFromTicket(t))).length === 0 ? (
                   <div className="p-8 text-center" style={{ color: textMuted }}>
                      <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                      <p className="text-sm font-bold">All caught up</p>
                   </div>
                ) : (
                   <div className="divide-y" style={{ borderColor: border }}>
-                    {tickets.filter(t => t.status.toUpperCase() === 'PENDING').map(t => (
+                    {tickets.filter(t => t.status.toUpperCase() === 'PENDING' && isFieldCategory(inferCategoryFromTicket(t))).map(t => (
                        <div key={t.id} className="p-4 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                           <div className="flex-1 min-w-0">
                              <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{t.title}</p>

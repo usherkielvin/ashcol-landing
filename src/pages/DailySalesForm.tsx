@@ -360,6 +360,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   useEffect(() => {
     if (!isAdmin) return
     const syncFromGlobal = (isInitial = false) => {
+      ignoreNextCohFetch.current = false
       const stored = localStorage.getItem('ashcol-global-branch-id')
       if (isInitial && user?.branchId && !stored) {
         const emailLower = (user.email || '').toLowerCase()
@@ -589,6 +590,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
       } catch (err) {
         console.error('Error pre-filling data:', err)
+      } finally {
+        ignoreNextCohFetch.current = false
       }
     }
 

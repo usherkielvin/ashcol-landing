@@ -9,6 +9,14 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import {
+  FIELD_TICKET_CATEGORIES,
+  categoryDefaultServiceType,
+  inferCategoryFromTicket,
+  isFieldCategory,
+  type TicketCategoryValue,
+} from '../constants/ticketCategories'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Ticket {
@@ -17,6 +25,8 @@ interface Ticket {
   description?: string
   serviceType?: string
   service_type?: string
+  ticketCategory?: string
+  ticket_category?: string
   serviceVehicle?: string
   service_vehicle?: string
   customerName?: string
@@ -402,6 +412,7 @@ function applyImportFieldsFromRow(row: Pick<
   if (row.service?.trim()) {
     updatedFields.serviceVehicle = row.service.trim()
     updatedFields.serviceType = 'S/I'
+    updatedFields.ticketCategory = 'INSTALLATION'
   }
   let statusVal = (row.status || '').toUpperCase().trim().replace(/\s+/g, '_')
   if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
@@ -418,10 +429,12 @@ function formatServiceDriver(ticket: Ticket): string {
   return vehicle || type || ''
 }
 
-function parseServiceDriverValue(raw?: string): { serviceType: string; serviceVehicle: string } {
+function parseServiceDriverValue(
+  raw?: string,
+  category: TicketCategoryValue = 'INSTALLATION',
+): { serviceType: string; serviceVehicle: string } {
   const val = (raw || '').trim()
-  if (!val) return { serviceType: 'S/I', serviceVehicle: '' }
-  return { serviceType: 'S/I', serviceVehicle: val }
+  return { serviceType: categoryDefaultServiceType(category), serviceVehicle: val }
 }
 
 function getF(ticket: Ticket, ...keys: (keyof Ticket)[]): string {
@@ -519,6 +532,7 @@ function buildImportCreateRow(item: ImportUnmatchedRow, importTargetDate?: strin
     description: (item.note || item.update || 'Excel imported ticket').trim(),
     customerName: (item.name || 'Unknown Customer').trim(),
     serviceType: item.service || 'S/I',
+    ticketCategory: 'INSTALLATION',
     unitType: item.brand || 'Split AC',
     location,
     sourceVendor: item.dlr || 'Direct',
@@ -747,6 +761,7 @@ export default function Tickets() {
   const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
+  const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [hoveredHeader, setHoveredHeader] = useState<string | null>(null)
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
@@ -796,7 +811,7 @@ export default function Tickets() {
   // ── Manual Add Modal State ───────────────────────────────────────────────
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addFormSnapshot, setAddFormSnapshot] = useState('')
-  const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string }>({
+  const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string; ticketCategory?: TicketCategoryValue }>({
     preferredDate: '',
     customerName: '',
     contactPhone: '',
@@ -812,17 +827,19 @@ export default function Tickets() {
     controlNumber: '',
     modeOfPayment: '',
     installationCharges: undefined,
+    ticketCategory: 'INSTALLATION',
   })
   const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string }[]>([])
   const [savingManual, setSavingManual] = useState(false)
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; ticketCategory?: TicketCategoryValue }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -880,6 +897,24 @@ export default function Tickets() {
 
       const match = tickets.find(t => {
         if (usedTicketIds.has(t.id)) return false
+
+        const status = (t.status || '').toUpperCase()
+        const isDone = status === 'COMPLETED' || status === 'CANCELLED'
+
+        // 1. Match by control number if both have it
+        const rowCtrl = (row.controlNo || '').trim().toLowerCase()
+        const tCtrl = (t.controlNumber || t.control_number || '').trim().toLowerCase()
+        if (rowCtrl && tCtrl && rowCtrl === tCtrl) {
+          if (isDone) {
+            // "dont fetch done for control #"
+            return false
+          }
+          return true
+        }
+
+        // 2. Otherwise fall back to name and phone matching, but ignore done tickets
+        if (isDone) return false
+
         const tName = (t.customerName || t.customer_name || t.title || '').toLowerCase().trim()
         const cleanRowName = rowName.toLowerCase().trim()
 
@@ -1188,39 +1223,51 @@ export default function Tickets() {
 
 
 
-  const handleSaveManualTicket = async () => {
+  const promptSaveManualTicket = () => {
     if (!addForm.preferredDate) {
       alert('Preferred Date is required')
       return
     }
-    if (!addForm.customerName || !addForm.customerName.trim()) {
+    if (!addForm.customerName?.trim()) {
       alert('Customer Name is required')
       return
     }
-    if (!addForm.contactPhone || !addForm.contactPhone.trim()) {
+    if (!addForm.contactPhone?.trim()) {
       alert('Contact No. is required')
       return
     }
-    if (!addForm.location || !addForm.location.trim()) {
+    if (!addForm.location?.trim()) {
       alert('Destination/Address is required')
       return
     }
-    if (!confirm(`Create ticket for ${addForm.customerName?.trim()}?`)) return
+    const name = addForm.customerName.trim()
+    setConfirmModal({
+      title: 'Create ticket?',
+      message: `Add ${name} to the schedule for ${addForm.preferredDate}.`,
+      variant: 'save',
+      confirmText: 'Create Ticket',
+      cancelText: 'Not Yet',
+      onConfirm: () => void commitSaveManualTicket(),
+    })
+  }
 
+  const commitSaveManualTicket = async () => {
     setSavingManual(true)
     try {
       const tokenVal = token()
-      const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver)
-      const titleVal = `${serviceType} service`
+      const category = addForm.ticketCategory || 'INSTALLATION'
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver, category)
+      const titleVal = `${categoryDefaultServiceType(category)} service`
       const descVal = addForm.commitTerms?.trim() || 'No additional details provided.'
       
       const payload = {
-        customerName: addForm.customerName.trim(),
+        customerName: (addForm.customerName || '').trim(),
         title: titleVal,
         description: descVal,
         serviceType,
-        location: addForm.location.trim(),
-        contactPhone: addForm.contactPhone.trim(),
+        ticketCategory: category,
+        location: (addForm.location || '').trim(),
+        contactPhone: (addForm.contactPhone || '').trim(),
         unitType: addForm.unitType?.trim() || undefined,
         preferredDate: addForm.preferredDate,
         sourceVendor: addForm.sourceVendor?.trim() || 'Direct',
@@ -1282,6 +1329,7 @@ export default function Tickets() {
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
+      ticketCategory: inferCategoryFromTicket(ticket),
       status,
       installationCharges: ticket.installationCharges ?? ticket.installation_charges,
       modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment,
@@ -1297,7 +1345,18 @@ export default function Tickets() {
   const isEditFormDirty = () => JSON.stringify(editForm) !== editFormSnapshot
 
   const requestCloseEditModal = () => {
-    if (isEditFormDirty() && !confirm('Discard unsaved changes to this ticket?')) return
+    if (isEditFormDirty()) {
+      setConfirmModal({
+        title: 'Discard changes?',
+        message: 'You have unsaved edits on this ticket.',
+        detail: editForm.customerName?.trim() || undefined,
+        variant: 'discard',
+        confirmText: 'Discard',
+        cancelText: 'Keep Editing',
+        onConfirm: () => setEditModalOpen(false),
+      })
+      return
+    }
     setEditModalOpen(false)
   }
 
@@ -1318,6 +1377,7 @@ export default function Tickets() {
       controlNumber: '',
       modeOfPayment: '',
       installationCharges: undefined as number | undefined,
+      ticketCategory: 'INSTALLATION' as TicketCategoryValue,
     }
     setAddForm(form)
     setAddFormSnapshot(JSON.stringify(form))
@@ -1327,46 +1387,61 @@ export default function Tickets() {
   const isAddFormDirty = () => JSON.stringify(addForm) !== addFormSnapshot
 
   const requestCloseAddModal = () => {
-    if (isAddFormDirty() && !confirm('Discard unsaved ticket details?')) return
+    if (isAddFormDirty()) {
+      setConfirmModal({
+        title: 'Discard new ticket?',
+        message: 'Unsaved details will be lost.',
+        detail: addForm.customerName?.trim() || undefined,
+        variant: 'discard',
+        confirmText: 'Discard',
+        cancelText: 'Keep Editing',
+        onConfirm: () => setAddModalOpen(false),
+      })
+      return
+    }
     setAddModalOpen(false)
   }
 
-  const handleSaveEditTicket = async () => {
-    if (!editForm.id) return
+  const validateEditForm = (): string | null => {
+    if (!editForm.id) return 'Ticket not found'
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     if (isReschedStatusEarly) {
-      if (!editForm.rescheduleToDate?.trim()) {
-        alert('Select a reschedule date beside the RESCHED status')
-        return
-      }
+      if (!editForm.rescheduleToDate?.trim()) return 'Select a reschedule date beside the RESCHED status'
     } else if (!editForm.preferredDate) {
-      alert('Preferred Date is required')
-      return
+      return 'Preferred Date is required'
     }
-    if (!editForm.customerName || !editForm.customerName.trim()) {
-      alert('Customer Name is required')
-      return
-    }
-    if (!editForm.contactPhone || !editForm.contactPhone.trim()) {
-      alert('Contact No. is required')
-      return
-    }
-    if (!editForm.location || !editForm.location.trim()) {
-      alert('Destination/Address is required')
-      return
-    }
-    if (!confirm(`Save changes to ticket for ${editForm.customerName?.trim() || 'this customer'}?`)) return
-    const isReschedStatus = isReschedStatusEarly
-    if (isReschedStatus && !editForm.rescheduleToDate?.trim()) {
-      alert('Select a reschedule date beside the RESCHED status')
-      return
-    }
+    if (!editForm.customerName?.trim()) return 'Customer Name is required'
+    if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
+    if (!editForm.location?.trim()) return 'Destination/Address is required'
+    return null
+  }
 
+  const promptSaveEditTicket = () => {
+    const error = validateEditForm()
+    if (error) {
+      alert(error)
+      return
+    }
+    const name = editForm.customerName?.trim() || 'this customer'
+    setConfirmModal({
+      title: 'Save ticket changes?',
+      message: `Your updates will be applied to the schedule for ${name}.`,
+      variant: 'save',
+      confirmText: 'Save Changes',
+      cancelText: 'Not Yet',
+      onConfirm: () => void commitSaveEditTicket(),
+    })
+  }
+  const commitSaveEditTicket = async () => {
+    if (!editForm.id) return
+    const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
+    const isReschedStatus = isReschedStatusEarly
     setSavingEdit(true)
     try {
       const tokenVal = token()
-      const { serviceType, serviceVehicle } = parseServiceDriverValue(editForm.serviceDriver)
-      const titleVal = `${serviceType} service`
+      const category = editForm.ticketCategory || 'INSTALLATION'
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(editForm.serviceDriver, category)
+      const titleVal = `${categoryDefaultServiceType(category)} service`
       const descVal = editForm.commitTerms?.trim() || 'No additional details provided.'
 
       const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
@@ -1376,12 +1451,13 @@ export default function Tickets() {
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
 
       const body: Record<string, any> = {
-        customerName: editForm.customerName.trim(),
+        customerName: (editForm.customerName || '').trim(),
         title: titleVal,
         description: descVal,
         serviceType,
-        location: editForm.location.trim(),
-        contactPhone: editForm.contactPhone.trim(),
+        ticketCategory: category,
+        location: (editForm.location || '').trim(),
+        contactPhone: (editForm.contactPhone || '').trim(),
         unitType: editForm.unitType?.trim() || undefined,
         preferredDate: newDateKey,
         sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
@@ -1933,7 +2009,7 @@ export default function Tickets() {
       const width = isExpanded ? c.expW : c.w
       const l = c.sticky ? left : 0
       if (c.sticky) left += width
-      return { ...c, isExpanded, width, left: l }
+      return { ...c, isExpanded, width, baseWidth: c.w, expWidth: c.expW, left: l }
     })
   }, [expandedCols, isTaguigServices])
 
@@ -1947,7 +2023,8 @@ export default function Tickets() {
     try {
       const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
       const size = isAdmin ? 300 : 200
-      const res  = await fetch(`${API_BASE_URL}${ep}?page=0&size=${size}`, {
+      const qs = new URLSearchParams({ page: '0', size: String(size), categoryGroup: 'FIELD' })
+      const res  = await fetch(`${API_BASE_URL}${ep}?${qs}`, {
         headers: { Authorization: `Bearer ${token()}` }
       })
       if (!res.ok) throw new Error('fetch failed')
@@ -1986,6 +2063,7 @@ export default function Tickets() {
   // ── Filter ────────────────────────────────────────────────────────────────
   const visible = useMemo(() => {
     let list = tickets.filter(t => {
+      if (!isFieldCategory(inferCategoryFromTicket(t))) return false
       const stat = (t.status || '').toUpperCase()
 
       if (stat === 'COMPLETED') {
@@ -2164,9 +2242,21 @@ export default function Tickets() {
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
-  const handleDelete = async (ticketId: string) => {
-    if (!confirm('Delete this ticket?')) return
+  const handleDelete = (ticketId: string) => {
+    const ticket = tickets.find(t => t.id === ticketId)
+    const name = ticket?.customerName || ticket?.customer_name || ticket?.title || 'this ticket'
     setContextMenu(null)
+    setConfirmModal({
+      title: 'Delete ticket?',
+      message: 'This action cannot be undone.',
+      detail: name,
+      variant: 'danger',
+      confirmText: 'Delete',
+      onConfirm: () => void commitDeleteTicket(ticketId),
+    })
+  }
+
+  const commitDeleteTicket = async (ticketId: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token()}` }
@@ -2177,7 +2267,7 @@ export default function Tickets() {
     } catch { alert('Could not delete.') }
   }
 
-  const handleClearAllVisible = async () => {
+  const promptClearAllVisible = () => {
     if (!isAdmin || visible.length === 0) return
     const count = visible.length
     const scope = [
@@ -2186,7 +2276,19 @@ export default function Tickets() {
       searchQuery.trim() ? `search "${searchQuery.trim()}"` : '',
     ].filter(Boolean).join(' / ')
 
-    if (!confirm(`Clear all ${count} visible ticket${count === 1 ? '' : 's'} for ${scope}? This cannot be undone.`)) return
+    setConfirmModal({
+      title: `Clear ${count} ticket${count === 1 ? '' : 's'}?`,
+      message: 'All visible tickets in the current view will be permanently deleted.',
+      detail: scope,
+      variant: 'danger',
+      confirmText: 'Clear All',
+      onConfirm: () => void commitClearAllVisible(),
+    })
+  }
+
+  const commitClearAllVisible = async () => {
+    if (!isAdmin || visible.length === 0) return
+    const count = visible.length
 
     setSaving(true)
     setContextMenu(null)
@@ -2217,6 +2319,30 @@ export default function Tickets() {
     }
   }
 
+  function wrapEditingCell(editor: React.ReactNode, colLabel: string) {
+    const col = columns.find(c => c.label === colLabel)
+    const expW = col?.expWidth ?? 200
+    const isTall = colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE'
+    return (
+      <div
+        className="rounded-md"
+        style={{
+          minWidth: expW,
+          width: 'max(100%, ' + expW + 'px)',
+          minHeight: isTall ? 72 : 44,
+          position: 'relative',
+          zIndex: 20,
+          backgroundColor: isLight ? '#ffffff' : inputBg,
+          border: `1px solid ${green}`,
+          padding: '4px 6px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+        }}
+      >
+        {editor}
+      </div>
+    )
+  }
+
   function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowGhost?: boolean) {
     if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
 
@@ -2229,10 +2355,9 @@ export default function Tickets() {
       padding: '4px 6px',
       borderRadius: 6,
       outline: 'none',
-      backgroundColor: inputBg,
-      border: `1px solid ${green}`,
+      backgroundColor: 'transparent',
+      border: 'none',
       color: textPrimary,
-      boxShadow: '0 0 0 2px rgba(22,163,74,0.15)',
     }
 
     const commit = () => {
@@ -2255,7 +2380,7 @@ export default function Tickets() {
     }
 
     if (colLabel === 'STATUS') {
-      return (
+      return wrapEditingCell(
         <select
           autoFocus
           disabled={isSaving}
@@ -2270,12 +2395,13 @@ export default function Tickets() {
           {STATUS_OPTS.map(opt => (
             <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
           ))}
-        </select>
+        </select>,
+        colLabel,
       )
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
-      return (
+      return wrapEditingCell(
         <textarea
           autoFocus
           disabled={isSaving}
@@ -2287,11 +2413,12 @@ export default function Tickets() {
           onKeyDown={onKeyDown}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
-        />
+        />,
+        colLabel,
       )
     }
 
-    return (
+    return wrapEditingCell(
       <input
         autoFocus
         disabled={isSaving}
@@ -2303,7 +2430,8 @@ export default function Tickets() {
         onKeyDown={onKeyDown}
         className="w-full rounded-md outline-none"
         style={inputStyle}
-      />
+      />,
+      colLabel,
     )
   }
 
@@ -2317,19 +2445,30 @@ export default function Tickets() {
     if (!isCellExpanded || !canEdit || rowGhost) return content
     const isEditing = editingCell?.ticketId === ticket.id && editingCell?.colLabel === colLabel
     if (isEditing) return content
+    const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === colLabel
     return (
-      <div className="relative">
-        <div style={{ paddingRight: 18 }}>{content}</div>
-        <button
-          type="button"
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-          onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
-          title="Edit in cell"
-          className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15 transition-colors"
-          style={{ color: textMuted, lineHeight: 1 }}
-        >
-          <Pencil className="w-3 h-3" />
-        </button>
+      <div
+        className="relative rounded-md transition-all"
+        style={{
+          border: `1px solid ${isHovered ? green : (isLight ? '#d1d5db' : '#475569')}`,
+          backgroundColor: isLight ? '#ffffff' : inputBg,
+          padding: '4px 8px',
+          minHeight: 28,
+        }}
+      >
+        <div style={{ paddingRight: isHovered ? 18 : 0 }}>{content}</div>
+        {isHovered && (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
+            title="Edit in cell"
+            className="absolute top-0.5 right-0.5 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15 transition-opacity"
+            style={{ color: textMuted, lineHeight: 1, opacity: isHovered ? 1 : 0 }}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        )}
       </div>
     )
   }
@@ -2368,11 +2507,10 @@ export default function Tickets() {
           </span>
         )
       }
-      return withEditPencil(
+      return (
         <span style={{ ...truncStyle, fontWeight: 700 }} title={val}>
           {val ? val.replace(/_/g, ' ') : '—'}
-        </span>,
-        isCellExpanded, ticket, label, rowGhost,
+        </span>
       )
     }
 
@@ -2647,7 +2785,7 @@ export default function Tickets() {
               {isAdmin && (
                 <button
                   type="button"
-                  onClick={handleClearAllVisible}
+                  onClick={promptClearAllVisible}
                   disabled={visible.length === 0 || saving}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                   style={{ backgroundColor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.45)', color: '#EF4444' }}
@@ -2823,11 +2961,22 @@ export default function Tickets() {
 
                       {/* Data cells */}
                       {columns.map((col) => {
+                        const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
+                        const isStatusCol = col.label === 'STATUS'
+                        const cellWidth = isEditingCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
+                              onMouseEnter={() => setHoveredCell({ ticketId: ticket.id, colLabel: col.label })}
+                              onMouseLeave={() => setHoveredCell(prev =>
+                                prev?.ticketId === ticket.id && prev?.colLabel === col.label ? null : prev
+                              )}
                               onClick={e => {
                                 e.stopPropagation()
-                                if (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label) return
+                                if (isEditingCell) return
+                                if (isStatusCol && canEdit && !isGhost) {
+                                  startCellEdit(ticket, 'STATUS')
+                                  return
+                                }
                                 setExpandedCells(prev => ({
                                   ...prev,
                                   [`${ticket.id}:${col.label}`]: !prev[`${ticket.id}:${col.label}`],
@@ -2835,7 +2984,7 @@ export default function Tickets() {
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
-                                if (canEdit && !isGhost) {
+                                if (canEdit && !isGhost && !isStatusCol) {
                                   openEditModal(ticket)
                                 }
                               }}
@@ -2846,12 +2995,17 @@ export default function Tickets() {
                                 backgroundColor: bg,
                                 borderRight: `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
-                                width: col.width, minWidth: col.width, maxWidth: col.width,
-                                transition: 'background-color 0.1s ease',
+                                width: cellWidth,
+                                minWidth: cellWidth,
+                                maxWidth: isEditingCell ? 'none' : cellWidth,
+                                overflow: isEditingCell ? 'visible' : 'hidden',
+                                transition: 'background-color 0.1s ease, width 0.15s ease',
                                 cursor: canEdit && !isGhost ? 'pointer' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
-                                ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {}),
+                                ...(col.sticky
+                                  ? { position: 'sticky' as const, left: col.left, zIndex: isEditingCell ? 12 : 5 }
+                                  : isEditingCell ? { position: 'relative' as const, zIndex: 10 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
@@ -3521,7 +3675,7 @@ export default function Tickets() {
                                 <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || '—'}</td>
                                 <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || '—'}</td>
                                 <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `₱${row.charges}` : '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `₱${Number(row.charges).toLocaleString('en-PH')}` : '—'}</td>
                                 <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || '—'}</td>
                                 <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || '—'}</td>
                               </tr>
@@ -3637,6 +3791,18 @@ export default function Tickets() {
                   Service & Unit Details
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Ticket Type" required>
+                    <select
+                      value={addForm.ticketCategory || 'INSTALLATION'}
+                      onChange={e => setAddForm({ ...addForm, ticketCategory: e.target.value as TicketCategoryValue })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    >
+                      {FIELD_TICKET_CATEGORIES.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field label="Brand / Unit Type">
                     <input type="text" value={addForm.unitType || ''} 
                       onChange={e => setAddForm({ ...addForm, unitType: e.target.value })}
@@ -3737,7 +3903,7 @@ export default function Tickets() {
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
               </button>
-              <button onClick={handleSaveManualTicket}
+              <button onClick={promptSaveManualTicket}
                 disabled={savingManual}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: green }}>
@@ -3841,6 +4007,18 @@ export default function Tickets() {
                   Service & Unit Details
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Ticket Type" required>
+                    <select
+                      value={editForm.ticketCategory || 'INSTALLATION'}
+                      onChange={e => setEditForm({ ...editForm, ticketCategory: e.target.value as TicketCategoryValue })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    >
+                      {FIELD_TICKET_CATEGORIES.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field label="Brand / Unit Type">
                     <input type="text" value={editForm.unitType || ''} 
                       onChange={e => setEditForm({ ...editForm, unitType: e.target.value })}
@@ -4012,7 +4190,7 @@ export default function Tickets() {
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
               </button>
-              <button onClick={handleSaveEditTicket}
+              <button onClick={promptSaveEditTicket}
                 disabled={savingEdit}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: green }}>
@@ -4023,6 +4201,8 @@ export default function Tickets() {
         </div>
         )
       })()}
+
+      <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
     </div>
   )
 }

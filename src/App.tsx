@@ -7,6 +7,7 @@ import CreateAccount from './pages/CreateAccount'
 import DashboardLayout from './layouts/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
+import OfficeTasks from './pages/OfficeTasks'
 import CreateTicket from './pages/CreateTicket'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardRedirect />} />
           <Route path="/dashboard-home" element={<Dashboard />} />
           <Route path="/tickets" element={<Tickets />} />
+          <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<ClientMasterlist />} />
