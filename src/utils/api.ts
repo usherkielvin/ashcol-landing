@@ -16,6 +16,17 @@ export function resolveScopedBranchId(branchId?: string | null): string {
   return raw.replace(/-(sales|services|service)$/i, '')
 }
 
+/** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
+export function resolveArchiveBranchId(
+  ...candidates: Array<string | null | undefined>
+): string {
+  for (const candidate of candidates) {
+    const resolved = resolveScopedBranchId(candidate)
+    if (resolved && resolved !== 'ALL_BRANCHES') return resolved
+  }
+  return ''
+}
+
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
   if (path.startsWith('http') || path.startsWith('data:')) return path

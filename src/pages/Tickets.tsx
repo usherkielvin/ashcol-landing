@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -708,6 +708,89 @@ function wantsTicketArchive(ticket: Partial<Ticket>, fields?: Partial<Ticket>): 
   const status = String(fields?.status ?? ticket.status ?? '').toUpperCase()
   if (status === 'COMPLETED') return true
   return qualifiesForInstallComplete(ticket, fields)
+}
+
+function buildArchiveServiceReportPayload(
+  ticket: Ticket,
+  branchId: string,
+  fields: {
+    customerName?: string
+    location?: string
+    contactPhone?: string
+    district?: string
+    commitType?: string
+    sourceVendor?: string
+    unitType?: string
+    installerName?: string
+    serviceVehicle?: string
+    installationCharges?: number
+    modeOfPayment?: string
+    remarks?: string
+    remarksUpdate?: string
+    controlNumber?: string
+    note?: string
+  } = {},
+  scheduleDateKey?: string,
+): Record<string, unknown> | null {
+  if (!branchId) return null
+  const merged = { ...ticket, ...fields } as Ticket
+  const scheduleKey =
+    scheduleDateKey ||
+    getArchivedScheduleDate(merged) ||
+    getPreferredDateKey(merged) ||
+    todayDateKey()
+  const installedKey = todayDateKey()
+  const mode = String(
+    fields.modeOfPayment ?? ticket.modeOfPayment ?? ticket.mode_of_payment ?? 'CASH',
+  ).toUpperCase()
+  const charges =
+    fields.installationCharges ??
+    ticket.installationCharges ??
+    ticket.installation_charges ??
+    ticket.amountCharged ??
+    0
+  const remarks =
+    fields.remarksUpdate ??
+    fields.remarks ??
+    ticket.remarksUpdate ??
+    ticket.remarks ??
+    'Installed'
+
+  return {
+    branchId,
+    reportDate: scheduleKey,
+    scheduledDate: scheduleKey,
+    installedDate: installedKey,
+    customerName: (fields.customerName ?? getF(ticket, 'customerName', 'customer_name') ?? ticket.title ?? '').trim(),
+    customerAddress: formatAddress(fields.location ?? ticket.location),
+    customerPhone: fields.contactPhone ?? getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+    district: fields.district ?? parseDistrict(ticket.location, ticket.district),
+    serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
+    statusCode: 'I',
+    commitTerms: fields.commitType ?? getF(ticket, 'commitType', 'commitTerms', 'description') ?? ticket.description ?? '',
+    dealer: fields.sourceVendor ?? getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') ?? '',
+    unitBrandModel: fields.unitType ?? parseBrand(ticket),
+    technicianName: fields.installerName ?? getInstallerDisplay(ticket),
+    amountCharged: parseFloat(String(charges)) || 0,
+    paymentStatus: mode,
+    jobStatus: 'COMPLETED',
+    remarks,
+    note: fields.note ?? ticket.note ?? '',
+    controlNumber: fields.controlNumber ?? ticket.controlNumber ?? ticket.control_number ?? '',
+    serviceColumn: fields.serviceVehicle ?? ticket.serviceVehicle ?? ticket.service_vehicle ?? '',
+  }
+}
+
+async function postArchiveServiceReport(
+  payload: Record<string, unknown>,
+  tokenVal: string,
+): Promise<void> {
+  const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
+    body: JSON.stringify(payload),
+  })
+  if (!reportRes.ok) throw new Error(await readApiError(reportRes))
 }
 
 function getCellRawValue(ticket: Ticket, colLabel: string): string {
@@ -1607,39 +1690,39 @@ export default function Tickets() {
       }
 
       if (shouldComplete && originalTicket) {
-        const reportDate = oldDateKey || newDateKey || todayDateKey()
-        const charges = finalBody.installationCharges ?? paymentCharges ?? 0
-        const mode = finalBody.modeOfPayment ?? paymentMode ?? 'CASH'
-        const remarks = finalBody.remarksUpdate || finalBody.remarks || 'Installed'
-        try {
-          const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-            body: JSON.stringify({
-              branchId: resolveImportBranchId(originalTicket.branchId),
-              reportDate,
-              customerName: body.customerName,
-              customerAddress: body.location,
-              customerPhone: body.contactPhone,
-              district: body.district,
-              serviceType: String(mode).toUpperCase() === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
-              statusCode: 'I',
-              commitTerms: body.commitType || '',
-              dealer: body.sourceVendor,
-              unitBrandModel: body.unitType,
-              technicianName: body.installerName,
-              amountCharged: parseFloat(String(charges)) || 0,
-              paymentStatus: mode,
-              jobStatus: 'COMPLETED',
-              remarks,
-              note: originalTicket.note || '',
-              controlNumber: body.controlNumber || originalTicket.controlNumber || '',
-              serviceColumn: body.serviceVehicle || originalTicket.serviceVehicle || '',
-            }),
-          })
-          if (!reportRes.ok) console.warn('Archive service report failed:', await reportRes.text())
-        } catch (err) {
-          console.warn('Archive service report failed:', err)
+        const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
+        const branchId = resolveImportBranchId(originalTicket.branchId || originalTicket.branch_id)
+        const archivePayload = buildArchiveServiceReportPayload(
+          originalTicket,
+          branchId,
+          {
+            customerName: body.customerName,
+            location: body.location,
+            contactPhone: body.contactPhone,
+            district: body.district,
+            commitType: body.commitType,
+            sourceVendor: body.sourceVendor,
+            unitType: body.unitType,
+            installerName: body.installerName,
+            serviceVehicle: body.serviceVehicle,
+            installationCharges: finalBody.installationCharges as number | undefined,
+            modeOfPayment: finalBody.modeOfPayment as string | undefined,
+            remarks: finalBody.remarksUpdate as string | undefined,
+            remarksUpdate: finalBody.remarksUpdate as string | undefined,
+            controlNumber: body.controlNumber,
+            note: originalTicket.note,
+          },
+          schedKey,
+        )
+        if (!archivePayload) {
+          alert('Ticket marked completed but not added to Archives — select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
+        } else {
+          try {
+            await postArchiveServiceReport(archivePayload, tokenVal)
+          } catch (err) {
+            console.warn('Archive service report failed:', err)
+            alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
+          }
         }
       }
 
@@ -1663,7 +1746,7 @@ export default function Tickets() {
     const branchSource = branchEmployee
       ? (user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
       : (globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
-    return resolveScopedBranchId(ticketBranchId || branchSource)
+    return resolveArchiveBranchId(ticketBranchId, branchSource, user?.branchId)
   }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
 
   const handleApplyImport = async () => {
@@ -1714,38 +1797,23 @@ export default function Tickets() {
       : normalUpdates
 
     const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
-      const custName = getF(ticket, 'customerName', 'customer_name') || ticket.title
-      const charges = updatedFields.installationCharges ?? ticket.installationCharges ?? ticket.amountCharged ?? 0
-      const mode = updatedFields.modeOfPayment ?? ticket.modeOfPayment ?? 'CASH'
-      const remarks = (updatedFields.remarksUpdate ?? ticket.remarksUpdate ?? ticket.remarks) || 'Installed'
-      const controlNo = updatedFields.controlNumber ?? ticket.controlNumber ?? ''
-      const serviceReportPayload = {
-        branchId: resolveImportBranchId(ticket.branchId),
-        reportDate: reportDate || todayStr,
-        customerName: custName,
-        customerAddress: formatAddress(updatedFields.location ? updatedFields.location : ticket.location),
-        customerPhone: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-        district: parseDistrict(updatedFields.location ? updatedFields.location : ticket.location, updatedFields.district || ticket.district),
-        serviceType: mode === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
-        statusCode: 'I',
-        commitTerms: getF(ticket, 'commitTerms', 'description') || ticket.description || '',
-        dealer: updatedFields.sourceVendor || getF(ticket, 'dealer'),
-        unitBrandModel: updatedFields.unitType || parseBrand(ticket),
-        technicianName: updatedFields.installerName || getF(ticket, 'assignedEmployeeName', 'assigned_employee_name'),
-        amountCharged: parseFloat(String(charges)) || 0,
-        paymentStatus: mode,
-        jobStatus: 'COMPLETED',
-        remarks,
-        note: updatedFields.note || ticket.note || '',
-        controlNumber: controlNo,
-        serviceColumn: updatedFields.serviceVehicle || ticket.serviceVehicle || ticket.service_vehicle || '',
-      }
-      const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-        body: JSON.stringify(serviceReportPayload),
-      })
-      if (!reportRes.ok) throw new Error(await readApiError(reportRes))
+      const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+      const payload = buildArchiveServiceReportPayload(ticket, branchId, {
+        location: updatedFields.location,
+        district: updatedFields.district,
+        sourceVendor: updatedFields.sourceVendor,
+        unitType: updatedFields.unitType,
+        installerName: updatedFields.installerName,
+        serviceVehicle: updatedFields.serviceVehicle,
+        installationCharges: updatedFields.installationCharges,
+        modeOfPayment: updatedFields.modeOfPayment,
+        remarksUpdate: updatedFields.remarksUpdate,
+        remarks: updatedFields.remarks,
+        controlNumber: updatedFields.controlNumber,
+        note: updatedFields.note,
+      }, reportDate)
+      if (!payload) throw new Error('No branch selected for archive')
+      await postArchiveServiceReport(payload, tokenVal)
     }
 
     for (const item of scheduleUpdates) {
@@ -2345,6 +2413,20 @@ export default function Tickets() {
         body: JSON.stringify(finalBody),
       })
       if (!res.ok) throw new Error(await readApiError(res))
+      if ((finalBody.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
+        const schedKey = getPreferredDateKey(ticket) || todayDateKey()
+        const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+        const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {}, schedKey)
+        if (!archivePayload) {
+          alert('Ticket completed but not added to Archives — select a branch in the sidebar.')
+        } else {
+          try {
+            await postArchiveServiceReport(archivePayload, token())
+          } catch (err) {
+            alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
+          }
+        }
+      }
       setTickets(prev => prev.map(t => {
         if (t.id !== ticket.id) return t
         return {
@@ -3526,42 +3608,21 @@ export default function Tickets() {
           setSaving(true)
           
           try {
-            const d = new Date()
-            const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-             // 1. Post to Daily Service Report
-             const serviceReportPayload = {
-               branchId: resolveScopedBranchId(t.branchId || localStorage.getItem('ashcol-global-branch-id')),
-               reportDate: todayStr,
-               customerName: custName,
-               customerAddress: formatAddress(t.location),
-               customerPhone: getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-               district: parseDistrict(t.location, t.district),
-               serviceType: cp.modeOfPayment === 'FREE INSTALL' ? 'FREE_INSTALLATION' : 'INSTALLATION',
-               statusCode: 'I',
-               commitTerms: getF(t, 'commitTerms', 'description') || t.description || '',
-               dealer: getF(t, 'dealer'),
-               unitBrandModel: parseBrand(t),
-               technicianName: getF(t, 'assignedEmployeeName', 'assigned_employee_name'),
-               amountCharged: parseFloat(cp.amount) || 0,
-               paymentStatus: cp.modeOfPayment,
-               jobStatus: 'COMPLETED',
-               remarks: cp.value || 'Installed',
-               note: t.note || '',
-               controlNumber: t.controlNumber || ''
-             }
-
-            const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token()}`
+            const schedKey = getPreferredDateKey(t) || todayDateKey()
+            const branchId = resolveImportBranchId(t.branchId || t.branch_id)
+            const archivePayload = buildArchiveServiceReportPayload(
+              t,
+              branchId,
+              {
+                installationCharges: parseFloat(cp.amount) || 0,
+                modeOfPayment: cp.modeOfPayment,
+                remarks: cp.value || 'Installed',
               },
-              body: JSON.stringify(serviceReportPayload)
-            })
-            if (!reportRes.ok) throw new Error('Failed to create Service Report')
+              schedKey,
+            )
+            if (!archivePayload) throw new Error('Select a branch before completing to Archives')
 
-            // 2. Delete the ticket from the active list
+            await postArchiveServiceReport(archivePayload, token())
             const deleteRes = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
               method: 'DELETE',
               headers: {
