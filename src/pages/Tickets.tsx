@@ -553,22 +553,6 @@ function formatDateTriggerLabel(value: string) {
   return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
 }
 
-async function readApiError(res: Response): Promise<string> {
-  try {
-    const data = await res.json()
-    if (typeof data === 'string') return data
-    if (data?.message) return data.message
-    return data.error || JSON.stringify(data)
-  } catch {
-    try {
-      const text = await res.text()
-      return text || `HTTP ${res.status}`
-    } catch {
-      return `HTTP ${res.status}`
-    }
-  }
-}
-
 function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
   return Boolean(
     (item.status && item.status.toUpperCase() === 'COMPLETED') ||
