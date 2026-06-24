@@ -282,7 +282,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const loadedAuditLine = useRef<string | null>(null)
 
   useEffect(() => {
-    if (user && !reportId) {
+    const params = new URLSearchParams(window.location.search)
+    if (user && !reportId && !params.get('id')) {
       if (user.name && !receivedBy) {
         setReceivedBy(user.name)
       }
@@ -343,7 +344,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           setBranchesList(finalList)
           if (finalList.length > 0) {
             const exists = finalList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
-            if (!exists && isAdmin) {
+            if (!exists && isAdmin && !reportId && !new URLSearchParams(window.location.search).get('id')) {
               setSelectedBranchId(finalList[0].id)
               setSelectedAuditLine(finalList[0].auditLine || null)
               setBranch(finalList[0].name)
@@ -355,11 +356,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       }
     }
     loadBranchesList()
-  }, [canSubmit, selectedBranchId, selectedAuditLine])
+  }, [canSubmit, selectedBranchId, selectedAuditLine, reportId])
 
   useEffect(() => {
     if (!isAdmin) return
     const syncFromGlobal = (isInitial = false) => {
+      if (isInitial) {
+        const params = new URLSearchParams(window.location.search)
+        if (reportId || params.get('id')) return
+      }
       ignoreNextCohFetch.current = false
       const stored = localStorage.getItem('ashcol-global-branch-id')
       if (isInitial && user?.branchId && !stored) {
@@ -408,10 +413,25 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
 
     syncFromGlobal(true)
-    const handleSync = () => syncFromGlobal(false)
+    const handleSync = () => {
+      syncFromGlobal(false)
+      const params = new URLSearchParams(window.location.search)
+      const isEditing = !!(reportId || params.get('id'))
+      if (isEditing) {
+        console.log('[Global Branch Change] Clearing reportId and form state')
+        setReportId(null)
+        clearForm(true)
+        loadedReportDate.current = null
+        loadedBranchId.current = null
+        loadedAuditLine.current = null
+        const url = new URL(window.location.href)
+        url.searchParams.delete('id')
+        window.history.replaceState({}, '', url.toString())
+      }
+    }
     window.addEventListener('ashcol-global-branch-change', handleSync)
     return () => window.removeEventListener('ashcol-global-branch-change', handleSync)
-  }, [isAdmin, branchesList, user])
+  }, [isAdmin, branchesList, user, reportId])
 
   useEffect(() => {
     if (!reviewMode) return
@@ -889,28 +909,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
 
 
-  // Reset form and clear URL parameter when changing branch or date of a loaded report
-  useEffect(() => {
-    if (reportId) {
-      const dateChanged = !!loadedReportDate.current && reportDate !== loadedReportDate.current
-      const branchChanged = !!loadedBranchId.current && selectedBranchId !== loadedBranchId.current
-      const auditLineChanged = loadedAuditLine.current !== undefined && selectedAuditLine !== loadedAuditLine.current
-
-      if (dateChanged || branchChanged || auditLineChanged) {
-        console.log('[Date/Branch Change] Clearing reportId and form state')
-        setReportId(null)
-        clearForm(true)
-        loadedReportDate.current = null
-        loadedBranchId.current = null
-        loadedAuditLine.current = null
-        
-        // Remove `id` from browser URL parameters to transition out of edit mode
-        const url = new URL(window.location.href)
-        url.searchParams.delete('id')
-        window.history.replaceState({}, '', url.toString())
-      }
-    }
-  }, [reportDate, selectedBranchId, selectedAuditLine, reportId])
+  // Reset form / URL parameter tracking useEffect removed (handled inline in event handlers)
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
   const processImage = async (file: File) => {
@@ -1400,6 +1399,17 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               onChange={e => {
                 ignoreNextCohFetch.current = false
                 setReportDate(e.target.value)
+                if (reportId) {
+                  console.log('[Date Change] Clearing reportId and form state')
+                  setReportId(null)
+                  clearForm(true)
+                  loadedReportDate.current = null
+                  loadedBranchId.current = null
+                  loadedAuditLine.current = null
+                  const url = new URL(window.location.href)
+                  url.searchParams.delete('id')
+                  window.history.replaceState({}, '', url.toString())
+                }
               }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
               disabled={reviewMode}

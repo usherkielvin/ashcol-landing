@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -2023,13 +2023,8 @@ export default function Tickets() {
     try {
       const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
       const size = isAdmin ? 300 : 200
-      const qs = new URLSearchParams({ page: '0', size: String(size), categoryGroup: 'FIELD' })
-      const res  = await fetch(`${API_BASE_URL}${ep}?${qs}`, {
-        headers: { Authorization: `Bearer ${token()}` }
-      })
-      if (!res.ok) throw new Error('fetch failed')
-      const data = await res.json()
-      setTickets(data?.data?.tickets || data?.tickets || [])
+      const list = await fetchTicketsPage(ep, token(), { size })
+      setTickets(list as Ticket[])
     } catch { setFetchError('Failed to load tickets. Check your connection.') }
     finally  { setLoading(false) }
   }, [user, isCustomer, isAdmin, token])
@@ -2327,15 +2322,22 @@ export default function Tickets() {
       <div
         className="rounded-md"
         style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
           minWidth: expW,
           width: 'max(100%, ' + expW + 'px)',
-          minHeight: isTall ? 72 : 44,
-          position: 'relative',
+          minHeight: isTall ? 72 : '100%',
+          height: '100%',
           zIndex: 20,
           backgroundColor: isLight ? '#ffffff' : inputBg,
-          border: `1px solid ${green}`,
-          padding: '4px 6px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+          border: `2px solid ${green}`,
+          padding: '4px 8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+          display: 'flex',
+          alignItems: isTall ? 'stretch' : 'center',
         }}
       >
         {editor}
@@ -2989,7 +2991,7 @@ export default function Tickets() {
                                 }
                               }}
                               style={{
-                                padding: '10px 14px',
+                                padding: isEditingCell ? '0px' : '10px 14px',
                                 color: isGhost ? textMuted : textPrimary,
                                 fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                 backgroundColor: bg,

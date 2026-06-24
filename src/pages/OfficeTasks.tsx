@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, X, Edit3, CalendarDays, Loader2, ClipboardList } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import {
   OFFICE_TICKET_CATEGORIES,
@@ -126,13 +126,8 @@ export default function OfficeTasks() {
     setFetchError(null)
     try {
       const ep = isAdmin ? '/tickets' : '/tickets/branch'
-      const qs = new URLSearchParams({ page: '0', size: '300', categoryGroup: 'OFFICE' })
-      const res = await fetch(`${API_BASE_URL}${ep}?${qs}`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      })
-      if (!res.ok) throw new Error('fetch failed')
-      const data = await res.json()
-      setTickets(data?.data?.tickets || data?.tickets || [])
+      const list = await fetchTicketsPage(ep, token(), { size: 300 })
+      setTickets(list as OfficeTicket[])
     } catch {
       setFetchError('Failed to load office tasks.')
     } finally {

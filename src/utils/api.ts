@@ -111,3 +111,38 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
   if (isServiceWorkspaceUser(user)) return '/service-report'
   return '/audit-report?tab=submit'
 }
+
+/** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */
+export async function fetchTicketsPage(
+  endpoint: string,
+  token: string,
+  options: { size?: number; categoryGroup?: 'FIELD' | 'OFFICE' } = {},
+): Promise<unknown[]> {
+  const size = options.size ?? 200
+  const headers = { Authorization: `Bearer ${token}` }
+  const base = { page: '0', size: String(size) }
+
+  const attempts: Record<string, string>[] = options.categoryGroup
+    ? [{ ...base, categoryGroup: options.categoryGroup }, base]
+    : [base]
+
+  let lastStatus = 0
+  let lastBody = ''
+  for (const params of attempts) {
+    const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, { headers })
+    if (res.ok) {
+      const data = await res.json()
+      return data?.data?.tickets || data?.tickets || []
+    }
+    lastStatus = res.status
+    lastBody = await res.text().catch(() => '')
+    if (params.categoryGroup) {
+      console.warn(
+        `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
+        lastBody.slice(0, 200),
+      )
+    }
+  }
+
+  throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+}
