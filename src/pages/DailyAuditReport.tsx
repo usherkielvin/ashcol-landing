@@ -555,7 +555,18 @@ export default function DailyAuditReport() {
 
 
       {/* ── Submit Tab ──────────────────────────────────────────────────────── */}
-      {activeTab === 'submit' && <DailySalesForm onSwitchToSummary={() => setActiveTab('summary')} />}
+      {activeTab === 'submit' && (
+        <DailySalesForm onSwitchToSummary={() => {
+          const params = new URLSearchParams(location.search)
+          params.delete('tab')
+          params.delete('id')
+          params.delete('branchId')
+          params.delete('date')
+          params.delete('auditLine')
+          navigate(`/audit-report${params.toString() ? `?${params.toString()}` : ''}`, { replace: true })
+          fetchAudit()
+        }} />
+      )}
 
       {/* ── Summary Tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'summary' && <>

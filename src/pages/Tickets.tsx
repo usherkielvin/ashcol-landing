@@ -2189,14 +2189,19 @@ export default function Tickets() {
 
   const cancelEdit = () => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    setEditingCell(null)
+    setEditingCell(prev => {
+      if (prev) {
+        const key = cellEditKey(prev.ticketId, prev.colLabel)
+        setExpandedCells(cells => ({ ...cells, [key]: false }))
+      }
+      return null
+    })
   }
 
   const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
 
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    setExpandedCells(prev => ({ ...prev, [cellEditKey(ticket.id, colLabel)]: true }))
     setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel) })
   }
 
@@ -2439,38 +2444,36 @@ export default function Tickets() {
 
   function withEditPencil(
     content: React.ReactNode,
-    isCellExpanded: boolean,
     ticket: Ticket,
     colLabel: string,
     rowGhost?: boolean,
   ) {
-    if (!isCellExpanded || !canEdit || rowGhost) return content
+    if (!canEdit || rowGhost) return content
     const isEditing = editingCell?.ticketId === ticket.id && editingCell?.colLabel === colLabel
     if (isEditing) return content
     const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === colLabel
+    if (!isHovered) return content
     return (
       <div
         className="relative rounded-md transition-all"
         style={{
-          border: `1px solid ${isHovered ? green : (isLight ? '#d1d5db' : '#475569')}`,
+          border: `1px solid ${green}`,
           backgroundColor: isLight ? '#ffffff' : inputBg,
           padding: '4px 8px',
           minHeight: 28,
         }}
       >
-        <div style={{ paddingRight: isHovered ? 18 : 0 }}>{content}</div>
-        {isHovered && (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
-            title="Edit in cell"
-            className="absolute top-0.5 right-0.5 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15 transition-opacity"
-            style={{ color: textMuted, lineHeight: 1, opacity: isHovered ? 1 : 0 }}
-          >
-            <Pencil className="w-3 h-3" />
-          </button>
-        )}
+        <div style={{ paddingRight: 18 }}>{content}</div>
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+          onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
+          title="Edit in cell"
+          className="absolute top-0.5 right-0.5 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15"
+          style={{ color: textMuted, lineHeight: 1 }}
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
       </div>
     )
   }
@@ -2521,7 +2524,7 @@ export default function Tickets() {
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
         </span>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
@@ -2534,7 +2537,7 @@ export default function Tickets() {
            title={val}>
           {formatted}
         </a>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
@@ -2544,7 +2547,7 @@ export default function Tickets() {
               title={val} className={showExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
         </span>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
@@ -2571,7 +2574,7 @@ export default function Tickets() {
               title={val} className={showExpanded ? '' : 'line-clamp-2'}>
           {val || ''}
         </span>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
@@ -2579,20 +2582,20 @@ export default function Tickets() {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
     if (label === 'INSTALLER') {
       return withEditPencil(
         <span style={{ ...truncStyle }} title={val}>{val}</span>,
-        isCellExpanded, ticket, label, rowGhost,
+        ticket, label, rowGhost,
       )
     }
 
     return withEditPencil(
       <span style={truncStyle} title={val}>{val}</span>,
-      isCellExpanded, ticket, label, rowGhost,
+      ticket, label, rowGhost,
     )
   }
 
@@ -2601,6 +2604,8 @@ export default function Tickets() {
     <div className="flex flex-col gap-4 pb-8" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
+      setExpandedCells({})
+      setHoveredCell(null)
       setAddMenuOpen(false)
     }}>
 
@@ -2979,10 +2984,15 @@ export default function Tickets() {
                                   startCellEdit(ticket, 'STATUS')
                                   return
                                 }
-                                setExpandedCells(prev => ({
-                                  ...prev,
-                                  [`${ticket.id}:${col.label}`]: !prev[`${ticket.id}:${col.label}`],
-                                }))
+                                const key = `${ticket.id}:${col.label}`
+                                setExpandedCells(prev => {
+                                  if (prev[key]) {
+                                    const next = { ...prev }
+                                    delete next[key]
+                                    return next
+                                  }
+                                  return { [key]: true }
+                                })
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
