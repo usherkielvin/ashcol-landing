@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
-  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil
+  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
+  ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -429,6 +430,57 @@ function formatServiceDriver(ticket: Ticket): string {
   return vehicle || type || ''
 }
 
+/** Parse "ALLAN - 3" / "T3 (DOMINIC) - 7" into name + site number for grouping. */
+function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
+  const v = (raw || '').trim()
+  if (!v || v === '—') return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
+  const m = v.match(/^(.+?)\s*-\s*(\d+)\s*$/i)
+  if (m) {
+    const label = m[1].trim()
+    return {
+      name: label.toUpperCase(),
+      site: parseInt(m[2], 10) || 0,
+      label,
+    }
+  }
+  return { name: v.toUpperCase(), site: Number.MAX_SAFE_INTEGER, label: v }
+}
+
+function compareNameSiteStrings(a: string, b: string): number {
+  const pa = parseNameSiteToken(a)
+  const pb = parseNameSiteToken(b)
+  if (!pa.name && !pb.name) return 0
+  if (!pa.name) return 1
+  if (!pb.name) return -1
+  const byName = pa.name.localeCompare(pb.name, undefined, { sensitivity: 'base' })
+  if (byName !== 0) return byName
+  return pa.site - pb.site
+}
+
+function ticketColumnText(ticket: Ticket, colLabel: string): string {
+  switch (colLabel) {
+    case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
+    case 'DESTINATION': return formatAddress(ticket.location)
+    case 'BRAND': return parseBrand(ticket)
+    case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
+    case 'STATUS': return ticket.status || ''
+    case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
+    case 'INSTALLER': return getInstallerDisplay(ticket)
+    case 'SERVICE': return formatServiceDriver(ticket)
+    case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
+    default: return ''
+  }
+}
+
+function compareTicketsByColumn(a: Ticket, b: Ticket, colLabel: string): number {
+  const av = ticketColumnText(a, colLabel)
+  const bv = ticketColumnText(b, colLabel)
+  if (colLabel === 'INSTALLER' || colLabel === 'SERVICE') {
+    return compareNameSiteStrings(av, bv)
+  }
+  return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
+}
+
 function parseServiceDriverValue(
   raw?: string,
   category: TicketCategoryValue = 'INSTALLATION',
@@ -758,6 +810,8 @@ export default function Tickets() {
   const [loading, setLoading]         = useState(true)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null)
+  const [installerFilter, setInstallerFilter] = useState('')
   const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
@@ -2070,7 +2124,7 @@ export default function Tickets() {
   }, [canEdit, token, globalBranchId, user?.branchId])
 
   // ── Filter ────────────────────────────────────────────────────────────────
-  const visible = useMemo(() => {
+  const filtered = useMemo(() => {
     let list = tickets.filter(t => {
       if (!isFieldCategory(inferCategoryFromTicket(t))) return false
       const stat = (t.status || '').toUpperCase()
@@ -2126,6 +2180,42 @@ export default function Tickets() {
     }
     return list
   }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
+
+  const installerOptions = useMemo(() => {
+    const names = new Map<string, string>()
+    filtered.forEach(t => {
+      const raw = getInstallerDisplay(t).trim()
+      if (!raw) return
+      const { name, label } = parseNameSiteToken(raw)
+      if (!name) return
+      if (!names.has(name)) names.set(name, label || raw)
+    })
+    return [...names.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
+      .map(([key, label]) => ({ key, label }))
+  }, [filtered])
+
+  const visible = useMemo(() => {
+    let list = filtered
+    if (installerFilter) {
+      list = list.filter(t => parseNameSiteToken(getInstallerDisplay(t)).name === installerFilter)
+    }
+    if (sortConfig) {
+      list = [...list].sort((a, b) => {
+        const cmp = compareTicketsByColumn(a, b, sortConfig.column)
+        return sortConfig.direction === 'desc' ? -cmp : cmp
+      })
+    }
+    return list
+  }, [filtered, installerFilter, sortConfig])
+
+  const handleColumnSort = useCallback((colLabel: string) => {
+    setSortConfig(prev => {
+      if (prev?.column !== colLabel) return { column: colLabel, direction: 'asc' }
+      if (prev.direction === 'asc') return { column: colLabel, direction: 'desc' }
+      return null
+    })
+  }, [])
 
   const duplicateNameKeys = useMemo(() => {
     const counts = new Map<string, number>()
@@ -2810,6 +2900,36 @@ export default function Tickets() {
               />
             </>
           )}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shrink-0"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+            <select
+              value={installerFilter}
+              onChange={e => {
+                const val = e.target.value
+                setInstallerFilter(val)
+                if (val) setSortConfig({ column: 'INSTALLER', direction: 'asc' })
+              }}
+              className="bg-transparent outline-none text-xs font-semibold max-w-[140px] cursor-pointer"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            >
+              <option value="">All installers</option>
+              {installerOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            {installerFilter && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
+                style={{ color: textMuted }}
+                title="Clear installer filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs"
                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
@@ -2851,6 +2971,16 @@ export default function Tickets() {
             <span style={{ color: textMuted }}>For Quotation / For Approval</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
           </div>
+          {(sortConfig || installerFilter) && (
+            <button
+              type="button"
+              onClick={() => { setSortConfig(null); setInstallerFilter('') }}
+              className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
+              style={{ color: green }}
+            >
+              Reset sort / filter
+            </button>
+          )}
         </div>
       )}
 
@@ -2883,11 +3013,22 @@ export default function Tickets() {
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
-                  {columns.map(col => (
+                  {columns.map(col => {
+                    const isSorted = sortConfig?.column === col.label
+                    const SortIcon = isSorted
+                      ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
+                      : ArrowUpDown
+                    return (
                     <th key={col.label}
                         onMouseEnter={() => setHoveredHeader(col.label)}
                         onMouseLeave={() => setHoveredHeader(null)}
                         onClick={e => {
+                          if (e.detail > 1) return
+                          handleColumnSort(col.label)
+                        }}
+                        onDoubleClick={e => {
+                          e.preventDefault()
+                          e.stopPropagation()
                           const isExpanding = !expandedCols[col.label]
                           toggleCol(col.label)
                           if (isExpanding) {
@@ -2897,9 +3038,10 @@ export default function Tickets() {
                             }, 80)
                           }
                         }}
+                        title="Click to sort · Double-click to widen column"
                         style={{
                           padding: '12px 14px',
-                          color: (col.isExpanded || hoveredHeader === col.label) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          color: (col.isExpanded || hoveredHeader === col.label || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
                           fontWeight: 700, whiteSpace: 'nowrap',
                           borderRight: `1px solid ${border}`,
                           borderBottom: `2px solid ${border}`,
@@ -2916,9 +3058,14 @@ export default function Tickets() {
                         'justify-start text-left'
                       }`}>
                         <span>{col.display}</span>
+                        <SortIcon
+                          className="w-3 h-3 shrink-0 opacity-70"
+                          style={{ color: isSorted ? green : textMuted }}
+                        />
                       </div>
                     </th>
-                  ))}
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>

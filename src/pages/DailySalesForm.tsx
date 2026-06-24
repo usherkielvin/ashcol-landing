@@ -1229,9 +1229,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
-  const totalPartsSales      = sumArr(partsSales.map(r => r.salePrice))
-  const grandTotalExpenses   = totalExpReceipt + totalExpPurch + totalOrders
-  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns + totalPartsSales
+  const grandTotalExpenses   = totalExpReceipt + totalExpPurch
+  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
   // ── Submit handler ───────────────────────────────────────────────
