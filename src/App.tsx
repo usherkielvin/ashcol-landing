@@ -79,10 +79,10 @@ export default function App() {
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
           <Route path="/dashboard-home" element={<Dashboard />} />
-          <Route path="/tickets" element={<Tickets />} />
+          <Route path="/tickets" element={<ClientMasterlist />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
-          <Route path="/schedules" element={<ClientMasterlist />} />
+          <Route path="/schedules" element={<Tickets />} />
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
           <Route path="/employees" element={<Employees />} />

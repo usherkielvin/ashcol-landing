@@ -9,6 +9,26 @@ import {
   Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi
 } from 'lucide-react'
+import {
+  MdOutlineConfirmationNumber,
+  MdOutlineLocalActivity,
+  MdOutlineCalendarMonth,
+  MdOutlineArchive,
+  MdOutlinePeopleAlt,
+  MdOutlineDescription,
+  MdOutlinePlaylistAdd,
+  MdOutlineChecklist,
+  MdOutlineInsertChartOutlined,
+  MdOutlineReceipt,
+  MdOutlineMonetizationOn,
+  MdOutlineBarChart,
+  MdOutlineAccountBalanceWallet,
+  MdOutlinePhone,
+  MdMenuBook,
+  MdOutlinePerson,
+  MdOutlineStorefront,
+} from 'react-icons/md'
+import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
 
@@ -41,6 +61,8 @@ export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
+  const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
+  const [activeSubItem, setActiveSubItem]        = useState<string | null>('Relays')
   const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
@@ -182,10 +204,10 @@ export default function DashboardLayout() {
 
   const allLinks = [
     { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
-    { name: 'Relays',          path: '/schedules',        icon: Radio,           roles: ['admin'] },
-    { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
+    { name: 'Relays',          path: '/tickets',        icon: Radio,           roles: ['admin'] },
+    { name: 'Schedules',       path: '/schedules',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Schedules',       path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Lineup',          path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee'] },
@@ -199,8 +221,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
-  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const salesWorkspaceLinks = ['Relays', 'Schedules', 'Lineup', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const serviceWorkspaceLinks = ['Relays', 'Schedules', 'Lineup', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -266,10 +288,11 @@ export default function DashboardLayout() {
         className={`
           fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
           transition-all duration-300 ease-in-out
+          bg-gradient-to-b from-[#0a180f] via-[#205e30] to-[#3ca94d]
+          text-white
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[240px] lg:w-[260px]'}
         `}
-        style={{ backgroundColor: sidebarBg, borderRight: `1px solid ${border}` }}
       >
         {/* Brand */}
         <div
@@ -293,8 +316,8 @@ export default function DashboardLayout() {
             className="flex-1 min-w-0 ml-3 transition-all duration-200"
             style={{ opacity: sidebarCollapsed ? 0 : 1, width: sidebarCollapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
           >
-            <div className="text-[15px] font-black tracking-wide" style={{ color: textPrimary }}>ASHCOL</div>
-            <div className="text-[9px] font-bold tracking-[3px] text-[#10B981] uppercase">Portal</div>
+            <div className="text-[15px] font-black tracking-wide text-white">ASHCOL</div>
+            <div className="text-[9px] font-bold tracking-[3px] text-green-400 uppercase">Portal</div>
           </div>
 
           {/* Mobile close */}
@@ -310,11 +333,14 @@ export default function DashboardLayout() {
         {/* ── Nav Links ──────────────────────────────────── */}
         <nav className="flex-1 overflow-y-auto py-4 px-2 flex flex-col gap-0.5">
           {!sidebarCollapsed && (
-            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2" style={{ color: textMuted }}>
+            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40">
               Navigation
             </div>
           )}
-          {navLinks.map((link) => {
+
+          {/* ── Overview (always flat, no accordion) ─────── */}
+          {navLinks.some(l => l.name === 'Overview') && (() => {
+            const link = navLinks.find(l => l.name === 'Overview')!
             const isActive = location.pathname === link.path
             const Icon = link.icon
             return (
@@ -324,12 +350,157 @@ export default function DashboardLayout() {
                 onClick={() => setSidebarOpen(false)}
                 title={sidebarCollapsed ? link.name : undefined}
                 className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
-                style={isActive ? {
-                  color: '#10B981',
-                  backgroundColor: 'rgba(16,185,129,0.12)',
-                } : {
-                  color: textMuted,
+                style={isActive
+                  ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
+                  : { color: '#ffffff' }}
+                onMouseEnter={e => {
+                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.1)'
                 }}
+                onMouseLeave={e => {
+                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                }}
+              >
+                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
+                {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                {!sidebarCollapsed && <span className="flex-1 truncate">{link.name}</span>}
+                {!sidebarCollapsed && isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
+              </Link>
+            )
+          })()}
+
+          {/* ── Accordion Groups ─────────────────────────── */}
+          {!sidebarCollapsed && (() => {
+            // Define accordion groups; each sub-item maps name -> path from navLinks
+            const findPath = (name: string) => navLinks.find(l => l.name === name)?.path ?? '#'
+            const hasLink  = (name: string) => navLinks.some(l => l.name === name)
+
+            const groups = [
+              {
+                title: 'Tickets',
+                Icon: MdOutlineConfirmationNumber,
+                subItems: [
+                  { name: 'Relays',     icon: <MdOutlineLocalActivity size={16} />,   path: findPath('Relays') },
+                  { name: 'Schedules',  icon: <MdOutlineCalendarMonth size={16} />,   path: findPath('Schedules') },
+                  { name: 'Archives',   icon: <MdOutlineArchive size={16} />,         path: findPath('Archives') },
+                ].filter(s => s.path !== '#' || hasLink(s.name)),
+              },
+              {
+                title: 'Operations',
+                Icon: MdOutlinePeopleAlt,
+                subItems: [
+                  { name: 'HRIS',         icon: <MdOutlineDescription size={16} />,  path: findPath('HRIS') },
+                  { name: 'Line-up',      icon: <MdOutlinePlaylistAdd size={16} />,  path: findPath('Lineup') },
+                  { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />,    path: findPath('Expense Records') },
+                ].filter(s => navLinks.some(l => l.path === s.path)),
+              },
+              {
+                title: 'Finance',
+                Icon: MdOutlineInsertChartOutlined,
+                subItems: [
+                  { name: 'Expenses',     icon: <MdOutlineReceipt size={16} />,              path: findPath('Expense Records') },
+                  { name: 'Collections',  icon: <MdOutlineMonetizationOn size={16} />,       path: findPath('For Collections') },
+                  { name: 'Branch quota', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
+                  { name: 'Bills',        icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
+                  { name: 'Telecoms',     icon: <MdOutlinePhone size={16} />,                path: findPath('Telecoms') },
+                ].filter(s => navLinks.some(l => l.path === s.path)),
+              },
+              {
+                title: 'Directory',
+                Icon: MdMenuBook,
+                subItems: [
+                  { name: 'Employees', icon: <MdOutlinePerson size={16} />,     path: findPath('Employees') },
+                  { name: 'Branches',  icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
+                ].filter(s => navLinks.some(l => l.path === s.path)),
+              },
+            ].filter(g => g.subItems.length > 0)
+
+            return groups.map(group => {
+              const isOpen = openAccordion === group.title
+              const GroupIcon = group.Icon
+              // STRICT: parent highlights ONLY when this accordion is the open one
+              const isParentActive = isOpen
+              return (
+                <div key={group.title} className="mb-0.5">
+                  {/* Accordion header */}
+                  <button
+                    onClick={() => setOpenAccordion(isOpen ? null : group.title)}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150"
+                    style={isParentActive
+                      ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
+                      : { color: '#ffffff' }}
+                    onMouseEnter={e => {
+                      if (!isParentActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.08)'
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = isParentActive ? 'rgba(255,255,255,0.12)' : 'transparent'
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <GroupIcon size={17} className="shrink-0" />
+                      <span className="flex-1 truncate text-left">{group.title}</span>
+                    </div>
+                    {isOpen
+                      ? <FiMinus size={13} className="shrink-0 opacity-60" />
+                      : <FiPlus  size={13} className="shrink-0 opacity-60" />}
+                  </button>
+
+                  {/* Sub-items with solid line indicator */}
+                  {isOpen && (
+                    <div className="relative ml-5 mt-1 mb-2 pl-5">
+                      {/* Thin continuous vertical line */}
+                      <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
+
+                      <div className="flex flex-col space-y-3 py-1">
+                        {group.subItems.map((sub, idx) => {
+                          const isSubActive = activeSubItem === sub.name
+                          return (
+                            <Link
+                              key={idx}
+                              to={sub.path}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveSubItem(sub.name)
+                                setSidebarOpen(false)
+                              }}
+                              className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
+                                isSubActive
+                                  ? 'text-white'
+                                  : 'text-white/50 hover:text-white'
+                              }`}
+                            >
+                              {/* Thick active indicator — overlays the thin line */}
+                              {isSubActive && (
+                                <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                              )}
+                              <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-50'}`}>
+                                {sub.icon}
+                              </span>
+                              <span className="truncate">{sub.name}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          })()}
+
+          {/* Collapsed mode: show flat icons only for all nav links */}
+          {sidebarCollapsed && navLinks.map((link) => {
+            const isActive = location.pathname === link.path
+            const Icon = link.icon
+            return (
+              <Link
+                key={link.name}
+                to={link.path}
+                onClick={() => setSidebarOpen(false)}
+                title={link.name}
+                className="group flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
+                style={isActive
+                  ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.12)' }
+                  : { color: textMuted }}
                 onMouseEnter={e => {
                   if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg
                   if (!isActive) (e.currentTarget as HTMLElement).style.color = textPrimary
@@ -339,12 +510,8 @@ export default function DashboardLayout() {
                   if (!isActive) (e.currentTarget as HTMLElement).style.color = textMuted
                 }}
               >
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />
-                )}
+                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
                 {Icon && <Icon className="w-4 h-4 shrink-0" />}
-                {!sidebarCollapsed && <span className="flex-1 truncate">{link.name}</span>}
-                {!sidebarCollapsed && isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
               </Link>
             )
           })}
@@ -363,146 +530,126 @@ export default function DashboardLayout() {
         </nav>
 
         {/* ── Admin Branch Switcher (only for admin) ── */}
-        {isAdmin && adminBranches.length > 0 && (
-          <div 
-            onClick={() => { if (sidebarCollapsed) setSidebarCollapsed(false) }}
-            title={sidebarCollapsed ? "Active Branch Switcher" : undefined}
-            className={`px-4 py-3 transition-colors ${
-              sidebarCollapsed 
-                ? 'flex justify-center cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/40 mt-auto' 
-                : 'mt-auto'
-            }`}
-            style={{ borderTop: `1px solid ${border}` }}
-          >
-            {sidebarCollapsed ? (
-              <Building2 className="w-5 h-5 shrink-0" style={{ color: textMuted }} />
-            ) : (
-              <div className="flex flex-col gap-1.5 w-full">
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  Active Branch
-                </label>
-                <div className="relative flex items-center w-full">
-                  <Building2 className="absolute left-3 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
-                  <select
-                    value={globalBranchId || ''}
-                    onChange={(e) => handleGlobalBranchChange(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 transition-all"
-                    style={{
-                      color: textPrimary,
-                      backgroundColor: hoverBg,
-                      border: `1px solid ${inputBorder}`,
-                    }}
+        {/* ── Bottom Sticky Section ─────────────────────── */}
+        {(() => {
+          const showBranch = isAdmin && adminBranches.length > 0
+          return (
+            <div className={`px-4 pb-6 pt-3 space-y-3 ${!showBranch ? 'mt-auto' : ''}`}>
+
+              {/* Branch Button (admin only) */}
+              {showBranch && (
+                sidebarCollapsed ? (
+                  <div
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="flex justify-center cursor-pointer py-3"
+                    title="Active Branch Switcher"
                   >
-                    {adminBranches.map((b) => (
-                      <option key={b.id} value={b.id} style={{ backgroundColor: sidebarBg, color: textPrimary }}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 w-3.5 h-3.5 pointer-events-none opacity-60" style={{ color: textMuted }} />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+                    <Building2 className="w-5 h-5 text-white/70" />
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-white/40 px-1">
+                      Active Branch
+                    </label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none z-10" />
+                      <select
+                        value={globalBranchId || ''}
+                        onChange={(e) => handleGlobalBranchChange(e.target.value)}
+                        className="w-full pl-9 pr-8 py-3 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
+                      >
+                        {adminBranches.map((b) => (
+                          <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70 pointer-events-none" />
+                    </div>
+                  </div>
+                )
+              )}
 
-        {/* ── User Profile Bottom Section ────────────────── */}
-        <div 
-          ref={profileRef} 
-          className={`relative select-none ${
-            (isAdmin && adminBranches.length > 0) ? '' : 'mt-auto'
-          }`}
-          style={{ borderTop: `1px solid ${border}` }}
-        >
-          {/* Dropdown Popup Menu (renders above/beside the profile strip) */}
-          {profileOpen && (
-            <div
-              className={`absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden`}
-              style={{ 
-                backgroundColor: sidebarBg, 
-                border: `1px solid ${border}`,
-                bottom: 'calc(100% + 8px)',
-                left: sidebarCollapsed ? '12px' : '16px',
-              }}
-            >
-              {/* User info header */}
-              <div className="px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
-                <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
-                <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
-              </div>
+              {/* User Profile Button */}
+              <div ref={profileRef} className="relative">
+                {/* Dropdown popup */}
+                {profileOpen && (
+                  <div
+                    className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
+                    style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
+                  >
+                    <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      <p className="text-sm font-bold truncate text-white">{user?.name}</p>
+                      <p className="text-[11px] truncate text-white/50">{user?.email}</p>
+                    </div>
+                    <div className="py-1.5">
+                      <Link
+                        to="/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        <UserCircle className="w-4 h-4 text-green-400" />
+                        My Account
+                      </Link>
+                      <div className="mx-3 my-1 border-t border-white/10" />
+                      <button
+                        onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }) }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/60 transition-colors text-left hover:bg-white/10 hover:text-red-400"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-              <div className="py-1.5">
-                <Link
-                  to="/profile"
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
-                  style={{ color: textPrimary }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = hoverBg)}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                >
-                  <UserCircle className="w-4 h-4" style={{ color: '#10B981' }} />
-                  My Account
-                </Link>
-
-                <div className="mx-3 my-1" style={{ borderTop: `1px solid ${border}` }} />
-
+                {/* Profile button */}
                 <button
-                  onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }) }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
-                  style={{ color: textMuted }}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = '#EF4444' }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = textMuted }}
+                  onClick={() => setProfileOpen(p => !p)}
+                  className={`w-full flex items-center gap-3 text-left bg-[#1e732c] hover:bg-[#236130] rounded-xl shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] transition-all ${
+                    sidebarCollapsed ? 'p-3 justify-center' : 'px-4 py-3'
+                  }`}
                 >
-                  <LogOut className="w-4 h-4" />
-                  Logout
+                  {/* Avatar */}
+                  {user?.picture && !navPicBroken ? (
+                    <img
+                      src={user.picture}
+                      alt={user.name}
+                      className="w-9 h-9 rounded-full object-cover ring-2 ring-white/30 shrink-0"
+                      referrerPolicy="no-referrer"
+                      onError={() => setNavPicBroken(true)}
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#1e732c] font-bold text-lg shrink-0">
+                      {user?.initials ?? '?'}
+                    </div>
+                  )}
+
+                  {/* Name + Role */}
+                  {!sidebarCollapsed && (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate leading-snug text-white">
+                        {user?.name ?? 'Admin User'}
+                      </p>
+                      <p className="text-xs truncate leading-none mt-0.5 text-white/60 font-normal">
+                        {user?.jobTitle || formatRole(user?.role) || 'Administrator'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Chevron */}
+                  {!sidebarCollapsed && (
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform duration-200 shrink-0 text-white/70 ${profileOpen ? 'rotate-180' : ''}`}
+                    />
+                  )}
                 </button>
               </div>
+
             </div>
-          )}
+          )
+        })()}
 
-          {/* Profile Strip Button */}
-          <button
-            onClick={() => setProfileOpen(p => !p)}
-            className={`w-full flex items-center gap-3 text-left transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800/40 ${
-              sidebarCollapsed ? 'p-3 justify-center' : 'px-4 py-3.5'
-            }`}
-          >
-            {/* Avatar */}
-            {user?.picture && !navPicBroken ? (
-              <img
-                src={user.picture}
-                alt={user.name}
-                className="w-8 h-8 rounded-lg object-cover ring-2 ring-[#10B981]/30 shrink-0"
-                referrerPolicy="no-referrer"
-                onError={() => setNavPicBroken(true)}
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-bold text-xs shrink-0">
-                {user?.initials ?? '?'}
-              </div>
-            )}
-
-            {/* Info details (hidden when collapsed) */}
-            {!sidebarCollapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold truncate leading-snug" style={{ color: textPrimary }}>
-                  {user?.name ?? 'Admin User'}
-                </p>
-                <p className="text-[10px] truncate leading-none mt-0.5" style={{ color: textMuted }}>
-                  {user?.jobTitle || formatRole(user?.role) || 'Administrator'}
-                </p>
-              </div>
-            )}
-
-            {/* Caret arrow */}
-            {!sidebarCollapsed && (
-              <ChevronDown 
-                className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${profileOpen ? 'rotate-180' : ''}`} 
-                style={{ color: textMuted }} 
-              />
-            )}
-          </button>
-        </div>
 
       </aside>
 
