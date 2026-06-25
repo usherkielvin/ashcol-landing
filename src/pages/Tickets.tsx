@@ -983,11 +983,15 @@ export default function Tickets() {
   const weeklyTabs = useMemo(() => {
     const list = []
     const start = new Date()
+    const day = start.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    start.setDate(start.getDate() + diff)
     for (let i = 0; i < 7; i++) {
       const d = new Date(start)
       d.setDate(start.getDate() + i)
       const key = formatDateToKey(d)
-      const dayName = i === 0 ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
+      const isToday = key === todayDateKey()
+      const dayName = isToday ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
       const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
       list.push({ key, dayName, dateLabel })
     }
