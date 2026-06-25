@@ -162,7 +162,7 @@ export default function SearchResultDetailModal({ result, onClose }: SearchResul
             </div>
             <div>
               <h2 className="text-lg font-bold" style={{ color: textPrimary }}>
-                {result.type === 'ticket' ? 'Ticket Details' : 'Service Report Details'}
+                {result.type === 'ticket' ? 'Schedule Details' : 'Service Report Details'}
               </h2>
               <p className="text-xs" style={{ color: textMuted }}>
                 {result.ticketNumber || result.controlNumber || result.id}

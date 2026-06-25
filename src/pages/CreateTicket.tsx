@@ -3,13 +3,14 @@
  * Mirrors the native app's create-ticket screen, adapted for the web portal.
  */
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Minus, Camera,
   Search, Check, DollarSign, ChevronDown, ChevronUp, Trash2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 
@@ -196,6 +197,87 @@ export default function CreateTicket() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  const location = useLocation()
+  const scannedData = location.state?.scannedData
+
+  useEffect(() => {
+    if (scannedData) {
+      if (scannedData.customerName) setFullName(scannedData.customerName)
+      if (scannedData.contactPhone) setContactPhone(scannedData.contactPhone)
+      if (scannedData.description) setDescription(scannedData.description)
+      
+      // Parse service type if valid
+      if (scannedData.serviceType) {
+        const mappedService = SERVICE_TYPES.find(
+          s => s.toLowerCase() === scannedData.serviceType.toLowerCase()
+        )
+        if (mappedService) {
+          setSelectedService(mappedService)
+        }
+      }
+      
+      // Format preferredDate (YYYY-MM-DD)
+      if (scannedData.preferredDate) {
+        try {
+          const d = new Date(scannedData.preferredDate)
+          if (!isNaN(d.getTime())) {
+            setSelectedDate(d.toISOString().split('T')[0])
+          }
+        } catch (e) {}
+      }
+      
+      // Set sourceVendor if valid
+      if (scannedData.sourceVendor) {
+        setSourceVendor(scannedData.sourceVendor)
+      }
+      
+      // Parse address details
+      if (scannedData.location) {
+        const addrStr = scannedData.location
+        setAddress(prev => ({
+          ...prev,
+          street: addrStr,
+          landmark: scannedData.landmarks || ''
+        }))
+      }
+
+      // Pre-fill unitType details if brand/capacity are detected
+      const brandVal = scannedData.brand || ''
+      const capacityVal = scannedData.capacity || ''
+      if (brandVal || capacityVal) {
+        let matchedHp = ''
+        if (capacityVal) {
+          const cleanedCap = capacityVal.toUpperCase().replace(/\s/g, '')
+          matchedHp = Object.keys(HP_MOD).find(
+            hp => hp.toUpperCase().replace(/\s/g, '') === cleanedCap || cleanedCap.includes(hp.toUpperCase().replace(/\s/g, ''))
+          ) || ''
+        }
+
+        setUnitTypes(prev => prev.map(u => {
+          if (u.name === 'Split AC') {
+            return {
+              ...u,
+              selected: true,
+              details: [{
+                brand: brandVal,
+                hp: matchedHp,
+                technology: '',
+                subtype: '',
+                feature: '',
+                issueType: '',
+                refrigerant: '',
+                voltage: '',
+                ageRange: '',
+                expandedMore: false
+              }]
+            }
+          }
+          return u
+        }))
+      }
+    }
+  }, [scannedData])
+
 
   const emptyDetail = (): UnitDetail => ({ brand: '', hp: '', technology: '', subtype: '', feature: '', issueType: '', refrigerant: '', voltage: '', ageRange: '', expandedMore: false })
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([
@@ -254,12 +336,15 @@ export default function CreateTicket() {
       const fullLoc = [address.region, address.city, address.barangay, address.street]
         .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const branchId = resolveScopedBranchId(
+        localStorage.getItem('ashcol-global-branch-id') || user?.branchId
+      ) || undefined
 
-      const res = await fetch(`${apiUrl}/tickets`, {
+      const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          customerName: fullName.trim(),
           title: `${selectedService} service`,
           description: fullDesc,
           serviceType: selectedService,
@@ -269,9 +354,13 @@ export default function CreateTicket() {
           preferredDate: selectedDate || undefined,
           location: fullLoc.trim(),
           sourceVendor: sourceVendor,
+          branchId,
         })
       })
-      if (!res.ok) throw new Error('Failed')
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(errText || `Failed (HTTP ${res.status})`)
+      }
       navigate('/tickets')
     } catch (err) {
       console.error(err)

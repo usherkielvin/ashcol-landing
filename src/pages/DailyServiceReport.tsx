@@ -3,7 +3,7 @@ import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
   Scan, Loader2, ClipboardPaste, Save,
-  Check,
+  Check, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -56,6 +56,7 @@ interface ServiceRow {
 }
 
 const COL_FIELD: Record<string, keyof ServiceRow> = {
+  'DATE INSTALLED':       'installedDate',
   "CUSTOMER'S NAME":      'customerName',
   'DESTINATION':          'customerAddress',
   'DISTRICT':             'district',
@@ -72,7 +73,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 }
 
 const EDITABLE_COLS = [
-  "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
+  'DATE INSTALLED', "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
   'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
   'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
@@ -88,6 +89,25 @@ const todayLocal = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+const toDateKey = (raw: string | null | undefined): string => {
+  if (!raw) return ''
+  const s = raw.trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const formatDateKeyLabel = (key: string) => {
+  if (!key) return ''
+  const d = new Date(`${key}T00:00:00`)
+  if (isNaN(d.getTime())) return key
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+const getInstalledDateKey = (row: ServiceRow) =>
+  toDateKey(row.installedDate) || toDateKey(row.reportDate) || ''
 
 const formatDateTime = (isoStr: string | null | undefined) => {
   if (!isoStr) return '—'
@@ -219,6 +239,8 @@ export default function DailyServiceReport() {
   // Details Modal States
   const [detailRow, setDetailRow] = useState<ServiceRow | null>(null)
   const [detailForm, setDetailForm] = useState<ServiceRow | null>(null)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const green = '#16A34A'
 
   useEffect(() => {
     setDetailForm(detailRow)
@@ -478,6 +500,7 @@ export default function DailyServiceReport() {
   const columns = useMemo(() => {
     const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
+      { label: 'DATE INSTALLED', display: 'DATE INSTALLED', defaultW: 110, expW: 140, sticky: true, freeze: false, right: false },
       { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", defaultW: 180, expW: 300, sticky: true, freeze: false, right: false },
       { label: 'DESTINATION', display: "DESTINATION ADDRESS", defaultW: 250, expW: 450, sticky: true, freeze: true, right: false },
       { label: 'DISTRICT', display: "DISTRICT", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
@@ -746,6 +769,7 @@ export default function DailyServiceReport() {
 
   function getCellDisplay(row: ServiceRow, colLabel: string): string {
     switch (colLabel) {
+      case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
       case 'DESTINATION':     return row.customerAddress || ''
       case 'DISTRICT':        return row.district || ''
@@ -769,7 +793,9 @@ export default function DailyServiceReport() {
 
   const startEdit = (row: ServiceRow, col: string) => {
     if (!canEdit || !EDITABLE_COLS.includes(col)) return
-    const val = getCellDisplay(row, col)
+    const val = col === 'DATE INSTALLED'
+      ? getInstalledDateKey(row)
+      : getCellDisplay(row, col)
     setEditingCell({ rowId: row.id, col })
     setCellValue(val)
     setContextMenu(null)
@@ -820,6 +846,11 @@ export default function DailyServiceReport() {
         localPatch.freeInstallation = true
         localPatch.jobStatus = 'COMPLETED'
       }
+    }
+
+    if (col === 'DATE INSTALLED') {
+      finalValue = value.trim() ? value.trim().slice(0, 10) : null
+      localPatch.installedDate = finalValue
     }
 
     // If it's a temp row and Customer Name is still not set, update locally but do not save to DB yet
@@ -1021,7 +1052,7 @@ export default function DailyServiceReport() {
       return (
         <input
           ref={el => { inputRef.current = el }}
-          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : 'text'}
+          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
           list={label === 'INSTALLER' ? 'installer-options' : undefined}
           value={cellValue}
           onChange={e => setCellValue(e.target.value)}
@@ -1039,6 +1070,14 @@ export default function DailyServiceReport() {
 
     const editHint: React.CSSProperties = isEditable && canEdit
       ? { cursor: 'pointer' } : {}
+
+    if (label === 'DATE INSTALLED') {
+      return (
+        <span style={{ ...truncStyle, ...editHint }} title={val} className="whitespace-nowrap text-[10px] font-semibold">
+          {val || '—'}
+        </span>
+      )
+    }
 
     if (label === "CUSTOMER'S NAME") {
       return (
@@ -1323,7 +1362,7 @@ export default function DailyServiceReport() {
       r.paymentStatus, r.jobStatus, r.remarks, r.note, r.controlNumber,
       r.serviceColumn, r.papers, r.costing, r.relayStatus, r.fifteenQuestions,
       r.freeInstallation ? 'free installation' : '',
-      r.reportDate, amt, amtPeso,
+      r.reportDate, r.installedDate, r.scheduledDate, amt, amtPeso,
     ].filter(Boolean).join(' ').toLowerCase()
   }
 
@@ -1382,7 +1421,7 @@ export default function DailyServiceReport() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-5 pb-8" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col gap-5 pb-8" onClick={() => { setContextMenu(null); setAddMenuOpen(false); }}>
 
       {/* Thinner, simple design header controls */}
       <div
@@ -1470,34 +1509,70 @@ export default function DailyServiceReport() {
 
           {/* Action buttons wrapper */}
           <div className="flex items-center gap-2 shrink-0">
-            {canEdit && (
-              <>
-                <button type="button"
-                  onClick={handleAddRow}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Plus className="w-3.5 h-3.5" /> Add
+            {(canEdit || canImport) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddMenuOpen(!addMenuOpen);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
+                  style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Record</span>
+                  <ChevronDown className="w-3 h-3 ml-0.5" />
                 </button>
-                <button type="button"
-                  onClick={() => setScanModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs border hover:opacity-80 transition-all animate-pulse-subtle"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Scan className="w-3.5 h-3.5 text-emerald-500" /> Scan Image
-                </button>
-              </>
+
+                {addMenuOpen && (
+                  <div
+                    className="absolute right-0 mt-1.5 rounded-xl shadow-2xl overflow-hidden z-[100] w-48 border"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                    onClick={() => setAddMenuOpen(false)}
+                  >
+                    {canEdit && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleAddRow}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                          style={{ color: textPrimary }}
+                        >
+                          <Plus className="w-3.5 h-3.5" style={{ color: green }} />
+                          Manual Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScanModalOpen(true)}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
+                          style={{ color: textPrimary }}
+                        >
+                          <Scan className="w-3.5 h-3.5 text-emerald-500" />
+                          Scan Image
+                        </button>
+                      </>
+                    )}
+
+                    {canImport && (
+                      <button
+                        type="button"
+                        disabled={importing || viewMode === 'weekly'}
+                        onClick={() => document.getElementById('svc-import-input')?.click()}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                        style={{ color: textPrimary }}
+                      >
+                        <Upload className="w-3.5 h-3.5 text-amber-500" />
+                        Import Excel
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {canImport && (
-              <>
-                <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
-                <button id="svc-import-btn" type="button" disabled={importing || viewMode === 'weekly'}
-                  onClick={() => document.getElementById('svc-import-input')?.click()}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <Upload className={`w-3.5 h-3.5 ${importing ? 'animate-bounce' : ''}`} style={{ color: textMuted }} />
-                  {importing ? 'Importing…' : 'Import'}
-                </button>
-              </>
+              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
             )}
           </div>
         </div>
@@ -1795,12 +1870,22 @@ export default function DailyServiceReport() {
               <Field label="Target Branch" required>
                 <select value={pendingImport.branchId}
                   onChange={e => setPendingImport({ ...pendingImport, branchId: e.target.value })}
-                  disabled={true}
-                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted }}>
+                  disabled={isBranchScoped}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                   <option value="">— Choose branch —</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
+              </Field>
+
+              <Field label="Target Date" required>
+                <input
+                  type="date"
+                  value={pendingImport.detectedDate || todayLocal()}
+                  onChange={e => setPendingImport({ ...pendingImport, detectedDate: e.target.value })}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
               </Field>
             </div>
             <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
@@ -1809,7 +1894,7 @@ export default function DailyServiceReport() {
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
                 Cancel
               </button>
-              <button onClick={() => runImport(pendingImport.file, pendingImport.branchId)}
+              <button onClick={() => runImport(pendingImport.file, pendingImport.branchId, pendingImport.detectedDate || undefined)}
                 disabled={!pendingImport.branchId || importing}
                 className="px-4 py-2 rounded-xl text-xs font-bold border"
                 style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, opacity: !pendingImport.branchId || importing ? 0.5 : 1 }}>
@@ -1970,10 +2055,17 @@ export default function DailyServiceReport() {
                       <span className="font-bold" style={{ color: textPrimary }}>
                         {branches.find(b => b.id === branchFilter)?.name || 'None'}
                       </span>
-                      <span style={{ color: textMuted }}>Date:</span>
-                      <span className="font-bold" style={{ color: textPrimary }}>
-                        {new Date((scannedRows[0]?.reportDate || todayLocal()) + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
+                      <span style={{ color: textMuted }}>Target Date:</span>
+                      <input
+                        type="date"
+                        value={scannedRows[0]?.reportDate || todayLocal()}
+                        onChange={e => {
+                          const newDate = e.target.value || todayLocal()
+                          setScannedRows(prev => prev.map(r => ({ ...r, reportDate: newDate })))
+                        }}
+                        className="rounded-lg px-2.5 py-1 outline-none border text-xs font-bold transition-all focus:ring-2 focus:ring-slate-400"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
                     </div>
                   </div>
 
@@ -2208,6 +2300,16 @@ export default function DailyServiceReport() {
                   Customer Information
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Report Date" required>
+                    {canEdit ? (
+                      <input type="date" value={detailForm.reportDate || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, reportDate: e.target.value || null })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.reportDate || '—'}</span>
+                    )}
+                  </Field>
                   <Field label="Customer Name">
                     {canEdit ? (
                       <input type="text" value={detailForm.customerName || ''} 
@@ -2342,6 +2444,18 @@ export default function DailyServiceReport() {
                     ) : (
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>
                         <EmployeeNameLink nameOrId={detailForm.technicianName} />
+                      </span>
+                    )}
+                  </Field>
+                  <Field label="Negotiator">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.negotiator || ''} 
+                        onChange={e => setDetailForm({ ...detailForm, negotiator: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                        <EmployeeNameLink nameOrId={detailForm.negotiator} />
                       </span>
                     )}
                   </Field>

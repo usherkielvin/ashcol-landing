@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -214,6 +215,7 @@ const DelBtn = ({ onClick }: { onClick: () => void }) => (
 export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummary?: () => void } = {}) {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const location = useLocation()
   const isLight = theme === 'light'
 
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
@@ -221,6 +223,13 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
 
   const role = (user?.role || '').toLowerCase()
+  const jobTitleLower = (user?.jobTitle || '').trim().toLowerCase()
+  const isSalesCoordinator = role === 'employee' && (
+    jobTitleLower === 'sales coordinator'
+    || jobTitleLower === 'coordinator'
+    || jobTitleLower.includes('coor')
+  )
+  const isManager = role === 'manager' || role === 'oic' || isSalesCoordinator
   const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee' || role === 'oic'
   const isAdmin = role === 'admin'
 
@@ -252,22 +261,46 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [submittedAt, setSubmittedAt] = useState<string | null>(null)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null)
+  const [reportStatus, setReportStatus] = useState<string | null>(null)
   const trNoExample = branchName && reportDate
     ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
     : 'DAS-260604'
 
+  const canEditExistingReport = useMemo(() => {
+    if (!reportId) return true
+    if (reportStatus === 'AUDITED') return isAdmin
+    if (isAdmin) return true
+    if (!isManager || !user?.branchId || !selectedBranchId) return false
+
+    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    const rowBranchNorm = selectedBranchId.replace(/-(sales|services)$/i, '').toLowerCase()
+    if (userBranchNorm !== rowBranchNorm) return false
+
+    const isTaguigRow = selectedBranchId.toUpperCase().startsWith('BR-TAGUIG')
+      || selectedBranchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    if (isTaguigRow) {
+      const emailLower = (user.email || '').toLowerCase()
+      const titleLower = (user.jobTitle || '').toLowerCase()
+      const userBranchIdLower = user.branchId.toLowerCase()
+      const isServiceUser = userBranchIdLower.includes('service')
+        || emailLower.includes('service')
+        || titleLower.includes('service')
+      const isServiceRow = selectedAuditLine === 'TAGUIG_SERVICE'
+      return isServiceUser === isServiceRow
+    }
+    return true
+  }, [reportId, reportStatus, isAdmin, isManager, user, selectedBranchId, selectedAuditLine])
+
   const canEditOrSubmit = useMemo(() => {
     if (!canSubmit) return false
-    if (isAdmin) return true   // Admin can edit any report
-    if (reportId) return false // Non-admins cannot edit existing reports
-    
-    // Non-admin can submit to any active branch
+    if (reportId) return canEditExistingReport
+
     const selectedBranch = branchesList.find(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
     if (selectedBranch && selectedBranch.isActive === false) {
       return false
     }
     return true
-  }, [canSubmit, reportId, isAdmin, selectedBranchId, selectedAuditLine, branchesList])
+  }, [canSubmit, reportId, canEditExistingReport, selectedBranchId, selectedAuditLine, branchesList])
 
   const isFormDisabled = !canEditOrSubmit || reviewMode
 
@@ -282,7 +315,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const loadedAuditLine = useRef<string | null>(null)
 
   useEffect(() => {
-    if (user && !reportId) {
+    const params = new URLSearchParams(window.location.search)
+    if (user && !reportId && !params.get('id')) {
       if (user.name && !receivedBy) {
         setReceivedBy(user.name)
       }
@@ -343,7 +377,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           setBranchesList(finalList)
           if (finalList.length > 0) {
             const exists = finalList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
-            if (!exists && isAdmin) {
+            if (!exists && isAdmin && !reportId && !new URLSearchParams(window.location.search).get('id')) {
               setSelectedBranchId(finalList[0].id)
               setSelectedAuditLine(finalList[0].auditLine || null)
               setBranch(finalList[0].name)
@@ -355,11 +389,16 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       }
     }
     loadBranchesList()
-  }, [canSubmit, selectedBranchId, selectedAuditLine])
+  }, [canSubmit, selectedBranchId, selectedAuditLine, reportId])
 
   useEffect(() => {
     if (!isAdmin) return
     const syncFromGlobal = (isInitial = false) => {
+      if (isInitial) {
+        const params = new URLSearchParams(window.location.search)
+        if (reportId || params.get('id')) return
+      }
+      ignoreNextCohFetch.current = false
       const stored = localStorage.getItem('ashcol-global-branch-id')
       if (isInitial && user?.branchId && !stored) {
         const emailLower = (user.email || '').toLowerCase()
@@ -407,10 +446,25 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
 
     syncFromGlobal(true)
-    const handleSync = () => syncFromGlobal(false)
+    const handleSync = () => {
+      syncFromGlobal(false)
+      const params = new URLSearchParams(window.location.search)
+      const isEditing = !!(reportId || params.get('id'))
+      if (isEditing) {
+        console.log('[Global Branch Change] Clearing reportId and form state')
+        setReportId(null)
+        clearForm(true)
+        loadedReportDate.current = null
+        loadedBranchId.current = null
+        loadedAuditLine.current = null
+        const url = new URL(window.location.href)
+        url.searchParams.delete('id')
+        window.history.replaceState({}, '', url.toString())
+      }
+    }
     window.addEventListener('ashcol-global-branch-change', handleSync)
     return () => window.removeEventListener('ashcol-global-branch-change', handleSync)
-  }, [isAdmin, branchesList, user])
+  }, [isAdmin, branchesList, user, reportId])
 
   useEffect(() => {
     if (!reviewMode) return
@@ -497,7 +551,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         const isEditing = !!(reportId || urlParams.get('id'))
         if (!isEditing && !ignoreNextCohFetch.current) {
           const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
-          const resAudit = await fetch(`${API_BASE_URL}/reports/audit-summary?date=${yesterday}`, { headers })
+          const resAudit = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${yesterday}`, { headers })
           if (resAudit.ok) {
             const data = await resAudit.json()
             const myRow = data.find((r: any) => {
@@ -589,6 +643,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
       } catch (err) {
         console.error('Error pre-filling data:', err)
+      } finally {
+        ignoreNextCohFetch.current = false
       }
     }
 
@@ -637,6 +693,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       setSubmittedAt(data.createdAt || null)
       setLastUpdatedAt(data.updatedAt || null)
       setLastUpdatedBy(data.updatedBy || null)
+      setReportStatus(data.status || 'SUBMITTED')
 
       // Populate rebates
       const rebatesList: RebateRow[] = []
@@ -806,13 +863,73 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         })
       }
 
+      // Map item lists with fallback for Excel imports
+      if (cashSales.length === 0 && data.totalCashRemits != null && Number(data.totalCashRemits) > 0) {
+        cashSales.push({
+          id: uid(),
+          customer: 'Imported Total',
+          installer: '',
+          amount: String(data.totalCashRemits)
+        })
+      }
       setCashTx(cashSales.length > 0 ? cashSales : [mkCash()])
+
+      if (cashReturnsList.length === 0 && data.cashReturns != null && Number(data.cashReturns) > 0) {
+        cashReturnsList.push({
+          id: uid(),
+          name: 'Imported Returns',
+          amount: String(data.cashReturns)
+        })
+      }
       setCashRet(cashReturnsList.length > 0 ? cashReturnsList : [mkRet()])
+
       setPartsSales(partsSalesList.length > 0 ? partsSalesList : [mkPart()])
+
+      if (onlineTxList.length === 0 && data.totalOnlineRemits != null && Number(data.totalOnlineRemits) > 0) {
+        onlineTxList.push({
+          id: uid(),
+          installer: '',
+          customer: 'Imported Total',
+          bank: '',
+          amount: String(data.totalOnlineRemits)
+        })
+      }
       setOnlineTx(onlineTxList.length > 0 ? onlineTxList : [mkOnl()])
+
       setCheckRem(checkRemList.length > 0 ? checkRemList : [mkChk()])
+
+      if (expReceiptList.length === 0 && data.totalExpenses != null && Number(data.totalExpenses) > 0) {
+        expReceiptList.push({
+          id: uid(),
+          name: 'Imported Total',
+          description: '',
+          amount: String(data.totalExpenses),
+          receiptReturned: false,
+          actualAmount: '',
+          receiptNo: '',
+          receiptDate: '',
+          resolvedExpenseId: '',
+          receiptStatus: ''
+        })
+      }
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
+
+      if (expPurchList.length === 0 && data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
+        expPurchList.push({
+          id: uid(),
+          name: 'Imported Total',
+          description: '',
+          amount: String(data.totalForPurchase),
+          receiptReturned: false,
+          actualAmount: '',
+          receiptNo: '',
+          receiptDate: '',
+          resolvedExpenseId: '',
+          receiptStatus: ''
+        })
+      }
       setExpPurch(expPurchList.length > 0 ? expPurchList : [mkExp()])
+
       setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
       setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
 
@@ -823,24 +940,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
-
-  // Load query params on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlId = params.get('id')
-    const urlBranchId = params.get('branchId')
-    const urlDate = params.get('date')
-    const urlAuditLine = params.get('auditLine')
-
-    if (urlId) {
-      setReportId(urlId)
-      fetchReportDetails(urlId)
-    } else {
-      if (urlBranchId) setSelectedBranchId(urlBranchId)
-      if (urlDate) setReportDate(urlDate)
-      if (urlAuditLine) setSelectedAuditLine(urlAuditLine || null)
-    }
-  }, [])
 
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
@@ -883,31 +982,34 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     setCancelledUnits('0')
     setFreeInstallUnits('0')
   }
-
-
-
-  // Reset form and clear URL parameter when changing branch or date of a loaded report
+  // Load query params on mount/URL change
   useEffect(() => {
-    if (reportId) {
-      const dateChanged = !!loadedReportDate.current && reportDate !== loadedReportDate.current
-      const branchChanged = !!loadedBranchId.current && selectedBranchId !== loadedBranchId.current
-      const auditLineChanged = loadedAuditLine.current !== undefined && selectedAuditLine !== loadedAuditLine.current
+    const params = new URLSearchParams(location.search)
+    const urlId = params.get('id')
+    const urlBranchId = params.get('branchId')
+    const urlDate = params.get('date')
+    const urlAuditLine = params.get('auditLine')
 
-      if (dateChanged || branchChanged || auditLineChanged) {
-        console.log('[Date/Branch Change] Clearing reportId and form state')
+    if (urlId) {
+      setReportId(urlId)
+      fetchReportDetails(urlId)
+    } else {
+      // If we were previously editing a report but now there is no id in the URL,
+      // reset/clear the form so we transition back to a clean submission form.
+      const urlParams = new URLSearchParams(window.location.search)
+      const currentId = reportId || urlParams.get('id')
+      if (currentId) {
         setReportId(null)
         clearForm(true)
         loadedReportDate.current = null
         loadedBranchId.current = null
         loadedAuditLine.current = null
-        
-        // Remove `id` from browser URL parameters to transition out of edit mode
-        const url = new URL(window.location.href)
-        url.searchParams.delete('id')
-        window.history.replaceState({}, '', url.toString())
       }
+      if (urlBranchId) setSelectedBranchId(urlBranchId)
+      if (urlDate) setReportDate(urlDate)
+      if (urlAuditLine) setSelectedAuditLine(urlAuditLine || null)
     }
-  }, [reportDate, selectedBranchId, selectedAuditLine, reportId])
+  }, [location.search])
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
   const processImage = async (file: File) => {
@@ -1038,6 +1140,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
+    } else if (data.totalExpenses != null && Number(data.totalExpenses) > 0) {
+      setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
     } else {
       setExpReceipt([mkExp()])
     }
@@ -1049,6 +1153,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
       })))
+    } else if (data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
+      setExpPurch([{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }])
     } else {
       setExpPurch([mkExp()])
     }
@@ -1129,7 +1235,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   // ── Submit handler ───────────────────────────────────────────────
   const handleDtrSubmit = async () => {
-    if (!canEditOrSubmit) return
+    if (!canEditOrSubmit) {
+      setError(reportStatus === 'AUDITED'
+        ? 'This report has been audited. Only admin accounts can edit audited reports.'
+        : 'You do not have permission to edit this report.')
+      return
+    }
     setSubmitAttempted(true)
     setError(null)
     const checkEmpty = (val: any) => {
@@ -1150,7 +1261,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       setError('All numeric input fields (HO Transfers & Cash on Hand, and Unit Summary) require a value. Please enter 0 if there is no amount/count.')
       return
     }
-    if (!reviewMode) {
+    if (!reviewMode && !reportId) {
       setReviewStartedAt(new Date())
       setReviewMode(true)
       
@@ -1166,6 +1277,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       return
     }
     setSubmitting(true); setError(null)
+    const wasEdit = Boolean(reportId)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
@@ -1261,11 +1373,23 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error(await res.text())
-      setSuccess(true)
-      clearForm(true)
+      if (!res.ok) {
+        let msg = await res.text()
+        try {
+          const json = JSON.parse(msg) as { error?: string; message?: string }
+          msg = json.error || json.message || msg
+        } catch { /* plain text */ }
+        throw new Error(msg || `Save failed (HTTP ${res.status})`)
+      }
       setReviewMode(false)
       setReviewStartedAt(null)
+      if (wasEdit) {
+        if (onSwitchToSummary) onSwitchToSummary()
+        else window.location.href = '/audit-report'
+        return
+      }
+      setSuccess(true)
+      clearForm(true)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Submission failed. Please try again.')
     } finally { setSubmitting(false) }
@@ -1374,11 +1498,13 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         </div>
       )}
 
-      {!!reportId && !isAdmin && (
+      {!!reportId && !canEditOrSubmit && (
         <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">
           <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
           <p className="text-sm text-amber-600 dark:text-amber-400">
-            <strong>Uploaded Report:</strong> This report has been submitted and is final. Editing is disabled.
+            <strong>Read Only:</strong> {reportStatus === 'AUDITED'
+              ? 'This report has been audited. Only admin accounts can edit audited reports.'
+              : 'You do not have permission to edit this report.'}
           </p>
         </div>
       )}
@@ -1397,6 +1523,17 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               onChange={e => {
                 ignoreNextCohFetch.current = false
                 setReportDate(e.target.value)
+                if (reportId) {
+                  console.log('[Date Change] Clearing reportId and form state')
+                  setReportId(null)
+                  clearForm(true)
+                  loadedReportDate.current = null
+                  loadedBranchId.current = null
+                  loadedAuditLine.current = null
+                  const url = new URL(window.location.href)
+                  url.searchParams.delete('id')
+                  window.history.replaceState({}, '', url.toString())
+                }
               }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
               disabled={reviewMode}
@@ -2104,10 +2241,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>
                   <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
-                    <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Total Fund Received</td>
                     <td className="px-3 py-2 text-right font-bold text-cyan-600 dark:text-cyan-400">{php(totalFundReceived)}</td>
                   </tr>
@@ -2197,7 +2330,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       )}
 
       {/* Submit Button */}
-      {canSubmit && (
+      {canEditOrSubmit && (
         reviewMode ? (
           <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
             <button

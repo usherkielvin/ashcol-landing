@@ -5,7 +5,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
-import { getPortalHomePath, resolveImageUrl } from '../utils/api'
+import { getPortalHomePath, resolveImageUrl, API_BASE_URL } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
@@ -65,8 +65,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-      const backendRes = await fetch(`${apiUrl}/auth/login`, {
+      const backendRes = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, fcmToken: '' })
@@ -136,8 +135,7 @@ export default function Login() {
         if (!googleRes.ok) throw new Error('Failed to fetch profile')
         const profile = await googleRes.json()
 
-        const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
-        const backendRes = await fetch(`${apiUrl}/auth/google`, {
+        const backendRes = await fetch(`${API_BASE_URL}/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ access_token: tokenResponse.access_token, id_token: '', fcm_token: '' })

@@ -1,13 +1,35 @@
-const PROD_API_BASE_URL = 'https://ashcol-service-api-production.up.railway.app/api'
+const PROD_API_BASE_URL = 'https://ashcol.up.railway.app/api'
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PROD_API_BASE_URL : 'http://localhost:8080/api')
 export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '')
 
-/** Resolves a potentially relative image path to a full URL using the configured server base */
+/** Normalize branch id for API writes (mirrors backend scopedBranchId). */
+export function resolveScopedBranchId(branchId?: string | null): string {
+  const raw = (branchId || '').trim()
+  if (!raw) return ''
+  const upper = raw.toUpperCase()
+  if (upper.startsWith('BR-TAGUIG') || upper.startsWith('2880C29E-581C-11F1-BF8C-74D4DD6DFC0B')) {
+    if (upper.includes('SERVICE')) return 'BR-TAGUIG-SERVICES'
+    return 'BR-TAGUIG-SALES'
+  }
+  return raw.replace(/-(sales|services|service)$/i, '')
+}
+
+/** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
+export function resolveArchiveBranchId(
+  ...candidates: Array<string | null | undefined>
+): string {
+  for (const candidate of candidates) {
+    const resolved = resolveScopedBranchId(candidate)
+    if (resolved && resolved !== 'ALL_BRANCHES') return resolved
+  }
+  return ''
+}
+
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
-  if (path.startsWith('http')) return path
+  if (path.startsWith('http') || path.startsWith('data:')) return path
   return `${SERVER_BASE_URL}${path}`
 }
 
@@ -99,4 +121,60 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
   if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
   if (isServiceWorkspaceUser(user)) return '/service-report'
   return '/audit-report?tab=submit'
+}
+
+/** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */
+export async function fetchTicketsPage(
+  endpoint: string,
+  token: string,
+  options: { size?: number; categoryGroup?: 'FIELD' | 'OFFICE' } = {},
+): Promise<unknown[]> {
+  const size = options.size ?? 200
+  const headers = { Authorization: `Bearer ${token}` }
+  const base = { page: '0', size: String(size) }
+
+  const attempts: Record<string, string>[] = options.categoryGroup
+    ? [{ ...base, categoryGroup: options.categoryGroup }, base]
+    : [base]
+
+  let lastStatus = 0
+  let lastBody = ''
+  for (const params of attempts) {
+    const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, { headers })
+    if (res.ok) {
+      const data = await res.json()
+      return data?.data?.tickets || data?.tickets || []
+    }
+    lastStatus = res.status
+    lastBody = await res.text().catch(() => '')
+    if (params.categoryGroup) {
+      console.warn(
+        `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
+        lastBody.slice(0, 200),
+      )
+    }
+  }
+
+  throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+}
+
+export async function readApiError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '')
+  if (!text) return `Request failed (HTTP ${res.status})`
+  try {
+    const json = JSON.parse(text)
+    if (typeof json.message === 'string' && json.message.trim()) return json.message
+    if (typeof json.error === 'string' && json.error.trim()) return json.error
+    return text
+  } catch {
+    return text
+  }
+}
+
+export function formatFetchError(err: unknown): string {
+  if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
+    return 'Could not reach the server. Check your connection and try again.'
+  }
+  if (err instanceof Error && err.message.trim()) return err.message
+  return 'Unknown error'
 }

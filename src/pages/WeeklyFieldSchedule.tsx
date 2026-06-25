@@ -95,7 +95,7 @@ export default function WeeklyFieldSchedule() {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   const [kind, setKind] = useState<ScheduleKind>('drivers')
-  const [anchorDate, setAnchorDate] = useState(toDateKey(new Date()))
+  const [anchorDate, setAnchorDate] = useState(() => toDateKey(getWeekStart(toDateKey(new Date()))))
   const anchorDateInputRef = useRef<HTMLInputElement>(null)
 
   const days = useMemo(() => getWeekDays(anchorDate), [anchorDate])
