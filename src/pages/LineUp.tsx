@@ -481,6 +481,8 @@ export default function LineUp() {
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
 
+  const isTaguigServices = branchName && branchName.toUpperCase().includes('TAGUIG') && (branchName.toUpperCase().includes('SERVICE') || branchName.toUpperCase().includes('SERVICES') || branchName.toUpperCase().includes('DEPT'))
+
   const currentThemeKey = getBranchThemeKey(branchName)
 
   const currentTheme = branchThemes[currentThemeKey] || branchThemes["TAGUIG - SALES"]
@@ -2517,9 +2519,9 @@ export default function LineUp() {
 
           driverTime: r.driverTime || r.driverScheduledTime || '8:00AM',
 
-          installerName: r.installer || r.installerName || r.INSTALLER || '',
+          installerName: r.installer || r.installerName || r.INSTALLER || r.technician || r.technicianName || r.TECHNICIAN || '',
 
-          installerTime: r.installerTime || r.installerScheduledTime || '7:00AM',
+          installerTime: r.installerTime || r.installerScheduledTime || r.technicianTime || r.technicianScheduledTime || '7:00AM',
 
           route: r.route || r.ROUTE || '',
 
@@ -2951,7 +2953,16 @@ export default function LineUp() {
 
     if (rows.length === 0) { showToast('No data to export!', 'error'); return }
 
-    const data = rows.map((r, i) => ({ '#': i + 1, SERVICE: r.service, DRIVER: r.driverName, 'SCHEDULED TIME – IN OF DRIVER': r.driverTime, INSTALLER: r.installerName, 'SCHEDULED TIME – IN OF INSTALLER': r.installerTime, ROUTE: r.route, REMARKS: r.remarks }))
+    const data = rows.map((r, i) => ({
+      '#': i + 1,
+      SERVICE: r.service,
+      DRIVER: r.driverName,
+      'SCHEDULED TIME – IN OF DRIVER': r.driverTime,
+      [isTaguigServices ? 'TECHNICIAN' : 'INSTALLER']: r.installerName,
+      [isTaguigServices ? 'SCHEDULED TIME – IN OF TECHNICIAN' : 'SCHEDULED TIME – IN OF INSTALLER']: r.installerTime,
+      ROUTE: r.route,
+      REMARKS: r.remarks
+    }))
 
     const ws = XLSX.utils.json_to_sheet(data)
 
@@ -3079,9 +3090,11 @@ export default function LineUp() {
 
           const driverTime = k(/driver/i, undefined) && k(/time/i) ? String(row[k(/driver/i)!] || '').trim() : '8:00AM'
 
-          const installerName = k(/installer/i, /time/i) ? String(row[k(/installer/i, /time/i)!] || '').trim() : ''
+          const installerNameKey = k(/installer/i, /time/i) || k(/technician/i, /time/i)
 
-          const installerTime = k(/installer/i) && k(/time/i) ? '7:00AM' : '7:00AM'
+          const installerName = installerNameKey ? String(row[installerNameKey] || '').trim() : ''
+
+          const installerTime = (k(/installer/i) || k(/technician/i)) && k(/time/i) ? '7:00AM' : '7:00AM'
 
           const route = k(/route/i) ? String(row[k(/route/i)!] || '').trim() : ''
 
@@ -4515,7 +4528,7 @@ export default function LineUp() {
 
                <tr>
 
-                 {['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
+                 {['SERVICE', 'DRIVER', 'DRIVER TIME IN', isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
 
                    const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
 
@@ -4950,9 +4963,9 @@ export default function LineUp() {
 
                          {renderMobileCell(row, 'driverTime', 'Driver in', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
 
-                         {renderMobileCell(row, 'installerName', 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
+                         {renderMobileCell(row, 'installerName', isTaguigServices ? 'Technician' : 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
 
-                         {renderMobileCell(row, 'installerTime', 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
+                         {renderMobileCell(row, 'installerTime', isTaguigServices ? 'Technician in' : 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
 
                          {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
 
@@ -5630,7 +5643,7 @@ export default function LineUp() {
 
                   <tr>
 
-                    {['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
+                    {['SERVICE', 'DRIVER', 'DRIVER TIME IN', isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => {
 
                       const showcaseHeaderBg = isLight ? currentTheme.accentLight : currentTheme.accent + '20'
 
@@ -6001,9 +6014,9 @@ export default function LineUp() {
 
                     {thOrig('DRIVER TIME IN')}
 
-                    {thOrig('INSTALLER')}
+                    {thOrig(isTaguigServices ? 'TECHNICIAN' : 'INSTALLER')}
 
-                    {thOrig('INSTALLER TIME IN')}
+                    {thOrig(isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN')}
 
                     {thOrig('ROUTE', true)}
 
@@ -7247,7 +7260,7 @@ export default function LineUp() {
 
                            onChange={e => wUpdatePerson(person.id, { name: e.target.value.toUpperCase() })}
 
-                           placeholder={wKind === 'drivers' ? 'Driver name' : 'Installer name'}
+                           placeholder={wKind === 'drivers' ? 'Driver name' : (isTaguigServices ? 'Technician name' : 'Installer name')}
 
                            className="bg-transparent outline-none text-xs font-bold uppercase w-full border-b border-transparent hover:border-slate-300 focus:border-slate-500 transition-colors"
 
@@ -7685,7 +7698,7 @@ export default function LineUp() {
 
                           [
 
-                            wKind === 'drivers' ? 'DRIVER' : 'INSTALLER',
+                            wKind === 'drivers' ? 'DRIVER' : (isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'),
 
                             ...wDays.map(day => {
 
@@ -7741,7 +7754,7 @@ export default function LineUp() {
 
                         ) : (
 
-                          ['SERVICE', 'DRIVER', 'DRIVER TIME IN', 'INSTALLER', 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => (
+                          ['SERVICE', 'DRIVER', 'DRIVER TIME IN', isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => (
 
                             <th
 
