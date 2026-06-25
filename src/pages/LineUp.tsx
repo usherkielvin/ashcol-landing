@@ -3524,7 +3524,7 @@ export default function LineUp() {
 
   const [wKind, setWKind] = useState<WScheduleKind>('drivers')
 
-  const [wAnchorDate, setWAnchorDate] = useState(wToDateKey(new Date()))
+  const [wAnchorDate, setWAnchorDate] = useState(() => wToDateKey(wGetWeekStart(wToDateKey(new Date()))))
 
   const wDays = useMemo(() => wGetWeekDays(wAnchorDate), [wAnchorDate])
 
