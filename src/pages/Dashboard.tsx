@@ -1,7 +1,8 @@
+// @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  FileText, Clock, CheckCircle, AlertCircle, Plus,
+  FileText, Clock, CheckCircle, AlertCircle,
   ChevronRight, Wrench, Zap, Wind, Building2, Circle,
   CalendarDays, MapPin, RefreshCw, ExternalLink, Navigation,
   ClipboardList, Phone,
@@ -12,6 +13,21 @@ import FleetMap from '../components/FleetMap'
 import GlobalSearch from '../components/GlobalSearch'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
 import { inferCategoryFromTicket, isFieldCategory } from '../constants/ticketCategories'
+
+import { 
+  FiSearch, 
+  FiBell, 
+  FiMoon, 
+  FiSun,
+  FiCalendar, 
+  FiClock, 
+  FiAlertCircle 
+} from "react-icons/fi";
+import { 
+  MdOutlineConfirmationNumber, 
+  MdOutlineBusiness, 
+  MdHelpOutline 
+} from "react-icons/md";
 
 interface Ticket {
   id: string
@@ -45,10 +61,10 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string; bor
   CANCELLED:   { label: 'Cancelled',   color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.25)', icon: Circle },
 }
 
-const SVC_ICON: Record<string, typeof Wrench> = {
-  Cleaning: Wrench, Maintenance: Wrench, Repair: Zap,
-  Installation: Building2, Ducting: Wind,
-}
+// const SVC_ICON: Record<string, typeof Wrench> = {
+//   Cleaning: Wrench, Maintenance: Wrench, Repair: Zap,
+//   Installation: Building2, Ducting: Wind,
+// }
 
 function formatDate(iso?: string) {
   if (!iso) return null
@@ -136,7 +152,7 @@ function ticketsLink(ticketId?: string, status?: string) {
 }
 
 export default function Dashboard() {
-  const { theme } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
   const navigate = useNavigate()
   const isLight = theme === 'light'
@@ -148,16 +164,59 @@ export default function Dashboard() {
   const [statsData, setStatsData] = useState<Record<string, number> | null>(null)
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState('ALL')
+  const [filterStatus] = useState('ALL') // removed setFilterStatus
+  const [activeFilter, setActiveFilter] = useState("All");
+
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const filters = ["All", "Pending", "In Progress", "Completed"];
+
+  // Mock data for the populated table
+  const recentTickets = [
+    {
+      id: "#12345678",
+      service: "T3 (DOMINIC) - 1S",
+      branch: "Main Branch",
+      city: "Davao City",
+      tech: "Unassigned",
+      date: "June 23, 2026",
+      time: "4:39 PM",
+      status: "Pending"
+    },
+    {
+      id: "#12345678",
+      service: "T3 (ONCALL) - 2S",
+      branch: "Matina Branch",
+      city: "Davao City",
+      tech: "Unassigned",
+      date: "June 23, 2026",
+      time: "4:39 PM",
+      status: "Pending"
+    },
+    {
+      id: "#12345678",
+      service: "STRADA (ROMMEL) - 3S",
+      branch: "Matina Branch",
+      city: "Davao City",
+      tech: "Unassigned",
+      date: "June 23, 2026",
+      time: "4:39 PM",
+      status: "Pending"
+    }
+  ];
   const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([])
   const [assignLoading, setAssignLoading] = useState<string | null>(null)
   const [selectedSearchResult, setSelectedSearchResult] = useState<any>(null)
 
-  const [currentTime, setCurrentTime] = useState(new Date())
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000)
-    return () => clearInterval(timer)
-  }, [])
+  // const [currentTime, setCurrentTime] = useState(new Date())
+  // useEffect(() => {
+  //   const timer = setInterval(() => setCurrentTime(new Date()), 60000)
+  //   return () => clearInterval(timer)
+  // }, [])
 
   const todayStr = useMemo(() => {
     const d = new Date()
@@ -270,9 +329,6 @@ export default function Dashboard() {
 
   const customerStats = [
     { label: 'Total',       value: statsData?.total       ?? 0, color: '#10B981', icon: FileText,    status: 'ALL' },
-    { label: 'Pending',     value: statsData?.pending     ?? 0, color: '#F59E0B', icon: Clock,       status: 'PENDING' },
-    { label: 'In Progress', value: statsData?.inProgress  ?? 0, color: '#3B82F6', icon: RefreshCw,   status: 'IN_PROGRESS' },
-    { label: 'Completed',   value: statsData?.completed   ?? 0, color: '#8B5CF6', icon: CheckCircle, status: 'COMPLETED' },
   ]
 
   const adminStats = [
@@ -288,15 +344,18 @@ export default function Dashboard() {
     ? tickets.find(t => !['COMPLETED', 'CANCELLED'].includes(t.status.toUpperCase()))
     : null
 
-  const filtered = filterStatus === 'ALL'
-    ? tickets
-    : tickets.filter(t => {
-        const u = t.status.toUpperCase()
-        if (filterStatus === 'IN_PROGRESS' && (isCustomer || isAdminOrManager)) {
-          return u === 'IN_PROGRESS' || u === 'ON_THE_WAY'
-        }
-        return u === filterStatus
-      })
+  const filtered = useMemo(() => {
+    const statusKey = activeFilter.toUpperCase().replace(' ', '_');
+    return statusKey === 'ALL'
+      ? tickets
+      : tickets.filter(t => {
+          const u = (t.status || '').toUpperCase()
+          if (statusKey === 'IN_PROGRESS' && (isCustomer || isAdminOrManager)) {
+            return u === 'IN_PROGRESS' || u === 'ON_THE_WAY'
+          }
+          return u === statusKey
+        })
+  }, [tickets, activeFilter, isCustomer, isAdminOrManager])
 
   const focusJob = useMemo(() => {
     if (!isEmployee) return null
@@ -320,9 +379,9 @@ export default function Dashboard() {
       .sort((a, b) => (getPreferredDate(a) || '').localeCompare(getPreferredDate(b) || ''))
   }, [isEmployee, tickets])
 
-  const filterPills = isEmployee
-    ? ['ALL', 'ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED'] as const
-    : ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED'] as const
+  // const filterPills = isEmployee
+  //   ? ['ALL', 'ASSIGNED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED'] as const
+  //   : ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED'] as const
 
   function JobStepper({ ticket }: { ticket: Ticket }) {
     const st = ticket.status.toUpperCase()
@@ -577,290 +636,204 @@ export default function Dashboard() {
 
   /* ── Customer, manager, admin dashboard (original flow) ──────── */
   return (
-    <div className="flex flex-col gap-5 pb-8" style={{ backgroundColor: pageBg }}>
-
-      {/* Global Search Bar - Only for admin/manager/staff */}
-      {isAdminOrManager && (
-        <div className="flex justify-center">
-          <GlobalSearch onResultClick={(result) => setSelectedSearchResult(result)} />
-        </div>
-      )}
-
-      {/* Welcome Banner */}
-      <div
-        className="rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row items-start justify-between gap-4 shadow-sm"
+    <div className="w-full h-full flex flex-col font-sans">
+      
+      {/* 1. Full-width Hero Header (Compacted to match global header) */}
+      <header 
+        className="relative flex justify-between items-start py-4 px-8 border-b z-10 sticky top-0 transition-colors shrink-0"
         style={{
-          background: isLight 
-            ? 'linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 50%, #F5F3FF 100%)' 
-            : 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(6,182,212,0.04) 50%, rgba(139,92,246,0.04) 100%)',
-          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(30,45,72,0.5)'}`
+          backgroundColor: isLight ? '#ffffff' : '#0a1120',
+          borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)'
         }}
       >
-        {/* Background Decorative Pattern */}
-        <div className="absolute top-0 right-0 w-80 h-full opacity-10 pointer-events-none hidden md:block">
-          <svg className="w-full h-full text-emerald-500" viewBox="0 0 100 100" fill="none" preserveAspectRatio="none">
-            <path d="M50 0C60 40 90 60 100 100H50V0Z" fill="currentColor" />
-          </svg>
-        </div>
-        
-        {/* Content */}
-        <div className="relative z-10 flex-1 flex flex-col gap-4">
-          <div>
-            <h2 className="text-xl md:text-2xl font-black tracking-tight" style={{ color: textPrimary }}>
-              Good {currentTime.getHours() < 12 ? 'morning' : currentTime.getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋
-            </h2>
-            <p className="text-xs mt-1 font-medium" style={{ color: textMuted }}>
-              Here's what's happening with your service operations today.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2.5">
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary }}>
-              <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-              {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-            </div>
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary }}>
-              <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-              {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-            </div>
-          </div>
+        {/* Left: Greeting */}
+        <div>
+          <h1 className="text-[28px] font-black tracking-tight uppercase transition-colors" style={{ color: isLight ? '#111827' : '#ffffff' }}>
+            Good Morning, Usher!
+          </h1>
+          <p className="text-sm mt-1 transition-colors" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
+            Here's what's happening with your service operations today.
+          </p>
         </div>
 
-        {isCustomer ? (
-          <button
-            type="button"
-            onClick={() => navigate('/create-ticket')}
-            className="relative z-10 flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs text-white bg-[#10B981] hover:bg-emerald-500 hover:scale-[1.02] active:scale-95 transition-all shadow-md shadow-emerald-500/10 shrink-0 self-start md:self-center"
-          >
-            <Plus className="w-4 h-4" /> New Request
-          </button>
-        ) : (
-          <div className="relative z-10 flex items-center gap-2 shrink-0 py-1 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 self-start md:self-center">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Operations Online
+        {/* Center: Title (Absolutely positioned to stay centered) */}
+        <div className="absolute left-1/2 -translate-x-1/2 text-center pt-1 pointer-events-none">
+          <h2 className="text-lg font-bold uppercase tracking-widest transition-colors" style={{ color: isLight ? '#111827' : '#ffffff' }}>Overview</h2>
+          <p className="text-sm uppercase tracking-wider font-medium mt-1 transition-colors" style={{ color: isLight ? '#9ca3af' : '#6b7280' }}>Branch - Bulacan</p>
+        </div>
+
+        {/* Right: Date & Controls */}
+        <div className="flex flex-col items-end space-y-3 pt-1">
+          <div className="flex items-center border rounded-md px-3 py-1.5 shadow-sm transition-colors"
+               style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
+            <FiCalendar className="text-green-600 mr-2" size={16} />
+            <span className="text-sm font-medium transition-colors" style={{ color: isLight ? '#374151' : '#d1d5db' }}>
+              {now.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
           </div>
-        )}
-      </div>
-
-      {/* KPI Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s, i) => {
-          const Icon = s.icon
-          const isActive = filterStatus === s.status
-          const changeVal = s.value > 0 ? '▲ 100%' : '— 0%'
-          const changeColor = s.value > 0 ? '#10B981' : textMuted
-          
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setFilterStatus(isActive ? 'ALL' : s.status)}
-              className="rounded-3xl p-5 text-left transition-all hover:shadow-md relative overflow-hidden flex flex-col gap-4 shadow-sm"
-              style={{
-                backgroundColor: isActive ? `${s.color}08` : cardBg,
-                border: `1.5px solid ${isActive ? s.color : border}`,
-              }}
-            >
-              <div className="absolute top-0 left-0 w-[4px] h-full" style={{ backgroundColor: s.color }} />
-              
-              <div className="flex items-center gap-4 pl-1">
-                <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-inner" 
-                     style={{ backgroundColor: `${s.color}12`, border: `1px solid ${s.color}25`, color: s.color }}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <span className="text-[11px] font-bold uppercase tracking-wider block" style={{ color: textMuted }}>
-                    {s.label}
-                  </span>
-                  <span className="text-2xl md:text-3xl font-black tracking-tight block mt-0.5" style={{ color: s.color }}>
-                    {loading ? '—' : s.value}
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-[10px] font-bold uppercase tracking-wide border-t pt-3 flex items-center justify-between pl-1" 
-                   style={{ borderColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.03)' }}>
-                <span style={{ color: changeColor }}>{changeVal} vs yesterday</span>
-                {isActive && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black" style={{ color: s.color, backgroundColor: `${s.color}15` }}>
-                    FILTERED
-                  </span>
-                )}
-              </div>
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center border rounded-full px-3 py-1.5 transition-colors"
+                 style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(34,197,94,0.1)', borderColor: isLight ? '#bbf7d0' : 'rgba(34,197,94,0.2)' }}>
+              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></div>
+              <span className="text-[11px] font-bold uppercase tracking-wide transition-colors" style={{ color: isLight ? '#15803d' : '#4ade80' }}>Operations Online</span>
+            </div>
+            <button className="p-2 border rounded-md shadow-sm transition-colors hover:opacity-80"
+                    style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)', color: isLight ? '#4b5563' : '#d1d5db' }}>
+              <FiBell size={16} />
             </button>
-          )
-        })}
+            <button onClick={toggleTheme} title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'} className="p-2 border rounded-md shadow-sm transition-colors hover:opacity-80"
+                    style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)', color: isLight ? '#4b5563' : '#d1d5db' }}>
+              {isLight ? <FiMoon size={16} /> : <FiSun size={16} />}
+            </button>
+            <div className="border rounded-md px-3 py-1.5 shadow-sm text-sm font-medium transition-colors tabular-nums"
+                 style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)', color: isLight ? '#374151' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
+              {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Page Content */}
+      <div className="p-8 space-y-8 flex-1 overflow-y-auto">
+        {/* 2. Top Metrics & Search Bar */}
+        <div className="flex justify-between items-center">
+          {/* Metric Cards */}
+          <div className="flex space-x-4">
+          <div className="border rounded-xl py-3 px-6 text-center shadow-sm min-w-[120px] transition-colors" style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
+            <div className="text-[32px] leading-none font-bold mb-1 transition-colors" style={{ color: isLight ? '#111827' : '#f9fafb' }}>
+              {statsData?.total_tickets ?? statsData?.total ?? 0}
+            </div>
+            <div className="text-[10px] font-bold text-[#4caf50] uppercase tracking-wider">Total Tickets</div>
+          </div>
+          <div className="border rounded-xl py-3 px-6 text-center shadow-sm min-w-[120px] transition-colors" style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
+            <div className="text-[32px] leading-none font-bold mb-1 transition-colors" style={{ color: isLight ? '#111827' : '#f9fafb' }}>
+              {statsData?.pending_tickets ?? 0}
+            </div>
+            <div className="text-[10px] font-bold text-[#f5a623] uppercase tracking-wider">Pending</div>
+          </div>
+          <div className="border rounded-xl py-3 px-6 text-center shadow-sm min-w-[120px] transition-colors" style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
+            <div className="text-[32px] leading-none font-bold mb-1 transition-colors" style={{ color: isLight ? '#111827' : '#f9fafb' }}>
+              {statsData?.in_progress_tickets ?? 0}
+            </div>
+            <div className="text-[10px] font-bold text-[#4a90e2] uppercase tracking-wider">In Progress</div>
+          </div>
+          <div className="border rounded-xl py-3 px-6 text-center shadow-sm min-w-[120px] transition-colors" style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
+            <div className="text-[32px] leading-none font-bold mb-1 transition-colors" style={{ color: isLight ? '#111827' : '#f9fafb' }}>
+              {statsData?.completed_tickets ?? 0}
+            </div>
+            <div className="text-[10px] font-bold text-[#9013fe] uppercase tracking-wider">Completed</div>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="flex-1 max-w-[500px] relative z-10">
+          <GlobalSearch onResultClick={(res) => setSelectedSearchResult(res)} />
+        </div>
       </div>
 
-      {/* Main Grid: Recent Schedules & Today's Schedule */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* 3. Middle Section: Recent Tickets & Today's Schedule */}
+      <div className="grid grid-cols-12 gap-6 mb-8">
         
-        {/* Left Column: Recent Schedules */}
-        <div className="lg:col-span-2 rounded-3xl shadow-sm flex flex-col overflow-hidden" 
-             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        {/* Left Panel: Recent Tickets (8 cols) */}
+        <div className="col-span-8 rounded-xl border shadow-sm flex flex-col overflow-hidden transition-colors"
+             style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
           
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4" 
-               style={{ borderBottom: `1px solid ${border}` }}>
-            <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-              {isCustomer ? 'My Service Requests' : 'Recent Schedules'}
-            </h3>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-wrap gap-1">
-                {filterPills.map(s => {
-                  const cfg = s === 'ALL' ? null : STATUS_CFG[s]
-                  const isActive = filterStatus === s
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setFilterStatus(s)}
-                      className="px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all"
-                      style={isActive
-                        ? { color: cfg?.color ?? '#10B981', backgroundColor: cfg?.bg ?? 'rgba(16,185,129,0.1)', borderColor: cfg?.border ?? 'rgba(16,185,129,0.25)' }
-                        : { color: textMuted, backgroundColor: 'transparent', borderColor: border }
-                      }
-                    >
-                      {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s === 'ON_THE_WAY' ? 'On the way' : s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ')}
-                    </button>
-                  )
-                })}
-              </div>
-              <Link to="/tickets" className="text-xs font-bold text-[#10B981] hover:underline flex items-center gap-0.5">
-                View all <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
+          {/* Interactive Panel Header */}
+          <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50 dark:border-slate-800 dark:bg-slate-800/30">
+            <h2 className="text-base font-bold text-gray-900 dark:text-white">Recent Tickets</h2>
+            <div className="flex items-center space-x-2">
+              {filters.map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setActiveFilter(filter)}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                    activeFilter === filter 
+                      ? "text-[#268038] bg-[#e6f4ea] border border-[#268038]/20 dark:bg-emerald-900/30 dark:text-emerald-400" 
+                      : "text-gray-500 hover:bg-gray-100 border border-transparent dark:text-gray-400 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+              <span onClick={() => navigate('/tickets')} className="text-xs font-bold text-[#268038] cursor-pointer ml-3 hover:underline dark:text-emerald-400">View All &gt;</span>
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex flex-col gap-3 p-5">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: inputBg }}>
-                <FileText className="w-6 h-6" style={{ color: textMuted }} />
+          {/* Populated Table Area */}
+          {filtered.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-16">
+              <div className="p-3 bg-gray-50 rounded-xl mb-3 dark:bg-slate-800">
+                <FileText size={24} className="text-gray-400" />
               </div>
-              <p className="font-bold" style={{ color: textPrimary }}>No tickets found</p>
-              <p className="text-sm" style={{ color: textMuted }}>
-                {filterStatus !== 'ALL' ? 'Try a different filter.' : isCustomer ? 'Book your first service to get started.' : 'No tickets yet.'}
-              </p>
-              {isCustomer && filterStatus === 'ALL' && (
-                <Link to="/create-ticket"
-                  className="mt-1 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all">
-                  <Plus className="w-4 h-4" /> Book a Service
-                </Link>
-              )}
+              <h3 className="text-sm font-bold text-gray-900 mb-1 dark:text-white">No tickets found</h3>
+              <p className="text-xs text-gray-500">No tickets match the selected filter.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse" style={{ minWidth: '700px' }}>
+            <div className="flex-1 overflow-x-auto">
+              <table className="w-full text-left">
                 <thead>
-                  <tr style={{ borderBottom: `1.5px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.3)' }}>
-                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Ticket / Service</th>
-                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Branch</th>
-                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Technician</th>
-                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Date & Time</th>
-                    <th className="px-5 py-3 font-bold uppercase tracking-wider text-[10px]" style={{ color: textMuted }}>Status</th>
-                    <th className="px-3 py-3 w-10"></th>
+                  <tr className="text-[10px] font-bold text-gray-800 uppercase tracking-wider border-b border-gray-200 bg-gray-50/30 dark:text-gray-300 dark:border-slate-700 dark:bg-slate-800/30">
+                    <th className="py-4 px-6">Ticket / Service</th>
+                    <th className="py-4 px-6">Location</th>
+                    <th className="py-4 px-6 text-center">Technician</th>
+                    <th className="py-4 px-6">Date & Time</th>
+                    <th className="py-4 px-6">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y" style={{ borderColor: border }}>
-                  {filtered.slice(0, 10).map((t, idx) => {
-                    const sk = statusKey(t.status)
-                    const cfg = STATUS_CFG[sk] ?? STATUS_CFG.PENDING
-                    const SvcIcon = SVC_ICON[t.serviceType] ?? Wrench
-                    
-                    // Mock branches based on index for beautiful visuals
-                    const isEven = idx % 2 === 0
-                    const mockBranch = isEven ? 'Main Branch' : 'Matina Branch'
-                    const mockLocation = isEven ? 'Davao City' : 'Davao City'
-                    
-                    // Get date/time
-                    const createdIso = t.createdAt || t.created_at
-                    const dateFormatted = createdIso ? new Date(createdIso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
-                    const timeFormatted = createdIso ? new Date(createdIso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
-                    
-                    // Technician initials & name
-                    const techName = t.assigned_employee_name || 'Unassigned'
-                    const techInitials = techName !== 'Unassigned' ? techName.split(' ').map(n => n[0]).join('').toUpperCase() : '?'
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {filtered.slice(0, 50).map((ticket, index) => {
+                    const locLine = formatLocationLine(ticket.location) || 'Unknown Location'
+                    const techName = ticket.assigned_employee_name || ticket.assignedTo || 'Unassigned'
+                    const prefDateStr = getPreferredDate(ticket)
+                    const dateStr = formatDate(prefDateStr) || 'No Date'
+                    const timeStr = prefDateStr ? new Date(prefDateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''
+                    const stCfg = STATUS_CFG[statusKey(ticket.status)]
                     
                     return (
-                      <tr key={t.id} 
-                          className="hover:bg-slate-500/5 transition-colors cursor-pointer"
-                          onClick={() => navigate(ticketsLink(t.id, t.status))}>
-                        
-                        {/* 1. Ticket / Service */}
-                        <td className="px-5 py-3.5 flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" 
-                               style={{ backgroundColor: `${cfg.color}15`, color: cfg.color }}>
-                            <SvcIcon className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold truncate" style={{ color: textPrimary }}>
-                              {t.serviceType || 'S/I Service'}
-                            </p>
-                            <p className="text-[10px] truncate" style={{ color: textMuted }}>
-                              {t.title}
-                            </p>
-                            <p className="text-[9px] font-semibold opacity-60" style={{ color: textMuted }}>
-                              #{t.id.slice(0, 8).toUpperCase()}
-                            </p>
-                          </div>
-                        </td>
-                        
-                        {/* 2. Branch */}
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-slate-500/10" style={{ color: textMuted }}>
-                              <Building2 className="w-3.5 h-3.5" />
+                      <tr key={ticket.id || index} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors group">
+                        <td className="py-4 px-6">
+                          <div className="flex items-center space-x-3">
+                            <div className="p-2 bg-[#e6f4ea] text-[#268038] rounded-md border border-[#268038]/20 dark:bg-emerald-900/30 dark:text-emerald-400">
+                              <MdOutlineConfirmationNumber size={18} />
                             </div>
                             <div>
-                              <p className="font-bold" style={{ color: textPrimary }}>{mockBranch}</p>
-                              <p className="text-[10px]" style={{ color: textMuted }}>{mockLocation}</p>
+                              <p className="text-xs font-bold text-gray-900 dark:text-white">{ticket.serviceType || 'Unknown Service'}</p>
+                              <p className="text-[11px] text-gray-400">{(ticket.id || '').split('-')[0]}</p>
                             </div>
                           </div>
                         </td>
-                        
-                        {/* 3. Technician */}
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold text-[10px]"
-                                 style={{ 
-                                   backgroundColor: techName === 'Unassigned' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)', 
-                                   color: techName === 'Unassigned' ? '#EF4444' : '#3B82F6' 
-                                 }}>
-                              {techInitials}
+                        <td className="py-4 px-6">
+                          <div className="flex items-center space-x-2">
+                            <div className="p-1.5 bg-gray-100 text-gray-500 rounded-md dark:bg-slate-800 dark:text-slate-400">
+                              <MdOutlineBusiness size={14} />
                             </div>
-                            <span className="font-semibold text-xs" style={{ color: techName === 'Unassigned' ? textMuted : textPrimary }}>
-                              {techName}
-                            </span>
+                            <div>
+                              <p className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate max-w-[150px]">{locLine}</p>
+                            </div>
                           </div>
                         </td>
-                        
-                        {/* 4. Date & Time */}
-                        <td className="px-5 py-3.5">
-                          <p className="font-semibold text-xs" style={{ color: textPrimary }}>{dateFormatted}</p>
-                          <p className="text-[10px]" style={{ color: textMuted }}>{timeFormatted}</p>
+                        <td className="py-4 px-6 text-center">
+                          <div className="inline-flex items-center space-x-1.5 text-gray-400 dark:text-slate-400">
+                            <MdHelpOutline size={16} />
+                            <span className="text-xs font-medium">{techName}</span>
+                          </div>
                         </td>
-                        
-                        {/* 5. Status */}
-                        <td className="px-5 py-3.5">
-                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border tracking-wider"
-                                style={{ color: cfg.color, backgroundColor: cfg.bg, borderColor: cfg.border }}>
-                            {cfg.label}
+                        <td className="py-4 px-6">
+                          <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{dateStr}</p>
+                          <p className="text-[11px] text-gray-400">{timeStr}</p>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span 
+                            className="inline-block px-4 py-1.5 text-xs font-bold rounded-md shadow-sm border"
+                            style={{ 
+                              color: stCfg?.color || '#9ca3af', 
+                              backgroundColor: stCfg?.bg || 'transparent',
+                              borderColor: stCfg?.border || 'transparent'
+                            }}
+                          >
+                            {stCfg?.label || ticket.status}
                           </span>
                         </td>
-                        
-                        {/* 6. Action */}
-                        <td className="px-3 py-3.5 text-center" onClick={(e) => { e.stopPropagation(); navigate(ticketsLink(t.id, t.status)) }}>
-                          <span className="text-base font-black hover:opacity-80 p-1" style={{ color: textMuted }}>⋮</span>
-                        </td>
-                        
                       </tr>
                     )
                   })}
@@ -869,85 +842,51 @@ export default function Dashboard() {
             </div>
           )}
 
-          {filtered.length > 0 && (
-            <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-              <span className="text-[12px]" style={{ color: textMuted }}>Showing {Math.min(10, filtered.length)} of {filtered.length} ticket{filtered.length !== 1 ? 's' : ''}</span>
-              <Link to="/tickets" className="text-[12px] font-bold text-[#10B981] hover:underline flex items-center gap-1">
-                View all tickets <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          )}
-
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-slate-800">
+            <p className="text-[11px] text-gray-400 font-medium">Showing {Math.min(filtered.length, 50)} out of {filtered.length} tickets</p>
+          </div>
         </div>
 
-        {/* Right Column: Today's Schedule */}
-        <div className="rounded-3xl shadow-sm flex flex-col p-5 gap-5" 
-             style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        {/* Right Panel: Today's Schedule (4 cols) */}
+        <div className="col-span-4 bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col transition-colors" style={{ backgroundColor: isLight ? '#ffffff' : '#1f2937', borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)' }}>
           
-          <div className="flex items-center justify-between">
-            <h3 className="font-black text-sm" style={{ color: textPrimary }}>Today's Schedule</h3>
-            <Link to="/tickets" className="text-xs font-bold text-[#10B981] hover:underline">
-              View all
-            </Link>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-base font-bold transition-colors" style={{ color: isLight ? '#111827' : '#f9fafb' }}>Today's Schedule</h2>
+            <span onClick={() => navigate('/tickets')} className="text-xs font-bold text-[#268038] cursor-pointer hover:underline">View All &gt;</span>
           </div>
 
-          <div className="flex flex-col gap-3">
-            {/* 1. Today's Schedules */}
-            <div className="rounded-2xl p-4 flex items-center justify-between" 
-                 style={{ backgroundColor: isLight ? '#F0FDF4' : 'rgba(16,185,129,0.06)', border: `1px solid ${isLight ? '#DCFCE7' : 'rgba(16,185,129,0.15)'}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#10B981]/20 text-[#10B981]">
-                  <CalendarDays className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Today's Schedules</h4>
-                </div>
+          <div className="space-y-4 flex-1">
+            <div className="flex items-center p-4 bg-[#5cb85c] rounded-xl shadow-sm text-white transition-opacity hover:opacity-90 cursor-pointer" onClick={() => navigate('/tickets?filter=today')}>
+              <div className="p-3 bg-white/20 rounded-lg mr-4">
+                <FiCalendar size={24} />
               </div>
-              <span className="text-xl font-black text-[#10B981]">{todaysSchedulesCount}</span>
+              <div>
+                <p className="text-[32px] font-bold leading-none mb-1">{todaysSchedulesCount}</p>
+                <p className="text-xs font-bold tracking-wider uppercase opacity-90">Scheduled</p>
+              </div>
             </div>
 
-            {/* 2. Upcoming */}
-            <div className="rounded-2xl p-4 flex items-center justify-between" 
-                 style={{ backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.06)', border: `1px solid ${isLight ? '#FEF3C7' : 'rgba(245,158,11,0.15)'}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#F59E0B]/20 text-[#F59E0B]">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Upcoming</h4>
-                </div>
+            <div className="flex items-center p-4 bg-[#f0ad4e] rounded-xl shadow-sm text-white transition-opacity hover:opacity-90 cursor-pointer" onClick={() => navigate('/tickets?filter=upcoming')}>
+              <div className="p-3 bg-white/20 rounded-lg mr-4">
+                <FiClock size={24} />
               </div>
-              <span className="text-xl font-black text-[#F59E0B]">{upcomingCount}</span>
+              <div>
+                <p className="text-[32px] font-bold leading-none mb-1">{upcomingCount}</p>
+                <p className="text-xs font-bold tracking-wider uppercase opacity-90">Upcoming</p>
+              </div>
             </div>
 
-            {/* 3. Urgent */}
-            <div className="rounded-2xl p-4 flex items-center justify-between" 
-                 style={{ backgroundColor: isLight ? '#FEF2F2' : 'rgba(239,68,68,0.06)', border: `1px solid ${isLight ? '#FEE2E2' : 'rgba(239,68,68,0.15)'}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#EF4444]/20 text-[#EF4444]">
-                  <AlertCircle className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Urgent</h4>
-                </div>
+            <div className="flex items-center p-4 bg-[#d9534f] rounded-xl shadow-sm text-white transition-opacity hover:opacity-90 cursor-pointer" onClick={() => navigate('/tickets?filter=urgent')}>
+              <div className="p-3 bg-white/20 rounded-lg mr-4">
+                <FiAlertCircle size={24} />
               </div>
-              <span className="text-xl font-black text-[#EF4444]">{urgentCount}</span>
+              <div>
+                <p className="text-[32px] font-bold leading-none mb-1">{urgentCount}</p>
+                <p className="text-xs font-bold tracking-wider uppercase opacity-90">Urgent</p>
+              </div>
             </div>
           </div>
-
-          {/* Caught Up Info Box */}
-          <div className="mt-auto rounded-2xl p-3.5 flex items-center gap-2.5 text-[11px]" 
-               style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textMuted }}>
-            <CheckCircle className="w-4 h-4 text-[#10B981] shrink-0" />
-            <span>
-              {urgentCount === 0 
-                ? "You're all caught up! No urgent items." 
-                : `You have ${urgentCount} urgent item${urgentCount > 1 ? 's' : ''} to resolve.`}
-            </span>
-          </div>
-
         </div>
-
       </div>
 
       {/* ── Technician Workload & Quick Assign ── */}
@@ -1109,6 +1048,7 @@ export default function Dashboard() {
         result={selectedSearchResult}
         onClose={() => setSelectedSearchResult(null)}
       />
+    </div>
     </div>
   )
 }

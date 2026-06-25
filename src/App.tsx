@@ -7,11 +7,12 @@ import CreateAccount from './pages/CreateAccount'
 import DashboardLayout from './layouts/DashboardLayout'
 import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
-import OfficeTasks from './pages/OfficeTasks'
 import CreateTicket from './pages/CreateTicket'
+import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
+import ClientMasterlist from './pages/ClientMasterlist'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
@@ -23,7 +24,6 @@ import Hris from './pages/Hris'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
 
-import ClientMasterlist from './pages/ClientMasterlist'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -84,6 +84,8 @@ export default function App() {
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Tickets />} />
+          <Route path="/relays" element={<ClientMasterlist />} />
+          <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
           <Route path="/employees" element={<Employees />} />
