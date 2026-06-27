@@ -20,7 +20,7 @@ import { useTheme } from '../contexts/ThemeContext'
 
 import { useAuth } from '../contexts/AuthContext'
 
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch } from '../utils/api'
 
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -325,13 +325,19 @@ export default function LineUp() {
 
   const role      = (user?.role || '').toLowerCase()
 
-  const canEdit   = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
-
   const [date, setDate]         = useState(tomorrowStr)
 
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
 
   const [branchId, setBranchId] = useState('')
+
+  const canEdit = useMemo(() => {
+    if (role === 'admin') return true
+    if (!user?.branchId || !branchId) return false
+    const isAllowedRole = role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
+    if (!isAllowedRole) return false
+    return isSameBaseBranch(user.branchId, branchId)
+  }, [role, user, branchId])
 
   const [vehicles, setVehicles] = useState<VehicleItem[]>(() => {
 
