@@ -23,6 +23,101 @@ export function isSameBaseBranch(a?: string | null, b?: string | null): boolean 
   return cleanA === cleanB
 }
 
+export type BranchListEntry = {
+  id: string
+  name: string
+  auditLine?: string | null
+  isActive?: boolean
+}
+
+export function isTaguigBranchRef(branchId?: string | null, name?: string | null): boolean {
+  const id = (branchId || '').toLowerCase()
+  const n = (name || '').toUpperCase()
+  return id.includes('taguig')
+    || id.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+    || n.includes('TAGUIG')
+}
+
+export function branchAuditLineIsService(auditLine?: string | null, name?: string | null): boolean {
+  if (auditLine === 'TAGUIG_SERVICE') return true
+  const n = (name || '').toUpperCase()
+  return n.includes('SERVICE') && !n.includes('SALES')
+}
+
+/** Normalize admin global branch id or user branch id for list matching. */
+export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?: string | null): {
+  branchId: string
+  auditLine: string | null
+  branchName: string
+} {
+  const raw = (globalOrBranchId || '').trim()
+  const lower = raw.toLowerCase()
+  const emailLower = (email || '').toLowerCase()
+  const isServices = lower.endsWith('-services')
+    || lower.endsWith('-service')
+    || lower === 'br-taguig-services'
+    || emailLower.includes('service')
+
+  if (isTaguigBranchRef(raw)) {
+    return {
+      branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
+      auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
+      branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
+    }
+  }
+
+  let baseName = raw.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
+  if (!baseName) baseName = 'BRANCH'
+
+  return {
+    branchId: raw.replace(/-(sales|services|service)$/i, '').toUpperCase(),
+    auditLine: null,
+    branchName: baseName,
+  }
+}
+
+/** Match admin global branch id to a row from the /branches list (handles Taguig + UUID ids). */
+export function findBranchListEntry(
+  globalOrBranchId: string | null | undefined,
+  list: BranchListEntry[],
+  email?: string | null,
+): BranchListEntry | undefined {
+  if (!globalOrBranchId?.trim() || list.length === 0) return undefined
+
+  const raw = globalOrBranchId.trim()
+  const norm = parseGlobalBranchScope(raw, email)
+
+  const direct = list.find((b) => {
+    if (b.id !== raw && b.id.toUpperCase() !== raw.toUpperCase()) return false
+    if (norm.auditLine && isTaguigBranchRef(b.id, b.name)) {
+      return branchAuditLineIsService(b.auditLine, b.name) === (norm.auditLine === 'TAGUIG_SERVICE')
+    }
+    return true
+  })
+  if (direct) return direct
+
+  return list.find((b) => {
+    if (isTaguigBranchRef(norm.branchId) && isTaguigBranchRef(b.id, b.name)) {
+      return branchAuditLineIsService(b.auditLine, b.name) === (norm.auditLine === 'TAGUIG_SERVICE')
+    }
+    if (b.id.toUpperCase() === norm.branchId.toUpperCase()) {
+      return (b.auditLine || null) === norm.auditLine
+    }
+    return isSameBaseBranch(b.id, norm.branchId) || isSameBaseBranch(b.id, raw)
+  })
+}
+
+export function branchEntryMatchesGlobal(
+  entry: { id: string; auditLine?: string | null; name?: string | null },
+  globalOrBranchId?: string | null,
+): boolean {
+  return !!findBranchListEntry(globalOrBranchId, [{
+    id: entry.id,
+    name: entry.name || '',
+    auditLine: entry.auditLine,
+  }])
+}
+
 /** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
 export function resolveArchiveBranchId(
   ...candidates: Array<string | null | undefined>

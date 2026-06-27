@@ -31,7 +31,7 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser } from '../utils/api'
+import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
 
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -170,6 +170,7 @@ export default function DashboardLayout() {
 
         const newList: BranchOption[] = []
         for (const b of list) {
+          if (b.isActive === false) continue
           const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
           if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
             if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
@@ -188,12 +189,15 @@ export default function DashboardLayout() {
         newList.sort((a, b) => a.name.localeCompare(b.name))
         setAdminBranches(newList)
         
-        // Initialize default global branch if not set yet
         const stored = localStorage.getItem('ashcol-global-branch-id')
-        const storedStillValid = stored && newList.some(b => b.id === stored)
-        if ((!storedStillValid || !stored) && newList.length > 0) {
+        const storedEntry = stored ? findBranchListEntry(stored, newList) : undefined
+        if (!storedEntry && newList.length > 0) {
           localStorage.setItem('ashcol-global-branch-id', newList[0].id)
           setGlobalBranchId(newList[0].id)
+          window.dispatchEvent(new Event('ashcol-global-branch-change'))
+        } else if (storedEntry && stored !== storedEntry.id) {
+          localStorage.setItem('ashcol-global-branch-id', storedEntry.id)
+          setGlobalBranchId(storedEntry.id)
           window.dispatchEvent(new Event('ashcol-global-branch-change'))
         }
       } catch (err) {
@@ -209,7 +213,7 @@ export default function DashboardLayout() {
       const gId = localStorage.getItem('ashcol-global-branch-id')
       setGlobalBranchId(gId)
       if (gId && adminBranches.length > 0) {
-        const found = adminBranches.find(b => b.id === gId)
+        const found = findBranchListEntry(gId, adminBranches) || adminBranches.find(b => b.id === gId)
         if (found) {
           setBranchLabel(found.name)
         }

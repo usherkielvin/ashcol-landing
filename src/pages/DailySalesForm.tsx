@@ -4,7 +4,18 @@ import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2, Edit } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
+import {
+  API_BASE_URL,
+  formatDisplayUserLabel,
+  isSameBaseBranch,
+  resolveScopedBranchId,
+  isMayDtrEditWindow,
+  isEmployeePortalRole,
+  findBranchListEntry,
+  branchEntryMatchesGlobal,
+  parseGlobalBranchScope,
+  type BranchListEntry,
+} from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
@@ -60,6 +71,7 @@ type EditPermissionContext = {
   isAdmin: boolean
   role: string
   isManager: boolean
+  globalBranchId?: string | null
   user?: {
     branchId?: string | null
     email?: string | null
@@ -76,7 +88,13 @@ const resolveCanEditExistingReport = (
     auditLine?: string | null
   },
 ) => {
-  if (ctx.isAdmin) return true
+  if (ctx.isAdmin) {
+    if (!ctx.globalBranchId) return false
+    return branchEntryMatchesGlobal(
+      { id: report.branchId || '', auditLine: report.auditLine },
+      ctx.globalBranchId,
+    )
+  }
 
   const role = ctx.role
   const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(report.reportDate)
@@ -151,31 +169,43 @@ const cleanInstallerName = (name: string, currentBranchName?: string) => {
   return cleaned
 }
 
-const normalizeTransactionBranch = (branchId?: string | null, email?: string | null) => {
-  const raw = branchId || ''
-  const lower = raw.toLowerCase()
-  const emailLower = (email || '').toLowerCase()
+const normalizeTransactionBranch = (branchId?: string | null, email?: string | null) =>
+  parseGlobalBranchScope(branchId, email)
 
-  const isServices = lower.endsWith('-services') || lower.endsWith('-service') || emailLower.includes('service')
+const applyBranchListEntry = (
+  branch: BranchListEntry,
+  setters: {
+    setSelectedBranchId: (id: string) => void
+    setSelectedAuditLine: (line: string | null) => void
+    setBranch: (name: string) => void
+  },
+) => {
+  setters.setSelectedBranchId(branch.id)
+  setters.setSelectedAuditLine(branch.auditLine || null)
+  setters.setBranch(branch.name)
+}
 
-  if (lower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || lower.startsWith('br-taguig') || lower.includes('taguig')) {
-    return {
-      branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
-      auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
-      branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
-    }
+const syncAdminBranchFromGlobal = (
+  globalId: string | null | undefined,
+  branchesList: BranchListEntry[],
+  email?: string | null,
+  setters?: {
+    setSelectedBranchId: (id: string) => void
+    setSelectedAuditLine: (line: string | null) => void
+    setBranch: (name: string) => void
+  },
+): BranchListEntry | null => {
+  if (!globalId || !setters) return null
+  const found = findBranchListEntry(globalId, branchesList, email)
+  if (found) {
+    applyBranchListEntry(found, setters)
+    return found
   }
-
-  let baseName = raw.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
-  if (!baseName) {
-    baseName = 'BRANCH'
-  }
-
-  return {
-    branchId: raw.replace(/-(sales|services|service)$/i, '').toUpperCase(),
-    auditLine: null,
-    branchName: baseName,
-  }
+  const norm = parseGlobalBranchScope(globalId, email)
+  setters.setSelectedBranchId(norm.branchId)
+  setters.setSelectedAuditLine(norm.auditLine)
+  setters.setBranch(norm.branchName)
+  return null
 }
 
 const mkCash = (): CashTxRow   => ({ id: uid(), customer: '', installer: '', amount: '' })
@@ -325,7 +355,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [branchName, setBranch] = useState(initialBranchName)
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId)
   const [selectedAuditLine, setSelectedAuditLine] = useState<string | null>(initialAuditLine)
-  const [branchesList, setBranchesList] = useState<{ id: string; name: string; auditLine?: string; isActive?: boolean }[]>([])
+  const [branchesList, setBranchesList] = useState<BranchListEntry[]>([])
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id'),
+  )
   // Submission metadata (populated when viewing existing report)
   const [submittedAt, setSubmittedAt] = useState<string | null>(null)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
@@ -340,7 +373,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const canEditExistingReport = useMemo(() => {
     if (!reportId) return true
     return resolveCanEditExistingReport(
-      { isAdmin, role, isManager, user },
+      { isAdmin, role, isManager, user, globalBranchId },
       {
         reportDate,
         status: reportStatus,
@@ -348,18 +381,30 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         auditLine: selectedAuditLine,
       },
     )
-  }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine])
+  }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine, globalBranchId])
 
   const canEditOrSubmit = useMemo(() => {
     if (!canSubmit) return false
     if (reportId) return canEditExistingReport
 
-    const selectedBranch = branchesList.find(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
+    const selectedBranch = branchesList.find(
+      b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null),
+    )
+
     if (selectedBranch && selectedBranch.isActive === false) {
       return false
     }
+
+    if (isAdmin) {
+      if (!globalBranchId) return false
+      return branchEntryMatchesGlobal(
+        { id: selectedBranchId, auditLine: selectedAuditLine, name: branchName },
+        globalBranchId,
+      )
+    }
+
     return true
-  }, [canSubmit, reportId, canEditExistingReport, selectedBranchId, selectedAuditLine, branchesList])
+  }, [canSubmit, reportId, canEditExistingReport, selectedBranchId, selectedAuditLine, branchesList, isAdmin, globalBranchId, branchName])
 
   const isFormDisabled = !canEditOrSubmit || reviewMode || (!!reportId && !isEditingExisting)
   const isViewOnlyReport = !!reportId && !isEditingExisting && !reviewMode
@@ -398,11 +443,20 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const datePickerCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    if (!isAdmin) return
+    const syncGlobal = () => setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    syncGlobal()
+    window.addEventListener('ashcol-global-branch-change', syncGlobal)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncGlobal)
+  }, [isAdmin])
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (user && !reportId && !params.get('id')) {
       if (user.name && !receivedBy) {
         setReceivedBy(user.name)
       }
+      if (isAdmin) return
       const emailLower = (user.email || '').toLowerCase()
       const norm = normalizeTransactionBranch(user.branchId, emailLower)
       if (norm.branchId) {
@@ -411,7 +465,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         setBranch(norm.branchName)
       }
     }
-  }, [user, reportId, receivedBy])
+  }, [user, reportId, receivedBy, isAdmin])
 
   useEffect(() => {
     if (!canSubmit) return
@@ -458,12 +512,24 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           
           finalList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(finalList)
-          if (finalList.length > 0) {
-            const exists = finalList.some(b => b.id === selectedBranchId && (b.auditLine || null) === (selectedAuditLine || null))
-            if (!exists && isAdmin && !reportId && !new URLSearchParams(window.location.search).get('id')) {
-              setSelectedBranchId(finalList[0].id)
-              setSelectedAuditLine(finalList[0].auditLine || null)
-              setBranch(finalList[0].name)
+
+          const params = new URLSearchParams(window.location.search)
+          const isEditingExistingReport = !!(reportId || params.get('id'))
+          if (finalList.length > 0 && isAdmin && !isEditingExistingReport) {
+            const branchSetters = {
+              setSelectedBranchId,
+              setSelectedAuditLine,
+              setBranch,
+            }
+            const globalId = localStorage.getItem('ashcol-global-branch-id')
+            const activeEntry = globalId ? findBranchListEntry(globalId, finalList, user?.email) : null
+            const currentEntry = findBranchListEntry(selectedBranchId, finalList, user?.email)
+            if (activeEntry) {
+              const sameAsActive = currentEntry?.id === activeEntry.id
+                && (currentEntry.auditLine || null) === (activeEntry.auditLine || null)
+              if (!sameAsActive) {
+                applyBranchListEntry(activeEntry, branchSetters)
+              }
             }
           }
         }
@@ -472,7 +538,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       }
     }
     loadBranchesList()
-  }, [canSubmit, selectedBranchId, selectedAuditLine, reportId])
+  }, [canSubmit, isAdmin, reportId])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -482,50 +548,14 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         if (reportId || params.get('id')) return
       }
       ignoreNextCohFetch.current = false
-      const stored = localStorage.getItem('ashcol-global-branch-id')
-      if (isInitial && user?.branchId && !stored) {
-        const emailLower = (user.email || '').toLowerCase()
-        const norm = normalizeTransactionBranch(user.branchId, emailLower)
-        if (norm.branchId) {
-          setSelectedBranchId(norm.branchId)
-          setSelectedAuditLine(norm.auditLine)
-          setBranch(norm.branchName)
-          let storedId = norm.branchId
-          if (norm.branchId.startsWith('BR-TAGUIG') || norm.branchId.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
-            storedId = norm.auditLine === 'TAGUIG_SERVICE' ? 'BR-TAGUIG-SALES-services' : 'BR-TAGUIG-SALES-sales'
-          }
-          localStorage.setItem('ashcol-global-branch-id', storedId)
-          return
-        }
-      }
-
       const gId = localStorage.getItem('ashcol-global-branch-id')
       if (!gId) return
-      
-      const norm = normalizeTransactionBranch(gId, null)
-      const found = branchesList.find(b => {
-        const bIdBase = b.id.toLowerCase().replace(/-(sales|services|service)$/i, '')
-        const normIdBase = norm.branchId.toLowerCase().replace(/-(sales|services|service)$/i, '')
-        if (bIdBase === normIdBase) {
-          if (normIdBase.includes('taguig') || normIdBase.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')) {
-            const isServiceB = b.auditLine === 'TAGUIG_SERVICE' || (b.name && b.name.toUpperCase().includes('SERVICES'))
-            const isServiceNorm = norm.auditLine === 'TAGUIG_SERVICE'
-            return isServiceB === isServiceNorm
-          }
-          return true
-        }
-        return false
-      })
 
-      if (found) {
-        setSelectedBranchId(found.id)
-        setSelectedAuditLine(found.auditLine || null)
-        setBranch(found.name)
-      } else {
-        setSelectedBranchId(norm.branchId)
-        setSelectedAuditLine(norm.auditLine)
-        setBranch(norm.branchName)
-      }
+      syncAdminBranchFromGlobal(gId, branchesList, user?.email, {
+        setSelectedBranchId,
+        setSelectedAuditLine,
+        setBranch,
+      })
     }
 
     syncFromGlobal(true)
@@ -534,7 +564,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       const params = new URLSearchParams(window.location.search)
       const isEditing = !!(reportId || params.get('id'))
       if (isEditing) {
-        console.log('[Global Branch Change] Clearing reportId and form state')
         setReportId(null)
         clearForm(true)
         loadedReportDate.current = null
