@@ -4162,7 +4162,7 @@ export default function Tickets() {
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={addForm.ticketNumber || ''}
-                      placeholder="Auto-generated if left blank (e.g. TKT-00001)"
+                      placeholder="Auto-generated if left blank (e.g. AS-01)"
                       onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -4378,7 +4378,7 @@ export default function Tickets() {
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={editForm.ticketNumber || ''}
-                      placeholder="e.g. TKT-00001"
+                      placeholder="e.g. AS-01"
                       onChange={e => setEditForm({ ...editForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />

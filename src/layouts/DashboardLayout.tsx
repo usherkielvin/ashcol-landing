@@ -753,7 +753,13 @@ export default function DashboardLayout() {
         )}
 
         {/* ── Page Content ───────────────────────────────── */}
-        <main className={currentPage === 'Overview' ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]" : "flex-1 overflow-y-auto p-5 md:p-8 relative"}>
+        <main className={
+          currentPage === 'Overview'
+            ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
+            : currentPage === 'Relays'
+              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+              : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+        }>
           {/* Subtle ambient gradient */}
           {!isLight && (
             <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[500px] opacity-[0.06]"
@@ -763,7 +769,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className="relative z-10">
+          <div className={`relative z-10 ${currentPage === 'Relays' ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             <Outlet />
           </div>
         </main>

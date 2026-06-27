@@ -4,11 +4,11 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
-  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Maximize2
+  Eye, Phone, CheckSquare, Square, Edit3
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatBranchName } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -395,12 +395,23 @@ export default function ClientMasterlist() {
     return null
   }
 
+  const formatAssignedBranchLabel = (branchId?: string) => {
+    const resolved = resolveBranch(branchId)
+    if (!resolved && !branchId) return '—'
+    const id = (resolved?.id || branchId || '').toUpperCase()
+    const name = resolved?.name || ''
+    if (id === 'BR-TAGUIG-SALES' || id.endsWith('-SALES')) return 'TAGUIG - SALES'
+    if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) {
+      return 'TAGUIG - SERVICES'
+    }
+    return formatBranchName(name) || '—'
+  }
+
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING'>('ALL_PENDING')
-  const [relayView, setRelayView] = useState<'DETAILS' | 'SUMMARY'>('DETAILS')
   const [ticketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
@@ -497,49 +508,49 @@ export default function ClientMasterlist() {
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
-  const [fitView, setFitView] = useState(false)
 
   const tableRowBorder = isLight ? '#cbd5e1' : '#2a3f5f'
   const tableColBorder = `1px solid ${tableRowBorder}`
-  const cellPadY = fitView ? 4 : 8
-  const cellPadX = fitView ? 7 : 12
-  const headerPadY = fitView ? 5 : 9
+  const cellPadY = 8
+  const cellPadX = 10
+  const headerPadY = 9
+  const tableFontSize = '11px'
+  const headerFontSize = '10px'
 
   const toggleColumn = useCallback((colLabel: string) => {
-    if (fitView) return
     setExpandedCols(prev => ({
       ...prev,
       [colLabel]: !prev[colLabel]
     }))
-  }, [fitView])
+  }, [])
 
   const columns = useMemo(() => {
     const rawCols = [
-      { label: 'ASSIGNED',           weight: 12, expMul: 1.55, sticky: true,  freeze: true,  center: true, right: false },
-      { label: 'CUSTOMER NAME',      weight: 16, expMul: 1.65, sticky: false, freeze: false, center: true, right: false },
-      { label: 'DISTRICT',           weight: 9,  expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'STORE',              weight: 11, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
-      { label: 'BRAND / HP',         weight: 10, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'COMMIT',             weight: 12, expMul: 1.6,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'DATE RELAYED',       weight: 10, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
-      { label: 'REQUESTED SCHEDULE', weight: 12, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL SCHEDULE',     weight: 10, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
-      { label: 'LAST UPDATE',        weight: 18, expMul: 1.75, sticky: false, freeze: false, center: true, right: true },
+      { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'STATUS',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'CATEGORY',     weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'CUSTOMER NAME', weight: 14, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'DISTRICT',     weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'LAST UPDATE',  weight: 15, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
     ]
 
     const weights = rawCols.map(col => {
-      const isExpanded = !fitView && !!expandedCols[col.label]
+      const isExpanded = !!expandedCols[col.label]
       return col.weight * (isExpanded ? col.expMul : 1)
     })
     const totalWeight = weights.reduce((sum, w) => sum + w, 0)
 
     return rawCols.map((col, idx) => ({
       ...col,
-      isExpanded: !fitView && !!expandedCols[col.label],
+      isExpanded: !!expandedCols[col.label],
       w: `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`,
       left: col.sticky ? 0 : undefined,
     }))
-  }, [expandedCols, fitView])
+  }, [expandedCols])
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
@@ -1367,9 +1378,58 @@ export default function ClientMasterlist() {
 
   
 
+  const formatRelayDate = (value?: string) => {
+    if (!value) return '—'
+    try {
+      const d = new Date(value)
+      if (isNaN(d.getTime())) return value
+      const day = d.getDate()
+      const mon = d.toLocaleDateString('en-US', { month: 'short' })
+      const yr = String(d.getFullYear()).slice(-2)
+      return `${day}-${mon}-${yr}`
+    } catch {
+      return value
+    }
+  }
+
+  const getCategoryLabel = (ticket: Ticket) => {
+    const svc = (ticket.serviceType || '').trim().toUpperCase()
+    if (/S\/I|\bSI\b|INSTALL/.test(svc)) return 'S/I'
+    if (svc.includes('SURVEY')) return 'SURVEY'
+    if (svc.includes('INSTALLATION')) return 'INSTALLATION'
+    if (svc.includes('SERVICE') || svc.includes('CLEAN')) return 'SERVICE'
+    const cat = getTicketCategory(ticket)
+    if (cat === 'Survey & Install') return 'S/I'
+    if (cat === 'Survey') return 'SURVEY'
+    if (cat === 'Service') return 'SERVICE'
+    return svc || 'SERVICE'
+  }
+
+  const getRelayStatusShort = (ticket: Ticket) => {
+    const label = getRelayStatusLabel(ticket)
+    if (label === 'Pending') return 'PENDING'
+    if (label === 'Cancelled') return 'CANCELLED'
+    return 'ASSIGNED'
+  }
+
+  const formatBranchTableLabel = (branchId?: string) => {
+    const full = formatAssignedBranchLabel(branchId)
+    if (full === '—') return '—'
+    if (full.startsWith('TAGUIG')) return 'TAGUIG'
+    return full
+  }
+
   const getTicketNumber = (ticket: Ticket) => {
-    if (ticket.ticketNumber?.trim()) return ticket.ticketNumber.trim()
-    return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '—').toUpperCase()
+    const raw = ticket.ticketNumber?.trim()
+    if (raw) {
+      const legacy = raw.match(/^TKT-0*(\d+)$/i)
+      if (legacy) {
+        const seq = parseInt(legacy[1], 10)
+        return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw
+      }
+      return raw
+    }
+    return '—'
   }
 
   const displayUpper = (value?: string | null) => {
@@ -1411,10 +1471,10 @@ export default function ClientMasterlist() {
     : { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
 
   return (
-    <div className="flex flex-col gap-5" style={{ minHeight: '100%', backgroundColor: pageBg }}>
+    <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-wrap items-center gap-2 px-5 md:px-8 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2">
 
           {/* Branch Filter */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
@@ -1458,44 +1518,6 @@ export default function ClientMasterlist() {
             </select>
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
-
-          <div className="flex items-center rounded-lg border overflow-hidden"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            {[
-              { key: 'DETAILS', label: 'Details', icon: List },
-              { key: 'SUMMARY', label: 'Summary', icon: LayoutGrid },
-            ].map(item => {
-              const Icon = item.icon
-              const active = relayView === item.key
-              return (
-                <button key={item.key} type="button" onClick={() => setRelayView(item.key as typeof relayView)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold transition-colors"
-                  style={{
-                    backgroundColor: active ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.16)') : 'transparent',
-                    color: active ? '#059669' : textMuted,
-                    borderRight: item.key === 'DETAILS' ? `1px solid ${inputBorder}` : undefined
-                  }}>
-                  <Icon className="w-3.5 h-3.5" />
-                  {item.label}
-                </button>
-              )
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setFitView(v => !v)}
-            title={fitView ? 'Restore default column spacing' : 'Fit table — compact columns and row grid'}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all hover:opacity-90 shrink-0"
-            style={{
-              backgroundColor: fitView ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.16)') : inputBg,
-              borderColor: fitView ? (isLight ? '#86efac' : 'rgba(16,185,129,0.35)') : inputBorder,
-              color: fitView ? '#059669' : textMuted,
-            }}>
-            <Maximize2 className="w-3.5 h-3.5" />
-            {fitView ? 'Default View' : 'Fit View'}
-          </button>
-
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1543,7 +1565,7 @@ export default function ClientMasterlist() {
 
       {/* ── Scan Error Banner ──────────────────────────────────── */}
       {scanError && (
-        <div className="p-4 rounded-xl border flex items-center justify-between gap-3"
+        <div className="mx-3 mt-2 p-3 rounded-lg border flex items-center justify-between gap-3"
           style={{ backgroundColor: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
           <div className="flex items-center gap-2 text-xs font-semibold text-red-500">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -1555,130 +1577,15 @@ export default function ClientMasterlist() {
         </div>
       )}
 
-      {relayView === 'SUMMARY' ? (
-        <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
-            <div>
-              <h2 className="text-sm font-black" style={{ color: textPrimary }}>Ticket Summary</h2>
-              <p className="text-xs mt-0.5" style={{ color: textMuted }}>{filtered.length} ticket{filtered.length !== 1 ? 's' : ''} matching the current filters</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {['Service', 'Survey & Install', 'Survey', 'Collection'].map(category => {
-                const color = getCategoryColor(category)
-                return (
-                  <span key={category} className="px-2.5 py-1 rounded-lg text-xs font-black border"
-                    style={{ color, backgroundColor: `${color}14`, borderColor: `${color}33` }}>
-                    {category}: {filtered.filter(t => getTicketCategory(t) === category).length}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table
-              className="w-full text-xs"
-              style={{
-                width: '100%',
-                borderCollapse: 'collapse',
-                tableLayout: 'fixed',
-              }}>
-              <colgroup>
-                {['9%', '8%', '16%', '10%', '11%', '12%', '9%', '9%', '11%', '5%'].map((w, i) => (
-                  <col key={i} style={{ width: w }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr style={{ backgroundColor: inputBg }}>
-                  {['CATEGORY', 'STATUS', 'CUSTOMER', 'BRANCH', 'NEGOTIATOR', 'STORE', 'REQUESTED', 'FINAL', 'PAYMENT', 'ACTION'].map(label => (
-                    <th
-                      key={label}
-                      className="text-center font-black whitespace-nowrap"
-                      style={{
-                        color: textMuted,
-                        borderBottom: `2px solid ${tableRowBorder}`,
-                        borderRight: tableColBorder,
-                        padding: `${headerPadY}px ${cellPadX}px`,
-                        fontSize: fitView ? '9px' : '10px',
-                        textAlign: 'center',
-                      }}>
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="uppercase">
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center" style={{ color: textMuted }}>
-                      <Loader2 className="w-7 h-7 animate-spin mx-auto mb-3 text-[#10B981]" />
-                      Loading tickets...
-                    </td>
-                  </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center" style={{ color: textMuted }}>No tickets match the current filters.</td>
-                  </tr>
-                ) : filtered.map((ticket, idx) => {
-                  const category = getTicketCategory(ticket)
-                  const details = parseAcDetails(ticket)
-                  const status = getRelayStatusLabel(ticket)
-                  const paymentText = category === 'Collection'
-                    ? (isCollectionPaid(ticket) ? 'Collected' : 'Pending collection')
-                    : (ticket.modeOfPayment || (ticket.installationCharges ? `₱${ticket.installationCharges.toLocaleString()}` : '—'))
-                  const summaryCellStyle = (extra: Record<string, unknown> = {}) => ({
-                    padding: `${cellPadY}px ${cellPadX}px`,
-                    borderBottom: `1px solid ${tableRowBorder}`,
-                    borderRight: tableColBorder,
-                    fontSize: fitView ? '10px' : undefined,
-                    lineHeight: fitView ? 1.25 : undefined,
-                    boxSizing: 'border-box' as const,
-                    overflow: 'hidden',
-                    verticalAlign: 'middle' as const,
-                    textAlign: 'center' as const,
-                    ...extra,
-                  })
-                  return (
-                    <tr key={ticket.id}
-                      onClick={() => { setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
-                      style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'), cursor: 'pointer' }}>
-                      <td style={summaryCellStyle()}><span className="whitespace-nowrap">{idx + 1}. {displayUpper(category)}</span></td>
-                      <td style={summaryCellStyle({ color: status === 'Pending' ? '#F59E0B' : textPrimary })} className="whitespace-nowrap">{displayUpper(status)}</td>
-                      <td style={summaryCellStyle({ color: textPrimary })} className="truncate" title={displayUpper(ticket.customerName || 'Direct Client')}>{displayUpper(ticket.customerName || 'Direct Client')}</td>
-                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(resolveBranch(ticket.branchId)?.name)}</td>
-                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(ticket.assignedEmployeeName || ticket.installerName)}</td>
-                      <td style={summaryCellStyle({ color: textMuted })} className="truncate" title={displayUpper(getStoreStyle(ticket.sourceVendor).label)}>{displayUpper(getStoreStyle(ticket.sourceVendor).label)}</td>
-                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(formatShortDate(ticket.preferredDate))}</td>
-                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(formatShortDate(details.finalDate))}</td>
-                      <td style={summaryCellStyle({ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted })} className="whitespace-nowrap">{displayUpper(paymentText)}</td>
-                      <td style={summaryCellStyle({ textAlign: 'right' })}>
-                        <div className="flex justify-end gap-1.5">
-                          <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                            <Eye className="w-3.5 h-3.5" /> View
-                          </button>
-                          <button type="button" onClick={e => { e.stopPropagation(); openDrawer(ticket) }}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                            Edit
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>      ) : (
-      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className={`overflow-x-auto ${fitView ? '' : 'overflow-y-auto'}`} style={{ maxHeight: fitView ? undefined : 'calc(100vh - 220px)' }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
+          <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
           <table
-            className="text-xs w-full"
+            className="w-full"
             style={{
               width: '100%',
               tableLayout: 'fixed',
               borderCollapse: 'collapse',
+              fontSize: tableFontSize,
             }}>
             <colgroup>
               {columns.map(col => (
@@ -1690,7 +1597,7 @@ export default function ClientMasterlist() {
                 {columns.map(col => (
                   <th key={col.label}
                     onClick={() => col.label !== 'ACTIONS' && toggleColumn(col.label)}
-                    title={fitView ? col.label : col.label !== 'ACTIONS' ? `Click to ${col.isExpanded ? 'collapse' : 'expand'} column` : undefined}
+                    title={col.label !== 'ACTIONS' ? `Click to ${col.isExpanded ? 'collapse' : 'expand'} column` : undefined}
                     style={{
                       padding: `${headerPadY}px ${cellPadX}px`,
                       textAlign: 'center',
@@ -1701,10 +1608,10 @@ export default function ClientMasterlist() {
                       textOverflow: 'ellipsis',
                       borderRight: tableColBorder,
                       borderBottom: `2px solid ${tableRowBorder}`,
-                      fontSize: fitView ? '9px' : '10px',
+                      fontSize: headerFontSize,
                       letterSpacing: '0.07em',
                       backgroundColor: inputBg,
-                      cursor: fitView ? 'default' : col.label !== 'ACTIONS' ? 'pointer' : 'default',
+                      cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
                       userSelect: 'none',
                       transition: 'all 0.15s ease-in-out',
                       position: 'sticky',
@@ -1741,14 +1648,13 @@ export default function ClientMasterlist() {
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
-                  const branchName = resolveBranch(ticket.branchId)?.name || '—'
+                  const branchName = formatBranchTableLabel(ticket.branchId)
                   const category = getTicketCategory(ticket)
+                  const categoryLabel = getCategoryLabel(ticket)
                   const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
                   const district = ticket.district || guessDistrict(ticket.location || '') || '—'
-                  const relayedDate = formatShortDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
-                  const requestedDate = formatShortDate(ticket.preferredDate)
-                  const finalDate = formatShortDate(details.finalDate)
-                  const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatShortDate(ticket.updatedAt)}` : '')
+                  const relayedDate = formatRelayDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
+                  const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatRelayDate(ticket.updatedAt)}` : '—')
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
                   const categoryTint = !isSelected
                     ? category === 'Survey'
@@ -1764,27 +1670,41 @@ export default function ClientMasterlist() {
                     : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
                     : (isLight ? '#f1f5f9' : '#0f1e36')
                   const ticketNo = getTicketNumber(ticket)
+                  const relayStatus = getRelayStatusShort(ticket)
+                  const statusIsAssigned = relayStatus === 'ASSIGNED'
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = [
                     { value: (
-                      <div className="flex flex-col items-center justify-center gap-0.5 w-full text-center">
-                        <span className="font-semibold text-[11px] w-full truncate" style={{ color: textPrimary }}>{displayUpper(branchName)}</span>
-                        <span className="text-[10px] w-full truncate" style={{ color: textMuted }}>{displayUpper(negotiator)}</span>
-                      </div>
+                      <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
+                        {displayUpper(ticketNo)}
+                      </span>
                     ) },
                     { value: (
-                      <div className="flex flex-col items-center justify-center gap-0.5 min-w-0 w-full text-center">
-                        <span className={`${fitView || !columns[1].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full`} title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>{displayUpper(ticket.customerName || 'Direct Client')}</span>
-                        <span className="text-[9px] font-mono font-bold truncate w-full" style={{ color: textMuted }} title={ticketNo}>{displayUpper(ticketNo)}</span>
-                      </div>
+                      <span
+                        className="font-semibold w-full truncate block text-center"
+                        title={relayStatus}
+                        style={{ color: statusIsAssigned ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
+                        {relayStatus}
+                      </span>
+                    ) },
+                    { value: (
+                      <span className="truncate block w-full text-center font-semibold" style={{ color: textPrimary }} title={categoryLabel}>
+                        {categoryLabel}
+                      </span>
+                    ) },
+                    { value: (
+                      <span
+                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full text-center`}
+                        title={displayUpper(ticket.customerName || 'Direct Client')}
+                        style={{ color: textPrimary }}>
+                        {displayUpper(ticket.customerName || 'Direct Client')}
+                      </span>
                     ) },
                     { value: <span className="block w-full truncate text-center">{displayUpper(district)}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
-                    { value: <span className="block w-full truncate text-center">{displayUpper(`${details.brand || ''} ${details.capacity || ''}`.trim())}</span> },
-                    { value: <span className={`${fitView || !columns[5].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={displayUpper(ticket.commitType)}>{displayUpper(ticket.commitType)}</span> },
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(requestedDate)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(finalDate)}</span> },
-                    { value: <span className={`${fitView || !columns[9].isExpanded ? 'truncate' : 'break-words'} block w-full text-right`} title={displayUpper(lastUpdate)}>{displayUpper(lastUpdate)}</span>, right: true },
+                    { value: <span className="truncate block w-full text-center" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
+                    { value: <span className="truncate block w-full text-center" title={displayUpper(negotiator)}>{displayUpper(negotiator)}</span> },
+                    { value: <span className={`${!columns[9].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={displayUpper(lastUpdate)}>{displayUpper(lastUpdate)}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -1815,8 +1735,8 @@ export default function ClientMasterlist() {
                               borderRight: tableColBorder,
                               borderBottom: `1px solid ${tableRowBorder}`,
                               color: textMuted,
-                              fontSize: fitView ? '10px' : '11px',
-                              lineHeight: fitView ? 1.25 : 1.4,
+                              fontSize: tableFontSize,
+                              lineHeight: 1.4,
                               textAlign: columnTextAlign(col, cell),
                               overflow: 'hidden',
                               verticalAlign: 'middle',
@@ -1839,7 +1759,7 @@ export default function ClientMasterlist() {
         </div>
 
         {/* ── Combined Stats Counter & Danger Zone Footer Strip ─────────────────────────────── */}
-        <div className="flex items-center justify-between gap-4 px-4 py-2.5 flex-wrap" style={{ borderTop: `1px solid ${border}` }}>
+        <div className="flex items-center justify-between gap-3 px-3 py-2 flex-wrap shrink-0" style={{ borderTop: `1px solid ${border}` }}>
           {/* Counters */}
           <div className="flex flex-wrap items-center gap-5">
             {[
@@ -1874,7 +1794,6 @@ export default function ClientMasterlist() {
           )}
         </div>
       </div>
-      )}
 
       {/* Centered Manage/Edit Ticket Modal */}
       {isActionDrawerOpen && selectedTicket && ReactDOM.createPortal((() => {
@@ -2857,7 +2776,7 @@ export default function ClientMasterlist() {
         const det = previewDetails
         const sl  = getRelayStatusLabel(t)
         const neg = t.assignedEmployeeName || t.installerName || '—'
-        const bn  = resolveBranch(t.branchId)?.name || '—'
+        const bn  = formatAssignedBranchLabel(t.branchId)
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
