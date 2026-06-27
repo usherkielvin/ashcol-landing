@@ -4,7 +4,8 @@ import {
   CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
   Camera, MapPin, Calendar, Tag, User,
-  ChevronDown, ChevronUp, Map, Home, Mailbox, Globe
+  ChevronDown, ChevronUp, Map, Home, Mailbox, Globe,
+  Loader2, Truck
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -124,7 +125,9 @@ export default function Employees() {
   // Drawer details panel state
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'address' | 'system'>('overview')
+  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'address' | 'system' | 'lineup'>('overview')
+  const [employeeLineups, setEmployeeLineups] = useState<any[]>([])
+  const [loadingLineups, setLoadingLineups] = useState(false)
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -200,6 +203,62 @@ export default function Employees() {
   }
 
   const allJobTitles = [...DEFAULT_JOB_TITLES, ...customJobTitles]
+
+  useEffect(() => {
+    if (activeDrawerTab !== 'lineup' || !selectedEmployee) {
+      setEmployeeLineups([])
+      return
+    }
+
+    const fetchEmployeeLineups = async () => {
+      setLoadingLineups(true)
+      try {
+        const dates: string[] = []
+        // Fetch 3 days in the past and 7 days in the future
+        for (let i = -3; i <= 7; i++) {
+          const d = new Date()
+          d.setDate(d.getDate() + i)
+          const yyyy = d.getFullYear()
+          const mm = String(d.getMonth() + 1).padStart(2, '0')
+          const dd = String(d.getDate()).padStart(2, '0')
+          dates.push(`${yyyy}-${mm}-${dd}`)
+        }
+        const headers = { Authorization: `Bearer ${token()}` }
+        const requests = dates.map(date =>
+          fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${selectedEmployee.branchId}`, { headers })
+            .then(r => r.ok ? r.json() : { data: [] })
+            .catch(() => ({ data: [] }))
+        )
+        const responses = await Promise.all(requests)
+        const allRows: any[] = []
+        responses.forEach((res: any, idx) => {
+          const list = res?.data || []
+          const date = dates[idx]
+          list.forEach((row: any) => {
+            allRows.push({ ...row, date })
+          })
+        })
+
+        const empName = selectedEmployee.name.toLowerCase().trim()
+        const matched = allRows.filter(row => {
+          const isDriver = (row.driverName || '').toLowerCase().trim() === empName
+          const isInstaller = Array.isArray(row.installerNames)
+            ? row.installerNames.some((name: string) => (name || '').toLowerCase().trim() === empName)
+            : (row.installerNames || '').toLowerCase().includes(empName)
+          return isDriver || isInstaller
+        })
+        
+        // Sort by date ascending
+        matched.sort((a, b) => a.date.localeCompare(b.date))
+        setEmployeeLineups(matched)
+      } catch (err) {
+        console.error("Error loading employee lineups:", err)
+      } finally {
+        setLoadingLineups(false)
+      }
+    }
+    fetchEmployeeLineups()
+  }, [activeDrawerTab, selectedEmployee])
 
   // ── Data Loaders ────────────────────────────────────────────────────────────
   const fetchBranches = async () => {
@@ -985,7 +1044,7 @@ export default function Employees() {
               <div className="flex-1 flex flex-col min-w-0">
                 {/* Tabs */}
                 <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
-                  {(['overview', 'address', 'system'] as const).map(tab => (
+                  {(['overview', 'address', 'system', 'lineup'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveDrawerTab(tab)}
@@ -1074,6 +1133,77 @@ export default function Employees() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Lineup tab */}
+                  {activeDrawerTab === 'lineup' && (
+                    <div className="flex flex-col gap-4">
+                      {loadingLineups ? (
+                        <div className="flex flex-col items-center justify-center py-10 gap-3">
+                          <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
+                          <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading schedules...</span>
+                        </div>
+                      ) : employeeLineups.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 border border-dashed rounded-2xl p-6" style={{ borderColor: border, backgroundColor: inputBg }}>
+                          <Truck className="w-8 h-8 mb-2" style={{ color: textMuted }} />
+                          <span className="text-xs font-semibold text-center" style={{ color: textMuted }}>No active lineup schedules found for this week.</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: textMuted }}>
+                            Assigned Lineup Schedules (Active Week)
+                          </div>
+                          {employeeLineups.map((row, idx) => {
+                            const isDriver = (row.driverName || '').toLowerCase().trim() === selectedEmployee.name.toLowerCase().trim()
+                            const dateObj = new Date(row.date)
+                            const dateString = dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                            
+                            return (
+                              <div key={row.id || idx} className="p-4 rounded-xl border flex flex-col gap-2.5 transition-all hover:scale-[1.01]" style={{ borderColor: border, backgroundColor: inputBg }}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4" style={{ color: '#10B981' }} />
+                                    <span className="text-xs font-bold" style={{ color: textPrimary }}>{dateString}</span>
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider" style={isDriver 
+                                    ? { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
+                                    : { backgroundColor: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }
+                                  }>
+                                    {isDriver ? 'Driver' : 'Installer'}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 text-xs border-t pt-2.5" style={{ borderColor: border }}>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Assigned Vehicle</div>
+                                    <div className="font-semibold flex items-center gap-1.5" style={{ color: textPrimary }}>
+                                      <Truck className="w-3.5 h-3.5" style={{ color: textMuted }} />
+                                      {row.vehicleName || 'No Vehicle'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Crew / Partner</div>
+                                    <div className="font-semibold truncate" style={{ color: textPrimary }} title={isDriver ? (row.installerNames || []).join(', ') : row.driverName}>
+                                      {isDriver 
+                                        ? (Array.isArray(row.installerNames) && row.installerNames.length > 0 ? row.installerNames.join(', ') : 'No Installers')
+                                        : (row.driverName || 'No Driver')
+                                      }
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {row.remarks && (
+                                  <div className="text-[11px] p-2 rounded-lg border leading-relaxed" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>
+                                    <span className="font-bold text-[9px] uppercase tracking-wider block mb-0.5" style={{ color: textMuted }}>Job Details / Route Remarks</span>
+                                    {row.remarks}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 

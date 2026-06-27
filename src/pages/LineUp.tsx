@@ -893,43 +893,7 @@ export default function LineUp() {
 
       let finalList = newList
 
-      if (user?.role && user.role.toLowerCase() !== 'admin' && user.branchId) {
 
-        const userBranchLower = user.branchId.toLowerCase()
-
-        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-
-        finalList = newList.filter(b => {
-
-          if (isUserTaguig) {
-
-            const emailLower = (user?.email || '').toLowerCase()
-
-            const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
-
-            const bNameUpper = b.name.toUpperCase()
-
-            if (isServicesUser) {
-
-              return bNameUpper.includes('SERVICE') || bNameUpper.includes('SERVICES')
-
-            } else {
-
-              return bNameUpper.includes('SALES')
-
-            }
-
-          } else {
-
-            const userBranchIdUpper = user.branchId!.toUpperCase()
-
-            const bIdUpper = b.id.toUpperCase()
-            return bIdUpper === userBranchIdUpper || 
-                   bIdUpper.startsWith(userBranchIdUpper + '-') || 
-                   userBranchIdUpper.startsWith(bIdUpper + '-')
-          }
-        })
-      }
 
       setBranches(finalList)
 
@@ -4030,7 +3994,7 @@ export default function LineUp() {
 
         </div>
 
-        {role === 'admin' ? (
+        {branches.length > 0 ? (
 
           <div className="relative flex items-center w-full md:w-64 shrink-0">
 
@@ -4072,7 +4036,7 @@ export default function LineUp() {
 
       </div>
 
-      {role === 'admin' && branches.length > 0 && (
+      {branches.length > 0 && (
 
         <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1 scroll-smooth">
 

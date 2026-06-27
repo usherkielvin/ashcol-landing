@@ -198,13 +198,13 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
-    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'manager'] },
-    { name: 'Lineup',          path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin'] },
+    { name: 'Lineup',          path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee'] },
-    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee'] },
+    { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'manager'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'manager'] },
@@ -214,8 +214,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Overview', 'Tickets', 'Schedules', 'Office tasks', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
-  const serviceWorkspaceLinks = ['Overview', 'Tickets', 'Schedules', 'Office tasks', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records']
+  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -392,7 +392,7 @@ export default function DashboardLayout() {
                 subItems: [
                   { name: 'Expenses',     icon: <MdOutlineReceipt size={16} />,              path: findPath('Expense Records') },
                   { name: 'Collections',  icon: <MdOutlineMonetizationOn size={16} />,       path: findPath('For Collections') },
-                  { name: 'Branch quota', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
+                  { name: 'Daily Transaction', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
                   { name: 'Bills',        icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
                   { name: 'Telecoms',     icon: <MdOutlinePhone size={16} />,                path: findPath('Telecoms') },
                 ].filter(s => navLinks.some(l => l.path === s.path)),
