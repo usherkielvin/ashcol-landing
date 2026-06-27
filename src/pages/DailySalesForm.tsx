@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2, Edit } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
@@ -43,24 +43,6 @@ const formatReviewDateTime = (date: Date) =>
 
 const formatReportDateLabel = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-
-const matchesBranchAuditRow = (row: any, branchId: string, auditLine: string | null) => {
-  const rIdBase = String(row?.branchId || '').replace(/-(sales|services|service)$/i, '').toUpperCase()
-  const selIdBase = branchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
-  if (rIdBase !== selIdBase) return false
-  if (auditLine) {
-    const isServiceRow = row.auditLine === 'TAGUIG_SERVICE'
-    const isServiceTarget = auditLine === 'TAGUIG_SERVICE'
-    return isServiceRow === isServiceTarget
-  }
-  return row.auditLine !== 'TAGUIG_SERVICE'
-}
-
-const hasMeaningfulExistingReport = (row: any) => {
-  if (!row?.id) return false
-  const remarks = String(row.remarks || '').trim().toUpperCase()
-  return !['NO TRANSACTION', 'NO RECORD', 'NO SCHED', 'NO REPORT'].includes(remarks)
-}
 
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
@@ -273,6 +255,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [error, setError]           = useState<string | null>(null)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
+  const [isEditingExisting, setIsEditingExisting] = useState(false)
   const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
   const [trNo, setTrNo]         = useState('')
   const [branchName, setBranch] = useState(initialBranchName)
@@ -333,7 +316,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     return true
   }, [canSubmit, reportId, canEditExistingReport, selectedBranchId, selectedAuditLine, branchesList])
 
-  const isFormDisabled = !canEditOrSubmit || reviewMode
+  const isFormDisabled = !canEditOrSubmit || reviewMode || (!!reportId && !isEditingExisting)
 
   const [scanning, setScanning]     = useState(false)
   const [scanError, setScanError]   = useState<string | null>(null)
@@ -346,6 +329,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const dateInputRef = useRef<HTMLInputElement>(null)
   const loadedBranchId = useRef<string | null>(null)
   const loadedAuditLine = useRef<string | null>(null)
+  const userInitiatedDateChange = useRef(false)
+  const branchEmployeeNamesRef = useRef<string[]>([])
+  const existingReportLookupCache = useRef<Map<string, any | null>>(new Map())
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -561,9 +547,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const headers = { Authorization: `Bearer ${token}` }
 
-    const loadData = async () => {
+    const loadBranchData = async () => {
       try {
-        // 1. Fetch branch name (only if not pre-populated/customized by admin selection)
         if (!isAdmin) {
           const resBranch = await fetch(`${API_BASE_URL}/branches/${selectedBranchId}`, { headers })
           if (resBranch.ok) {
@@ -579,29 +564,69 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           }
         }
 
-        // 2. Initialize Cash on Hand Previous Date to always '0'
+        const cleanBranchIdForPurchases = selectedBranchId.replace(/-(sales|services)$/, '')
+        const [resEmployees, resPurchases] = await Promise.all([
+          fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers }),
+          fetch(`${API_BASE_URL}/v1/reports/purchases?branchId=${cleanBranchIdForPurchases}`, { headers }),
+        ])
+
+        const employeeNames: string[] = []
+        if (resEmployees.ok) {
+          const data = await resEmployees.json()
+          const list = data?.data || []
+          list.forEach((emp: any) => {
+            const empBranch = normalizeTransactionBranch(emp.branchId, emp.email).branchId
+            if (empBranch === selectedBranchId && emp.isActive !== false && emp.name?.trim()) {
+              employeeNames.push(cleanInstallerName(emp.name, branchName))
+            }
+          })
+        }
+        branchEmployeeNamesRef.current = employeeNames
+
+        if (resPurchases && resPurchases.ok) {
+          const purchasesData = await resPurchases.json()
+          const refPurchases = (purchasesData || []).filter((p: any) => p.receiptReturned && p.amount > p.actualAmount)
+          setRefundablePurchases(refPurchases)
+        } else {
+          setRefundablePurchases([])
+        }
+      } catch (err) {
+        console.error('Error loading branch data:', err)
+      }
+    }
+
+    loadBranchData()
+  }, [selectedBranchId, selectedAuditLine, isAdmin, branchName])
+
+  useEffect(() => {
+    if (!selectedBranchId) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const headers = { Authorization: `Bearer ${token}` }
+
+    const loadDateData = async () => {
+      try {
         const urlParams = new URLSearchParams(window.location.search)
         const isEditing = !!(reportId || urlParams.get('id'))
-        if (!isEditing && !ignoreNextCohFetch.current) {
+        if (!isEditing && !ignoreNextCohFetch.current && !userInitiatedDateChange.current) {
+          const existing = await lookupExistingReport(reportDate)
+          if (existing?.id) {
+            void loadExistingReportById(existing.id, reportDate)
+            return
+          }
           setCashOnHand('0')
         }
 
-        // 3. Fetch lineup, service reports, and branch employees to collect technician names
         const lineupQueryBranchId = selectedAuditLine
           ? `${selectedBranchId}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
           : selectedBranchId
 
-        const cleanBranchIdForPurchases = selectedBranchId.replace(/-(sales|services)$/, '')
-        const [resLineup, resService, resEmployees, resPurchases] = await Promise.all([
+        const [resLineup, resService] = await Promise.all([
           fetch(`${API_BASE_URL}/v1/lineup?date=${reportDate}&branchId=${lineupQueryBranchId}`, { headers }),
           fetch(`${API_BASE_URL}/v1/service-reports?date=${reportDate}&branchId=${selectedBranchId}`, { headers }),
-          fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers }),
-          fetch(`${API_BASE_URL}/v1/reports/purchases?branchId=${cleanBranchIdForPurchases}`, { headers })
         ])
 
-        const namesSet = new Set<string>()
+        const namesSet = new Set<string>(branchEmployeeNamesRef.current)
 
-        // Process lineup
         if (resLineup.ok) {
           const list = await resLineup.json()
           list.forEach((r: any) => {
@@ -610,7 +635,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           })
         }
 
-        // Process service reports
         if (resService.ok) {
           const list = await resService.json()
           list.forEach((r: any) => {
@@ -619,7 +643,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               const code = (r.statusCode || '').toUpperCase()
               const isSales = type.includes('INSTALL') || code === 'I'
               const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
-              if (isSales === isServiceTarget) return // mismatch
+              if (isSales === isServiceTarget) return
             }
             if (r.technicianName?.trim()) {
               r.technicianName.split(/[,/&]+/).forEach((n: string) => {
@@ -630,36 +654,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           })
         }
 
-        // Process employees
-        if (resEmployees.ok) {
-          const data = await resEmployees.json()
-          const list = data?.data || []
-          list.forEach((emp: any) => {
-            const empBranch = normalizeTransactionBranch(emp.branchId, emp.email).branchId
-            if (empBranch === selectedBranchId && emp.isActive !== false && emp.name?.trim()) {
-              namesSet.add(cleanInstallerName(emp.name, branchName))
-            }
-          })
-        }
-
-        const uniqueNames = Array.from(namesSet).sort()
-        setTechSuggestions(uniqueNames)
-
-        let refPurchases: any[] = []
-        if (resPurchases && resPurchases.ok) {
-          const purchasesData = await resPurchases.json()
-          refPurchases = (purchasesData || []).filter((p: any) => p.receiptReturned && p.amount > p.actualAmount)
-        }
-        setRefundablePurchases(refPurchases)
-
+        setTechSuggestions(Array.from(namesSet).sort())
       } catch (err) {
-        console.error('Error pre-filling data:', err)
+        console.error('Error pre-filling date data:', err)
       } finally {
         ignoreNextCohFetch.current = false
       }
     }
 
-    loadData()
+    loadDateData()
   }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin, reportId])
 
   const fetchReportDetails = async (id: string) => {
@@ -971,6 +974,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     setSuccess(false)
     setSubmitAttempted(false)
     setReportId(null)
+    setIsEditingExisting(false)
     ignoreNextCohFetch.current = false
     if (clearTrNo) setTrNo('')
     setCashOnHand('0')
@@ -996,16 +1000,30 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const lookupExistingReport = async (date: string) => {
     if (!selectedBranchId || !date) return null
+    const cacheKey = `${selectedBranchId}|${selectedAuditLine || ''}|${date}`
+    if (existingReportLookupCache.current.has(cacheKey)) {
+      return existingReportLookupCache.current.get(cacheKey)
+    }
+
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${date}`, {
+    const params = new URLSearchParams({
+      branchId: selectedBranchId,
+      date,
+    })
+    if (selectedAuditLine) params.set('auditLine', selectedAuditLine)
+
+    const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/lookup?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (!res.ok) return null
-    const data = await res.json()
-    const row = (Array.isArray(data) ? data : []).find((r: any) =>
-      matchesBranchAuditRow(r, selectedBranchId, selectedAuditLine),
-    )
-    return hasMeaningfulExistingReport(row) ? row : null
+    let row = null
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.found && data?.id) {
+        row = data
+      }
+    }
+    existingReportLookupCache.current.set(cacheKey, row)
+    return row
   }
 
   const applyFreshDateChange = (newDate: string) => {
@@ -1027,6 +1045,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const loadExistingReportById = async (id: string, newDate: string) => {
     setReportDate(newDate)
     setReportId(id)
+    setIsEditingExisting(false)
     ignoreNextCohFetch.current = true
     const url = new URL(window.location.href)
     url.searchParams.set('id', id)
@@ -1042,10 +1061,21 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const handleReportDateChange = async (newDate: string) => {
     if (!newDate || newDate === reportDate || reviewMode) return
 
+    const previousDate = reportDate
+    const wasEditing = !!reportId
+    userInitiatedDateChange.current = true
     setCheckingExistingReport(true)
+
+    if (!wasEditing) {
+      setReportDate(newDate)
+    }
+
     try {
       const existing = await lookupExistingReport(newDate)
       if (existing?.id) {
+        if (!wasEditing) {
+          setReportDate(previousDate)
+        }
         const submittedLabel = existing.timeUploaded
           ? `Last uploaded at ${existing.timeUploaded}.`
           : existing.createdAt
@@ -1068,14 +1098,30 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         resetReportDateInput()
         return
       }
-      applyFreshDateChange(newDate)
+
+      if (wasEditing) {
+        applyFreshDateChange(newDate)
+      } else {
+        ignoreNextCohFetch.current = false
+      }
     } catch (err) {
       console.error('[handleReportDateChange] Failed to check existing report:', err)
-      applyFreshDateChange(newDate)
+      if (wasEditing) {
+        applyFreshDateChange(newDate)
+      } else if (!wasEditing) {
+        setReportDate(newDate)
+      }
     } finally {
+      userInitiatedDateChange.current = false
       setCheckingExistingReport(false)
     }
   }
+
+  useEffect(() => {
+    if (dateInputRef.current && document.activeElement !== dateInputRef.current) {
+      dateInputRef.current.value = reportDate
+    }
+  }, [reportDate])
 
   const finalizeReportDateSelection = (newDate: string) => {
     if (!newDate || newDate === reportDate || reviewMode || checkingExistingReport) return
@@ -1619,9 +1665,13 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Report Date</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              Report Date
+              {checkingExistingReport && (
+                <span className="normal-case font-medium text-emerald-600 dark:text-emerald-400">Checking…</span>
+              )}
+            </label>
             <input
-              key={`report-date-${reportDate}`}
               ref={dateInputRef}
               id="report-date-input"
               type="date"
@@ -1641,7 +1691,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 finalizeReportDateSelection(e.target.value)
               }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
-              disabled={reviewMode || checkingExistingReport}
+              disabled={reviewMode}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -2461,38 +2511,63 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           </div>
         ) : (
           reportId ? (
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
-              <button
-                type="button"
-                onClick={handleClearForm}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
-              >
-                <Trash2 className="w-4 h-4" /> Clear Form
-              </button>
-              <button
-                id="submit-dtr-btn"
-                onClick={handleDtrSubmit}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-                style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-              >
-                {submitting ? <>Updating...</> : <><Send className="w-4 h-4" /> Update Report</>}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (onSwitchToSummary) onSwitchToSummary()
-                  else window.location.href = '/audit-report'
-                }}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
-              >
-                Cancel
-              </button>
-            </div>
+            !isEditingExisting ? (
+              <div className="flex gap-2.5 mt-2 flex-wrap">
+                {canEditExistingReport && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingExisting(true)}
+                    className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg"
+                    style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+                  >
+                    <Edit className="w-4 h-4" /> Edit Report
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onSwitchToSummary) onSwitchToSummary()
+                    else window.location.href = '/audit-report'
+                  }}
+                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01]"
+                  style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+                >
+                  Back to Summary
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={handleClearForm}
+                  disabled={submitting}
+                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                  style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+                >
+                  <Trash2 className="w-4 h-4" /> Clear Form
+                </button>
+                <button
+                  id="submit-dtr-btn"
+                  onClick={handleDtrSubmit}
+                  disabled={submitting}
+                  className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
+                  style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+                >
+                  {submitting ? <>Updating...</> : <><Send className="w-4 h-4" /> Update Report</>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingExisting(false)
+                  }}
+                  disabled={submitting}
+                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
+                  style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
               <button

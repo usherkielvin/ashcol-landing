@@ -143,7 +143,7 @@ export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
-  const [activeSubItem, setActiveSubItem]        = useState<string | null>('Relays')
+  const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
@@ -340,6 +340,25 @@ export default function DashboardLayout() {
   const navGroups = buildNavGroups(navLinks)
   const collapsedNavItems = buildCollapsedNavItems(navLinks)
 
+  // Keep the group for the current page open; don't fight manual collapse until route changes.
+  useEffect(() => {
+    const path = location.pathname
+    for (const group of navGroups) {
+      const active = group.subItems.find(sub =>
+        path === sub.path || (sub.path.length > 1 && path.startsWith(sub.path + '/'))
+      )
+      if (active) {
+        setOpenAccordion(group.title)
+        setActiveSubItem(active.name)
+        return
+      }
+    }
+  }, [location.pathname, navGroups])
+
+  const toggleAccordion = (title: string) => {
+    setOpenAccordion(prev => (prev === title ? null : title))
+  }
+
   const sidebarIconColor = 'rgba(255,255,255,0.88)'
   const sidebarHoverBg = 'rgba(255,255,255,0.1)'
   const sidebarActiveBg = 'rgba(16,185,129,0.18)'
@@ -450,20 +469,44 @@ export default function DashboardLayout() {
           {!sidebarCollapsed && navGroups.map(group => {
             const isOpen = openAccordion === group.title
             const GroupIcon = group.Icon
-            const isParentActive = isOpen
+            const isRouteInGroup = group.subItems.some(sub =>
+              location.pathname === sub.path
+              || (sub.path.length > 1 && location.pathname.startsWith(sub.path + '/'))
+            )
+            const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
             return (
               <div key={group.title} className="mb-0.5 w-full">
                 <button
-                  onClick={() => setOpenAccordion(isOpen ? null : group.title)}
-                  className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150"
-                  style={isParentActive
+                  type="button"
+                  tabIndex={-1}
+                  aria-expanded={isOpen}
+                  aria-controls={panelId}
+                  onClick={() => toggleAccordion(group.title)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault()
+                      return
+                    }
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      toggleAccordion(group.title)
+                    }
+                  }}
+                  className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                  style={isOpen
                     ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
-                    : { color: sidebarIconColor }}
+                    : isRouteInGroup
+                      ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.06)' }
+                      : { color: sidebarIconColor }}
                   onMouseEnter={e => {
-                    if (!isParentActive) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                    if (!isOpen) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
                   }}
                   onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = isParentActive ? 'rgba(255,255,255,0.12)' : 'transparent'
+                    (e.currentTarget as HTMLElement).style.backgroundColor = isOpen
+                      ? 'rgba(255,255,255,0.12)'
+                      : isRouteInGroup
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'transparent'
                   }}
                 >
                   <div className="flex items-center gap-3">
@@ -476,7 +519,7 @@ export default function DashboardLayout() {
                 </button>
 
                 {isOpen && (
-                  <div className="relative ml-5 mt-1 mb-2 pl-5">
+                  <div id={panelId} role="region" aria-label={group.title} className="relative ml-5 mt-1 mb-2 pl-5">
                     <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
                     <div className="flex flex-col space-y-3 py-1">
                       {group.subItems.map((sub, idx) => {
