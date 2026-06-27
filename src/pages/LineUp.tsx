@@ -653,7 +653,11 @@ export default function LineUp() {
 
   const getBranchDefaultRows = useCallback((dateStr: string, bId: string): LineUpRow[] => {
 
-    const isTaguig = branchName && /TAGUIG/i.test(branchName)
+    const isTaguigServices = branchName && /TAGUIG/i.test(branchName) && (/SERVICE/i.test(branchName) || /SERVICES/i.test(branchName))
+
+    const isTaguigSales = branchName && /TAGUIG/i.test(branchName) && /SALES/i.test(branchName)
+
+    const isTaguig = isTaguigServices || isTaguigSales
 
     const filterSystemKeys = (arr: string[]) => (arr || []).filter(s => {
 
@@ -677,11 +681,15 @@ export default function LineUp() {
 
     for (let i = 0; i < numRows; i++) {
 
-      const service = (!isTaguig && branchServices.length > 0)
+      const service = isTaguigServices
 
-                      ? branchServices[i % branchServices.length]
+                      ? (i === 0 ? 'T3' : i === 1 ? 'FB15' : 'FB17')
 
-                      : (i === 0 ? 'T2' : i === 1 ? 'T3' : 'STRADA');
+                      : (!isTaguig && branchServices.length > 0)
+
+                        ? branchServices[i % branchServices.length]
+
+                        : (i === 0 ? 'T2' : i === 1 ? 'T3' : 'STRADA');
 
       const driver = (!isTaguig && branchDrivers.length > 0)
 

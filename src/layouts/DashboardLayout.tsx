@@ -390,9 +390,9 @@ export default function DashboardLayout() {
                 title: 'Finance',
                 Icon: MdOutlineInsertChartOutlined,
                 subItems: [
+                  { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
                   { name: 'Expenses',     icon: <MdOutlineReceipt size={16} />,              path: findPath('Expense Records') },
                   { name: 'Collections',  icon: <MdOutlineMonetizationOn size={16} />,       path: findPath('For Collections') },
-                  { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
                   { name: 'Bills',        icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
                   { name: 'Telecoms',     icon: <MdOutlinePhone size={16} />,                path: findPath('Telecoms') },
                 ].filter(s => navLinks.some(l => l.path === s.path)),
