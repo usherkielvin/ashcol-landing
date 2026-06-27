@@ -3113,11 +3113,11 @@ export default function Tickets() {
               </button>
             )}
           </div>
-          {isCustomer && (
+          {canEdit && !isTaguigServices && (
             <button onClick={() => navigate('/tickets/create')}
                     className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm"
                     style={{ backgroundColor: green }}>
-              <Plus className="w-3.5 h-3.5" /> New Schedule
+              <Plus className="w-3.5 h-3.5" /> New Ticket
             </button>
           )}
         </div>
@@ -3127,7 +3127,7 @@ export default function Tickets() {
       {!loading && tickets.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
              style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Schedules:</span>
+          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
           <div className="flex items-center gap-1">
             <span style={{ color: textMuted }}>Scheduled / Rescheduled</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.scheduledOrRescheduled}</span>
