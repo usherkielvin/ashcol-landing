@@ -505,7 +505,7 @@ export default function DailyAuditReport() {
     { key: 'target',      label: 'Target Quota',           short: 'Quota' },
     { key: 'difference',  label: 'Diff / Remarks',         short: 'Diff/Rem.' },
     { key: 'coh',         label: 'COH Prev Day',           short: 'COH' },
-    { key: 'fundHo',      label: 'Fund from HO',           short: 'HO' },
+
     { key: 'cashReturns', label: 'Cash Returns',           short: 'Ret.' },
     { key: 'totalCohCfd', label: 'Total COH/CFD',          short: 'CFD' },
     { key: 'cashColl',    label: 'Cash Collection',        short: 'Cash' },
@@ -1006,10 +1006,7 @@ export default function DailyAuditReport() {
                         <>₱{peso(row.cohPreviousDay)}</>
                       </td>
 
-                      {/* ⑨ Fund from HO */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.fundFromHo)}</>
-                      </td>
+
 
                       {/* ⑩ Cash Returns */}
                       <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
@@ -1092,8 +1089,8 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: '#8B5CF6', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.targetDailyQuota)}
                   </td>
-                  {/* Difference + Remarks + COH + HO + Returns + CFD */}
-                  <td colSpan={5} />
+                  {/* Difference + Remarks + COH + Returns + CFD */}
+                  <td colSpan={4} />
                   {/* Cash Collection */}
                   <td className="font-black whitespace-nowrap" style={{ color: '#10B981', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.totalCashCollection)}
@@ -1518,7 +1515,7 @@ export default function DailyAuditReport() {
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, bold: false },
-                            { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo)}`, bold: false },
+
                             { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, bold: false },
                             { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, bold: true },
                           ].map(r => (
