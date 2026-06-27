@@ -59,6 +59,58 @@ const isLikelyMonthNavigation = (fromIso: string, toIso: string) => {
 
 const DATE_PICKER_MONTH_NAV_MS = 350
 
+type EditPermissionContext = {
+  isAdmin: boolean
+  role: string
+  isManager: boolean
+  user?: {
+    branchId?: string | null
+    email?: string | null
+    jobTitle?: string | null
+  } | null
+}
+
+const resolveCanEditExistingReport = (
+  ctx: EditPermissionContext,
+  report: {
+    reportDate: string
+    status?: string | null
+    branchId?: string | null
+    auditLine?: string | null
+  },
+) => {
+  if (ctx.isAdmin) return true
+
+  const role = ctx.role
+  const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(report.reportDate)
+  const mayCorrectionEdit = mayEmployeeEdit || (ctx.isManager && isMayDtrEditWindow(report.reportDate))
+  const reportStatus = report.status || 'SUBMITTED'
+
+  if (reportStatus === 'AUDITED') {
+    if (!mayCorrectionEdit) return false
+  } else if (!ctx.isManager && !mayEmployeeEdit) {
+    return false
+  }
+
+  const selectedBranchId = report.branchId
+  if (!ctx.user?.branchId || !selectedBranchId) return false
+  if (!isSameBaseBranch(ctx.user.branchId, selectedBranchId)) return false
+
+  const resolvedSelected = resolveScopedBranchId(selectedBranchId)
+  const isTaguigRow = resolvedSelected.toUpperCase().includes('TAGUIG')
+  if (isTaguigRow) {
+    const emailLower = (ctx.user.email || '').toLowerCase()
+    const titleLower = (ctx.user.jobTitle || '').toLowerCase()
+    const resolvedUserBranch = resolveScopedBranchId(ctx.user.branchId).toLowerCase()
+    const isServiceUser = resolvedUserBranch.includes('service')
+      || emailLower.includes('service')
+      || titleLower.includes('service')
+    const isServiceRow = report.auditLine === 'TAGUIG_SERVICE'
+    return isServiceUser === isServiceRow
+  }
+  return true
+}
+
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
   cleaned = cleaned.replace(/^ASHCOL\s*[-|:]?\s*/i, '').trim()
@@ -290,34 +342,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const canEditExistingReport = useMemo(() => {
     if (!reportId) return true
-    if (isAdmin) return true
-
-    const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(reportDate)
-    const mayCorrectionEdit = mayEmployeeEdit || (isManager && isMayDtrEditWindow(reportDate))
-
-    if (reportStatus === 'AUDITED') {
-      if (!mayCorrectionEdit) return false
-    } else if (!isManager && !mayEmployeeEdit) {
-      return false
-    }
-
-    if (!user?.branchId || !selectedBranchId) return false
-
-    if (!isSameBaseBranch(user.branchId, selectedBranchId)) return false
-
-    const resolvedSelected = resolveScopedBranchId(selectedBranchId)
-    const isTaguigRow = resolvedSelected.toUpperCase().includes('TAGUIG')
-    if (isTaguigRow) {
-      const emailLower = (user.email || '').toLowerCase()
-      const titleLower = (user.jobTitle || '').toLowerCase()
-      const resolvedUserBranch = resolveScopedBranchId(user.branchId).toLowerCase()
-      const isServiceUser = resolvedUserBranch.includes('service')
-        || emailLower.includes('service')
-        || titleLower.includes('service')
-      const isServiceRow = selectedAuditLine === 'TAGUIG_SERVICE'
-      return isServiceUser === isServiceRow
-    }
-    return true
+    return resolveCanEditExistingReport(
+      { isAdmin, role, isManager, user },
+      {
+        reportDate,
+        status: reportStatus,
+        branchId: selectedBranchId,
+        auditLine: selectedAuditLine,
+      },
+    )
   }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine])
 
   const canEditOrSubmit = useMemo(() => {
@@ -682,7 +715,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     loadDateData()
   }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin, reportId])
 
-  const fetchReportDetails = async (id: string) => {
+  const fetchReportDetails = async (id: string, options?: { enterEditMode?: boolean }) => {
     console.log('[fetchReportDetails] Requested ID:', id)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -965,10 +998,27 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
       setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
 
+      if (options?.enterEditMode) {
+        const canEdit = resolveCanEditExistingReport(
+          { isAdmin, role, isManager, user },
+          {
+            reportDate: data.reportDate,
+            status: data.status || 'SUBMITTED',
+            branchId: data.branchId,
+            auditLine: data.auditLine || null,
+          },
+        )
+        setIsEditingExisting(canEdit)
+      } else {
+        setIsEditingExisting(false)
+      }
+
+      return data
     } catch (err) {
       console.error('[fetchReportDetails] Error:', err)
       const msg = err instanceof Error ? err.message : 'Error loading existing DTR report details.'
       setError(msg)
+      return null
     }
   }
 
@@ -1060,16 +1110,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
-  const loadExistingReportById = async (id: string, newDate: string) => {
+  const loadExistingReportById = async (id: string, newDate: string, enterEditMode = true) => {
     setReportDate(newDate)
     setReportId(id)
-    setIsEditingExisting(false)
     ignoreNextCohFetch.current = true
     const url = new URL(window.location.href)
     url.searchParams.set('id', id)
     url.searchParams.delete('date')
     window.history.replaceState({}, '', url.toString())
-    await fetchReportDetails(id)
+    await fetchReportDetails(id, { enterEditMode })
   }
 
   const resetReportDateInput = () => {
@@ -1187,7 +1236,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
     if (urlId) {
       setReportId(urlId)
-      fetchReportDetails(urlId)
+      void fetchReportDetails(urlId, { enterEditMode: true })
     } else {
       // If we were previously editing a report but now there is no id in the URL,
       // reset/clear the form so we transition back to a clean submission form.

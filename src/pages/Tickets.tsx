@@ -348,6 +348,52 @@ function getPreviousScheduleDates(ticket: Ticket): string[] {
   return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
 }
 
+function isReschedulePending(ticket: Ticket): boolean {
+  const meta = parseAcMeta(ticket)
+  return meta.reschedulePending === true || String(meta.reschedulePending).toLowerCase() === 'true'
+}
+
+function getScheduleStatusDisplay(ticket: Ticket): string {
+  const val = getScheduleStatusValue(ticket)
+  if (val === 'RESCHED' && isReschedulePending(ticket)) return 'Resched (Pending)'
+  if (val === 'RESCHED') {
+    const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
+    return movedTo ? `Resched → ${movedTo}` : 'Resched'
+  }
+  return getScheduleStatusLabel(val)
+}
+
+function buildReschedulePatchBody(
+  ticket: Ticket,
+  options: { newDateKey?: string | null; pending: boolean },
+): Record<string, unknown> {
+  const oldDateKey = getPreferredDateKey(ticket)
+  const body: Record<string, unknown> = { status: 'RESCHED' }
+  const acUpdates: Record<string, unknown> = { scheduleOutcome: '' }
+
+  if (options.pending) {
+    acUpdates.reschedulePending = true
+    acUpdates.rescheduledTo = ''
+  } else {
+    const newDateKey = (options.newDateKey || '').split('T')[0].trim()
+    if (!newDateKey) return {}
+    acUpdates.reschedulePending = false
+    acUpdates.rescheduledTo = newDateKey
+    body.preferredDate = newDateKey
+    if (oldDateKey && oldDateKey !== newDateKey) {
+      const existing = parseAcMeta(ticket)
+      const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
+        ? [...existing.previousScheduleDates]
+        : []
+      if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
+      acUpdates.previousScheduleDates = prevDates
+    }
+  }
+
+  body.acDetails = mergeAcMeta(ticket, acUpdates)
+  return body
+}
+
 function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
   const dateStr = ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
@@ -1192,12 +1238,16 @@ export default function Tickets() {
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; ticketCategory?: TicketCategoryValue }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
+  const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
+  const [reschedToDate, setReschedToDate] = useState('')
+  const [reschedPending, setReschedPending] = useState(false)
+  const [savingResched, setSavingResched] = useState(false)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1693,7 +1743,8 @@ export default function Tickets() {
       modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment,
       remarks: ticket.remarks || ticket.remarksUpdate || '',
       acDetails: ticket.acDetails || ticket.ac_details,
-      rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' ? preferred : '',
+      rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
+      reschedulePending: isReschedulePending(ticket),
     }
     setEditForm(form)
     setEditFormSnapshot(JSON.stringify(form))
@@ -1764,7 +1815,9 @@ export default function Tickets() {
     if (!editForm.id) return 'Ticket not found'
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     if (isReschedStatusEarly) {
-      if (!editForm.rescheduleToDate?.trim()) return 'Select a reschedule date beside the RESCHED status'
+      if (!editForm.reschedulePending && !editForm.rescheduleToDate?.trim()) {
+        return 'Select a reschedule date or choose Pending if no slot is available yet'
+      }
     } else if (!editForm.preferredDate) {
       return 'Preferred Date is required'
     }
@@ -1805,9 +1858,10 @@ export default function Tickets() {
 
       const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
       const newDateKey = isReschedStatus
-        ? editForm.rescheduleToDate?.split('T')[0]?.trim() || ''
+        ? (editForm.reschedulePending ? '' : editForm.rescheduleToDate?.split('T')[0]?.trim() || '')
         : editForm.preferredDate?.split('T')[0]?.trim() || ''
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
+      const acMetaExtras: Record<string, any> = {}
 
       const body: Record<string, any> = {
         customerName: (editForm.customerName || '').trim(),
@@ -1818,7 +1872,9 @@ export default function Tickets() {
         location: (editForm.location || '').trim(),
         contactPhone: (editForm.contactPhone || '').trim(),
         unitType: editForm.unitType?.trim() || undefined,
-        preferredDate: newDateKey,
+        preferredDate: isReschedStatus && editForm.reschedulePending
+          ? (oldDateKey || editForm.preferredDate?.split('T')[0]?.trim() || undefined)
+          : newDateKey,
         sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
         district: editForm.district?.trim() || undefined,
         commitType: editForm.commitTerms?.trim() || undefined,
@@ -1833,6 +1889,10 @@ export default function Tickets() {
 
       if (isReschedStatus) {
         body.status = 'RESCHED'
+        if (editForm.reschedulePending) {
+          acMetaExtras.reschedulePending = true
+          acMetaExtras.rescheduledTo = ''
+        }
       } else if (isDateMove) {
         body.status = 'SCHEDULED'
       } else {
@@ -1847,7 +1907,6 @@ export default function Tickets() {
       }
       if (paymentMode) body.modeOfPayment = paymentMode
 
-      const acMetaExtras: Record<string, any> = {}
       if (isDateMove) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -1856,6 +1915,7 @@ export default function Tickets() {
         if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
         acMetaExtras.previousScheduleDates = prevDates
         acMetaExtras.rescheduledTo = newDateKey
+        acMetaExtras.reschedulePending = false
       }
 
       body.acDetails = mergeAcMeta(editForm as Ticket, {
@@ -1954,6 +2014,8 @@ export default function Tickets() {
 
       showToast(shouldComplete
         ? 'Ticket completed — see Archives tab ✓'
+        : isReschedStatus && editForm.reschedulePending
+          ? 'Marked as rescheduled (pending date) ✓'
         : isDateMove
           ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
           : 'Ticket updated successfully ✓')
@@ -2667,6 +2729,71 @@ export default function Tickets() {
     }
   }
 
+  const openReschedDialog = (ticket: Ticket) => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cancelEdit()
+    const preferred = getPreferredDateKey(ticket)
+    const meta = parseAcMeta(ticket)
+    const existingTarget = typeof meta.rescheduledTo === 'string' ? meta.rescheduledTo.split('T')[0].trim() : ''
+    setReschedDialog({ ticket })
+    setReschedToDate(isReschedulePending(ticket) ? '' : (existingTarget || preferred || dateFilter || todayDateKey()))
+    setReschedPending(isReschedulePending(ticket))
+  }
+
+  const closeReschedDialog = () => {
+    if (savingResched) return
+    setReschedDialog(null)
+    setReschedToDate('')
+    setReschedPending(false)
+  }
+
+  const commitInlineReschedule = async () => {
+    if (!reschedDialog) return
+    const { ticket } = reschedDialog
+    if (!reschedPending && !reschedToDate.trim()) {
+      alert('Pick a new date or mark as Pending if no slot is available yet.')
+      return
+    }
+
+    const body = buildReschedulePatchBody(ticket, {
+      newDateKey: reschedPending ? null : reschedToDate,
+      pending: reschedPending,
+    })
+    if (Object.keys(body).length === 0) {
+      alert('Could not build reschedule update.')
+      return
+    }
+
+    setSavingResched(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token()}`,
+        },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(await readApiError(res))
+      setTickets(prev => prev.map(t => {
+        if (t.id !== ticket.id) return t
+        return {
+          ...t,
+          ...(body as Partial<Ticket>),
+          acDetails: typeof body.acDetails === 'string' ? body.acDetails : t.acDetails,
+        }
+      }))
+      showToast(reschedPending
+        ? 'Marked as rescheduled (pending date) ✓'
+        : `Rescheduled to ${formatDateKeyLabel(reschedToDate)} ✓`)
+      closeReschedDialog()
+    } catch (err: unknown) {
+      alert(`Could not reschedule: ${formatFetchError(err)}`)
+    } finally {
+      setSavingResched(false)
+    }
+  }
+
   // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = (ticketId: string) => {
     const ticket = tickets.find(t => t.id === ticketId)
@@ -2810,7 +2937,14 @@ export default function Tickets() {
           autoFocus
           disabled={isSaving}
           value={editingCell.value}
-          onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onChange={e => {
+            const next = e.target.value
+            if (next === 'RESCHED') {
+              openReschedDialog(ticket)
+              return
+            }
+            setEditingCell(prev => prev ? { ...prev, value: next } : null)
+          }}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onKeyDown={onKeyDown}
@@ -2907,7 +3041,6 @@ export default function Tickets() {
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
-      const scheduleVal = getScheduleStatusValue(ticket)
       const outcome = getScheduleOutcome(ticket)
       if (rowGhost) {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
@@ -2937,7 +3070,7 @@ export default function Tickets() {
           : textPrimary
       return (
         <span style={{ ...truncStyle, fontWeight: 700, color: statusColor }} title={val}>
-          {getScheduleStatusLabel(scheduleVal) || '—'}
+          {getScheduleStatusDisplay(ticket) || '—'}
         </span>
       )
     }
@@ -4617,23 +4750,45 @@ export default function Tickets() {
                       </select>
                     </Field>
                     {isReschedStatus && (
-                      <Field label="Reschedule To" required>
-                        <input
-                          type="date"
-                          autoFocus={justChangedToResched}
-                          value={editForm.rescheduleToDate || ''}
-                          onChange={e => setEditForm({ ...editForm, rescheduleToDate: e.target.value })}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full"
-                          style={reschedFieldStyle}
-                        />
-                      </Field>
+                      <div className="flex flex-col gap-3">
+                        <Field label="Reschedule To" required={!editForm.reschedulePending}>
+                          <input
+                            type="date"
+                            autoFocus={justChangedToResched && !editForm.reschedulePending}
+                            disabled={editForm.reschedulePending}
+                            value={editForm.rescheduleToDate || ''}
+                            onChange={e => setEditForm({
+                              ...editForm,
+                              rescheduleToDate: e.target.value,
+                              reschedulePending: false,
+                            })}
+                            className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full disabled:opacity-50"
+                            style={reschedFieldStyle}
+                          />
+                        </Field>
+                        <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editForm.reschedulePending)}
+                            onChange={e => setEditForm({
+                              ...editForm,
+                              reschedulePending: e.target.checked,
+                              rescheduleToDate: e.target.checked ? '' : (editForm.rescheduleToDate || editOriginalDate || ''),
+                            })}
+                            className="rounded border-slate-300"
+                          />
+                          Pending — no date slot available yet
+                        </label>
+                      </div>
                     )}
                   </div>
                   {isReschedStatus && editOriginalDate && (
                     <p className="text-[11px] font-semibold leading-relaxed md:col-span-2" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
-                      {editForm.rescheduleToDate && editForm.rescheduleToDate !== editOriginalDate
-                        ? `Row will gray out on ${formatDateKeyLabel(editOriginalDate)} and appear on ${formatDateKeyLabel(editForm.rescheduleToDate)}.`
-                        : `Currently on ${formatDateKeyLabel(editOriginalDate)} — pick a new date beside RESCHED.`}
+                      {editForm.reschedulePending
+                        ? `Stays on ${formatDateKeyLabel(editOriginalDate)} as rescheduled (pending new date).`
+                        : editForm.rescheduleToDate && editForm.rescheduleToDate !== editOriginalDate
+                          ? `Row will gray out on ${formatDateKeyLabel(editOriginalDate)} and appear on ${formatDateKeyLabel(editForm.rescheduleToDate)}.`
+                          : `Currently on ${formatDateKeyLabel(editOriginalDate)} — pick a new date or mark as pending.`}
                     </p>
                   )}
                   <Field label="Remarks / Update" full>
@@ -4729,6 +4884,84 @@ export default function Tickets() {
       })()}
 
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
+
+      {reschedDialog && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={closeReschedDialog}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
+              <h3 className="text-sm font-black" style={{ color: textPrimary }}>Reschedule appointment</h3>
+              <p className="text-xs mt-1" style={{ color: textMuted }}>
+                {getCustomerDisplayName(reschedDialog.ticket)}
+                {getPreferredDateKey(reschedDialog.ticket)
+                  ? ` · currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
+                  : ''}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <Field label="Reschedule to" required={!reschedPending}>
+                <input
+                  type="date"
+                  autoFocus={!reschedPending}
+                  disabled={reschedPending || savingResched}
+                  value={reschedToDate}
+                  onChange={e => {
+                    setReschedToDate(e.target.value)
+                    setReschedPending(false)
+                  }}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full disabled:opacity-50"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
+              </Field>
+              <label className="flex items-start gap-2.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+                <input
+                  type="checkbox"
+                  checked={reschedPending}
+                  disabled={savingResched}
+                  onChange={e => {
+                    setReschedPending(e.target.checked)
+                    if (e.target.checked) setReschedToDate('')
+                  }}
+                  className="mt-0.5 rounded border-slate-300"
+                />
+                <span>
+                  Pending — no date slot available yet
+                  <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
+                    Ticket stays on the current schedule date until a new slot is confirmed.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="px-5 py-4 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={closeReschedDialog}
+                disabled={savingResched}
+                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void commitInlineReschedule()}
+                disabled={savingResched || (!reschedPending && !reschedToDate.trim())}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: green }}
+              >
+                {savingResched ? 'Saving...' : reschedPending ? 'Mark Pending' : 'Reschedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
