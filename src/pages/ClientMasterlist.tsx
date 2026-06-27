@@ -4,7 +4,7 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
-  Eye, Phone, CheckSquare, Square, Edit3
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -1365,19 +1365,6 @@ export default function ClientMasterlist() {
 
   
 
-  const formatShortDate = (value?: string) => {
-    if (!value) return ''
-    try {
-      const d = new Date(value)
-      if (isNaN(d.getTime())) return value
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    } catch (e) {
-      return value
-    }
-  }
-
-  
-
   const formatRelayDate = (value?: string) => {
     if (!value) return '—'
     try {
@@ -1440,12 +1427,8 @@ export default function ClientMasterlist() {
 
   
 
-  const getCategoryColor = (category: string) => {
-    const c = category.toLowerCase()
-    if (c.includes('collection')) return '#7C3AED'
-    if (c.includes('service')) return '#EF4444'
-    return isLight ? '#111827' : '#F8FAFC'
-  }
+
+  // Helper to determine if a field was auto-extracted from voucher scan
 
   
 
