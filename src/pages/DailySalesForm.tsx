@@ -362,6 +362,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   }, [canSubmit, reportId, canEditExistingReport, selectedBranchId, selectedAuditLine, branchesList])
 
   const isFormDisabled = !canEditOrSubmit || reviewMode || (!!reportId && !isEditingExisting)
+  const isViewOnlyReport = !!reportId && !isEditingExisting && !reviewMode
 
   const [scanning, setScanning]     = useState(false)
   const [scanError, setScanError]   = useState<string | null>(null)
@@ -1127,9 +1128,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
-  const loadExistingReportById = async (id: string, newDate: string, enterEditMode = true) => {
+  const loadExistingReportById = async (id: string, newDate: string, enterEditMode = false) => {
     setReportDate(newDate)
     setReportId(id)
+    setIsEditingExisting(false)
     ignoreNextCohFetch.current = true
     const url = new URL(window.location.href)
     url.searchParams.set('id', id)
@@ -1157,7 +1159,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       invalidateLookupCache(newDate)
       const existing = await lookupExistingReport(newDate, { skipCache: true })
       if (existing?.id) {
-        await loadExistingReportById(existing.id, newDate, true)
+        await loadExistingReportById(existing.id, newDate)
         return
       }
 
@@ -1231,7 +1233,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
     if (urlId) {
       setReportId(urlId)
-      void fetchReportDetails(urlId, { enterEditMode: true })
+      void fetchReportDetails(urlId, { enterEditMode: false })
     } else {
       // If we were previously editing a report but now there is no id in the URL,
       // reset/clear the form so we transition back to a clean submission form.
@@ -1632,7 +1634,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         return
       }
       if (saved?.id) {
-        await loadExistingReportById(saved.id, reportDate, true)
+        await loadExistingReportById(saved.id, reportDate)
         return
       }
       setSuccess(true)
@@ -1653,8 +1655,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const tableTh = 'px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider'
   const tableTd = 'px-2 py-1 border-b border-slate-100 dark:border-slate-800/40'
-  const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
-  const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${reviewMode ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20' : ''}`
+  const readOnlyFieldClass = reviewMode || isViewOnlyReport
+    ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20'
+    : ''
+  const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
+  const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
 
   // (Helper subcomponents extracted outside the component)
 
@@ -1770,7 +1775,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       {/* Draft banner removed */}
 
       {/* ── Metadata Header ─────────────────────────────────────────── */}
-      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4">
+      <div className={`rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition-opacity ${isViewOnlyReport ? 'opacity-80' : ''}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -1906,7 +1911,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       </div>
 
       {/* ── DTR Scanner Actions ──────────────────────────────────────── */}
-      {canEditOrSubmit && !reviewMode && (
+      {canEditOrSubmit && !reviewMode && !isViewOnlyReport && (
         <div className="rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
@@ -1945,6 +1950,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       )}
 
       {/* ── Two-Column Layout for Sections ──────────────────────────── */}
+      <div className={isViewOnlyReport ? 'opacity-80 pointer-events-none select-none' : undefined}>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* ── LEFT COLUMN ── */}
@@ -2598,6 +2604,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           </table>
           {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
         </div>
+      </div>
       </div>
 
       {/* Error */}
