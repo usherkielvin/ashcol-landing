@@ -3448,8 +3448,8 @@ export default function Tickets() {
                 </button>
               )}
 
-              {/* Delete — admin only */}
-              {isAdmin && (
+              {/* Delete — accessible by admin and non-admins */}
+              {canEdit && (
                 <button onClick={() => handleDelete(contextMenu.ticket.id)}
                         className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
                         style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}

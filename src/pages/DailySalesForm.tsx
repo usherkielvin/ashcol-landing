@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,27 @@ const formatReviewDateTime = (date: Date) =>
     minute: '2-digit',
     hour12: true,
   }).replace(/, (?=\d{1,2}:)/, ' ').replace(/\s(AM|PM)$/i, (_, meridiem) => meridiem.toUpperCase()).toUpperCase()
+
+const formatReportDateLabel = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+
+const matchesBranchAuditRow = (row: any, branchId: string, auditLine: string | null) => {
+  const rIdBase = String(row?.branchId || '').replace(/-(sales|services|service)$/i, '').toUpperCase()
+  const selIdBase = branchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
+  if (rIdBase !== selIdBase) return false
+  if (auditLine) {
+    const isServiceRow = row.auditLine === 'TAGUIG_SERVICE'
+    const isServiceTarget = auditLine === 'TAGUIG_SERVICE'
+    return isServiceRow === isServiceTarget
+  }
+  return row.auditLine !== 'TAGUIG_SERVICE'
+}
+
+const hasMeaningfulExistingReport = (row: any) => {
+  if (!row?.id) return false
+  const remarks = String(row.remarks || '').trim().toUpperCase()
+  return !['NO TRANSACTION', 'NO RECORD', 'NO SCHED', 'NO REPORT'].includes(remarks)
+}
 
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
@@ -262,6 +284,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null)
   const [reportStatus, setReportStatus] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [checkingExistingReport, setCheckingExistingReport] = useState(false)
   const trNoExample = branchName && reportDate
     ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
     : 'DAS-260604'
@@ -561,17 +585,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           const resAudit = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${yesterday}`, { headers })
           if (resAudit.ok) {
             const data = await resAudit.json()
-            const myRow = data.find((r: any) => {
-              const rIdBase = r.branchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
-              const selIdBase = selectedBranchId.replace(/-(sales|services|service)$/i, '').toUpperCase()
-              if (rIdBase !== selIdBase) return false
-              if (selectedAuditLine) {
-                const isServiceRow = r.auditLine === 'TAGUIG_SERVICE'
-                const isServiceTarget = selectedAuditLine === 'TAGUIG_SERVICE'
-                return isServiceRow === isServiceTarget
-              }
-              return true
-            })
+            const myRow = data.find((r: any) => matchesBranchAuditRow(r, selectedBranchId, selectedAuditLine))
             if (myRow && myRow.totalCohCfd !== undefined) {
               setCashOnHand(String(myRow.totalCohCfd))
             } else {
@@ -989,6 +1003,85 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     setCancelledUnits('0')
     setFreeInstallUnits('0')
   }
+
+  const lookupExistingReport = async (date: string) => {
+    if (!selectedBranchId || !date) return null
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${date}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const row = (Array.isArray(data) ? data : []).find((r: any) =>
+      matchesBranchAuditRow(r, selectedBranchId, selectedAuditLine),
+    )
+    return hasMeaningfulExistingReport(row) ? row : null
+  }
+
+  const applyFreshDateChange = (newDate: string) => {
+    ignoreNextCohFetch.current = false
+    const wasEditing = !!reportId
+    setReportDate(newDate)
+    if (wasEditing) {
+      setReportId(null)
+      clearForm(true)
+      loadedReportDate.current = null
+      loadedBranchId.current = null
+      loadedAuditLine.current = null
+      const url = new URL(window.location.href)
+      url.searchParams.delete('id')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }
+
+  const loadExistingReportById = async (id: string, newDate: string) => {
+    setReportDate(newDate)
+    setReportId(id)
+    ignoreNextCohFetch.current = true
+    const url = new URL(window.location.href)
+    url.searchParams.set('id', id)
+    url.searchParams.delete('date')
+    window.history.replaceState({}, '', url.toString())
+    await fetchReportDetails(id)
+  }
+
+  const handleReportDateChange = async (newDate: string) => {
+    if (!newDate || newDate === reportDate || reviewMode) return
+
+    setCheckingExistingReport(true)
+    try {
+      const existing = await lookupExistingReport(newDate)
+      if (existing?.id) {
+        const submittedLabel = existing.timeUploaded
+          ? `Last uploaded at ${existing.timeUploaded}.`
+          : existing.createdAt
+            ? `Submitted on ${formatReviewDateTime(new Date(existing.createdAt))}.`
+            : null
+        setConfirmDialog({
+          title: 'Existing report found',
+          message: `A daily report for ${formatReportDateLabel(newDate)} already exists for ${branchName || 'this branch'}.`,
+          detail: submittedLabel
+            ? `${submittedLabel} Do you want to load and edit this report?`
+            : 'Do you want to load and edit this report?',
+          confirmText: 'Edit existing report',
+          cancelText: 'Keep current date',
+          variant: 'info',
+          onConfirm: () => {
+            setConfirmDialog(null)
+            void loadExistingReportById(existing.id, newDate)
+          },
+        })
+        return
+      }
+      applyFreshDateChange(newDate)
+    } catch (err) {
+      console.error('[handleReportDateChange] Failed to check existing report:', err)
+      applyFreshDateChange(newDate)
+    } finally {
+      setCheckingExistingReport(false)
+    }
+  }
+
   // Load query params on mount/URL change
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -1531,23 +1624,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               id="report-date-input"
               type="date"
               value={reportDate}
-              onChange={e => {
-                ignoreNextCohFetch.current = false
-                setReportDate(e.target.value)
-                if (reportId) {
-                  console.log('[Date Change] Clearing reportId and form state')
-                  setReportId(null)
-                  clearForm(true)
-                  loadedReportDate.current = null
-                  loadedBranchId.current = null
-                  loadedAuditLine.current = null
-                  const url = new URL(window.location.href)
-                  url.searchParams.delete('id')
-                  window.history.replaceState({}, '', url.toString())
-                }
-              }}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={reviewMode}
+              onChange={e => { void handleReportDateChange(e.target.value) }}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
+              disabled={reviewMode || checkingExistingReport}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -1556,10 +1635,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               id="received-by-input"
               type="text"
               placeholder="Name"
-              value={receivedBy}
-              onChange={e => setReceivedBy(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              disabled={isFormDisabled}
+              value={receivedBy || user?.name || ''}
+              readOnly={true}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-default"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -2454,6 +2532,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           return <option key={p.id} value={optionText} />
         })}
       </datalist>
+
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
 
     </div>
   )
