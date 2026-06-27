@@ -342,6 +342,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const hasScannedTrNo = useRef(false)
   const isApplyingScannedData = useRef(false)
   const loadedReportDate = useRef<string | null>(null)
+  const isTypingReportDate = useRef(false)
   const loadedBranchId = useRef<string | null>(null)
   const loadedAuditLine = useRef<string | null>(null)
 
@@ -1624,7 +1625,23 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               id="report-date-input"
               type="date"
               value={reportDate}
-              onChange={e => { void handleReportDateChange(e.target.value) }}
+              onKeyDown={e => {
+                isTypingReportDate.current = true
+                if (e.key === 'Enter') {
+                  isTypingReportDate.current = false
+                  void handleReportDateChange((e.target as HTMLInputElement).value)
+                }
+              }}
+              onChange={e => {
+                setReportDate(e.target.value)
+                if (!isTypingReportDate.current) {
+                  void handleReportDateChange(e.target.value)
+                }
+              }}
+              onBlur={e => {
+                isTypingReportDate.current = false
+                void handleReportDateChange(e.target.value)
+              }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
               disabled={reviewMode || checkingExistingReport}
             />
