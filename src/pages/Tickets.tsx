@@ -120,6 +120,148 @@ type ImportUnmatchedRow = {
 
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
 
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY'
+
+const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
+  { value: 'SCHEDULED', label: 'Scheduled' },
+  { value: 'RESCHED', label: 'Resched' },
+  { value: 'SURVEY', label: 'Survey' },
+  { value: 'FOR_APPROVAL', label: 'For Approval' },
+  { value: 'DONE_CLEANING', label: 'Done Cleaning' },
+  { value: 'DONE_INSTALLED', label: 'Done Installed' },
+  { value: 'DONE_SURVEY', label: 'Done Survey' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+]
+
+function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
+  const meta = parseAcMeta(ticket as Ticket)
+  const explicit = String(meta.scheduleOutcome || '').toUpperCase()
+  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY') {
+    return explicit
+  }
+  const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
+  const stat = String(ticket.status || '').toUpperCase()
+  if (stat === 'COMPLETED') {
+    if (/clean/i.test(remarks)) return 'DONE_CLEANING'
+    if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
+  }
+  if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
+  return null
+}
+
+function getScheduleStatusValue(ticket: Ticket): string {
+  const outcome = getScheduleOutcome(ticket)
+  if (outcome) return outcome
+  let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
+  if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
+  if (['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY', 'COMPLETED'].includes(stat)) {
+    return stat === 'COMPLETED' ? 'DONE_INSTALLED' : 'SCHEDULED'
+  }
+  if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === stat)) return stat
+  return 'SCHEDULED'
+}
+
+function getScheduleStatusLabel(value: string): string {
+  const normalized = value.toUpperCase().replace(/\s+/g, '_')
+  const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
+  return found?.label ?? value.replace(/_/g, ' ')
+}
+
+function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  const val = scheduleValue.toUpperCase().replace(/\s+/g, '_')
+  const acUpdates: Record<string, unknown> = {}
+
+  if (val === 'DONE_CLEANING') {
+    body.status = 'COMPLETED'
+    acUpdates.scheduleOutcome = 'DONE_CLEANING'
+    const remarks = ticketRemarksText(ticket)
+    if (!/clean/i.test(remarks)) {
+      body.remarks = 'DONE CLEANING'
+      body.remarksUpdate = 'DONE CLEANING'
+      acUpdates.update = 'DONE CLEANING'
+      acUpdates.remarksUpdate = 'DONE CLEANING'
+    }
+  } else if (val === 'DONE_INSTALLED') {
+    body.status = 'COMPLETED'
+    acUpdates.scheduleOutcome = 'DONE_INSTALLED'
+  } else if (val === 'DONE_SURVEY') {
+    body.status = 'SURVEY'
+    acUpdates.scheduleOutcome = 'DONE_SURVEY'
+  } else if (val === 'FOR_QUOTATION') {
+    body.status = 'FOR_APPROVAL'
+    acUpdates.scheduleOutcome = ''
+  } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
+    body.status = val
+    acUpdates.scheduleOutcome = ''
+  }
+
+  if (Object.keys(acUpdates).length > 0) {
+    body.acDetails = mergeAcMeta(ticket, acUpdates)
+  }
+  return body
+}
+
+function getScheduleRowColors(
+  ticket: Ticket,
+  ghostKind: 'completed' | 'resched' | null,
+  isLight: boolean,
+  idx: number,
+  rowEven: string,
+  rowOdd: string,
+  isDuplicateName: boolean,
+): { baseBg: string; accent?: string } {
+  const outcome = getScheduleOutcome(ticket)
+
+  if (ghostKind === 'completed') {
+    if (outcome === 'DONE_CLEANING') {
+      return {
+        baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+        accent: '#3B82F6',
+      }
+    }
+    return {
+      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      accent: '#16A34A',
+    }
+  }
+
+  if (ghostKind === 'resched') {
+    return {
+      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+      accent: '#fbbf24',
+    }
+  }
+
+  if (outcome === 'DONE_SURVEY') {
+    return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
+  }
+
+  if (outcome === 'DONE_CLEANING') {
+    return {
+      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
+      accent: '#3B82F6',
+    }
+  }
+
+  if (isDuplicateName) {
+    return { baseBg: isLight ? '#fef9c3' : '#3d3418' }
+  }
+
+  return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
+}
+
+function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unknown>): boolean {
+  const outcome = getScheduleOutcome({
+    ...ticket,
+    ...body,
+    acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
+  } as Ticket)
+  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY') return false
+  if (outcome === 'DONE_INSTALLED') return true
+  return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatAddress(loc: any): string {
   if (!loc) return ''
@@ -860,7 +1002,7 @@ function getCellRawValue(ticket: Ticket, colLabel: string): string {
     case 'DESTINATION': return formatAddress(ticket.location)
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
-    case 'STATUS': return ticket.status || ''
+    case 'STATUS': return getScheduleStatusValue(ticket)
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'INSTALLER': return getInstallerDisplay(ticket)
     case 'SERVICE': return formatServiceDriver(ticket)
@@ -897,9 +1039,8 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
       body.acDetails = mergeAcMeta(acBase, { dealer: v, dlr: v })
       break
     case 'STATUS': {
-      let statusVal = v.toUpperCase().replace(/\s+/g, '_')
-      if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
-      if (statusVal && STATUS_OPTS.includes(statusVal)) body.status = statusVal
+      const patch = applyScheduleStatusPatch(ticket, v)
+      Object.assign(body, patch)
       break
     }
     case 'COMMIT':
@@ -1528,7 +1669,7 @@ export default function Tickets() {
 
   const openEditModal = (ticket: Ticket) => {
     const preferred = getPreferredDateKey(ticket)
-    const status = ticket.status || 'PENDING'
+    const status = getScheduleStatusValue(ticket)
     setEditOriginalDate(preferred)
     setEditInitialStatus(status)
     const form = {
@@ -1653,6 +1794,7 @@ export default function Tickets() {
     if (!editForm.id) return
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
+    const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
     setSavingEdit(true)
     try {
       const tokenVal = token()
@@ -1685,9 +1827,16 @@ export default function Tickets() {
         negotiatorId: editForm.negotiatorId || undefined,
         ticketNumber: editForm.ticketNumber?.trim() || undefined,
         controlNumber: editForm.controlNumber?.trim() || undefined,
-        status: isReschedStatus ? 'RESCHED' : (isDateMove ? 'SCHEDULED' : (editForm.status || 'PENDING')),
         remarks: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
+      }
+
+      if (isReschedStatus) {
+        body.status = 'RESCHED'
+      } else if (isDateMove) {
+        body.status = 'SCHEDULED'
+      } else {
+        Object.assign(body, applyScheduleStatusPatch((editForm as Ticket), scheduleVal))
       }
 
       const originalTicket = tickets.find(t => t.id === editForm.id)
@@ -1732,10 +1881,15 @@ export default function Tickets() {
       const shouldComplete = Boolean(
         originalTicket
         && !isReschedStatus
+        && !isDateMove
         && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
-        && wantsTicketArchive(
-          { ...originalTicket, ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks },
-          { ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
+        && (
+          scheduleVal === 'DONE_INSTALLED'
+          || scheduleVal === 'DONE_CLEANING'
+          || wantsTicketArchive(
+            { ...originalTicket, ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks },
+            { ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
+          )
         ),
       )
 
@@ -1759,7 +1913,7 @@ export default function Tickets() {
         throw new Error(await readApiError(res))
       }
 
-      if (shouldComplete && originalTicket) {
+      if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
         const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
         const branchId = resolveImportBranchId(originalTicket.branchId || originalTicket.branch_id)
         const archivePayload = buildArchiveServiceReportPayload(
@@ -2418,7 +2572,7 @@ export default function Tickets() {
       case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
       case 'BRAND':           return parseBrand(ticket)
       case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
-      case 'STATUS':          return ticket.status
+      case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
       case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
       case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
       case 'PAYMENT':         return formatPaymentAmount(ticket)
@@ -2468,7 +2622,10 @@ export default function Tickets() {
         body: JSON.stringify(finalBody),
       })
       if (!res.ok) throw new Error(await readApiError(res))
-      if ((finalBody.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
+      if (
+        (finalBody.status as string | undefined)?.toUpperCase() === 'COMPLETED'
+        && shouldArchiveCompletedSchedule(ticket, finalBody)
+      ) {
         const schedKey = getPreferredDateKey(ticket) || todayDateKey()
         const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
         const archivePayload = buildArchiveServiceReportPayload(
@@ -2660,8 +2817,8 @@ export default function Tickets() {
           className="w-full text-xs font-semibold rounded-md outline-none"
           style={inputStyle}
         >
-          {STATUS_OPTS.map(opt => (
-            <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
+          {SCHEDULE_STATUS_OPTS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>,
         colLabel,
@@ -2750,11 +2907,20 @@ export default function Tickets() {
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
+      const scheduleVal = getScheduleStatusValue(ticket)
+      const outcome = getScheduleOutcome(ticket)
       if (rowGhost) {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
+          if (outcome === 'DONE_CLEANING') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Done cleaning">
+                DONE CLEANING
+              </span>
+            )
+          }
           return (
             <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
-              INSTALLED
+              DONE INSTALLED
             </span>
           )
         }
@@ -2764,9 +2930,14 @@ export default function Tickets() {
           </span>
         )
       }
+      const statusColor = outcome === 'DONE_CLEANING'
+        ? (isLight ? '#1d4ed8' : '#93c5fd')
+        : outcome === 'DONE_SURVEY'
+          ? textPrimary
+          : textPrimary
       return (
-        <span style={{ ...truncStyle, fontWeight: 700 }} title={val}>
-          {val ? val.replace(/_/g, ' ') : '—'}
+        <span style={{ ...truncStyle, fontWeight: 700, color: statusColor }} title={val}>
+          {getScheduleStatusLabel(scheduleVal) || '—'}
         </span>
       )
     }
@@ -3304,15 +3475,10 @@ export default function Tickets() {
                     const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                     const isGhost = Boolean(ghostKind)
                     const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
-                    const baseBg = ghostKind === 'completed'
-                      ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)')
-                      : ghostKind === 'resched'
-                        ? (isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)')
-                        : isDuplicateName
-                          ? (isLight ? '#fef9c3' : '#3d3418')
-                          : (idx % 2 === 0 ? rowEven : rowOdd)
+                    const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                    const baseBg = rowColors.baseBg
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
-                    const ghostAccent = ghostKind === 'completed' ? green : ghostKind === 'resched' ? '#fbbf24' : undefined
+                    const ghostAccent = rowColors.accent
                     const rowIsActive = columns.some(col =>
                       (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
                       || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
@@ -4445,8 +4611,8 @@ export default function Tickets() {
                         }}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                        {STATUS_OPTS.map(opt => (
-                          <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>
+                        {SCHEDULE_STATUS_OPTS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
                     </Field>
