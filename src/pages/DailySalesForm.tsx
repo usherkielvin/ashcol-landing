@@ -41,9 +41,6 @@ const formatReviewDateTime = (date: Date) =>
     hour12: true,
   }).replace(/, (?=\d{1,2}:)/, ' ').replace(/\s(AM|PM)$/i, (_, meridiem) => meridiem.toUpperCase()).toUpperCase()
 
-const formatReportDateLabel = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-
 const getIsoDateParts = (iso: string) => {
   const [year, month, day] = iso.split('-').map(Number)
   return { year, month, day }
@@ -380,6 +377,22 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const userInitiatedDateChange = useRef(false)
   const branchEmployeeNamesRef = useRef<string[]>([])
   const existingReportLookupCache = useRef<Map<string, any | null>>(new Map())
+
+  const lookupCacheKey = (date: string, branchId = selectedBranchId, auditLine = selectedAuditLine) =>
+    `${branchId}|${auditLine || ''}|${date}`
+
+  const invalidateLookupCache = (date?: string, branchId?: string, auditLine?: string | null) => {
+    if (!date && !branchId) {
+      existingReportLookupCache.current.clear()
+      return
+    }
+    const key = lookupCacheKey(
+      date || reportDate,
+      branchId || selectedBranchId,
+      auditLine === undefined ? selectedAuditLine : auditLine,
+    )
+    existingReportLookupCache.current.delete(key)
+  }
   const datePickerLastValue = useRef<string | null>(null)
   const datePickerCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -649,6 +662,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   }, [selectedBranchId, selectedAuditLine, isAdmin, branchName])
 
   useEffect(() => {
+    invalidateLookupCache()
+  }, [selectedBranchId, selectedAuditLine])
+
+  useEffect(() => {
     if (!selectedBranchId) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const headers = { Authorization: `Bearer ${token}` }
@@ -658,7 +675,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         const urlParams = new URLSearchParams(window.location.search)
         const isEditing = !!(reportId || urlParams.get('id'))
         if (!isEditing && !ignoreNextCohFetch.current && !userInitiatedDateChange.current) {
-          const existing = await lookupExistingReport(reportDate)
+          const existing = await lookupExistingReport(reportDate, { skipCache: true })
           if (existing?.id) {
             void loadExistingReportById(existing.id, reportDate)
             return
@@ -1066,10 +1083,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     setFreeInstallUnits('0')
   }
 
-  const lookupExistingReport = async (date: string) => {
+  const lookupExistingReport = async (date: string, options?: { skipCache?: boolean }) => {
     if (!selectedBranchId || !date) return null
-    const cacheKey = `${selectedBranchId}|${selectedAuditLine || ''}|${date}`
-    if (existingReportLookupCache.current.has(cacheKey)) {
+    const cacheKey = lookupCacheKey(date)
+    if (!options?.skipCache && existingReportLookupCache.current.has(cacheKey)) {
       return existingReportLookupCache.current.get(cacheKey)
     }
 
@@ -1128,7 +1145,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const handleReportDateChange = async (newDate: string) => {
     if (!newDate || newDate === reportDate || reviewMode) return
 
-    const previousDate = reportDate
     const wasEditing = !!reportId
     userInitiatedDateChange.current = true
     setCheckingExistingReport(true)
@@ -1138,31 +1154,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
 
     try {
-      const existing = await lookupExistingReport(newDate)
+      invalidateLookupCache(newDate)
+      const existing = await lookupExistingReport(newDate, { skipCache: true })
       if (existing?.id) {
-        if (!wasEditing) {
-          setReportDate(previousDate)
-        }
-        const submittedLabel = existing.timeUploaded
-          ? `Last uploaded at ${existing.timeUploaded}.`
-          : existing.createdAt
-            ? `Submitted on ${formatReviewDateTime(new Date(existing.createdAt))}.`
-            : null
-        setConfirmDialog({
-          title: 'Existing report found',
-          message: `A daily report for ${formatReportDateLabel(newDate)} already exists for ${branchName || 'this branch'}.`,
-          detail: submittedLabel
-            ? `${submittedLabel} Do you want to load and edit this report?`
-            : 'Do you want to load and edit this report?',
-          confirmText: 'Edit existing report',
-          cancelText: 'Keep current date',
-          variant: 'info',
-          onConfirm: () => {
-            setConfirmDialog(null)
-            void loadExistingReportById(existing.id, newDate)
-          },
-        })
-        resetReportDateInput()
+        await loadExistingReportById(existing.id, newDate, true)
         return
       }
 
@@ -1627,11 +1622,17 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         } catch { /* plain text */ }
         throw new Error(msg || `Save failed (HTTP ${res.status})`)
       }
+      const saved = await res.json() as { id?: string; success?: boolean; message?: string }
+      invalidateLookupCache(reportDate)
       setReviewMode(false)
       setReviewStartedAt(null)
       if (wasEdit) {
         if (onSwitchToSummary) onSwitchToSummary()
         else window.location.href = '/audit-report'
+        return
+      }
+      if (saved?.id) {
+        await loadExistingReportById(saved.id, reportDate, true)
         return
       }
       setSuccess(true)
