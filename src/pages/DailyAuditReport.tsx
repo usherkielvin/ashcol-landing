@@ -11,7 +11,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
 import DailySalesForm from './DailySalesForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -284,10 +284,10 @@ export default function DailyAuditReport() {
     if (isAdmin) {
       if (!globalBranchId) return false
 
-      const isTaguigGlobal = globalBranchId.toUpperCase().startsWith('BR-TAGUIG') || 
-                             globalBranchId.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-      const isTaguigRow = selectedRow.branchId.toUpperCase().startsWith('BR-TAGUIG') || 
-                          selectedRow.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+      const resolvedGlobal = resolveScopedBranchId(globalBranchId)
+      const resolvedRow = resolveScopedBranchId(selectedRow.branchId)
+      const isTaguigGlobal = resolvedGlobal.toUpperCase().includes('TAGUIG')
+      const isTaguigRow = resolvedRow.toUpperCase().includes('TAGUIG')
 
       if (isTaguigGlobal && isTaguigRow) {
         if (globalBranchId.endsWith('-sales') || globalBranchId.endsWith('-sales-sales')) {
@@ -299,7 +299,7 @@ export default function DailyAuditReport() {
         }
       }
 
-      return selectedRow.branchId === globalBranchId
+      return isSameBaseBranch(selectedRow.branchId, globalBranchId)
     }
 
     // For non-admin manager
@@ -307,19 +307,16 @@ export default function DailyAuditReport() {
     if (!user?.branchId) return false
 
     // A non-admin manager can only edit their own branch DTR
-    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    const rowBranchNorm = selectedRow.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    const baseMatch = userBranchNorm === rowBranchNorm
-    if (!baseMatch) return false
+    if (!isSameBaseBranch(user.branchId, selectedRow.branchId)) return false
 
     // For Taguig, match the sub-branch/audit line
-    const isTaguigRow = selectedRow.branchId.toUpperCase().startsWith('BR-TAGUIG') || 
-                        selectedRow.branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    const resolvedRow = resolveScopedBranchId(selectedRow.branchId)
+    const isTaguigRow = resolvedRow.toUpperCase().includes('TAGUIG')
     if (isTaguigRow) {
       const emailLower = (user.email || '').toLowerCase()
       const titleLower = (user.jobTitle || '').toLowerCase()
-      const userBranchIdLower = user.branchId.toLowerCase()
-      const isServiceUser = userBranchIdLower.includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const resolvedUserBranch = resolveScopedBranchId(user.branchId).toLowerCase()
+      const isServiceUser = resolvedUserBranch.includes('service') || emailLower.includes('service') || titleLower.includes('service')
       const isServiceRow = selectedRow.auditLine === 'TAGUIG_SERVICE'
       return isServiceUser === isServiceRow
     }

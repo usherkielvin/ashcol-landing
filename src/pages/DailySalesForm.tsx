@@ -4,7 +4,7 @@ import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -272,17 +272,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     if (isAdmin) return true
     if (!isManager || !user?.branchId || !selectedBranchId) return false
 
-    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    const rowBranchNorm = selectedBranchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    if (userBranchNorm !== rowBranchNorm) return false
+    if (!isSameBaseBranch(user.branchId, selectedBranchId)) return false
 
-    const isTaguigRow = selectedBranchId.toUpperCase().startsWith('BR-TAGUIG')
-      || selectedBranchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    const resolvedSelected = resolveScopedBranchId(selectedBranchId)
+    const isTaguigRow = resolvedSelected.toUpperCase().includes('TAGUIG')
     if (isTaguigRow) {
       const emailLower = (user.email || '').toLowerCase()
       const titleLower = (user.jobTitle || '').toLowerCase()
-      const userBranchIdLower = user.branchId.toLowerCase()
-      const isServiceUser = userBranchIdLower.includes('service')
+      const resolvedUserBranch = resolveScopedBranchId(user.branchId).toLowerCase()
+      const isServiceUser = resolvedUserBranch.includes('service')
         || emailLower.includes('service')
         || titleLower.includes('service')
       const isServiceRow = selectedAuditLine === 'TAGUIG_SERVICE'

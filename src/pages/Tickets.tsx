@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, isSameBaseBranch } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -2290,12 +2290,9 @@ export default function Tickets() {
     })
     if (isAdmin && globalBranchId && globalBranchId !== 'ALL_BRANCHES') {
       list = list.filter(t => {
-        const b = (t.branchId || t.branch_id || '').toUpperCase()
+        const b = t.branchId || t.branch_id || ''
         if (!b) return true
-        const g = (globalBranchId || '').toUpperCase()
-        const cleanB = b.replace(/-(SALES|SERVICES)$/, '').replace(/-(SALES|SERVICES)$/, '')
-        const cleanG = g.replace(/-(SALES|SERVICES)$/, '').replace(/-(SALES|SERVICES)$/, '')
-        return cleanB === cleanG
+        return isSameBaseBranch(b, globalBranchId)
       })
     }
     if (dateFilter) {

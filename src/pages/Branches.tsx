@@ -3,7 +3,7 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
 
 interface AuditRow {
   id?: string | null
@@ -267,18 +267,15 @@ export default function Branches() {
     // A non-admin manager can only edit their own branch DTR
     if (!user?.branchId) return false
     
-    // Normalize both user and selected branch to compare base ID
-    const userBranchNorm = user.branchId.replace(/-(sales|services)$/i, '').toLowerCase()
-    const selectedBranchNorm = selectedBranch.id?.replace(/-(sales|services)$/i, '').toLowerCase()
-    const baseMatch = userBranchNorm === selectedBranchNorm
-    if (!baseMatch) return false
+    if (!isSameBaseBranch(user.branchId, selectedBranch.id)) return false
     
     // For Taguig, match the audit line / sub-branch
-    if (user.branchId.toLowerCase().includes('taguig')) {
+    const resolvedUserBranch = resolveScopedBranchId(user.branchId)
+    if (resolvedUserBranch.toUpperCase().includes('TAGUIG')) {
       const emailLower = (user.email || '').toLowerCase()
       const titleLower = (user.jobTitle || '').toLowerCase()
-      const isServiceUser = user.branchId.toLowerCase().includes('service') || emailLower.includes('service') || titleLower.includes('service')
-      const isServiceBranch = selectedBranch.id?.toLowerCase().includes('service') || selectedBranch.name.toUpperCase().includes('SERVICE')
+      const isServiceUser = resolvedUserBranch.toLowerCase().includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const isServiceBranch = (selectedBranch.id || '').toLowerCase().includes('service') || selectedBranch.name.toUpperCase().includes('SERVICE')
       return isServiceUser === isServiceBranch
     }
     

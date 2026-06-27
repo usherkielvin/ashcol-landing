@@ -16,6 +16,13 @@ export function resolveScopedBranchId(branchId?: string | null): string {
   return raw.replace(/-(sales|services|service)$/i, '')
 }
 
+export function isSameBaseBranch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false
+  const cleanA = resolveScopedBranchId(a).replace(/-(sales|services|service)$/i, '').toLowerCase()
+  const cleanB = resolveScopedBranchId(b).replace(/-(sales|services|service)$/i, '').toLowerCase()
+  return cleanA === cleanB
+}
+
 /** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
 export function resolveArchiveBranchId(
   ...candidates: Array<string | null | undefined>
@@ -91,8 +98,19 @@ export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
     || jobTitle === 'oic'
 }
 
+export function isServiceWorkspaceBranchOrTitle(user?: PortalUserLike | null): boolean {
+  if (!user) return false
+  const branchId = resolveScopedBranchId(user.branchId).toLowerCase()
+  const jobTitle = normalizeUserValue(user.jobTitle)
+  const email = normalizeUserValue((user as any).email)
+  return branchId.includes('service')
+    || jobTitle.includes('service')
+    || email.includes('service')
+}
+
 export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isServiceWorkspaceBranchOrTitle(user)) return false
   if (isCoordinatorOrOicUser(user)) return true
   const branchId = normalizeUserValue(user.branchId)
   const jobTitle = normalizeUserValue(user.jobTitle)
@@ -104,6 +122,7 @@ export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
 
 export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isServiceWorkspaceBranchOrTitle(user)) return true
   if (isCoordinatorOrOicUser(user)) return false
   const branchId = normalizeUserValue(user.branchId)
   const jobTitle = normalizeUserValue(user.jobTitle)

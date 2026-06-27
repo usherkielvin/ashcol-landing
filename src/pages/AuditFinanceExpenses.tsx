@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatDisplayUserLabel } from '../utils/api'
+import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
@@ -463,9 +463,7 @@ export default function AuditFinanceExpenses() {
           const list = data?.data || []
           const names = list
             .filter((emp: any) => {
-              const empBranch = emp.branchId ? emp.branchId.replace(/-(sales|services)$/i, '') : ''
-              const cleanBranchId = branchId.replace(/-(sales|services)$/i, '')
-              return empBranch === cleanBranchId && emp.isActive !== false && emp.name?.trim()
+              return isSameBaseBranch(emp.branchId, branchId) && emp.isActive !== false && emp.name?.trim()
             })
             .map((emp: any) => emp.name.toUpperCase().trim())
           setBranchEmployees(names)
