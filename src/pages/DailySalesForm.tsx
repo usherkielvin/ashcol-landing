@@ -1710,7 +1710,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
           <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Daily Report</p>
           <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-            {reportId ? 'Edit Daily Report' : 'Branch Daily Report'}
+            {reportId ? (isEditingExisting ? 'Edit Daily Report' : 'View Daily Report') : 'Branch Daily Report'}
           </h2>
           <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Report</p>
         </div>
@@ -1725,6 +1725,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           </button>
         )}
       </div>
+
+      {reportId && !isEditingExisting && canEditExistingReport && (
+        <div className="rounded-xl p-4 flex items-center gap-3 bg-blue-500/5 border border-blue-500/20">
+          <Receipt className="w-5 h-5 shrink-0 text-blue-500" />
+          <p className="text-sm text-blue-600 dark:text-blue-400">
+            <strong>Note:</strong> This report is currently in view-only mode. Click the <strong>Edit Report</strong> button at the bottom of the page to unlock and edit this daily report.
+          </p>
+        </div>
+      )}
 
       {reviewMode && (
         <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">

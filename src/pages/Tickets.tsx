@@ -127,8 +127,8 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
   { value: 'RESCHED', label: 'Resched' },
   { value: 'SURVEY', label: 'Survey' },
   { value: 'FOR_APPROVAL', label: 'For Approval' },
-  { value: 'DONE_CLEANING', label: 'Done Cleaning' },
-  { value: 'DONE_INSTALLED', label: 'Done Installed' },
+  { value: 'DONE_CLEANING', label: 'Cleaning' },
+  { value: 'DONE_INSTALLED', label: 'Installed' },
   { value: 'DONE_SURVEY', label: 'Done Survey' },
   { value: 'CANCELLED', label: 'Cancelled' },
 ]
@@ -2417,10 +2417,10 @@ export default function Tickets() {
       { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
     ]
     let left = 0
@@ -2502,11 +2502,12 @@ export default function Tickets() {
 
       return isScheduled || isResched || isForApproval || isSurvey
     })
-    if (isAdmin && globalBranchId && globalBranchId !== 'ALL_BRANCHES') {
+    const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
+    if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
       list = list.filter(t => {
         const b = t.branchId || t.branch_id || ''
         if (!b) return true
-        return isSameBaseBranch(b, globalBranchId)
+        return isSameBaseBranch(b, effectiveBranch)
       })
     }
     if (dateFilter) {
@@ -2943,7 +2944,8 @@ export default function Tickets() {
               openReschedDialog(ticket)
               return
             }
-            setEditingCell(prev => prev ? { ...prev, value: next } : null)
+            if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+            void saveCellEdit(ticket, colLabel, next)
           }}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
@@ -3046,14 +3048,14 @@ export default function Tickets() {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
           if (outcome === 'DONE_CLEANING') {
             return (
-              <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Done cleaning">
-                DONE CLEANING
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Cleaning">
+                CLEANING
               </span>
             )
           }
           return (
-            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
-              DONE INSTALLED
+            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
+              INSTALLED
             </span>
           )
         }
