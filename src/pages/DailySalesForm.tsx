@@ -343,6 +343,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const isApplyingScannedData = useRef(false)
   const loadedReportDate = useRef<string | null>(null)
   const isTypingReportDate = useRef(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const loadedBranchId = useRef<string | null>(null)
   const loadedAuditLine = useRef<string | null>(null)
 
@@ -578,23 +579,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           }
         }
 
-        // 2. Fetch yesterday's Cash on Hand from audit summary
+        // 2. Initialize Cash on Hand Previous Date to always '0'
         const urlParams = new URLSearchParams(window.location.search)
         const isEditing = !!(reportId || urlParams.get('id'))
         if (!isEditing && !ignoreNextCohFetch.current) {
-          const yesterday = new Date(new Date(reportDate).getTime() - 86400000).toISOString().split('T')[0]
-          const resAudit = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${yesterday}`, { headers })
-          if (resAudit.ok) {
-            const data = await resAudit.json()
-            const myRow = data.find((r: any) => matchesBranchAuditRow(r, selectedBranchId, selectedAuditLine))
-            if (myRow && myRow.totalCohCfd !== undefined) {
-              setCashOnHand(String(myRow.totalCohCfd))
-            } else {
-              setCashOnHand('0')
-            }
-          } else {
-            setCashOnHand('0')
-          }
+          setCashOnHand('0')
         }
 
         // 3. Fetch lineup, service reports, and branch employees to collect technician names
@@ -1046,6 +1035,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     await fetchReportDetails(id)
   }
 
+  const resetReportDateInput = () => {
+    if (dateInputRef.current) dateInputRef.current.value = reportDate
+  }
+
   const handleReportDateChange = async (newDate: string) => {
     if (!newDate || newDate === reportDate || reviewMode) return
 
@@ -1072,6 +1065,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             void loadExistingReportById(existing.id, newDate)
           },
         })
+        resetReportDateInput()
         return
       }
       applyFreshDateChange(newDate)
@@ -1081,6 +1075,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     } finally {
       setCheckingExistingReport(false)
     }
+  }
+
+  const finalizeReportDateSelection = (newDate: string) => {
+    if (!newDate || newDate === reportDate || reviewMode || checkingExistingReport) return
+    void handleReportDateChange(newDate)
   }
 
   // Load query params on mount/URL change
@@ -1622,25 +1621,24 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Report Date</label>
             <input
+              key={`report-date-${reportDate}`}
+              ref={dateInputRef}
               id="report-date-input"
               type="date"
-              value={reportDate}
+              defaultValue={reportDate}
               onKeyDown={e => {
                 isTypingReportDate.current = true
                 if (e.key === 'Enter') {
                   isTypingReportDate.current = false
-                  void handleReportDateChange((e.target as HTMLInputElement).value)
+                  finalizeReportDateSelection((e.target as HTMLInputElement).value)
                 }
               }}
-              onChange={e => {
-                setReportDate(e.target.value)
-                if (!isTypingReportDate.current) {
-                  void handleReportDateChange(e.target.value)
-                }
+              onChange={() => {
+                // Let the native picker update the uncontrolled value; commit on blur only.
               }}
               onBlur={e => {
                 isTypingReportDate.current = false
-                void handleReportDateChange(e.target.value)
+                finalizeReportDateSelection(e.target.value)
               }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
               disabled={reviewMode || checkingExistingReport}
@@ -2550,7 +2548,13 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         })}
       </datalist>
 
-      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+      <ConfirmDialog
+        dialog={confirmDialog}
+        onClose={() => {
+          setConfirmDialog(null)
+          resetReportDateInput()
+        }}
+      />
 
     </div>
   )
