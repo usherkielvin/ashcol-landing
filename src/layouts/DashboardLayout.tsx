@@ -1,14 +1,14 @@
 // @ts-nocheck
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, cloneElement, isValidElement } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  LayoutDashboard, Ticket as TicketIcon,
-  Menu, Sun, Moon, LogOut, X,
+  Ticket as TicketIcon,
+  Menu, LogOut, X, Sun, Moon,
   ChevronRight, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList,
   Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
-  Building2, Calendar, Landmark, Wifi
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -57,6 +57,86 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
 }
 
 interface BranchOption { id: string; name: string }
+
+type NavLinkDef = { name: string; path: string; icon: typeof TicketIcon; roles?: string[] }
+
+function buildNavGroups(navLinks: NavLinkDef[]) {
+  const findPath = (name: string) => navLinks.find(l => l.name === name)?.path ?? '#'
+  const hasLink = (name: string) => navLinks.some(l => l.name === name)
+
+  return [
+    {
+      title: 'Tickets',
+      Icon: MdOutlineConfirmationNumber,
+      subItems: [
+        { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
+        { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
+        { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
+      ].filter(s => s.path !== '#' || hasLink(s.name)),
+    },
+    {
+      title: 'Operations',
+      Icon: MdOutlinePeopleAlt,
+      subItems: [
+        { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
+        { name: 'Line-up', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
+        { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+    {
+      title: 'Finance',
+      Icon: MdOutlineInsertChartOutlined,
+      subItems: [
+        { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />, path: findPath('Daily Transaction') },
+        { name: 'Expenses', icon: <MdOutlineReceipt size={16} />, path: findPath('Expense Records') },
+        { name: 'Collections', icon: <MdOutlineMonetizationOn size={16} />, path: findPath('For Collections') },
+        { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
+        { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+    {
+      title: 'Directory',
+      Icon: MdMenuBook,
+      subItems: [
+        { name: 'Employees', icon: <MdOutlinePerson size={16} />, path: findPath('Employees') },
+        { name: 'Branches', icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+  ].filter(g => g.subItems.length > 0)
+}
+
+/** Collapsed rail: one icon per destination (no duplicate paths / redundant entries). */
+function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
+  const groups = buildNavGroups(navLinks)
+  const items: { key: string; name: string; path: string; icon: React.ReactNode }[] = []
+  const seenPaths = new Set<string>()
+
+  const normalizePath = (path: string) => (path === '/tickets' ? '/schedules' : path)
+
+  const addItem = (name: string, path: string, icon: React.ReactNode) => {
+    if (!path || path === '#') return
+    const key = normalizePath(path)
+    if (seenPaths.has(key)) return
+    seenPaths.add(key)
+    items.push({ key, name, path, icon })
+  }
+
+  for (const group of groups) {
+    for (const sub of group.subItems) {
+      addItem(sub.name, sub.path, sub.icon)
+    }
+  }
+
+  const covered = new Set(items.map(i => normalizePath(i.path)))
+  for (const link of navLinks) {
+    const key = normalizePath(link.path)
+    if (covered.has(key)) continue
+    const Icon = link.icon
+    addItem(link.name, link.path, <Icon className="w-4 h-4 shrink-0" strokeWidth={2} />)
+  }
+
+  return items
+}
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
@@ -194,16 +274,16 @@ export default function DashboardLayout() {
   }, [])
 
   const allLinks = [
-    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
+    // { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin'] },
-    { name: 'Lineup',          path: '/lineup',           icon: CalendarDays,    roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'For Collections',  path: '/collections',     icon: ClipboardList,   roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'manager'] },
@@ -257,6 +337,12 @@ export default function DashboardLayout() {
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name ?? 'Dashboard'
+  const navGroups = buildNavGroups(navLinks)
+  const collapsedNavItems = buildCollapsedNavItems(navLinks)
+
+  const sidebarIconColor = 'rgba(255,255,255,0.88)'
+  const sidebarHoverBg = 'rgba(255,255,255,0.1)'
+  const sidebarActiveBg = 'rgba(16,185,129,0.18)'
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -289,7 +375,7 @@ export default function DashboardLayout() {
       >
         {/* Brand */}
         <div
-          className="flex items-center h-14 shrink-0 px-4"
+          className={`flex items-center h-14 shrink-0 ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}
         >
           {/* Logo - always visible, click to toggle collapse on desktop */}
           <img
@@ -315,8 +401,7 @@ export default function DashboardLayout() {
 
           {/* Mobile close */}
           <button
-            className="md:hidden p-1.5 rounded-lg transition-colors hover:bg-red-500/10 hover:text-red-400 shrink-0"
-            style={{ color: textMuted }}
+            className="md:hidden p-1.5 rounded-lg transition-colors hover:bg-white/10 shrink-0 text-white/80 hover:text-white"
             onClick={() => setSidebarOpen(false)}
           >
             <X className="w-4 h-4" />
@@ -324,15 +409,15 @@ export default function DashboardLayout() {
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
-        <nav className="flex-1 overflow-y-auto py-4 px-2 flex flex-col gap-0.5">
+        <nav className={`flex-1 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
           {!sidebarCollapsed && (
-            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40">
+            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
               Navigation
             </div>
           )}
 
-          {/* ── Overview (always flat, no accordion) ─────── */}
-          {navLinks.some(l => l.name === 'Overview') && (() => {
+          {/* ── Overview (expanded only) ─────── */}
+          {!sidebarCollapsed && navLinks.some(l => l.name === 'Overview') && (() => {
             const link = navLinks.find(l => l.name === 'Overview')!
             const isActive = location.pathname === link.path
             const Icon = link.icon
@@ -361,159 +446,112 @@ export default function DashboardLayout() {
             )
           })()}
 
-          {/* ── Accordion Groups ─────────────────────────── */}
-          {!sidebarCollapsed && (() => {
-            // Define accordion groups; each sub-item maps name -> path from navLinks
-            const findPath = (name: string) => navLinks.find(l => l.name === name)?.path ?? '#'
-            const hasLink  = (name: string) => navLinks.some(l => l.name === name)
+          {/* ── Accordion Groups (expanded only) ─────────────────────────── */}
+          {!sidebarCollapsed && navGroups.map(group => {
+            const isOpen = openAccordion === group.title
+            const GroupIcon = group.Icon
+            const isParentActive = isOpen
+            return (
+              <div key={group.title} className="mb-0.5 w-full">
+                <button
+                  onClick={() => setOpenAccordion(isOpen ? null : group.title)}
+                  className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150"
+                  style={isParentActive
+                    ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
+                    : { color: sidebarIconColor }}
+                  onMouseEnter={e => {
+                    if (!isParentActive) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = isParentActive ? 'rgba(255,255,255,0.12)' : 'transparent'
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <GroupIcon size={17} className="shrink-0 text-white" />
+                    <span className="flex-1 truncate text-left">{group.title}</span>
+                  </div>
+                  {isOpen
+                    ? <FiMinus size={13} className="shrink-0 opacity-60 text-white" />
+                    : <FiPlus size={13} className="shrink-0 opacity-60 text-white" />}
+                </button>
 
-            const groups = [
-              {
-                title: 'Tickets',
-                Icon: MdOutlineConfirmationNumber,
-                subItems: [
-                  { name: 'Relays',     icon: <MdOutlineLocalActivity size={16} />,   path: findPath('Relays') },
-                  { name: 'Schedules',  icon: <MdOutlineCalendarMonth size={16} />,   path: findPath('Schedules') },
-                  { name: 'Archives',   icon: <MdOutlineArchive size={16} />,         path: findPath('Archives') },
-                ].filter(s => s.path !== '#' || hasLink(s.name)),
-              },
-              {
-                title: 'Operations',
-                Icon: MdOutlinePeopleAlt,
-                subItems: [
-                  { name: 'HRIS',         icon: <MdOutlineDescription size={16} />,  path: findPath('HRIS') },
-                  { name: 'Line-up',      icon: <MdOutlinePlaylistAdd size={16} />,  path: findPath('Lineup') },
-                  { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />,    path: findPath('Office tasks') },
-                ].filter(s => navLinks.some(l => l.path === s.path)),
-              },
-              {
-                title: 'Finance',
-                Icon: MdOutlineInsertChartOutlined,
-                subItems: [
-                  { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />,             path: findPath('Daily Transaction') },
-                  { name: 'Expenses',     icon: <MdOutlineReceipt size={16} />,              path: findPath('Expense Records') },
-                  { name: 'Collections',  icon: <MdOutlineMonetizationOn size={16} />,       path: findPath('For Collections') },
-                  { name: 'Bills',        icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
-                  { name: 'Telecoms',     icon: <MdOutlinePhone size={16} />,                path: findPath('Telecoms') },
-                ].filter(s => navLinks.some(l => l.path === s.path)),
-              },
-              {
-                title: 'Directory',
-                Icon: MdMenuBook,
-                subItems: [
-                  { name: 'Employees', icon: <MdOutlinePerson size={16} />,     path: findPath('Employees') },
-                  { name: 'Branches',  icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
-                ].filter(s => navLinks.some(l => l.path === s.path)),
-              },
-            ].filter(g => g.subItems.length > 0)
-
-            return groups.map(group => {
-              const isOpen = openAccordion === group.title
-              const GroupIcon = group.Icon
-              // STRICT: parent highlights ONLY when this accordion is the open one
-              const isParentActive = isOpen
-              return (
-                <div key={group.title} className="mb-0.5">
-                  {/* Accordion header */}
-                  <button
-                    onClick={() => setOpenAccordion(isOpen ? null : group.title)}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150"
-                    style={isParentActive
-                      ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
-                      : { color: '#ffffff' }}
-                    onMouseEnter={e => {
-                      if (!isParentActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.08)'
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = isParentActive ? 'rgba(255,255,255,0.12)' : 'transparent'
-                    }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <GroupIcon size={17} className="shrink-0" />
-                      <span className="flex-1 truncate text-left">{group.title}</span>
+                {isOpen && (
+                  <div className="relative ml-5 mt-1 mb-2 pl-5">
+                    <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
+                    <div className="flex flex-col space-y-3 py-1">
+                      {group.subItems.map((sub, idx) => {
+                        const isSubActive = activeSubItem === sub.name
+                          || location.pathname === sub.path
+                          || location.pathname.startsWith(sub.path + '/')
+                        return (
+                          <Link
+                            key={`${group.title}-${idx}`}
+                            to={sub.path}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveSubItem(sub.name)
+                              setSidebarOpen(false)
+                            }}
+                            className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
+                              isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
+                            }`}
+                          >
+                            {isSubActive && (
+                              <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                            )}
+                            <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
+                              {sub.icon}
+                            </span>
+                            <span className="truncate">{sub.name}</span>
+                          </Link>
+                        )
+                      })}
                     </div>
-                    {isOpen
-                      ? <FiMinus size={13} className="shrink-0 opacity-60" />
-                      : <FiPlus  size={13} className="shrink-0 opacity-60" />}
-                  </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
 
-                  {/* Sub-items with solid line indicator */}
-                  {isOpen && (
-                    <div className="relative ml-5 mt-1 mb-2 pl-5">
-                      {/* Thin continuous vertical line */}
-                      <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
-
-                      <div className="flex flex-col space-y-3 py-1">
-                        {group.subItems.map((sub, idx) => {
-                          const isSubActive = activeSubItem === sub.name
-                          return (
-                            <Link
-                              key={idx}
-                              to={sub.path}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveSubItem(sub.name)
-                                setSidebarOpen(false)
-                              }}
-                              className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
-                                isSubActive
-                                  ? 'text-white'
-                                  : 'text-white/50 hover:text-white'
-                              }`}
-                            >
-                              {/* Thick active indicator — overlays the thin line */}
-                              {isSubActive && (
-                                <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
-                              )}
-                              <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-50'}`}>
-                                {sub.icon}
-                              </span>
-                              <span className="truncate">{sub.name}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          })()}
-
-          {/* Collapsed mode: show flat icons only for all nav links */}
-          {sidebarCollapsed && navLinks.map((link) => {
-            const isActive = location.pathname === link.path
-            const Icon = link.icon
+          {/* Collapsed mode: deduplicated icon rail */}
+          {sidebarCollapsed && collapsedNavItems.map((item) => {
+            const isActive = location.pathname === item.path
+              || location.pathname.startsWith(item.path + '/')
+              || (item.path === '/schedules' && location.pathname === '/tickets')
             return (
               <Link
-                key={link.name}
-                to={link.path}
+                key={item.key}
+                to={item.path}
                 onClick={() => setSidebarOpen(false)}
-                title={link.name}
-                className="group flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
+                title={item.name}
+                className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
                 style={isActive
-                  ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.12)' }
-                  : { color: textMuted }}
+                  ? { color: '#10B981', backgroundColor: sidebarActiveBg }
+                  : { color: sidebarIconColor }}
                 onMouseEnter={e => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg
-                  if (!isActive) (e.currentTarget as HTMLElement).style.color = textPrimary
+                  if (!isActive) {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                    ;(e.currentTarget as HTMLElement).style.color = '#ffffff'
+                  }
                 }}
                 onMouseLeave={e => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
-                  if (!isActive) (e.currentTarget as HTMLElement).style.color = textMuted
+                  if (!isActive) {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                    ;(e.currentTarget as HTMLElement).style.color = sidebarIconColor
+                  }
                 }}
               >
                 {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
-                {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                {isValidElement(item.icon)
+                  ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
+                  : item.icon}
               </Link>
             )
           })}
 
-          {/* Expand button at bottom of nav when collapsed */}
           {sidebarCollapsed && (
             <button
-              className="hidden md:flex items-center justify-center mt-auto p-2.5 rounded-xl transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-              style={{ color: textMuted }}
+              className="hidden md:flex items-center justify-center w-11 h-11 mt-2 rounded-xl transition-colors text-white/70 hover:text-white hover:bg-white/10"
               title="Expand sidebar"
               onClick={() => setSidebarCollapsed(false)}
             >
@@ -527,7 +565,7 @@ export default function DashboardLayout() {
         {(() => {
           const showBranch = isAdmin && adminBranches.length > 0
           return (
-            <div className={`px-4 pb-6 pt-3 space-y-3 ${!showBranch ? 'mt-auto' : ''}`}>
+            <div className={`px-3 pb-5 pt-2 space-y-2 ${!showBranch ? 'mt-auto' : ''} ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
 
               {/* Branch Button (admin only) */}
               {showBranch && (
@@ -599,8 +637,8 @@ export default function DashboardLayout() {
                 {/* Profile button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`w-full flex items-center gap-3 text-left bg-[#1e732c] hover:bg-[#236130] rounded-xl shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] transition-all ${
-                    sidebarCollapsed ? 'p-3 justify-center' : 'px-4 py-3'
+                  className={`w-full flex items-center gap-3 text-left rounded-xl border border-white/10 bg-white/10 hover:bg-white/15 transition-all ${
+                    sidebarCollapsed ? 'p-2 justify-center w-11 h-11' : 'px-4 py-3'
                   }`}
                 >
                   {/* Avatar */}

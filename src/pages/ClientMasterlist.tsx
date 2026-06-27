@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
-  Building2, Trash2, User, MapPin, Wrench,
+  Building2, Trash2, User, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
-  Printer, Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Maximize2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -45,6 +45,7 @@ interface Ticket {
   installationCharges?: number
   modeOfPayment?: string
   controlNumber?: string
+  ticketNumber?: string
   warrantyRegistrationCompleted?: boolean
   warrantyRegistrationCompletedAt?: string
   warrantyRegistrationCompletedBy?: string
@@ -326,7 +327,7 @@ const getRelayStatusLabel = (ticket: Ticket) => {
 const getTicketCategory = (ticket: Ticket) => {
   const raw = `${ticket.serviceType || ''} ${ticket.title || ''}`.toLowerCase()
   if (raw.includes('collection') || raw.includes('collect')) return 'Collection'
-  if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Installation'
+  if (raw.includes('install') || raw.includes('s/i') || raw.includes(' si ')) return 'Survey & Install'
   if (raw.includes('survey')) return 'Survey'
   if (raw.includes('service') || raw.includes('clean')) return 'Service'
   return ticket.serviceType || 'Service'
@@ -474,10 +475,12 @@ export default function ClientMasterlist() {
   const [editInstallerName, setEditInstallerName] = useState('')
   const [editServiceVehicle, setEditServiceVehicle] = useState('')
   const [editRemarksUpdate, setEditRemarksUpdate] = useState('')
+  const [editPhoneNumbers, setEditPhoneNumbers] = useState<string[]>([''])
+  const [editBrandHP, setEditBrandHP] = useState('')
   const [editInstallationCharges, setEditInstallationCharges] = useState(0)
   const [editModeOfPayment, setEditModeOfPayment] = useState('')
   const [editControlNumber, setEditControlNumber] = useState('')
-  const [editContactPhone, setEditContactPhone] = useState('')
+
   const [editSourceVendor, setEditSourceVendor] = useState('')
   const [editUnitType, setEditUnitType] = useState('')
   const [editServiceType, setEditServiceType] = useState('')
@@ -487,58 +490,69 @@ export default function ClientMasterlist() {
   const [editCapacity, setEditCapacity] = useState('')
   const [editSku, setEditSku] = useState('')
   const [editSerialNumber, setEditSerialNumber] = useState('')
-  const [editAlternatePhone, setEditAlternatePhone] = useState('')
+
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
   const [editFinalDate, setEditFinalDate] = useState('')
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const [fitView, setFitView] = useState(false)
+
+  const tableRowBorder = isLight ? '#cbd5e1' : '#2a3f5f'
+  const tableColBorder = `1px solid ${tableRowBorder}`
+  const cellPadY = fitView ? 4 : 8
+  const cellPadX = fitView ? 7 : 12
+  const headerPadY = fitView ? 5 : 9
 
   const toggleColumn = useCallback((colLabel: string) => {
+    if (fitView) return
     setExpandedCols(prev => ({
       ...prev,
       [colLabel]: !prev[colLabel]
     }))
-  }, [])
+  }, [fitView])
 
   const columns = useMemo(() => {
     const rawCols = [
-      { label: 'CATEGORY',          defaultW: 110, expW: 180, sticky: true,  freeze: true,  center: true,  right: false },
-      { label: 'STATUS',            defaultW: 118, expW: 170, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'BRANCH ASSIGNED',   defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'NEGOTIATOR',        defaultW: 130, expW: 220, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'CUSTOMER NAME',     defaultW: 165, expW: 280, sticky: false, freeze: false, center: false, right: false },
-      { label: 'DISTRICT',          defaultW: 120, expW: 220, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'STORE',             defaultW: 135, expW: 220, sticky: false, freeze: false, center: false, right: false },
-      { label: 'BRAND',             defaultW: 105, expW: 180, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'CAPACITY',          defaultW: 100, expW: 150, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'COMMIT',            defaultW: 140, expW: 240, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'DATE RELAYED',      defaultW: 120, expW: 170, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'REQUESTED SCHEDULE', defaultW: 150, expW: 200, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'FINAL SCHEDULE',    defaultW: 135, expW: 190, sticky: false, freeze: false, center: true,  right: false },
-      { label: 'LAST UPDATE',       defaultW: 230, expW: 420, sticky: false, freeze: false, center: false, right: false },
-      { label: 'ACTIONS',           defaultW: 90,  expW: 90,  sticky: false, freeze: false, center: false, right: true  },
+      { label: 'ASSIGNED',           weight: 12, expMul: 1.55, sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'CUSTOMER NAME',      weight: 16, expMul: 1.65, sticky: false, freeze: false, center: true, right: false },
+      { label: 'DISTRICT',           weight: 9,  expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'STORE',              weight: 11, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'BRAND / HP',         weight: 10, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'COMMIT',             weight: 12, expMul: 1.6,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'DATE RELAYED',       weight: 10, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
+      { label: 'REQUESTED SCHEDULE', weight: 12, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL SCHEDULE',     weight: 10, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
+      { label: 'LAST UPDATE',        weight: 18, expMul: 1.75, sticky: false, freeze: false, center: true, right: true },
     ]
 
-    let accumulatedLeft = 0
-    return rawCols.map(col => {
-      const isExpanded = !!expandedCols[col.label]
-      const currentWidth = isExpanded ? col.expW : col.defaultW
-      const leftVal = col.sticky ? accumulatedLeft : 0
-      
-      if (col.sticky) {
-        accumulatedLeft += currentWidth
-      }
-
-      return {
-        ...col,
-        isExpanded,
-        w: currentWidth,
-        left: leftVal
-      }
+    const weights = rawCols.map(col => {
+      const isExpanded = !fitView && !!expandedCols[col.label]
+      return col.weight * (isExpanded ? col.expMul : 1)
     })
-  }, [expandedCols])
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0)
+
+    return rawCols.map((col, idx) => ({
+      ...col,
+      isExpanded: !fitView && !!expandedCols[col.label],
+      w: `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`,
+      left: col.sticky ? 0 : undefined,
+    }))
+  }, [expandedCols, fitView])
+
+  const columnCellStyle = (col: (typeof columns)[number]) => ({
+    width: col.w,
+    minWidth: col.w,
+    maxWidth: col.w,
+    boxSizing: 'border-box' as const,
+  })
+
+  const columnTextAlign = (col: (typeof columns)[number], cell?: { right?: boolean; center?: boolean }) => {
+    if (cell?.right || col.right) return 'right' as const
+    if (cell?.center ?? col.center) return 'center' as const
+    return 'center' as const
+  }
 
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -1015,13 +1029,13 @@ export default function ClientMasterlist() {
         capacity: editCapacity || '',
         sku: editSku || '',
         serialNumber: editSerialNumber || '',
-        alternatePhone: editAlternatePhone || '',
+        alternatePhone: editPhoneNumbers.slice(1).filter(Boolean).join(', '),
         relayedDate: editRelayedDate || '',
         finalDate: editFinalDate || ''
       }
       payload.acDetails = JSON.stringify(acDetailsObj)
       payload.images = editImages || null
-      payload.contactPhone = editContactPhone || null
+      payload.contactPhone = editPhoneNumbers[0] || null
       payload.sourceVendor = editSourceVendor || null
       payload.unitType = editUnitType || null
       payload.serviceType = editServiceType || null
@@ -1129,7 +1143,6 @@ export default function ClientMasterlist() {
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
-    setEditContactPhone(ticket.contactPhone || '')
     setEditSourceVendor(ticket.sourceVendor || '')
     setEditUnitType(ticket.unitType || '')
     setEditServiceType(ticket.serviceType || '')
@@ -1148,7 +1161,9 @@ export default function ClientMasterlist() {
     setEditCapacity(parsedDetails.capacity || '')
     setEditSku(parsedDetails.sku || '')
     setEditSerialNumber(parsedDetails.serialNumber || '')
-    setEditAlternatePhone(parsedDetails.alternatePhone || '')
+    const phonesList = [ticket.contactPhone || ''].concat(parsedDetails.alternatePhone ? parsedDetails.alternatePhone.split(',').map(s => s.trim()) : []).filter(Boolean)
+    setEditPhoneNumbers(phonesList.length ? phonesList : [''])
+    setEditBrandHP(`${parsedDetails.brand || ''} ${parsedDetails.capacity || ''}`.trim())
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
     setEditFinalDate(parsedDetails.finalDate || '')
@@ -1353,8 +1368,14 @@ export default function ClientMasterlist() {
   
 
   const getTicketNumber = (ticket: Ticket) => {
-    if (ticket.controlNumber) return ticket.controlNumber
-    return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '').toUpperCase()
+    if (ticket.ticketNumber?.trim()) return ticket.ticketNumber.trim()
+    return ticket.id && ticket.id.length > 8 ? ticket.id.substring(0, 8).toUpperCase() : (ticket.id || '—').toUpperCase()
+  }
+
+  const displayUpper = (value?: string | null) => {
+    const str = (value ?? '').trim()
+    if (!str || str === '—') return '—'
+    return str.toUpperCase()
   }
 
   
@@ -1461,6 +1482,20 @@ export default function ClientMasterlist() {
             })}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setFitView(v => !v)}
+            title={fitView ? 'Restore default column spacing' : 'Fit table — compact columns and row grid'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all hover:opacity-90 shrink-0"
+            style={{
+              backgroundColor: fitView ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.16)') : inputBg,
+              borderColor: fitView ? (isLight ? '#86efac' : 'rgba(16,185,129,0.35)') : inputBorder,
+              color: fitView ? '#059669' : textMuted,
+            }}>
+            <Maximize2 className="w-3.5 h-3.5" />
+            {fitView ? 'Default View' : 'Fit View'}
+          </button>
+
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1528,7 +1563,7 @@ export default function ClientMasterlist() {
               <p className="text-xs mt-0.5" style={{ color: textMuted }}>{filtered.length} ticket{filtered.length !== 1 ? 's' : ''} matching the current filters</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {['Service', 'Installation', 'Survey', 'Collection'].map(category => {
+              {['Service', 'Survey & Install', 'Survey', 'Collection'].map(category => {
                 const color = getCategoryColor(category)
                 return (
                   <span key={category} className="px-2.5 py-1 rounded-lg text-xs font-black border"
@@ -1540,17 +1575,38 @@ export default function ClientMasterlist() {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+            <table
+              className="w-full text-xs"
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                tableLayout: 'fixed',
+              }}>
+              <colgroup>
+                {['9%', '8%', '16%', '10%', '11%', '12%', '9%', '9%', '11%', '5%'].map((w, i) => (
+                  <col key={i} style={{ width: w }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr style={{ backgroundColor: inputBg }}>
                   {['CATEGORY', 'STATUS', 'CUSTOMER', 'BRANCH', 'NEGOTIATOR', 'STORE', 'REQUESTED', 'FINAL', 'PAYMENT', 'ACTION'].map(label => (
-                    <th key={label} className="px-3 py-2.5 text-left font-black text-[10px] whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                    <th
+                      key={label}
+                      className="text-center font-black whitespace-nowrap"
+                      style={{
+                        color: textMuted,
+                        borderBottom: `2px solid ${tableRowBorder}`,
+                        borderRight: tableColBorder,
+                        padding: `${headerPadY}px ${cellPadX}px`,
+                        fontSize: fitView ? '9px' : '10px',
+                        textAlign: 'center',
+                      }}>
                       {label}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="uppercase">
                 {loading ? (
                   <tr>
                     <td colSpan={10} className="py-16 text-center" style={{ color: textMuted }}>
@@ -1569,22 +1625,32 @@ export default function ClientMasterlist() {
                   const paymentText = category === 'Collection'
                     ? (isCollectionPaid(ticket) ? 'Collected' : 'Pending collection')
                     : (ticket.modeOfPayment || (ticket.installationCharges ? `₱${ticket.installationCharges.toLocaleString()}` : '—'))
+                  const summaryCellStyle = (extra: Record<string, unknown> = {}) => ({
+                    padding: `${cellPadY}px ${cellPadX}px`,
+                    borderBottom: `1px solid ${tableRowBorder}`,
+                    borderRight: tableColBorder,
+                    fontSize: fitView ? '10px' : undefined,
+                    lineHeight: fitView ? 1.25 : undefined,
+                    boxSizing: 'border-box' as const,
+                    overflow: 'hidden',
+                    verticalAlign: 'middle' as const,
+                    textAlign: 'center' as const,
+                    ...extra,
+                  })
                   return (
                     <tr key={ticket.id}
                       onClick={() => { setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
                       style={{ backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'), cursor: 'pointer' }}>
-                      <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                        <span className="whitespace-nowrap">{idx + 1}. {category}</span>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: status === 'Pending' ? '#F59E0B' : textPrimary, borderBottom: `1px solid ${border}` }}>{status}</td>
-                      <td className="px-3 py-2.5 max-w-[210px] truncate" title={ticket.customerName || 'Direct Client'} style={{ color: textPrimary, borderBottom: `1px solid ${border}` }}>{ticket.customerName || 'Direct Client'}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{resolveBranch(ticket.branchId)?.name || '—'}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{ticket.assignedEmployeeName || ticket.installerName || '—'}</td>
-                      <td className="px-3 py-2.5 max-w-[180px] truncate" title={ticket.sourceVendor || ''} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{getStoreStyle(ticket.sourceVendor).label}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(ticket.preferredDate) || '—'}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>{formatShortDate(details.finalDate) || '—'}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted, borderBottom: `1px solid ${border}` }}>{paymentText}</td>
-                      <td className="px-3 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}>
+                      <td style={summaryCellStyle()}><span className="whitespace-nowrap">{idx + 1}. {displayUpper(category)}</span></td>
+                      <td style={summaryCellStyle({ color: status === 'Pending' ? '#F59E0B' : textPrimary })} className="whitespace-nowrap">{displayUpper(status)}</td>
+                      <td style={summaryCellStyle({ color: textPrimary })} className="truncate" title={displayUpper(ticket.customerName || 'Direct Client')}>{displayUpper(ticket.customerName || 'Direct Client')}</td>
+                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(resolveBranch(ticket.branchId)?.name)}</td>
+                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(ticket.assignedEmployeeName || ticket.installerName)}</td>
+                      <td style={summaryCellStyle({ color: textMuted })} className="truncate" title={displayUpper(getStoreStyle(ticket.sourceVendor).label)}>{displayUpper(getStoreStyle(ticket.sourceVendor).label)}</td>
+                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(formatShortDate(ticket.preferredDate))}</td>
+                      <td style={summaryCellStyle({ color: textMuted })} className="whitespace-nowrap">{displayUpper(formatShortDate(details.finalDate))}</td>
+                      <td style={summaryCellStyle({ color: category === 'Collection' && !isCollectionPaid(ticket) ? '#F59E0B' : textMuted })} className="whitespace-nowrap">{displayUpper(paymentText)}</td>
+                      <td style={summaryCellStyle({ textAlign: 'right' })}>
                         <div className="flex justify-end gap-1.5">
                           <button type="button" onClick={e => { e.stopPropagation(); setSelectedPreviewTicket(ticket); setIsViewModalOpen(true) }}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
@@ -1606,57 +1672,56 @@ export default function ClientMasterlist() {
           </div>
         </div>      ) : (
       <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-          <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+          <div className={`overflow-x-auto ${fitView ? '' : 'overflow-y-auto'}`} style={{ maxHeight: fitView ? undefined : 'calc(100vh - 220px)' }}>
+          <table
+            className="text-xs w-full"
+            style={{
+              width: '100%',
+              tableLayout: 'fixed',
+              borderCollapse: 'collapse',
+            }}>
+            <colgroup>
+              {columns.map(col => (
+                <col key={col.label} style={{ width: col.w }} />
+              ))}
+            </colgroup>
             <thead>
-              <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
+              <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${tableRowBorder}` }}>
                 {columns.map(col => (
                   <th key={col.label}
                     onClick={() => col.label !== 'ACTIONS' && toggleColumn(col.label)}
-                    title={col.label !== 'ACTIONS' ? `Click to ${col.isExpanded ? 'collapse' : 'expand'} column` : undefined}
+                    title={fitView ? col.label : col.label !== 'ACTIONS' ? `Click to ${col.isExpanded ? 'collapse' : 'expand'} column` : undefined}
                     style={{
-                      padding: '9px 10px',
-                      textAlign: col.right ? 'right' : col.center ? 'center' : 'left',
+                      padding: `${headerPadY}px ${cellPadX}px`,
+                      textAlign: 'center',
                       color: col.isExpanded ? (isLight ? '#10B981' : '#34D399') : textMuted,
                       fontWeight: 700,
                       whiteSpace: 'nowrap',
-                      borderRight: `1px solid ${border}`,
-                      borderBottom: `2px solid ${border}`,
-                      fontSize: '10px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      borderRight: tableColBorder,
+                      borderBottom: `2px solid ${tableRowBorder}`,
+                      fontSize: fitView ? '9px' : '10px',
                       letterSpacing: '0.07em',
-                      width: col.w,
-                      minWidth: col.w,
-                      maxWidth: col.w,
                       backgroundColor: inputBg,
-                      cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
+                      cursor: fitView ? 'default' : col.label !== 'ACTIONS' ? 'pointer' : 'default',
                       userSelect: 'none',
                       transition: 'all 0.15s ease-in-out',
                       position: 'sticky',
                       top: 0,
                       zIndex: col.sticky ? 25 : 20,
-                      ...(col.sticky ? {
-                        left: col.left,
-                      } : {}),
-                      ...(col.freeze ? {
-                        borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                        boxShadow: isLight
-                          ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                          : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                      } : {}),
+                      verticalAlign: 'middle',
+                      ...columnCellStyle(col),
+                      ...(col.sticky ? { left: col.left } : {}),
                     }}>
-                    <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : col.center ? 'justify-center' : 'justify-between'}`}>
+                    <div className="flex items-center justify-center gap-1.5 w-full text-center">
                       <span>{col.label}</span>
-                      {col.label !== 'ACTIONS' && (
-                        <span className="text-[9px] opacity-60 transition-transform duration-200" style={{ transform: col.isExpanded ? 'rotate(180deg)' : 'none' }}>
-                          {col.isExpanded ? '◀' : '▶'}
-                        </span>
-                      )}
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="uppercase">
               {loading ? (
                 <tr>
                   <td colSpan={columns.length} className="py-20 text-center">
@@ -1676,7 +1741,6 @@ export default function ClientMasterlist() {
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
-                  const statusLabel = getRelayStatusLabel(ticket)
                   const branchName = resolveBranch(ticket.branchId)?.name || '—'
                   const category = getTicketCategory(ticket)
                   const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
@@ -1686,42 +1750,42 @@ export default function ClientMasterlist() {
                   const finalDate = formatShortDate(details.finalDate)
                   const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatShortDate(ticket.updatedAt)}` : '')
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const categoryTint = !isSelected
+                    ? category === 'Survey'
+                      ? (isLight ? 'rgba(234,179,8,0.07)' : 'rgba(234,179,8,0.06)')
+                      : category === 'Survey & Install' ? (isLight ? '#f0fdf9' : 'rgba(16,185,129,0.06)')
+                      : null
+                    : null
                   const rowBaseBg = isSelected
                     ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
-                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
-                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
-                  const cells = [
-                    { value: <span className="whitespace-nowrap">{idx + 1}. {category}</span>, center: true },
-                    { value: <span style={{ color: statusLabel === 'Pending' ? '#F59E0B' : undefined }}>{statusLabel}</span>, center: true },
-                    { value: <span>{branchName}</span>, center: true },
-                    { value: <span>{negotiator}</span>, center: true },
-                    { value: <span className={`${columns[4].isExpanded ? 'break-words' : 'truncate'} block`} title={ticket.customerName || 'Direct Client'}>{ticket.customerName || 'Direct Client'}</span> },
-                    { value: <span>{district}</span>, center: true },
-                    { value: <span className="truncate block" title={storeStyle.label}>{storeStyle.label}</span> },
-                    { value: <span>{details.brand || '—'}</span>, center: true },
-                    { value: <span>{details.capacity || '—'}</span>, center: true },
-                    { value: <span className={`${columns[9].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={ticket.commitType || ''}>{ticket.commitType || '—'}</span>, center: true },
-                    { value: <span className="whitespace-nowrap">{relayedDate || '—'}</span>, center: true },
-                    { value: <span className="whitespace-nowrap">{requestedDate || '—'}</span>, center: true },
-                    { value: <span className="whitespace-nowrap">{finalDate || '—'}</span>, center: true },
-                    { value: <span className={`${columns[13].isExpanded ? 'break-words' : 'line-clamp-2'} block`} title={lastUpdate}>{lastUpdate || '—'}</span> },
+                    : categoryTint || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
+                  const rowHoverBg = category === 'Survey'
+                    ? (isLight ? 'rgba(234,179,8,0.13)' : 'rgba(234,179,8,0.11)')
+                    : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
+                    : (isLight ? '#f1f5f9' : '#0f1e36')
+                  const ticketNo = getTicketNumber(ticket)
+                  const cells: Array<{ value: React.ReactNode; right?: boolean }> = [
                     { value: (
-                        <div className="flex justify-end gap-1.5">
-                          <button type="button" onClick={e => { e.stopPropagation(); openDrawer(ticket) }}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all hover:border-[#10B981] hover:text-[#10B981]"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
-                            Edit
-                          </button>
-                          {isAdmin && (
-                            <button type="button" onClick={e => { e.stopPropagation(); handleDeleteTicket(ticket.id, ticket.customerName) }}
-                              className="px-2 py-1 rounded-lg border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white transition-all">
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      ), right: true },
+                      <div className="flex flex-col items-center justify-center gap-0.5 w-full text-center">
+                        <span className="font-semibold text-[11px] w-full truncate" style={{ color: textPrimary }}>{displayUpper(branchName)}</span>
+                        <span className="text-[10px] w-full truncate" style={{ color: textMuted }}>{displayUpper(negotiator)}</span>
+                      </div>
+                    ) },
+                    { value: (
+                      <div className="flex flex-col items-center justify-center gap-0.5 min-w-0 w-full text-center">
+                        <span className={`${fitView || !columns[1].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full`} title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>{displayUpper(ticket.customerName || 'Direct Client')}</span>
+                        <span className="text-[9px] font-mono font-bold truncate w-full" style={{ color: textMuted }} title={ticketNo}>{displayUpper(ticketNo)}</span>
+                      </div>
+                    ) },
+                    { value: <span className="block w-full truncate text-center">{displayUpper(district)}</span> },
+                    { value: <span className="truncate block w-full text-center" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
+                    { value: <span className="block w-full truncate text-center">{displayUpper(`${details.brand || ''} ${details.capacity || ''}`.trim())}</span> },
+                    { value: <span className={`${fitView || !columns[5].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={displayUpper(ticket.commitType)}>{displayUpper(ticket.commitType)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(requestedDate)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(finalDate)}</span> },
+                    { value: <span className={`${fitView || !columns[9].isExpanded ? 'truncate' : 'break-words'} block w-full text-right`} title={displayUpper(lastUpdate)}>{displayUpper(lastUpdate)}</span>, right: true },
                   ]
-
                   return (
                     <tr key={ticket.id}
                       id={`row-${ticket.id}`}
@@ -1730,7 +1794,6 @@ export default function ClientMasterlist() {
                         setContextMenu({ x: e.clientX, y: e.clientY, ticket })
                       }}
                       style={{
-                        borderBottom: `1px solid ${border}`,
                         backgroundColor: rowBaseBg,
                         cursor: 'pointer',
                       }}
@@ -1748,19 +1811,19 @@ export default function ClientMasterlist() {
                               setSelectedColIndex(colIdx)
                             }}
                             style={{
-                              padding: '8px 10px',
-                              borderRight: col.freeze ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}` : `1px solid ${border}`,
+                              padding: `${cellPadY}px ${cellPadX}px`,
+                              borderRight: tableColBorder,
+                              borderBottom: `1px solid ${tableRowBorder}`,
                               color: textMuted,
-                              fontSize: '11px',
-                              textAlign: cell.right ? 'right' : cell.center || col.center ? 'center' : 'left',
-                              width: col.w,
-                              minWidth: col.w,
-                              maxWidth: col.w,
-                              transition: 'all 0.15s ease-in-out',
+                              fontSize: fitView ? '10px' : '11px',
+                              lineHeight: fitView ? 1.25 : 1.4,
+                              textAlign: columnTextAlign(col, cell),
+                              overflow: 'hidden',
+                              verticalAlign: 'middle',
+                              transition: 'background-color 0.15s ease-in-out',
                               backgroundColor: rowBaseBg,
-                              boxShadow: (isSelected && selectedColIndex === colIdx ? 'inset 0 0 0 2px #10B981' : undefined) || (col.freeze ? (isLight
-                                ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                                : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)') : undefined),
+                              ...columnCellStyle(col),
+                              boxShadow: isSelected && selectedColIndex === colIdx ? 'inset 0 0 0 2px #10B981' : undefined,
                               ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {})
                             }}>
                             {cell.value}
@@ -1814,329 +1877,300 @@ export default function ClientMasterlist() {
       )}
 
       {/* Centered Manage/Edit Ticket Modal */}
-      {isActionDrawerOpen && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
-            style={{ backgroundColor: cardBg, borderColor: border }}>
-            {/* Header */}
-            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-b" style={{ backgroundColor: cardBg, borderColor: border }}>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
-                  <Wrench className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Manage Client Ticket</h2>
-                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>
-                    ASH{(selectedTicket.id || '').replace(/-/g, '').slice(-6).toUpperCase()} · Edit details and branch assignments
-                  </p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                className="p-1.5 rounded-lg border text-slate-400 hover:text-slate-600 transition-colors"
-                style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+      {isActionDrawerOpen && selectedTicket && ReactDOM.createPortal((() => {
+        const ticket = selectedTicket;
+        const ticketCode = (ticket.id || '').replace(/-/g, '').slice(-6).toUpperCase();
 
-            {/* Form Container */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {/* Grid Container */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Left Column: Client & Address */}
-                <div className="space-y-4">
-                  {/* Block 1: Client Info */}
-                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 pb-1 border-b" style={{ borderColor: border }}>
-                      Client Information
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Customer Name</label>
-                        <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
-                          placeholder="Customer Name" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Primary Phone</label>
-                        <input type="text" value={editContactPhone} onChange={e => setEditContactPhone(e.target.value)}
-                          placeholder="Primary Phone" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Alternate Contact</label>
-                        <input type="text" value={editAlternatePhone} onChange={e => setEditAlternatePhone(e.target.value)}
-                          placeholder="Alternate contact" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store / Vendor Source</label>
-                        <select
-                          value={
-                            editSourceVendor.toLowerCase().includes('robinsons')
-                              ? 'Robinsons'
-                              : editSourceVendor.toLowerCase().includes('abenson')
-                              ? 'Abenson'
-                              : 'Direct'
-                          }
-                          onChange={e => setEditSourceVendor(e.target.value)}
-                          className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                          <option value="Robinsons">Robinsons</option>
-                          <option value="Abenson">Abenson</option>
-                          <option value="Direct">Direct Store</option>
-                        </select>
-                      </div>
-                    </div>
-                    {/* Optional vendor branch input */}
-                    {(editSourceVendor.toLowerCase().includes('robinsons') || editSourceVendor.toLowerCase().includes('abenson')) && (
-                      <div className="mt-1">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>
-                          {editSourceVendor.toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'} Branch Name
-                        </label>
-                        <input
-                          type="text"
-                          value={
-                            editSourceVendor === 'Robinsons' || editSourceVendor === 'Abenson'
-                              ? ''
-                              : editSourceVendor
-                          }
-                          onChange={e => {
-                            const prefix = editSourceVendor.toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
-                            setEditSourceVendor(e.target.value || prefix)
-                          }}
-                          placeholder={editSourceVendor.toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
-                          className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                        />
-                      </div>
-                    )}
-                  </div>
+        const EField = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
+          <div className={`flex flex-col gap-1.5 ${className}`}>
+            <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>
+            {children}
+          </div>
+        );
 
-                  {/* Block 2: Destination & Address */}
-                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-blue-500 pb-1 border-b" style={{ borderColor: border }}>
-                      Destination & Address
-                    </div>
-                    <div className="space-y-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Full Address / Destination *</label>
-                        <textarea value={editLocation} rows={2}
-                          onChange={e => {
-                            const val = e.target.value
-                            setEditLocation(val)
-                            const guessed = guessDistrict(val)
-                            if (guessed) setEditDistrict(guessed)
-                          }} 
-                          placeholder="e.g. Address details" 
-                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Landmarks / Directions</label>
-                          <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
-                            placeholder="e.g. Landmarks" className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>District</label>
-                          <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
-                            placeholder="e.g. District 1" className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </div>
-                      </div>
-                    </div>
+        const ESHead = ({ title }: { title: string }) => (
+          <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
+          </div>
+        );
+
+        const inputStyle = {
+          backgroundColor: inputBg,
+          borderColor: inputBorder,
+          color: textPrimary
+        };
+
+        const activeCategory = /collect/i.test(`${editServiceType} ${ticket.title}`)
+          ? 'Collection'
+          : /install|s\/i|\bsi\b/i.test(`${editServiceType} ${ticket.title}`)
+          ? 'Survey & Install'
+          : /survey/i.test(`${editServiceType} ${ticket.title}`)
+          ? 'Survey'
+          : /service|clean/i.test(`${editServiceType} ${ticket.title}`)
+          ? 'Service'
+          : 'Survey & Install';
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setIsActionDrawerOpen(false)}>
+
+            {/* Modal Box */}
+            <div className="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 shrink-0"
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                <div className="min-w-0 flex-1 mr-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                      Manage Client Ticket
+                    </h2>
+                    <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
+                      TICKET ID: ASH${ticketCode}
+                    </span>
                   </div>
                 </div>
-
-                {/* Right Column: Unit Details & Scheduling */}
-                <div className="space-y-4">
-                  {/* Block 3: Unit Details */}
-                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-purple-500 pb-1 border-b" style={{ borderColor: border }}>
-                      Aircon Unit Details
-                    </div>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
-                        <input type="text" value={editBrand} onChange={e => setEditBrand(e.target.value)}
-                          placeholder="e.g. Brand" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
-                        <input type="text" value={editCapacity} onChange={e => setEditCapacity(e.target.value)}
-                          placeholder="e.g. Capacity" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
-                        <input type="text" value={editSku} onChange={e => setEditSku(e.target.value)}
-                          placeholder="SKU" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial Number</label>
-                        <input type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)}
-                          placeholder="Serial #" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control # / SI Voucher</label>
-                        <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
-                          placeholder="Control #" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Type</label>
-                        <input type="text" value={editServiceType} onChange={e => {
-                          const val = e.target.value
-                          const isInstall = val.toLowerCase().includes('install') || val.toUpperCase() === 'S/I'
-                          const isSurvey = val.toLowerCase().includes('survey') || val.toUpperCase() === 'SURVEY'
-                          let mappedSvc = val
-                          if (isInstall) {
-                            mappedSvc = 'S/I'
-                            setEditCommitType('FREE FIRST 10 FEET')
-                          } else if (isSurvey) {
-                            mappedSvc = 'SURVEY'
-                          }
-                          setEditServiceType(mappedSvc)
-                        }}
-                          placeholder="e.g. S/I" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit Type / Promo</label>
-                        <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
-                          placeholder="e.g. Commit info" className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                    </div>
-                    {/* Document Attachment view */}
-                    {editImages && (
-                      <div className="rounded-lg p-2 flex items-center justify-between border mt-1" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-emerald-500 shrink-0" />
-                          <div className="text-[10px]">
-                            <p className="font-bold" style={{ color: textPrimary }}>Attached Voucher</p>
-                            <p className="truncate max-w-[120px]" style={{ color: textMuted }}>{editImages.split('/').pop()}</p>
-                          </div>
-                        </div>
-                        <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
-                           target="_blank" rel="noreferrer"
-                           className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 rounded text-[9px] font-bold transition-all">
-                          View
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Block 4: Scheduling & Assignment */}
-                  <div className="rounded-xl p-3 flex flex-col gap-2.5 border" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 pb-1 border-b" style={{ borderColor: border }}>
-                      Scheduling & Assignment
-                    </div>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Service Status</label>
-                        <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
-                          className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                          <option value="PENDING">Not Assigned (Pending)</option>
-                          <option value="ASSIGNED">Scheduled (Assigned)</option>
-                          <option value="SCHEDULED">Scheduled</option>
-                          <option value="RESCHED">Resched</option>
-                          <option value="FOR APPROVAL">For Approval</option>
-                          <option value="SURVEY">Survey</option>
-                          <option value="ON_THE_WAY">On the Way</option>
-                          <option value="IN_PROGRESS">In Progress</option>
-                          <option value="COMPLETED">Installed (Completed)</option>
-                          <option value="CANCELLED">Cancelled</option>
-                        </select>
-                      </div>
-                      {(updateStatus !== 'PENDING' || (selectedTicket && getTicketCategory(selectedTicket) === 'Collection')) && updateStatus !== 'CANCELLED' && (
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone</label>
-                          <select value={assignBranchId}
-                            onChange={e => setAssignBranchId(e.target.value)}
-                            className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                            <option value="">Select Branch...</option>
-                            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Relayed Date</label>
-                        <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
-                          className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Preferred Date</label>
-                        <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
-                          className={compactInput}
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      {assignBranchId && (updateStatus !== 'PENDING' || (selectedTicket && getTicketCategory(selectedTicket) === 'Collection')) && updateStatus !== 'CANCELLED' && (
-                        <div className="col-span-2">
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Date Assigned by Branch</label>
-                          <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                            className={compactInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Remarks / Update Notes</label>
-                      <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={2}
-                        placeholder="Remarks..." className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: cardBg }}>
-              {isAdmin ? (
-                <button type="button" onClick={() => handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)}
-                  disabled={actionSaving}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 border transition-all disabled:opacity-50 hover:bg-red-500 hover:text-white hover:border-red-500"
-                  style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}>
-                  <Trash2 className="w-3.5 h-3.5" /> Delete Ticket
-                </button>
-              ) : <div />}
-              <div className="flex gap-2">
                 <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                  className="px-4 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  Cancel
+                  className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                  <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
                 </button>
-                <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
-                  className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md"
-                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                  {actionSaving ? 'Saving...' : 'Save Changes'}
-                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+                {/* Section 1: Client Details */}
+                <div>
+                  <ESHead title="Client & Location Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <EField label="Customer Name">
+                      <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
+                        placeholder="Customer Name" className={compactInput} style={inputStyle} />
+                    </EField>
+                    
+                    {/* Growable Contact Numbers */}
+                    <EField label="Contact Number" className="sm:col-span-2">
+                      <div className="flex flex-col gap-2">
+                        {editPhoneNumbers.map((phone, pIdx) => (
+                          <div key={pIdx} className="flex gap-2 items-center">
+                            <input
+                              type="text"
+                              value={phone}
+                              onChange={e => {
+                                const newPhones = [...editPhoneNumbers];
+                                newPhones[pIdx] = e.target.value;
+                                setEditPhoneNumbers(newPhones);
+                              }}
+                              placeholder={`Contact Number ${pIdx + 1}`}
+                              className={compactInput}
+                              style={inputStyle}
+                            />
+                            {pIdx === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setEditPhoneNumbers([...editPhoneNumbers, ''])}
+                                className="p-1 px-2.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold transition-all text-xs shrink-0"
+                              >
+                                +
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newPhones = editPhoneNumbers.filter((_, idx) => idx !== pIdx);
+                                  setEditPhoneNumbers(newPhones);
+                                }}
+                                className="p-1 px-2.5 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold transition-all text-xs shrink-0"
+                              >
+                                -
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </EField>
+
+                    <EField label="Store / Vendor Source">
+                      <select
+                        value={
+                          editSourceVendor.toLowerCase().includes('robinsons')
+                            ? 'Robinsons'
+                            : editSourceVendor.toLowerCase().includes('abenson')
+                            ? 'Abenson'
+                            : 'Direct'
+                        }
+                        onChange={e => setEditSourceVendor(e.target.value)}
+                        className={compactInput}
+                        style={inputStyle}>
+                        <option value="Robinsons">Robinsons</option>
+                        <option value="Abenson">Abenson</option>
+                        <option value="Direct">Direct Store</option>
+                      </select>
+                    </EField>
+                    <EField label="Address" className="md:col-span-2">
+                      <input type="text" value={editLocation} onChange={e => setEditLocation(e.target.value)}
+                        placeholder="Installation Address" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="District Zone">
+                      <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
+                        placeholder="District" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Additional Notes / Landmark">
+                      <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
+                        placeholder="Landmarks / Notes" className={compactInput} style={inputStyle} />
+                    </EField>
+                  </div>
+                </div>
+
+                {/* Section 2: Equipment & Job details */}
+                <div>
+                  <ESHead title="Equipment & Job Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <EField label="Brand / HP" className="md:col-span-2">
+                      <input type="text" value={editBrandHP} onChange={e => {
+                        const val = e.target.value;
+                        setEditBrandHP(val);
+                        const parts = val.trim().split(/\s+/);
+                        const brand = parts[0] || '';
+                        const capacity = parts.slice(1).join(' ') || '';
+                        setEditBrand(brand);
+                        setEditCapacity(capacity);
+                      }}
+                        placeholder="e.g. Panasonic 1.5 HP" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Service Category / Type">
+                      <input type="text" value={editServiceType} onChange={e => {
+                        const val = e.target.value;
+                        const isSI = /install|s\/i|\bsi\b/i.test(val);
+                        const isSurvey = /survey/i.test(val);
+                        let mappedSvc = val;
+                        if (isSI) {
+                          mappedSvc = 'Survey & Install';
+                          setEditCommitType('FREE FIRST 10 FEET');
+                        } else if (isSurvey) {
+                          mappedSvc = 'SURVEY';
+                        }
+                        setEditServiceType(mappedSvc);
+                      }}
+                        placeholder="e.g. Survey & Install" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Commit Type / Promo" className="md:col-span-2">
+                      <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
+                        placeholder="e.g. Free 10ft copper" className={compactInput} style={inputStyle} />
+                    </EField>
+                    {editImages && (
+                      <div className="flex flex-col justify-end">
+                        <div className="rounded-lg p-2 flex items-center justify-between border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <div className="text-[10px]">
+                              <p className="font-bold" style={{ color: textPrimary }}>Attached Voucher</p>
+                              <p className="truncate max-w-[100px]" style={{ color: textMuted }}>{editImages.split('/').pop()}</p>
+                            </div>
+                          </div>
+                          <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
+                             target="_blank" rel="noreferrer"
+                             className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 rounded text-[9px] font-bold transition-all">
+                            View
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 3: Scheduling & Assignment */}
+                <div>
+                  <ESHead title="Scheduling & Branch Assignment" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <EField label="Status">
+                      <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
+                        className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
+                        style={inputStyle}>
+                        <option value="PENDING">Pending</option>
+                        <option value="ASSIGNED">Assigned</option>
+                        <option value="SCHEDULED">Scheduled</option>
+                      </select>
+                    </EField>
+                    {(updateStatus !== 'PENDING' || activeCategory === 'Collection') && updateStatus !== 'CANCELLED' && (
+                      <EField label="Branch Zone">
+                        <select value={assignBranchId}
+                          onChange={e => setAssignBranchId(e.target.value)}
+                          className={compactInput} style={inputStyle}>
+                          <option value="">Select Branch...</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </EField>
+                    )}
+                    <EField label="Relayed Date">
+                      <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
+                        className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Preferred Date">
+                      <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
+                        className={compactInput} style={inputStyle} />
+                    </EField>
+                    {assignBranchId && (updateStatus !== 'PENDING' || activeCategory === 'Collection') && updateStatus !== 'CANCELLED' && (
+                      <EField label="Final Date Assigned by Branch" className="md:col-span-2">
+                        <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                          className={compactInput} style={inputStyle} />
+                      </EField>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 4: Remarks */}
+                <div>
+                  <ESHead title="Remarks & Updates" />
+                  <EField label="Remarks / Update Notes">
+                    <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={3}
+                      placeholder="Remarks..." className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                      style={inputStyle} />
+                  </EField>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 flex items-center justify-between border-t shrink-0"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                {isAdmin ? (
+                  <button type="button" onClick={() => { handleDeleteTicket(ticket.id, ticket.customerName); setIsActionDrawerOpen(false); }}
+                    disabled={actionSaving}
+                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50">
+                    Delete Ticket
+                  </button>
+                ) : <div />}
+                <div className="flex gap-2.5">
+                  <button type="button" onClick={() => setIsActionDrawerOpen(false)}
+                    className="px-5 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
+                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
+                    className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md"
+                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                    {actionSaving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-
+        );
+      })(), document.body)}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && (() => {
         const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Collection'
           : /install|s\/i|\bsi\b/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Installation'
+          ? 'Survey & Install'
           : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Survey'
           : /service|clean/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Service'
-          : 'Installation'
+          : 'Survey & Install'
         const canAssignBranch = addForm.status !== 'CANCELLED' && (addForm.status !== 'PENDING' || addCategory === 'Collection')
         const fieldStyle = (value?: string) => ({
           backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
@@ -2144,7 +2178,7 @@ export default function ClientMasterlist() {
           color: textPrimary
         })
         const categoryOptions = [
-          { label: 'Installation', value: 'Installation', title: 'Installation service' },
+          { label: 'Survey & Install', value: 'Survey & Install', title: 'Installation service' },
           { label: 'Service', value: 'Service', title: 'Service ticket' },
           { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
           { label: 'Collection', value: 'Collection', title: 'Collection ticket' }
@@ -2205,7 +2239,7 @@ export default function ClientMasterlist() {
                               serviceType: option.value,
                               title: option.title,
                               status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType,
+                              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
                               installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
                               modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
                             }))
@@ -2228,7 +2262,7 @@ export default function ClientMasterlist() {
                               serviceType: option.value,
                               title: option.title,
                               status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Installation' ? 'FREE FIRST 10 FEET' : prev.commitType,
+                              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
                               installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
                               modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
                             }))}
@@ -2818,307 +2852,176 @@ export default function ClientMasterlist() {
 
 
       {/* ── Read-only Service Job Sheet Modal ──────────────────── */}
-      {isViewModalOpen && selectedPreviewTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}>
-            
-            {isViewModalOpen && (
-              <style dangerouslySetInnerHTML={{ __html: `
-                @media print {
-                  body * {
-                    visibility: hidden;
-                  }
-                  #print-job-sheet, #print-job-sheet * {
-                    visibility: visible;
-                  }
-                  #print-job-sheet {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                    padding: 0;
-                    margin: 0;
-                    background: white !important;
-                    color: black !important;
-                  }
-                  .dark #print-job-sheet {
-                    background: white !important;
-                    color: black !important;
-                  }
-                }
-              `}} />
-            )}
+      {isViewModalOpen && selectedPreviewTicket && ReactDOM.createPortal((() => {
+        const t   = selectedPreviewTicket
+        const det = previewDetails
+        const sl  = getRelayStatusLabel(t)
+        const neg = t.assignedEmployeeName || t.installerName || '—'
+        const bn  = resolveBranch(t.branchId)?.name || '—'
 
-            {/* Header / Actions Bar */}
-            <div className="px-6 py-4 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Document Viewer</span>
-                <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider bg-slate-100 dark:bg-slate-800" style={{ color: textMuted }}>
-                  TICKET NO: {getTicketNumber(selectedPreviewTicket)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  <Printer className="w-3.5 h-3.5" /> Print
-                </button>
-                <button type="button" onClick={() => { openDrawer(selectedPreviewTicket); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                  <Wrench className="w-3.5 h-3.5" /> Edit
-                </button>
-                <button type="button" onClick={() => setIsViewModalOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                  <X className="w-4.5 h-4.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Document Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-8 font-sans" id="print-job-sheet">
-              {/* Branding / Header */}
-              <div className="text-center pb-6 border-b-2 border-dashed" style={{ borderColor: border }}>
-                <h2 className="text-xl font-black uppercase tracking-widest" style={{ color: textPrimary }}>Service Job Sheet</h2>
-                <p className="text-xs font-semibold mt-1 text-slate-400 dark:text-slate-500">ASHCOL AIRCONDITIONING SERVICES</p>
-              </div>
-
-              {/* Status / Metadata Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-6 border-b" style={{ borderColor: border }}>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Branch</p>
-                  <p className="text-xs font-black mt-0.5" style={{ color: textPrimary }}>
-                    {resolveBranch(selectedPreviewTicket.branchId)?.name || 'UNASSIGNED'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</p>
-                  <div className="mt-1">
-                    {(() => {
-                      const isCancelled = selectedPreviewTicket.status.toUpperCase() === 'CANCELLED'
-                      const isInstalled = selectedPreviewTicket.status.toUpperCase() === 'COMPLETED' || !!(selectedPreviewTicket.installationCharges && selectedPreviewTicket.installationCharges > 0)
-                      const isAssigned = !!(selectedPreviewTicket.assignedTo || selectedPreviewTicket.branchId)
-                      const status = (selectedPreviewTicket.status || '').toUpperCase()
-
-                      if (isCancelled) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-red-500/10 text-red-500 border border-red-500/20">Cancelled</span>
-                      if (isInstalled) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">✓ Installed</span>
-                      if (status === 'IN_PROGRESS') return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">In Progress</span>
-                      if (status === 'ON_THE_WAY') return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-purple-500/10 text-purple-500 border border-purple-500/20">On the Way</span>
-                      if (status === 'ASSIGNED' || isAssigned) return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">Assigned</span>
-                      return <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">Unassigned</span>
-                    })()}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ticket Number</p>
-                  <p className="text-xs font-mono font-bold mt-0.5" style={{ color: textPrimary }}>
-                    {getTicketNumber(selectedPreviewTicket)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schedule Type</p>
-                  <p className="text-xs font-bold mt-0.5" style={{ color: textPrimary }}>
-                    {selectedPreviewTicket.serviceType || '—'}
-                  </p>
-                </div>
-              </div>
-
-              {/* 2 Column Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
-                
-                {/* Column 1: Client details */}
-                <div className="flex flex-col gap-4 p-4 rounded-xl transition-all" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.015)', border: `1px solid ${border}` }}>
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Client Details</h4>
-                  
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-semibold block">Customer Name</label>
-                    <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedPreviewTicket.customerName || 'Direct Client'}</span>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-semibold block">Contact Number</label>
-                    <span className="text-xs font-semibold text-emerald-500">
-                      <FormatPhone raw={selectedPreviewTicket.contactPhone} />
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-semibold block">Installation Address</label>
-                    <span className="text-xs font-medium block leading-relaxed" style={{ color: textPrimary }}>{selectedPreviewTicket.location || '—'}</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">District</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.district || '—'}</span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Landmark / Subd</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        {previewDetails.landmarks || '—'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Column 2: Equipment & Sched details */}
-                <div className="flex flex-col gap-4 p-4 rounded-xl transition-all" style={{ backgroundColor: isLight ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.015)', border: `1px solid ${border}` }}>
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Unit & Scheduling Details</h4>
-
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-semibold block">Unit / Brand Details</label>
-                    <span className="text-xs font-bold block" style={{ color: textPrimary }}>
-                      {(() => {
-                        const b = previewDetails.brand || ''
-                        const cap = previewDetails.capacity || ''
-                        if (b || cap) return `${b} ${cap}`.trim()
-                        return selectedPreviewTicket.unitType || 'Split AC'
-                      })()}
-                    </span>
-                    {(previewDetails.sku || previewDetails.serialNumber) && (
-                      <div className="text-[10px] text-slate-400 mt-0.5">
-                        {previewDetails.sku && <div>SKU: {previewDetails.sku}</div>}
-                        {previewDetails.serialNumber && <div>Serial: {previewDetails.serialNumber}</div>}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">DLR / Store</label>
-                      <span className="text-xs font-bold" style={{ color: textPrimary }}>{selectedPreviewTicket.sourceVendor || 'Direct Store'}</span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Commit Type</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.commitType || '—'}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed Date & Time</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        {(() => {
-                          try {
-                            const d = selectedPreviewTicket.createdAt ? new Date(selectedPreviewTicket.createdAt) : null
-                            return d && !isNaN(d.getTime())
-                              ? d.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
-                              : '—'
-                          } catch (e) { return '—' }
-                        })()}
-                      </span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Relayed By</label>
-                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400" style={{ color: textPrimary }}>
-                        {selectedPreviewTicket.createdBy ? (
-                          <EmployeeNameLink nameOrId={selectedPreviewTicket.createdBy} />
-                        ) : (
-                          selectedPreviewTicket.customerEmail || 'System'
-                        )}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Preferred Sched</label>
-                      <span className="text-xs font-medium" style={{ color: textPrimary }}>
-                        {(() => {
-                          try {
-                            const d = selectedPreviewTicket.preferredDate ? new Date(selectedPreviewTicket.preferredDate) : null
-                            return d && !isNaN(d.getTime()) ? d.toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—'
-                          } catch (e) { return '—' }
-                        })()}
-                      </span>
-                    </div>
-                    {previewDetails.finalDate && (
-                      <div>
-                        <label className="text-[10px] text-slate-400 font-semibold block">Final Sched</label>
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          {(() => {
-                            try {
-                              const d = new Date(previewDetails.finalDate)
-                              return d && !isNaN(d.getTime()) ? d.toLocaleDateString('en-PH', { dateStyle: 'medium' }) : previewDetails.finalDate
-                            } catch (e) { return previewDetails.finalDate }
-                          })()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Assignment & Pricing Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6 border-t" style={{ borderColor: border }}>
-                {/* Tech / Vehicle details */}
-                <div className="flex flex-col gap-4">
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Tech Assignment</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Installer Name</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.installerName || '—'}</span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Service Vehicle</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.serviceVehicle || '—'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Charges / Payment Details */}
-                <div className="flex flex-col gap-4">
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Charges & Payments</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Installation Charges</label>
-                      <span className="text-xs font-bold text-emerald-500">
-                        {selectedPreviewTicket.installationCharges ? `₱${selectedPreviewTicket.installationCharges.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '₱0.00'}
-                      </span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 font-semibold block">Mode of Payment</label>
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{selectedPreviewTicket.modeOfPayment || '—'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Remarks/Description Section */}
-              <div className="py-6 border-t" style={{ borderColor: border }}>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#10B981] pb-1 border-b" style={{ borderColor: border }}>Remarks / Technical Updates</h4>
-                <div className="mt-3 p-4 rounded-xl text-xs leading-relaxed" style={{ backgroundColor: inputBg, border: `1px solid ${border}`, color: textMuted }}>
-                  {selectedPreviewTicket.remarksUpdate || selectedPreviewTicket.description || 'No additional remarks logged for this work order.'}
-                </div>
-              </div>
-
-              {/* Printable footer */}
-              <div className="hidden print:block text-center mt-20 pt-6 border-t text-[10px]" style={{ borderColor: border }}>
-                <div className="flex justify-between font-semibold" style={{ color: textMuted }}>
-                  <span>Printed on: {new Date().toLocaleString()}</span>
-                  <span>Signature: __________________________</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Bar Footer */}
-            <div className="px-6 py-4 flex gap-2.5 justify-end shrink-0" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <button type="button" onClick={() => setIsViewModalOpen(false)}
-                className="px-5 py-2.5 border rounded-xl text-xs font-bold"
-                style={{ borderColor: inputBorder, color: textMuted }}>
-                Close
-              </button>
-            </div>
-
+        const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
+          <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</span>
+            <span className={`text-xs font-semibold break-words leading-snug ${green ? 'text-emerald-500' : ''}`}
+              style={green ? undefined : { color: textPrimary }}>
+              {value || '—'}
+            </span>
           </div>
-        </div>
-      )}
+        )
 
+        const SHead = ({ title }: { title: string }) => (
+          <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
+          </div>
+        )
+
+        const formatDate = (dateStr: string | null | undefined) => {
+          if (!dateStr) return '—';
+          try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+            return d.toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            });
+          } catch (e) { return '—'; }
+        };
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setIsViewModalOpen(false)}>
+
+            {/* Modal Box */}
+            <div className="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                
+                {/* Header Row 1 */}
+                <div className="flex items-center justify-between w-full">
+                  <div className="min-w-0 flex-1 mr-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                        {t.customerName || 'Direct Client'}
+                      </h2>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{
+                        backgroundColor: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way')
+                          ? 'rgba(16,185,129,0.12)'
+                          : 'rgba(245,158,11,0.12)',
+                        color: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way')
+                          ? '#10B981'
+                          : '#F59E0B'
+                      }}>
+                        {bn !== '—' && bn !== 'UNASSIGNED' ? bn : sl}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
+                        TICKET NO: {getTicketNumber(t)}
+                      </span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setIsViewModalOpen(false)}
+                    className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
+                  </button>
+                </div>
+
+                {/* Header Row 2 */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
+                    <span className="font-semibold text-xs text-emerald-500 uppercase">{getTicketCategory(t)}</span>
+                  </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
+                    <span className="font-semibold text-xs" style={{ color: textPrimary }}>
+                      {t.createdBy ? <EmployeeNameLink nameOrId={t.createdBy} /> : (t.customerEmail || 'System')}
+                    </span>
+                  </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
+                    <span className="font-semibold text-xs" style={{ color: textPrimary }}>{neg}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+                {/* Grid 1: Client & Location Info */}
+                <div>
+                  <SHead title="Client & Location Details" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <DField label="Contact Number" value={
+                      <div className="flex flex-col gap-0.5">
+                        <FormatPhone raw={t.contactPhone} />
+                        {det.alternatePhone && det.alternatePhone.split(',').map((p: string) => p.trim()).filter(Boolean).map((p: string, pIdx: number) => (
+                          <FormatPhone key={pIdx} raw={p} />
+                        ))}
+                      </div>
+                    } green />
+                    <DField label="Address" value={t.location} className="md:col-span-2" />
+                    <DField label="District" value={t.district || guessDistrict(t.location || '')} />
+                    <DField label="Additional Notes" value={det.landmarks} className="md:col-span-2" />
+                  </div>
+                </div>
+
+                {/* Grid 2: Job Scheduling Info */}
+                <div>
+                  <SHead title="Scheduling Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+                    <DField label="Date Relayed" value={formatDate(t.createdAt)} />
+                    <DField label="Preferred Schedule" value={formatDate(t.preferredDate)} />
+                    <DField label="Final Schedule" value={det.finalDate ? <span className="text-emerald-500 font-bold">{formatDate(det.finalDate)}</span> : '—'} />
+                    <DField label="Store / DLR" value={t.sourceVendor || 'Direct Store'} />
+                    <DField label="Commit Type" value={t.commitType} />
+                    <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                {(t.remarksUpdate || t.description) && (
+                  <div>
+                    <SHead title="Remarks & Updates" />
+                    <p className="text-xs leading-relaxed rounded-xl p-4"
+                      style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
+                      {t.remarksUpdate || t.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0"
+                style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
+                  className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
+                  Edit
+                </button>
+                {isAdmin && (
+                  <button type="button" onClick={() => { handleDeleteTicket(t.id, t.customerName); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
+                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all">
+                    Delete
+                  </button>
+                )}
+                <button type="button" onClick={() => setIsViewModalOpen(false)}
+                  className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
+                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })(), document.body)}
       {/* ── Right-click context menu ─────────────────────────────────── */}
       {contextMenu && (
         <div id="context-menu" className="fixed z-[200]" style={{ top: contextMenu.y, left: contextMenu.x }}

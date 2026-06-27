@@ -3182,7 +3182,8 @@ export default function Tickets() {
             <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
-                  {columns.map(col => {
+                  {columns.map(rawCol => {
+                    const col = rawCol as any
                     const canSort = 'sortable' in col && col.sortable
                     const isSorted = canSort && sortConfig?.column === col.label
                     const SortIcon = isSorted
@@ -3219,7 +3220,7 @@ export default function Tickets() {
                         col.align === 'right' ? 'justify-end text-right' :
                         'justify-start text-left'
                       }`}>
-                        <span>{col.display}</span>
+                        <span>{col.display as any}</span>
                         {canSort && (
                           <button
                             type="button"

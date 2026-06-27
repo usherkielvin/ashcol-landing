@@ -5,7 +5,6 @@ import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import CreateAccount from './pages/CreateAccount'
 import DashboardLayout from './layouts/DashboardLayout'
-import Dashboard from './pages/Dashboard'
 import Tickets from './pages/Tickets'
 import CreateTicket from './pages/CreateTicket'
 import OfficeTasks from './pages/OfficeTasks'
@@ -79,7 +78,7 @@ export default function App() {
         {/* Portal Routes */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/dashboard-home" element={<Dashboard />} />
+          <Route path="/dashboard-home" element={<Navigate to="/schedules" replace />} />
           <Route path="/tickets" element={<Tickets />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
