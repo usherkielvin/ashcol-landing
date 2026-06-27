@@ -11,7 +11,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole } from '../utils/api'
 import DailySalesForm from './DailySalesForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -302,11 +302,13 @@ export default function DailyAuditReport() {
       return isSameBaseBranch(selectedRow.branchId, globalBranchId)
     }
 
-    // For non-admin manager
-    if (!isManager) return false
+    // Managers/coordinators/OIC, or any employee during the May DTR correction window
+    const mayEmployeeEdit = isDtrMayEditOpenForView(viewMode, date, rangeFrom, rangeTo)
+      && isEmployeePortalRole(role)
+    if (!isManager && !mayEmployeeEdit) return false
     if (!user?.branchId) return false
 
-    // A non-admin manager can only edit their own branch DTR
+    // A non-admin user can only edit their own branch DTR
     if (!isSameBaseBranch(user.branchId, selectedRow.branchId)) return false
 
     // For Taguig, match the sub-branch/audit line
@@ -322,7 +324,7 @@ export default function DailyAuditReport() {
     }
 
     return true
-  }, [selectedRow, isAdmin, isManager, globalBranchId, user])
+  }, [selectedRow, isAdmin, isManager, globalBranchId, user, viewMode, date, rangeFrom, rangeTo, role])
 
 
 

@@ -3,7 +3,7 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
 
 interface AuditRow {
   id?: string | null
@@ -262,7 +262,9 @@ export default function Branches() {
       jobTitleLower.includes('coor')
     )
     const isManager = userRole === 'manager' || isSalesCoordinator || userRole === 'oic'
-    if (!isManager) return false
+    const today = new Date().toISOString().split('T')[0]
+    const mayEmployeeEdit = isEmployeePortalRole(userRole) && isMayDtrEditWindow(today)
+    if (!isManager && !mayEmployeeEdit) return false
     
     // A non-admin manager can only edit their own branch DTR
     if (!user?.branchId) return false

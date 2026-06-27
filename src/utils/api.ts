@@ -86,6 +86,33 @@ type PortalUserLike = {
 
 const normalizeUserValue = (value?: string | null) => (value || '').trim().toLowerCase()
 
+/** May DTR correction window — all assigned employees may edit their branch reports. */
+export function isMayDtrEditWindow(date?: string | null): boolean {
+  if (!date) return false
+  const iso = date.split('T')[0]
+  const match = iso.match(/^(\d{4})-(\d{2})/)
+  if (!match) return false
+  return parseInt(match[2], 10) === 5
+}
+
+export function isDtrMayEditOpenForView(
+  viewMode: 'single' | 'range',
+  singleDate: string,
+  rangeFrom: string,
+  rangeTo: string,
+): boolean {
+  if (viewMode === 'single') return isMayDtrEditWindow(singleDate)
+  if (isMayDtrEditWindow(rangeFrom) || isMayDtrEditWindow(rangeTo)) return true
+  const year = rangeFrom.slice(0, 4)
+  if (!/^\d{4}$/.test(year)) return false
+  return rangeFrom <= `${year}-05-31` && rangeTo >= `${year}-05-01`
+}
+
+export function isEmployeePortalRole(role?: string | null): boolean {
+  const r = normalizeUserValue(role)
+  return r === 'employee' || r === 'staff' || r === 'oic'
+}
+
 export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
   if (!user) return false
   const role = normalizeUserValue(user.role)

@@ -4,7 +4,7 @@ import { NumericFormat } from 'react-number-format'
 import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -270,7 +270,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     if (!reportId) return true
     if (reportStatus === 'AUDITED') return isAdmin
     if (isAdmin) return true
-    if (!isManager || !user?.branchId || !selectedBranchId) return false
+
+    const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(reportDate)
+    if (!isManager && !mayEmployeeEdit) return false
+    if (!user?.branchId || !selectedBranchId) return false
 
     if (!isSameBaseBranch(user.branchId, selectedBranchId)) return false
 
@@ -287,7 +290,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       return isServiceUser === isServiceRow
     }
     return true
-  }, [reportId, reportStatus, isAdmin, isManager, user, selectedBranchId, selectedAuditLine])
+  }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine])
 
   const canEditOrSubmit = useMemo(() => {
     if (!canSubmit) return false
