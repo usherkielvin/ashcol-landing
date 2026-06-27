@@ -146,6 +146,7 @@ export default function DashboardLayout() {
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const lastPathname = useRef<string | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -343,6 +344,9 @@ export default function DashboardLayout() {
   // Keep the group for the current page open; don't fight manual collapse until route changes.
   useEffect(() => {
     const path = location.pathname
+    if (path === lastPathname.current) return
+    lastPathname.current = path
+
     for (const group of navGroups) {
       const active = group.subItems.find(sub =>
         path === sub.path || (sub.path.length > 1 && path.startsWith(sub.path + '/'))

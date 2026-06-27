@@ -44,6 +44,21 @@ const formatReviewDateTime = (date: Date) =>
 const formatReportDateLabel = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 
+const getIsoDateParts = (iso: string) => {
+  const [year, month, day] = iso.split('-').map(Number)
+  return { year, month, day }
+}
+
+/** Native date inputs fire onChange when month arrows move but the day-of-month stays the same. */
+const isLikelyMonthNavigation = (fromIso: string, toIso: string) => {
+  if (!fromIso || !toIso || fromIso === toIso) return false
+  const from = getIsoDateParts(fromIso)
+  const to = getIsoDateParts(toIso)
+  return from.day === to.day && (from.month !== to.month || from.year !== to.year)
+}
+
+const DATE_PICKER_MONTH_NAV_MS = 350
+
 const cleanInstallerName = (name: string, currentBranchName?: string) => {
   let cleaned = name.trim()
   cleaned = cleaned.replace(/^ASHCOL\s*[-|:]?\s*/i, '').trim()
@@ -332,6 +347,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const userInitiatedDateChange = useRef(false)
   const branchEmployeeNamesRef = useRef<string[]>([])
   const existingReportLookupCache = useRef<Map<string, any | null>>(new Map())
+  const datePickerLastValue = useRef<string | null>(null)
+  const datePickerCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -699,7 +716,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       // Populate metadata
       setReportDate(data.reportDate)
       loadedReportDate.current = data.reportDate
-      setReceivedBy(formatDisplayUserLabel(data.receivedBy || ''))
+      const rawReceivedBy = (data.receivedBy || '').trim()
+      setReceivedBy(rawReceivedBy ? formatDisplayUserLabel(rawReceivedBy) : (user?.name || ''))
       setTrNo(data.trNo || '')
       setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
       setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
@@ -1127,6 +1145,37 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     if (!newDate || newDate === reportDate || reviewMode || checkingExistingReport) return
     void handleReportDateChange(newDate)
   }
+
+  const clearDatePickerCommitTimer = () => {
+    if (datePickerCommitTimer.current) {
+      clearTimeout(datePickerCommitTimer.current)
+      datePickerCommitTimer.current = null
+    }
+  }
+
+  const queueDatePickerCommit = (newDate: string) => {
+    if (!newDate || newDate === reportDate || reviewMode || checkingExistingReport) return
+
+    clearDatePickerCommitTimer()
+
+    const anchor = datePickerLastValue.current || reportDate
+    const monthBrowse = isLikelyMonthNavigation(anchor, newDate)
+      || isLikelyMonthNavigation(reportDate, newDate)
+
+    datePickerLastValue.current = newDate
+
+    if (monthBrowse) {
+      datePickerCommitTimer.current = setTimeout(() => {
+        datePickerCommitTimer.current = null
+        finalizeReportDateSelection(newDate)
+      }, DATE_PICKER_MONTH_NAV_MS)
+      return
+    }
+
+    finalizeReportDateSelection(newDate)
+  }
+
+  useEffect(() => () => clearDatePickerCommitTimer(), [])
 
   // Load query params on mount/URL change
   useEffect(() => {
@@ -1676,19 +1725,35 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               id="report-date-input"
               type="date"
               defaultValue={reportDate}
+              onFocus={() => {
+                datePickerLastValue.current = reportDate
+                clearDatePickerCommitTimer()
+              }}
               onKeyDown={e => {
                 isTypingReportDate.current = true
                 if (e.key === 'Enter') {
                   isTypingReportDate.current = false
+                  clearDatePickerCommitTimer()
                   finalizeReportDateSelection((e.target as HTMLInputElement).value)
                 }
               }}
-              onChange={() => {
-                // Let the native picker update the uncontrolled value; commit on blur only.
+              onChange={e => {
+                if (isTypingReportDate.current) return
+                queueDatePickerCommit(e.target.value)
               }}
               onBlur={e => {
-                isTypingReportDate.current = false
-                finalizeReportDateSelection(e.target.value)
+                if (isTypingReportDate.current) {
+                  isTypingReportDate.current = false
+                  clearDatePickerCommitTimer()
+                  finalizeReportDateSelection(e.target.value)
+                  return
+                }
+
+                const pending = e.target.value
+                if (pending && pending !== reportDate && datePickerCommitTimer.current) {
+                  clearDatePickerCommitTimer()
+                  finalizeReportDateSelection(pending)
+                }
               }}
               className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
               disabled={reviewMode}
