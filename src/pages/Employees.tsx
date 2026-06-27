@@ -209,20 +209,18 @@ export default function Employees() {
       const data = await res.json()
       const list: { id: string; name: string }[] = data?.data || []
       const result: BranchOption[] = []
-      const seenTaguig = { sales: false, services: false }
       for (const b of list) {
         const clean = b.name.replace(/^ashcol\s+/i, '').trim().toUpperCase()
-        if (clean === 'TAGUIG') {
-          if (!seenTaguig.sales) {
-            result.push({ id: `${b.id}-sales`,   name: 'TAGUIG - SALES' })
-            seenTaguig.sales = true
+        if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+          if (!result.some(item => item.id === 'BR-TAGUIG-SALES')) {
+            result.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
           }
-          if (!seenTaguig.services) {
-            result.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
-            seenTaguig.services = true
+        } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+          if (!result.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+            result.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
           }
         } else if (clean.startsWith('TAGUIG')) {
-          // covered above
+          // skip other taguig variants
         } else {
           result.push({ id: b.id, name: clean })
         }
@@ -253,10 +251,16 @@ export default function Employees() {
           bl.forEach((b: any) => {
             if (!b.id) return
             const clean = (b.name || b.id).replace(/^ashcol\s+/i, '').trim().toUpperCase()
-            branchMap[b.id] = clean
-            if (clean === 'TAGUIG') {
-              branchMap[`${b.id}-sales`]    = 'TAGUIG - SALES'
+            if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+              branchMap[b.id] = 'TAGUIG - SALES'
+              branchMap[`${b.id}-sales`] = 'TAGUIG - SALES'
+              branchMap['BR-TAGUIG-SALES-sales'] = 'TAGUIG - SALES'
+            } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+              branchMap[b.id] = 'TAGUIG - SERVICES'
               branchMap[`${b.id}-services`] = 'TAGUIG - SERVICES'
+              branchMap['BR-TAGUIG-SALES-services'] = 'TAGUIG - SERVICES'
+            } else {
+              branchMap[b.id] = clean
             }
           })
         }

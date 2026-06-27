@@ -63,30 +63,20 @@ export default function DashboardLayout() {
         if (!res.ok) return
         const data = await res.json()
         const list = data?.data || []
-        
-        const hasExplicitTaguigSales = list.some((b: any) => {
-          const id = b.id.toUpperCase()
-          const name = b.name.toUpperCase()
-          return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
-        })
-        const hasExplicitTaguigServices = list.some((b: any) => {
-          const id = b.id.toUpperCase()
-          const name = b.name.toUpperCase()
-          return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
-        })
 
         const newList: BranchOption[] = []
         for (const b of list) {
           const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
-          if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-            if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
-            if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
+          if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
+              newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            }
+          } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            }
           } else if (cleanName.includes('TAGUIG')) {
-            const isServ = cleanName.includes('SERVICE')
-            newList.push({
-              id: isServ ? `${b.id}-services` : `${b.id}-sales`,
-              name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
-            })
+            // skip other taguig variants
           } else {
             newList.push({ id: b.id, name: cleanName })
           }
