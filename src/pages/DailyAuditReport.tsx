@@ -514,10 +514,6 @@ export default function DailyAuditReport() {
     { key: 'totalPurch',  label: 'Total Purchases',        short: 'Purch.' },
     { key: 'forColl',     label: 'For Collection',         short: 'Coll.' },
     { key: 'rebates',     label: 'Rebates',                short: 'Reb.' },
-    { key: 'units',       label: 'Units Installed',        short: 'Inst.' },
-    { key: 'serviced',    label: 'Units Serviced',         short: 'Serv.' },
-    { key: 'cancelled',   label: 'Cancelled',              short: 'Canc.' },
-    { key: 'freeInstall', label: 'Free Install',           short: 'Free' },
   ]
 
   const mobileSortOptions = [
@@ -1077,25 +1073,7 @@ export default function DailyAuditReport() {
                         <>₱{peso(row.rebatesForCollection)}</>
                       </td>
 
-                      {/* ⑮ Units Installed */}
-                      <td className="text-center font-semibold" style={{ color: textPrimary, padding: p }} >
-                        {row.totalUnitsInstalledServiced}
-                      </td>
 
-                      {/* Units Serviced */}
-                      <td className="text-center font-semibold" style={{ color: textPrimary, padding: p }} >
-                        {row.totalUnitsServiced}
-                      </td>
-
-                      {/* ⑯ Cancelled */}
-                      <td className="text-center" style={{ color: row.totalCancelled > 0 ? '#EF4444' : textMuted, padding: p }} >
-                        {row.totalCancelled}
-                      </td>
-
-                      {/* ⑰ Free Install */}
-                      <td className="text-center" style={{ color: textMuted, padding: p }} >
-                        {row.totalUnitsFreeInstall}
-                      </td>
 
                     </tr>
                   )
@@ -1140,8 +1118,7 @@ export default function DailyAuditReport() {
                   <td className="font-black whitespace-nowrap" style={{ color: textMuted, fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
                     ₱{peso(totals.rebatesForCollection)}
                   </td>
-                  {/* Units + Serviced + Cancelled + Free */}
-                  <td colSpan={4} />
+
                 </tr>
               </tfoot>
             </table>
@@ -1255,9 +1232,7 @@ export default function DailyAuditReport() {
                         { label: 'Total CFD', val: row.totalCohCfd, color: textPrimary, money: true, readOnly: true },
                         { label: 'Scheduled', field: 'totalUnitsScheduled', val: row.totalUnitsScheduled, color: textPrimary, int: true },
                         { label: 'Rescheduled', field: 'totalRescheduled', val: row.totalRescheduled, color: textPrimary, int: true },
-                        { label: 'Units', field: 'totalUnitsInstalledServiced', val: row.totalUnitsInstalledServiced, color: textPrimary, int: true },
-                        { label: 'Serviced', field: 'totalUnitsServiced', val: row.totalUnitsServiced, color: textPrimary, int: true },
-                        { label: 'Cancelled', field: 'totalCancelled', val: row.totalCancelled, color: row.totalCancelled > 0 ? '#EF4444' : textMuted, int: true },
+
                         { label: 'Survey Only', field: 'totalUnitsSurveyOnly', val: row.totalUnitsSurveyOnly, color: textPrimary, int: true },
                       ].map(item => (
                         <div key={item.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: inputBg }}>
@@ -1586,10 +1561,7 @@ export default function DailyAuditReport() {
                           { label: 'Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
                           { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0), color: textPrimary },
                           { label: 'Rescheduled', value: String(selectedRow.totalRescheduled || 0), color: textPrimary },
-                          { label: 'Installed', value: String(selectedRow.totalUnitsInstalledServiced), color: textPrimary },
-                          { label: 'Serviced', value: String(selectedRow.totalUnitsServiced), color: textPrimary },
-                          { label: 'Cancelled', value: String(selectedRow.totalCancelled), color: textPrimary },
-                          { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall), color: textPrimary },
+
                           { label: 'Survey Only', value: String(selectedRow.totalUnitsSurveyOnly || 0), color: textPrimary },
                         ].map((item) => (
                           <div key={item.label} className="rounded-lg px-3 py-2" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
