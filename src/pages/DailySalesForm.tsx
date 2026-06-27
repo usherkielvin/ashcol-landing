@@ -268,11 +268,17 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const canEditExistingReport = useMemo(() => {
     if (!reportId) return true
-    if (reportStatus === 'AUDITED') return isAdmin
     if (isAdmin) return true
 
     const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(reportDate)
-    if (!isManager && !mayEmployeeEdit) return false
+    const mayCorrectionEdit = mayEmployeeEdit || (isManager && isMayDtrEditWindow(reportDate))
+
+    if (reportStatus === 'AUDITED') {
+      if (!mayCorrectionEdit) return false
+    } else if (!isManager && !mayEmployeeEdit) {
+      return false
+    }
+
     if (!user?.branchId || !selectedBranchId) return false
 
     if (!isSameBaseBranch(user.branchId, selectedBranchId)) return false
@@ -1238,7 +1244,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const handleDtrSubmit = async () => {
     if (!canEditOrSubmit) {
       setError(reportStatus === 'AUDITED'
-        ? 'This report has been audited. Only admin accounts can edit audited reports.'
+        ? (isMayDtrEditWindow(reportDate)
+          ? 'You do not have permission to edit this audited May report for this branch.'
+          : 'This report has been audited. Only admin accounts can edit audited reports.')
         : 'You do not have permission to edit this report.')
       return
     }
@@ -1504,7 +1512,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
           <p className="text-sm text-amber-600 dark:text-amber-400">
             <strong>Read Only:</strong> {reportStatus === 'AUDITED'
-              ? 'This report has been audited. Only admin accounts can edit audited reports.'
+              ? (isMayDtrEditWindow(reportDate)
+                ? 'You do not have permission to edit this audited May report for this branch.'
+                : 'This report has been audited. Only admin accounts can edit audited reports.')
               : 'You do not have permission to edit this report.'}
           </p>
         </div>

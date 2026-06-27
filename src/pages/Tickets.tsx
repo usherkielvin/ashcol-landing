@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
   Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
@@ -929,7 +928,6 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
 export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
-  const navigate   = useNavigate()
   const isLight    = theme === 'light'
 
   const role      = (user?.role || '').toLowerCase()
@@ -2205,7 +2203,7 @@ export default function Tickets() {
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
     ]
@@ -2338,7 +2336,12 @@ export default function Tickets() {
     if (sortConfig) {
       list = [...list].sort((a, b) => {
         const cmp = compareTicketsByColumn(a, b, sortConfig.column)
-        return sortConfig.direction === 'desc' ? -cmp : cmp
+        if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
+        if (sortConfig.column !== "CUSTOMER'S NAME") {
+          const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME")
+          if (byCustomer !== 0) return byCustomer
+        }
+        return 0
       })
     }
     return list
@@ -2837,8 +2840,23 @@ export default function Tickets() {
     }
 
     if (label === 'INSTALLER') {
+      const curToken = parseNameSiteToken(val)
+      const prevInstaller = idx != null && idx > 0 ? getInstallerDisplay(visible[idx - 1]) : ''
+      const prevToken = parseNameSiteToken(prevInstaller)
+      const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
       return withEditPencil(
-        <span style={{ ...truncStyle }} title={val}>{val}</span>,
+        <span
+          style={{
+            ...truncStyle,
+            display: 'block',
+            borderTop: isNewInstallerGroup ? `2px solid ${isLight ? '#d1d5db' : '#475569'}` : undefined,
+            paddingTop: isNewInstallerGroup ? 8 : 0,
+            marginTop: isNewInstallerGroup ? 4 : 0,
+          }}
+          title={val}
+        >
+          {val}
+        </span>,
         ticket, label, rowGhost,
       )
     }
@@ -2880,18 +2898,114 @@ export default function Tickets() {
       )}
 
       {/* ── Header bar ── */}
-      <div className="rounded-2xl px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm"
-           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="flex flex-wrap items-center gap-3">
-          {isAdmin && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold"
-                 style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', borderColor: inputBorder, color: textMuted }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{getBranchDisplayName(globalBranchId)}</span>
+      <div className="rounded-xl border px-3 py-2 flex flex-col gap-2 shadow-sm"
+           style={{ backgroundColor: cardBg, borderColor: border }}>
+        {/* Row 1: branch + primary action */}
+        <div className="flex items-center justify-between gap-2">
+          {isAdmin ? (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
+              <Building2 className="w-3 h-3" />
+              {getBranchDisplayName(globalBranchId)}
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Schedules</span>
+          )}
+          {canEdit && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setAddMenuOpen(!addMenuOpen)
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
+                style={{ backgroundColor: green, color: '#ffffff' }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Schedule
+                <ChevronDown className="w-3 h-3 opacity-80" />
+              </button>
+
+              {addMenuOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 rounded-xl shadow-xl overflow-hidden z-[100] w-48 border"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                  onClick={() => setAddMenuOpen(false)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddMenuOpen(false)
+                      openAddModal()
+                    }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                    style={{ color: textPrimary }}
+                  >
+                    <Plus className="w-3.5 h-3.5" style={{ color: green }} />
+                    Manual Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scanFileInputRef.current?.click()}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                    style={{ color: textPrimary }}
+                  >
+                    <Camera className="w-3.5 h-3.5 text-emerald-500" />
+                    Scan Schedule Sheet
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importing}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                    style={{ color: textPrimary }}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-amber-500" />
+                    Import Excel
+                  </button>
+                  {isAdmin && (
+                    <>
+                      <div className="h-px mx-2" style={{ backgroundColor: border }} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddMenuOpen(false)
+                          promptClearAllVisible()
+                        }}
+                        disabled={visible.length === 0 || saving}
+                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                        style={{ color: '#EF4444' }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Clear All Visible
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleImport}
+              />
+              <input
+                ref={scanFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleScanFilePicked}
+              />
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-1.5 max-w-full overflow-x-auto no-scrollbar py-0.5">
-            {/* Weekly Tabs */}
+        </div>
+
+        {/* Row 2: date picker strip (full width) */}
+        <div className="flex items-center gap-1 min-w-0 -mx-1 px-1">
+          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5">
             {weeklyTabs.map(tab => {
               const isActive = dateFilter === tab.key
               return (
@@ -2899,57 +3013,39 @@ export default function Tickets() {
                   type="button"
                   key={tab.key}
                   onClick={() => setDateFilter(tab.key)}
-                  className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[75px] cursor-pointer transition-all hover:scale-105"
+                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
                   style={{
-                    backgroundColor: isActive ? green : inputBg,
+                    backgroundColor: isActive ? green : 'transparent',
                     borderColor: isActive ? green : inputBorder,
-                    color: isActive ? '#ffffff' : textPrimary,
-                    boxShadow: isActive ? '0 4px 12px rgba(22, 163, 74, 0.2)' : 'none'
+                    color: isActive ? '#ffffff' : textMuted,
                   }}
                 >
-                  <span className="text-[9px] uppercase tracking-wider font-black opacity-80">{tab.dayName}</span>
-                  <span className="text-xs font-bold">{tab.dateLabel}</span>
+                  {tab.dayName} {tab.dateLabel}
                 </button>
               )
             })}
 
-            {/* Custom Tab if selected date is outside weekly tabs */}
             {isCustomSelected && (
               <button
                 type="button"
                 onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[75px] cursor-pointer transition-all hover:scale-105"
-                style={{
-                  backgroundColor: green,
-                  borderColor: green,
-                  color: '#ffffff',
-                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.2)'
-                }}
+                className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
               >
-                <span className="text-[9px] uppercase tracking-wider font-black opacity-80">Custom</span>
-                <span className="text-xs font-bold">
-                  {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                </span>
+                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
               </button>
             )}
 
-            {/* Calendar Picker Trigger */}
-            {!isCustomSelected && (
-              <div
-                onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl text-center border min-w-[45px] cursor-pointer transition-all hover:scale-105"
-                style={{
-                  backgroundColor: inputBg,
-                  borderColor: inputBorder,
-                  color: textPrimary
-                }}
-              >
-                <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
-                <span className="text-[9px] uppercase tracking-wider font-black mt-0.5 opacity-60">Pick</span>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => dateFilterInputRef.current?.showPicker?.()}
+              className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+              style={{ borderColor: inputBorder, color: textMuted }}
+              title="Pick date"
+            >
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+            </button>
 
-            {/* Hidden date input */}
             <input
               ref={dateFilterInputRef}
               type="date"
@@ -2960,174 +3056,118 @@ export default function Tickets() {
               aria-label="Ticket date filter"
             />
 
-            {/* All Tab */}
             <button
               type="button"
               onClick={() => setDateFilter('')}
-              className="flex flex-col items-center justify-center px-3.5 py-1.5 rounded-xl text-center border min-w-[60px] cursor-pointer transition-all hover:scale-105"
+              className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
               style={{
-                backgroundColor: dateFilter === '' ? green : inputBg,
+                backgroundColor: dateFilter === '' ? green : 'transparent',
                 borderColor: dateFilter === '' ? green : inputBorder,
-                color: dateFilter === '' ? '#ffffff' : textPrimary,
-                boxShadow: dateFilter === '' ? '0 4px 12px rgba(22, 163, 74, 0.2)' : 'none'
+                color: dateFilter === '' ? '#ffffff' : textMuted,
               }}
             >
-              <span className="text-[9px] uppercase tracking-wider font-black opacity-80">View</span>
-              <span className="text-xs font-bold">All</span>
+              All
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {canEdit && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAddMenuOpen(!addMenuOpen);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
-                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Schedule</span>
-                <ChevronDown className="w-3 h-3 ml-0.5" />
-              </button>
-
-              {addMenuOpen && (
-                <div
-                  className="absolute right-0 mt-1.5 rounded-xl shadow-2xl overflow-hidden z-[100] w-48 border"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                  onClick={() => setAddMenuOpen(false)}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddMenuOpen(false)
-                      openAddModal()
-                    }}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
-                  >
-                    <Plus className="w-3.5 h-3.5" style={{ color: green }} />
-                    Manual Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scanFileInputRef.current?.click()}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
-                  >
-                    <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                    Scan Schedule Sheet
-                  </button>
-                  <button
-                    type="button"
-                    disabled={importing}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
-                    style={{ color: textPrimary }}
-                  >
-                    <Upload className="w-3.5 h-3.5 text-amber-500" />
-                    Import Excel
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {canEdit && (
-            <>
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={promptClearAllVisible}
-                  disabled={visible.length === 0 || saving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  style={{ backgroundColor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.45)', color: '#EF4444' }}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Clear All</span>
-                </button>
-              )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleImport}
-              />
-
-              <input
-                ref={scanFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleScanFilePicked}
-              />
-            </>
-          )}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shrink-0"
+        {/* Row 3: search + installer filter/sort */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-0"
                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
-            <select
-              value={installerFilter}
-              onChange={e => {
-                const val = e.target.value
-                setInstallerFilter(val)
-                if (val) setSortConfig(DEFAULT_TICKET_SORT)
-              }}
-              className="bg-transparent outline-none text-xs font-semibold max-w-[140px] cursor-pointer"
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs flex-1 min-w-0"
               style={{ color: textPrimary }}
               onClick={e => e.stopPropagation()}
-            >
-              <option value="">All installers</option>
-              {installerOptions.map(opt => (
-                <option key={opt.key} value={opt.key}>{opt.label}</option>
-              ))}
-            </select>
-            {installerFilter && (
+            />
+            {searchQuery && (
+              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg border"
+                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <select
+                value={installerFilter}
+                onChange={e => {
+                  const val = e.target.value
+                  setInstallerFilter(val)
+                  if (val) setSortConfig(DEFAULT_TICKET_SORT)
+                }}
+                className="bg-transparent outline-none text-xs font-medium max-w-[110px] cursor-pointer"
+                style={{ color: textPrimary }}
+                onClick={e => e.stopPropagation()}
+              >
+                <option value="">All installers</option>
+                {installerOptions.map(opt => (
+                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                ))}
+              </select>
+              {installerFilter && (
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
+                  style={{ color: textMuted }}
+                  title="Clear installer filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex rounded-lg border overflow-hidden shrink-0"
+                 style={{ borderColor: inputBorder }}>
               <button
                 type="button"
-                onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
-                style={{ color: textMuted }}
-                title="Clear installer filter"
+                onClick={e => {
+                  e.stopPropagation()
+                  setSortConfig({ column: 'INSTALLER', direction: 'asc' })
+                }}
+                className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
+                style={{
+                  backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc'
+                    ? 'rgba(16,185,129,0.15)' : inputBg,
+                  color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc' ? green : textMuted,
+                }}
+                title="Sort installer A → Z (group same names)"
               >
-                <X className="w-3.5 h-3.5" />
+                <ArrowUp className="w-3.5 h-3.5" />
               </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs"
-               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
-            <input type="text" placeholder="Search..." value={searchQuery}
-                   onChange={e => setSearchQuery(e.target.value)}
-                   className="bg-transparent outline-none text-xs flex-1 font-medium"
-                   style={{ color: textPrimary }}
-                   onClick={e => e.stopPropagation()} />
-            {searchQuery && (
-              <button onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
+              <div className="w-px self-stretch" style={{ backgroundColor: inputBorder }} />
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  setSortConfig({ column: 'INSTALLER', direction: 'desc' })
+                }}
+                className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
+                style={{
+                  backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
+                    ? 'rgba(16,185,129,0.15)' : inputBg,
+                  color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc' ? green : textMuted,
+                }}
+                title="Sort installer Z → A"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
               </button>
-            )}
+            </div>
           </div>
-          {canEdit && !isTaguigServices && (
-            <button onClick={() => navigate('/tickets/create')}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs text-white hover:opacity-90 shadow-sm"
-                    style={{ backgroundColor: green }}>
-              <Plus className="w-3.5 h-3.5" /> New Ticket
-            </button>
-          )}
         </div>
       </div>
 
       {/* Stats bar */}
       {!loading && tickets.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-bold px-5 py-2.5 rounded-2xl border"
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 py-2 rounded-xl border text-xs"
              style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="uppercase tracking-wider text-[10px]">Active Tickets:</span>
+          <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
           <div className="flex items-center gap-1">
             <span style={{ color: textMuted }}>Scheduled / Rescheduled</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.scheduledOrRescheduled}</span>
