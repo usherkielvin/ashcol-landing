@@ -170,11 +170,18 @@ export default function DashboardLayout() {
 
         const newList: BranchOption[] = []
         for (const b of list) {
-          if (b.isActive === false) continue
           const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+          const isTaguigRow = (b.id || '').toLowerCase().includes('taguig')
+            || (b.id || '').toLowerCase().startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+            || cleanName.includes('TAGUIG')
+          // Taguig (Sales/Services) is always available; other inactive branches are hidden.
+          if (b.isActive === false && !isTaguigRow) continue
           if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
             if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
               newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            }
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
             }
           } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
             if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
