@@ -1009,8 +1009,8 @@ export default function ClientMasterlist() {
         payload.assignedTo = ""
         payload.status = updateStatus
       } else {
-        if (assignBranchId !== (selectedTicket.branchId || '')) {
-          payload.branchId = assignBranchId || ""
+        if (assignBranchId) {
+          payload.branchId = assignBranchId
         }
         if (assignTechId !== (selectedTicket.assignedTo || '')) {
           payload.assignedTo = assignTechId || ""

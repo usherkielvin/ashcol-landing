@@ -2002,6 +2002,14 @@ export default function Tickets() {
       }
       if (paymentMode) body.modeOfPayment = paymentMode
 
+      const negId = (editForm.negotiatorId || '').trim()
+      if (negId) {
+        const neg = branchEmployees.find((e) => e.id === negId)
+        if (neg?.branchId) {
+          body.branchId = resolveScopedBranchId(neg.branchId)
+        }
+      }
+
       if (isDateMove) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -2126,12 +2134,7 @@ export default function Tickets() {
 
   const resolveImportBranchId = useCallback((ticketBranchId?: string) => {
     if (ticketBranchId) {
-      return resolveTicketArchiveBranchId(
-        { branchId: ticketBranchId },
-        globalBranchId,
-        user?.branchId,
-        localStorage.getItem('ashcol-global-branch-id'),
-      )
+      return resolveTicketArchiveBranchId({ branchId: ticketBranchId })
     }
     const branchEmployee = isEmployee && !isAdmin && !isManager
     const branchSource = branchEmployee
@@ -2141,13 +2144,8 @@ export default function Tickets() {
   }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
 
   const resolveTicketArchiveBranch = useCallback((ticket: Ticket) =>
-    resolveTicketArchiveBranchId(
-      ticket,
-      globalBranchId,
-      user?.branchId,
-      localStorage.getItem('ashcol-global-branch-id'),
-    ),
-  [globalBranchId, user?.branchId])
+    resolveTicketArchiveBranchId(ticket),
+  [])
 
   const handleApplyImport = async () => {
     if (!importResults) return

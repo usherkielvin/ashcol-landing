@@ -168,23 +168,40 @@ export function isTaguigServiceArchiveRecord(row: TaguigArchiveRowSignals): bool
   return blob.includes('DONE BY')
 }
 
+export type ArchiveBranchRowSignals = TaguigArchiveRowSignals & {
+  branchName?: string | null
+  customerAddress?: string | null
+  district?: string | null
+  ticketBranchId?: string | null
+  installerLineupBranchId?: string | null
+}
+
+/** True branch: lineup installer roster > ticket branch > stored branch_id. */
+export function resolveEffectiveArchiveBranchId(row: ArchiveBranchRowSignals): string {
+  if (row.installerLineupBranchId?.trim()) return resolveScopedBranchId(row.installerLineupBranchId)
+  if (row.ticketBranchId?.trim()) return resolveScopedBranchId(row.ticketBranchId)
+  return resolveScopedBranchId(row.branchId)
+}
+
 /** Whether an Archives row belongs under the active branch filter (Taguig Sales/Services + all branches). */
 export function archiveRowMatchesBranch(
-  row: TaguigArchiveRowSignals & { branchName?: string | null },
+  row: ArchiveBranchRowSignals,
   branchFilter?: string | null,
 ): boolean {
   if (!branchFilter || branchFilter === 'ALL_BRANCHES') return false
-  if (!row.branchId && !row.branchName) return false
+
+  const effective = resolveEffectiveArchiveBranchId(row)
+  if (!effective) return false
 
   if (isTaguigBranchRef(branchFilter)) {
-    if (!isTaguigBranchRef(row.branchId, row.branchName)) return false
+    if (!isTaguigBranchRef(effective)) return false
     const wantServices = isTaguigServicesScope(branchFilter)
     const isService = isTaguigServiceArchiveRecord(row)
     return wantServices ? isService : !isService
   }
 
-  if (isTaguigBranchRef(row.branchId, row.branchName)) return false
-  return branchScopesMatch(row.branchId, branchFilter)
+  if (isTaguigBranchRef(effective)) return false
+  return branchScopesMatch(effective, branchFilter)
 }
 
 /** Resolve Archives page branch filter — never ALL_BRANCHES. */
@@ -284,14 +301,20 @@ export function resolveArchiveBranchId(
   return ''
 }
 
-/** Archives branch for a schedule ticket — always prefer the ticket's own branch. */
+/** Archives branch for a schedule ticket — lineup installer roster, then ticket branch. */
 export function resolveTicketArchiveBranchId(
-  ticket: { branchId?: string | null; branch_id?: string | null },
-  ...fallbacks: Array<string | null | undefined>
+  ticket: {
+    branchId?: string | null
+    branch_id?: string | null
+    installerLineupBranchId?: string | null
+    installer_lineup_branch_id?: string | null
+  },
 ): string {
-  const fromTicket = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
-  if (fromTicket && fromTicket !== 'ALL_BRANCHES') return fromTicket
-  return resolveArchiveBranchId(...fallbacks)
+  const fromLineup = resolveScopedBranchId(
+    ticket.installerLineupBranchId || ticket.installer_lineup_branch_id,
+  )
+  if (fromLineup && fromLineup !== 'ALL_BRANCHES') return fromLineup
+  return resolveScopedBranchId(ticket.branchId || ticket.branch_id)
 }
 
 /** Branch id for API writes (preserves Taguig Sales vs Services). */

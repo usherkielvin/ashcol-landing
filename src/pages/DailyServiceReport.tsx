@@ -17,6 +17,8 @@ interface ServiceRow {
   id: string
   branchId: string | null
   ticketId?: string | null
+  ticketBranchId?: string | null
+  installerLineupBranchId?: string | null
   branchName: string | null
   reportDate: string | null
   customerName: string | null
@@ -214,6 +216,23 @@ function getRowBrand(row: ServiceRow): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+const archiveRowSignals = (r: ServiceRow) => ({
+  branchId: r.branchId,
+  branchName: r.branchName,
+  ticketBranchId: r.ticketBranchId,
+  installerLineupBranchId: r.installerLineupBranchId,
+  district: r.district,
+  customerAddress: r.customerAddress,
+  serviceType: r.serviceType,
+  statusCode: r.statusCode,
+  dealer: r.dealer,
+  technicianName: r.technicianName,
+  remarks: r.remarks,
+  note: r.note,
+  inputBy: r.inputBy,
+  serviceColumn: r.serviceColumn,
+})
+
 export default function DailyServiceReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -257,18 +276,7 @@ export default function DailyServiceReport() {
   const uniqueBrands = useMemo(() => {
     const set = new Set<string>()
     rows
-      .filter((r) => archiveRowMatchesBranch({
-        branchId: r.branchId,
-        branchName: r.branchName,
-        serviceType: r.serviceType,
-        statusCode: r.statusCode,
-        dealer: r.dealer,
-        technicianName: r.technicianName,
-        remarks: r.remarks,
-        note: r.note,
-        inputBy: r.inputBy,
-        serviceColumn: r.serviceColumn,
-      }, branchFilter))
+      .filter((r) => archiveRowMatchesBranch(archiveRowSignals(r), branchFilter))
       .forEach((r) => set.add(getRowBrand(r)))
     return Array.from(set).sort()
   }, [rows, branchFilter])
@@ -683,18 +691,10 @@ export default function DailyServiceReport() {
       })
       if (res.ok) {
         const data = await res.json()
-        const scoped = (data as ServiceRow[]).filter((r) => archiveRowMatchesBranch({
-          branchId: r.branchId,
-          branchName: r.branchName,
-          serviceType: r.serviceType,
-          statusCode: r.statusCode,
-          dealer: r.dealer,
-          technicianName: r.technicianName,
-          remarks: r.remarks,
-          note: r.note,
-          inputBy: r.inputBy,
-          serviceColumn: r.serviceColumn,
-        }, resolveArchivesBranchFilter(branchFilter, branches, user)))
+        const scoped = (data as ServiceRow[]).filter((r) => archiveRowMatchesBranch(
+          archiveRowSignals(r),
+          resolveArchivesBranchFilter(branchFilter, branches, user),
+        ))
         setRows(scoped)
       }
     } catch (e) {
@@ -1390,18 +1390,10 @@ export default function DailyServiceReport() {
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     const activeBranch = resolveArchivesBranchFilter(branchFilter, branches, user)
-    let filtered = rows.filter((r) => archiveRowMatchesBranch({
-      branchId: r.branchId,
-      branchName: r.branchName,
-      serviceType: r.serviceType,
-      statusCode: r.statusCode,
-      dealer: r.dealer,
-      technicianName: r.technicianName,
-      remarks: r.remarks,
-      note: r.note,
-      inputBy: r.inputBy,
-      serviceColumn: r.serviceColumn,
-    }, activeBranch))
+    let filtered = rows.filter((r) => archiveRowMatchesBranch(
+      archiveRowSignals(r),
+      activeBranch,
+    ))
 
     if (brandFilter) {
       filtered = filtered.filter(r => getRowBrand(r) === brandFilter)
