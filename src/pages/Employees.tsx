@@ -65,8 +65,8 @@ const ROLE_META: Record<AssignableRole, {
   },
   MANAGEMENT: {
     label: 'Management',
-    hint: 'Employee with full admin portal view (all branches). Cannot manage user accounts.',
-    requiresBranch: true,
+    hint: 'All-branch portal access (same Active Branch switcher as admin). Optional home branch for HR records only.',
+    requiresBranch: false,
     requiresJobTitle: true,
     canDelete: false,
   },
@@ -101,7 +101,7 @@ const describeRoleChange = (fromRole: string, toRole: string) => {
     detail += ' This user will become the OIC for the selected branch.'
   }
   if (toRole.toUpperCase() === 'MANAGEMENT') {
-    detail += ' They will get admin portal access but cannot manage other accounts.'
+    detail += ' They will get all-branch portal access with the Active Branch switcher (not locked to one branch).'
   }
   return detail
 }

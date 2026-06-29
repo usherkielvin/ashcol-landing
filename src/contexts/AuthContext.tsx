@@ -32,6 +32,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const SESSION_KEY = 'ashcol-user'
 
+const normalizeAuthUser = (u: AuthUser | null): AuthUser | null => {
+  if (!u) return null
+  return { ...u, role: (u.role || '').toLowerCase() }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => {
     try {
@@ -61,18 +66,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const stored = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)
-      return stored ? JSON.parse(stored) : null
+      return stored ? normalizeAuthUser(JSON.parse(stored)) : null
     } catch {
       return null
     }
   })
 
   const setUser = (u: AuthUser | null) => {
-    setUserState(u)
-    if (u) {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(u))
+    const normalized = normalizeAuthUser(u)
+    setUserState(normalized)
+    if (normalized) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(normalized))
       if (localStorage.getItem('ashcol-token')) {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(u))
+        localStorage.setItem(SESSION_KEY, JSON.stringify(normalized))
       }
     } else {
       sessionStorage.removeItem(SESSION_KEY)

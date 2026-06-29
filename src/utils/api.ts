@@ -231,6 +231,12 @@ export function isPortalAdminUser(user?: PortalUserLike | null): boolean {
   return isPortalAdmin(user?.role)
 }
 
+/** Active branch for portal admin / management — sidebar switcher value. */
+export function getActivePortalBranchId(user?: PortalUserLike | null): string | null {
+  if (!isPortalAdmin(user?.role)) return user?.branchId ?? null
+  return localStorage.getItem('ashcol-global-branch-id') || user?.branchId || null
+}
+
 /** May DTR correction window — all assigned employees may edit their branch reports. */
 export function isMayDtrEditWindow(date?: string | null): boolean {
   if (!date) return false

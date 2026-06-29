@@ -773,7 +773,7 @@ export default function DashboardLayout() {
               </h1>
               {branchLabel ? (
                 <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel}>
-                  {`Branch · ${branchLabel}`}
+                  {isPortalAdminUser ? `Active Branch · ${branchLabel}` : `Branch · ${branchLabel}`}
                 </p>
               ) : null}
             </div>
