@@ -60,6 +60,7 @@ interface ServiceRow {
 const COL_FIELD: Record<string, keyof ServiceRow> = {
   'DATE INSTALLED':       'installedDate',
   "CUSTOMER'S NAME":      'customerName',
+  'REF NO.':              'controlNumber',
   'DESTINATION':          'customerAddress',
   'DISTRICT':             'district',
   'CONTACT NO.':          'customerPhone',
@@ -75,7 +76,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 }
 
 const EDITABLE_COLS = [
-  'DATE INSTALLED', "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
+  'DATE INSTALLED', "CUSTOMER'S NAME", 'REF NO.', 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
   'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
   'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
@@ -208,6 +209,8 @@ function getRowBrand(row: ServiceRow): string {
   const firstWord = raw.split(/\s+/)[0];
   return firstWord || 'OTHER';
 }
+
+
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -536,6 +539,7 @@ export default function DailyServiceReport() {
       { label: 'DATE INSTALLED',        display: 'DATE INSTALLED',                                                  weight: 10, expMul: 1.3, sticky: true,  freeze: false, align: 'left' },
       { label: "CUSTOMER'S NAME",       display: "CUSTOMER NAME",                                                   weight: 18, expMul: 1.5, sticky: true,  freeze: false, align: 'left' },
       { label: 'DISTRICT',              display: "DISTRICT",                                                        weight: 12, expMul: 1.4, sticky: true,  freeze: true,  align: 'center' },
+      { label: 'REF NO.',               display: "REF NO.",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'BRAND',                 display: "BRAND",                                                           weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' },
       ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' }] : []),
       { label: 'DLR',                   display: "DEALER",                                                          weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
@@ -793,6 +797,7 @@ export default function DailyServiceReport() {
     switch (colLabel) {
       case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
+      case 'REF NO.':         return row.controlNumber || ''
       case 'DESTINATION':     return row.customerAddress || ''
       case 'DISTRICT':        return row.district || ''
       case 'CONTACT NO.':     return row.customerPhone || ''

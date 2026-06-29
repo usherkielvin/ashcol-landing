@@ -65,9 +65,9 @@ const ROLE_META: Record<AssignableRole, {
   },
   MANAGEMENT: {
     label: 'Management',
-    hint: 'All-branch portal access (same Active Branch switcher as admin). Optional home branch for HR records only.',
+    hint: 'All-branch portal access (same Active Branch switcher as admin).',
     requiresBranch: false,
-    requiresJobTitle: true,
+    requiresJobTitle: false,
     canDelete: false,
   },
 }
@@ -110,12 +110,20 @@ const adaptEditFormForRole = (
   prev: { role: string; jobTitle: string; branchId: string },
   newRole: string,
 ) => {
-  const meta = ROLE_META[newRole.toUpperCase() as AssignableRole]
+  const roleUpper = newRole.toUpperCase()
+  if (roleUpper === 'MANAGEMENT') {
+    return {
+      role: newRole,
+      jobTitle: '',
+      branchId: '',
+    }
+  }
+  const meta = ROLE_META[roleUpper as AssignableRole]
   if (!meta) return { role: newRole }
   return {
     role: newRole,
     jobTitle: meta.requiresJobTitle ? (prev.jobTitle || 'TECHNICIAN') : '',
-    branchId: meta.requiresBranch ? prev.branchId : prev.branchId,
+    branchId: prev.branchId,
   }
 }
 
@@ -516,14 +524,15 @@ export default function Employees() {
     if (!form.name.trim()) return 'Name is required.'
     if (!form.email.trim()) return 'Login email is required.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Enter a valid email address.'
-    const meta = ROLE_META[form.role.toUpperCase() as AssignableRole]
+    const roleUpper = form.role.toUpperCase()
+    const meta = ROLE_META[roleUpper as AssignableRole]
     if (meta?.requiresBranch && !form.branchId.trim()) {
       return `${meta.label} must be assigned to a branch.`
     }
     if (meta?.requiresJobTitle && !form.jobTitle.trim()) {
       return 'Job title is required for this role.'
     }
-    if (options.requireBranchForAdmin && !form.branchId.trim()) {
+    if (options.requireBranchForAdmin && roleUpper !== 'MANAGEMENT' && !form.branchId.trim()) {
       return 'Branch is required.'
     }
     return ''
@@ -1631,12 +1640,6 @@ export default function Employees() {
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'Branch Assignment *' : 'Branch Assignment'} labelColor={textMuted}>
-                      <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
-                        <option value="">— Unassigned —</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </Field>
                     <Field label="System Role" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle}
                         value={editForm.role}
@@ -1647,12 +1650,20 @@ export default function Employees() {
                         {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
                       </select>
                     </Field>
+                    {editForm.role !== 'MANAGEMENT' && (
+                      <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'Branch Assignment *' : 'Branch Assignment'} labelColor={textMuted}>
+                        <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
+                          <option value="">— Unassigned —</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </Field>
+                    )}
                     {ROLE_META[editForm.role as AssignableRole]?.hint && (
                       <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>
                         {ROLE_META[editForm.role as AssignableRole].hint}
                       </p>
                     )}
-                    {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
+                    {editForm.role === 'EMPLOYEE' && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
@@ -1872,14 +1883,6 @@ export default function Employees() {
                 <div className="border-t pt-4" style={{ borderColor: border }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role & Placement</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {isAdmin && (
-                      <Field label="Branch" labelColor={textMuted}>
-                        <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
-                          <option value="">— Select branch —</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
-                      </Field>
-                    )}
                     <Field label="System Role" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle} value={createForm.role}
                         onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
@@ -1888,12 +1891,20 @@ export default function Employees() {
                         {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
                       </select>
                     </Field>
+                    {isAdmin && createForm.role !== 'MANAGEMENT' && (
+                      <Field label="Branch" labelColor={textMuted}>
+                        <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
+                          <option value="">— Select branch —</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </Field>
+                    )}
                     {ROLE_META[createForm.role as AssignableRole]?.hint && (
                       <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>
                         {ROLE_META[createForm.role as AssignableRole].hint}
                       </p>
                     )}
-                    {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
+                    {createForm.role === 'EMPLOYEE' && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
