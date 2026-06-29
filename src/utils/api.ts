@@ -168,6 +168,83 @@ export function isTaguigServiceArchiveRecord(row: TaguigArchiveRowSignals): bool
   return blob.includes('DONE BY')
 }
 
+/** Whether an Archives row belongs under the active branch filter (Taguig Sales/Services + all branches). */
+export function archiveRowMatchesBranch(
+  row: TaguigArchiveRowSignals & { branchName?: string | null },
+  branchFilter?: string | null,
+): boolean {
+  if (!branchFilter || branchFilter === 'ALL_BRANCHES') return false
+  if (!row.branchId && !row.branchName) return false
+
+  if (isTaguigBranchRef(branchFilter)) {
+    if (!isTaguigBranchRef(row.branchId, row.branchName)) return false
+    const wantServices = isTaguigServicesScope(branchFilter)
+    const isService = isTaguigServiceArchiveRecord(row)
+    return wantServices ? isService : !isService
+  }
+
+  if (isTaguigBranchRef(row.branchId, row.branchName)) return false
+  return branchScopesMatch(row.branchId, branchFilter)
+}
+
+/** Resolve Archives page branch filter — never ALL_BRANCHES. */
+export function resolveArchivesBranchFilter(
+  raw: string | null | undefined,
+  branchList: Array<{ id: string; name?: string }>,
+  user?: { role?: string | null; branchId?: string | null } | null,
+): string {
+  const realBranches = branchList.filter((b) => b.id && b.id !== 'ALL_BRANCHES')
+  if (realBranches.length === 0) return ''
+
+  const pick = (candidate?: string | null) => {
+    if (!candidate || candidate === 'ALL_BRANCHES') return ''
+    const direct = realBranches.find(
+      (b) => b.id === candidate || b.id.toUpperCase() === candidate.toUpperCase(),
+    )
+    if (direct) return direct.id
+    return realBranches.find((b) => branchScopesMatch(b.id, candidate))?.id || ''
+  }
+
+  return (
+    pick(raw)
+    || pick(getActivePortalBranchId(user))
+    || pick(user?.branchId)
+    || realBranches[0].id
+  )
+}
+
+/** Taguig Sales vs Services classification for schedule tickets. */
+export function isTaguigServiceTicket(ticket: Record<string, unknown>): boolean {
+  const branchId = String(ticket.branchId || ticket.branch_id || '')
+  if (branchId.toUpperCase() === 'BR-TAGUIG-SERVICES') return true
+
+  let meta: Record<string, unknown> = {}
+  const acRaw = ticket.acDetails || ticket.ac_details
+  if (typeof acRaw === 'string' && acRaw.trim()) {
+    try {
+      const parsed = JSON.parse(acRaw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) meta = parsed
+      else if (Array.isArray(parsed) && parsed[0]) meta = parsed[0] as Record<string, unknown>
+    } catch { /* ignore */ }
+  }
+
+  const installer = String(
+    ticket.installerName || ticket.installer_name || meta.installerName || meta.installer || meta.technicianName || '',
+  )
+
+  return isTaguigServiceArchiveRecord({
+    branchId,
+    serviceType: String(ticket.serviceType || ticket.service_type || ''),
+    statusCode: String(ticket.statusCode || ticket.status_code || meta.statusCode || ''),
+    dealer: String(ticket.sourceVendor || ticket.source_vendor || meta.dealer || meta.dlr || ''),
+    technicianName: installer,
+    remarks: String(ticket.remarks || ticket.remarksUpdate || meta.update || meta.remarksUpdate || ''),
+    note: String(ticket.note || meta.note || ''),
+    inputBy: String(ticket.inputBy || meta.inputBy || ''),
+    serviceColumn: String(ticket.serviceVehicle || ticket.service_vehicle || meta.serviceVehicle || ''),
+  })
+}
+
 /**
  * Match two branch ids including Taguig Sales vs Services split.
  * Use instead of isSameBaseBranch when filtering schedules/tickets/employees.

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, isTaguigBranchRef, isTaguigServiceArchiveRecord, branchScopesMatch, resolveArchiveWriteBranchId } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, archiveRowMatchesBranch, resolveArchiveWriteBranchId, resolveArchivesBranchFilter } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -241,19 +241,34 @@ export default function DailyServiceReport() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
-  const [branchFilter, setBranchFilter] = useState<string>(() => localStorage.getItem('ashcol-global-branch-id') || 'ALL_BRANCHES')
+  const [branchFilter, setBranchFilter] = useState<string>(() => {
+    const stored = localStorage.getItem('ashcol-global-branch-id')
+    return stored && stored !== 'ALL_BRANCHES' ? stored : ''
+  })
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
+  const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const uniqueBrands = useMemo(() => {
     const set = new Set<string>()
-    rows.forEach(r => {
-      set.add(getRowBrand(r))
-    })
+    rows
+      .filter((r) => archiveRowMatchesBranch({
+        branchId: r.branchId,
+        branchName: r.branchName,
+        serviceType: r.serviceType,
+        statusCode: r.statusCode,
+        dealer: r.dealer,
+        technicianName: r.technicianName,
+        remarks: r.remarks,
+        note: r.note,
+        inputBy: r.inputBy,
+        serviceColumn: r.serviceColumn,
+      }, branchFilter))
+      .forEach((r) => set.add(getRowBrand(r)))
     return Array.from(set).sort()
-  }, [rows])
+  }, [rows, branchFilter])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -279,7 +294,8 @@ export default function DailyServiceReport() {
       const payload = {
         ...updatedRow,
         id: isNew ? undefined : updatedRow.id,
-        branchId: resolveArchiveWriteBranchId(updatedRow.branchId) || null
+        branchId: resolveArchiveWriteBranchId(updatedRow.branchId) || null,
+        branchName: branches.find(b => b.id === updatedRow.branchId)?.name ?? updatedRow.branchName,
       }
       const url = isNew
         ? `${API_BASE_URL}/v1/service-reports`
@@ -306,10 +322,11 @@ export default function DailyServiceReport() {
 
   const handleAddRow = () => {
     if (!canEdit) return
-    let realBranchId = resolveScopedBranchId(branchFilter) || null
-    if (realBranchId === 'ALL_BRANCHES') {
-      const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
-      realBranchId = actualBranch ? actualBranch.id : null
+    let realBranchId = resolveScopedBranchId(
+      resolveArchivesBranchFilter(branchFilter, branches, user),
+    ) || null
+    if (!realBranchId) {
+      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
     }
     const tempId = `temp-${Date.now()}`
     const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
@@ -343,8 +360,10 @@ export default function DailyServiceReport() {
       const formData = new FormData()
       formData.append('image', file)
       
-      let targetBranchId = resolveScopedBranchId(branchFilter)
-      if (targetBranchId && targetBranchId !== 'ALL_BRANCHES') {
+      const targetBranchId = resolveScopedBranchId(
+        resolveArchivesBranchFilter(branchFilter, branches, user),
+      )
+      if (targetBranchId) {
         formData.append('branchId', targetBranchId)
       }
 
@@ -364,11 +383,9 @@ export default function DailyServiceReport() {
 
       if (data.rows && Array.isArray(data.rows)) {
         const mapped = data.rows.map((row: any, index: number) => {
-          let realBranchId = resolveScopedBranchId(branchFilter) || null
-          if (realBranchId === 'ALL_BRANCHES') {
-            const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
-            realBranchId = actualBranch ? actualBranch.id : null
-          }
+          let realBranchId = resolveScopedBranchId(
+            resolveArchivesBranchFilter(branchFilter, branches, user),
+          ) || resolveScopedBranchId(branches[0]?.id) || null
           return {
             id: `scan-temp-${index}-${Date.now()}`,
             branchId: realBranchId,
@@ -588,7 +605,8 @@ export default function DailyServiceReport() {
 
       let finalList = newList
       if (isAdmin) {
-        finalList = [{ id: 'ALL_BRANCHES', name: 'ALL BRANCHES' }, ...newList]
+        // Archives is always branch-specific — no combined "All Branches" view.
+        finalList = newList
       } else if (isBranchScoped && user?.branchId) {
         const userBranchLower = user.branchId.toLowerCase()
         const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
@@ -617,47 +635,34 @@ export default function DailyServiceReport() {
 
   useEffect(() => {
     if (branches.length === 0) return
-
-    const isRawBranchId = branchFilter === user?.branchId
-    if (!branchFilter || isRawBranchId) {
-      if (isBranchScoped && user?.branchId) {
-        const userBranchLower = user.branchId.toLowerCase()
-        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-        if (isUserTaguig) {
-          const emailLower = (user?.email || '').toLowerCase()
-          const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
-          const matched = branches.find(b => {
-            const bNameUpper = b.name.toUpperCase()
-            return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
-          })
-          if (matched) {
-            setBranchFilter(matched.id)
-          } else {
-            setBranchFilter(branches[0]?.id || user.branchId)
-          }
-        } else {
-          const userBranchIdUpper = user.branchId.toUpperCase()
-          const exactMatch = branches.find(b => b.id.toUpperCase() === userBranchIdUpper)
-          setBranchFilter(exactMatch ? exactMatch.id : (branches[0]?.id || user.branchId))
-        }
-      } else if (isAllBranchUser && !branchFilter) {
-        setBranchFilter(branches[0].id)
-      }
+    const resolved = resolveArchivesBranchFilter(branchFilter, branches, user)
+    if (resolved && resolved !== branchFilter) {
+      setBranchFilter(resolved)
     }
-  }, [isAllBranchUser, isBranchScoped, user?.branchId, branchFilter, branches])
+  }, [branches, user, branchFilter])
 
   useEffect(() => {
     if (!isAdmin) return
     const syncFromGlobal = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
-      setBranchFilter(gId || 'ALL_BRANCHES')
+      const resolved = resolveArchivesBranchFilter(gId, branches, user)
+      if (resolved) setBranchFilter(resolved)
     }
     syncFromGlobal()
     window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
     return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [isAdmin])
+  }, [isAdmin, branches, user])
 
   const fetchRows = useCallback(async () => {
+    const apiBranchId = resolveScopedBranchId(
+      resolveArchivesBranchFilter(branchFilter, branches, user),
+    )
+    if (!apiBranchId) {
+      setRows([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -667,34 +672,39 @@ export default function DailyServiceReport() {
       } else {
         params.set('date', todayLocal())
       }
-
-      // Resolve scoped branch id (Taguig Sales vs Services, strip virtual suffixes elsewhere).
-      const apiBranchId = branchFilter && branchFilter !== 'ALL_BRANCHES'
-        ? resolveScopedBranchId(branchFilter)
-        : ''
-      if (apiBranchId) {
-        params.set('branchId', apiBranchId)
-      }
+      params.set('branchId', apiBranchId)
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
         const data = await res.json()
-        setRows(data)
+        const scoped = (data as ServiceRow[]).filter((r) => archiveRowMatchesBranch({
+          branchId: r.branchId,
+          branchName: r.branchName,
+          serviceType: r.serviceType,
+          statusCode: r.statusCode,
+          dealer: r.dealer,
+          technicianName: r.technicianName,
+          remarks: r.remarks,
+          note: r.note,
+          inputBy: r.inputBy,
+          serviceColumn: r.serviceColumn,
+        }, resolveArchivesBranchFilter(branchFilter, branches, user)))
+        setRows(scoped)
       }
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [monthFilter, branchFilter])
+  }, [monthFilter, branchFilter, branches, user])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
 
   const fetchInstallerSuggestions = useCallback(async (bId: string) => {
-    if (!bId || bId === 'ALL_BRANCHES') {
+    if (!bId) {
       setInstallerSuggestions([])
       return
     }
@@ -738,6 +748,21 @@ export default function DailyServiceReport() {
       }
       
       setInstallerSuggestions(Array.from(namesSet).sort())
+
+      const negotiatorSet = new Set<string>()
+      if (resEmp && resEmp.ok) {
+        const payload = await resEmp.json()
+        const list = payload?.data || payload || []
+        list.forEach((emp: any) => {
+          if (emp.name?.trim() && emp.isActive !== false) {
+            const empBranch = resolveScopedBranchId(emp.branchId || '')
+            if (!cleanBranchId || empBranch.toUpperCase() === resolveScopedBranchId(cleanBranchId).toUpperCase()) {
+              negotiatorSet.add(emp.name.trim())
+            }
+          }
+        })
+      }
+      setNegotiatorSuggestions(Array.from(negotiatorSet).sort())
     } catch (e) {
       console.error('Failed to fetch installer suggestions', e)
     }
@@ -1084,12 +1109,6 @@ export default function DailyServiceReport() {
               <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
               <span className="font-semibold truncate">{val}</span>
             </div>
-            {branchFilter === 'ALL_BRANCHES' && r.branchName && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-bold w-fit uppercase mt-0.5"
-                    style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
-                {r.branchName}
-              </span>
-            )}
           </div>
           <button
             type="button"
@@ -1365,32 +1384,19 @@ export default function DailyServiceReport() {
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    let filtered = rows
-
-    const filterLower = (branchFilter || '').toLowerCase()
-    if (branchFilter && branchFilter !== 'ALL_BRANCHES') {
-      if (isTaguigBranchRef(branchFilter)) {
-        const wantServices = filterLower.endsWith('-services')
-          || filterLower.endsWith('-service')
-          || filterLower === 'br-taguig-services'
-        filtered = rows.filter((r) => {
-          const isService = isTaguigServiceArchiveRecord({
-            branchId: r.branchId,
-            serviceType: r.serviceType,
-            statusCode: r.statusCode,
-            dealer: r.dealer,
-            technicianName: r.technicianName,
-            remarks: r.remarks,
-            note: r.note,
-            inputBy: r.inputBy,
-            serviceColumn: r.serviceColumn,
-          })
-          return wantServices ? isService : !isService
-        })
-      } else {
-        filtered = rows.filter((r) => branchScopesMatch(r.branchId, branchFilter))
-      }
-    }
+    const activeBranch = resolveArchivesBranchFilter(branchFilter, branches, user)
+    let filtered = rows.filter((r) => archiveRowMatchesBranch({
+      branchId: r.branchId,
+      branchName: r.branchName,
+      serviceType: r.serviceType,
+      statusCode: r.statusCode,
+      dealer: r.dealer,
+      technicianName: r.technicianName,
+      remarks: r.remarks,
+      note: r.note,
+      inputBy: r.inputBy,
+      serviceColumn: r.serviceColumn,
+    }, activeBranch))
 
     if (brandFilter) {
       filtered = filtered.filter(r => getRowBrand(r) === brandFilter)
@@ -1398,7 +1404,7 @@ export default function DailyServiceReport() {
 
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery, branchFilter, brandFilter])
+  }, [rows, searchQuery, branchFilter, brandFilter, branches, user])
 
   // Build month options from current items (+ last 12 months always available)
   const monthOptions = useMemo(() => {
@@ -2176,11 +2182,9 @@ export default function DailyServiceReport() {
                         disabled={savingScanned}
                         onClick={() => {
                           const tempId = `scan-temp-${Date.now()}`
-                          let realBranchId = resolveScopedBranchId(branchFilter) || null
-                          if (realBranchId === 'ALL_BRANCHES') {
-                            const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
-                            realBranchId = actualBranch ? actualBranch.id : null
-                          }
+                          let realBranchId = resolveScopedBranchId(
+                            resolveArchivesBranchFilter(branchFilter, branches, user),
+                          ) || resolveScopedBranchId(branches[0]?.id) || null
                           const newRow = {
                             id: tempId,
                             branchId: realBranchId,
@@ -2269,6 +2273,67 @@ export default function DailyServiceReport() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              {/* Branch & Schedule Link */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Branch & Schedule
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Branch" required>
+                    {canEdit && isAdmin ? (
+                      <select
+                        value={detailForm.branchId || ''}
+                        onChange={e => {
+                          const id = e.target.value
+                          const name = branches.find(b => b.id === id)?.name || null
+                          setDetailForm({ ...detailForm, branchId: id || null, branchName: name })
+                        }}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                      >
+                        <option value="">— Select branch —</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                        {detailForm.branchName || branches.find(b => b.id === detailForm.branchId)?.name || detailForm.branchId || '—'}
+                      </span>
+                    )}
+                  </Field>
+                  <Field label="Schedule Ticket ID">
+                    <span className="text-xs font-mono font-semibold break-all" style={{ color: textPrimary }}>
+                      {detailForm.ticketId || '—'}
+                    </span>
+                  </Field>
+                  <Field label="Service Type">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.serviceType || ''}
+                        onChange={e => setDetailForm({ ...detailForm, serviceType: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.serviceType || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Status (S / I)">
+                    {canEdit ? (
+                      <select value={detailForm.statusCode || ''}
+                        onChange={e => setDetailForm({ ...detailForm, statusCode: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        <option value="">—</option>
+                        <option value="I">I — Installation</option>
+                        <option value="S">S — Service</option>
+                      </select>
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.statusCode || '—'}</span>
+                    )}
+                  </Field>
+                </div>
+              </div>
+
               {/* Customer Info Section */}
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
@@ -2424,7 +2489,8 @@ export default function DailyServiceReport() {
                   </Field>
                   <Field label="Negotiator">
                     {canEdit ? (
-                      <input type="text" value={detailForm.negotiator || ''} 
+                      <input type="text" value={detailForm.negotiator || ''}
+                        list="negotiator-options"
                         onChange={e => setDetailForm({ ...detailForm, negotiator: e.target.value })}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -2481,6 +2547,26 @@ export default function DailyServiceReport() {
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                     ) : (
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.relayStatus || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Schedule Time">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.scheduleTime || ''}
+                        onChange={e => setDetailForm({ ...detailForm, scheduleTime: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduleTime || '—'}</span>
+                    )}
+                  </Field>
+                  <Field label="Schedule Status">
+                    {canEdit ? (
+                      <input type="text" value={detailForm.scheduleStatus || ''}
+                        onChange={e => setDetailForm({ ...detailForm, scheduleStatus: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    ) : (
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduleStatus || '—'}</span>
                     )}
                   </Field>
                   <Field label="Scheduled Date">
@@ -2641,6 +2727,11 @@ export default function DailyServiceReport() {
 
       <datalist id="installer-options">
         {installerSuggestions.map(name => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      <datalist id="negotiator-options">
+        {negotiatorSuggestions.map(name => (
           <option key={name} value={name} />
         ))}
       </datalist>

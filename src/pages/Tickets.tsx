@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -1063,6 +1063,7 @@ function buildArchiveServiceReportPayload(
   const negotiator =
     (fields.negotiatorName || '').trim() ||
     String(meta.negotiatorName || meta.negotiator || '').trim() ||
+    String((merged as Ticket & { negotiatorName?: string }).negotiatorName || '').trim() ||
     ''
   const controlNo =
     fields.controlNumber ??
@@ -2622,8 +2623,14 @@ export default function Tickets() {
     if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
       list = list.filter(t => {
         const b = t.branchId || t.branch_id || ''
-        if (!b) return true
-        return branchScopesMatch(b, effectiveBranch, user?.email)
+        if (!b) return false
+        if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
+        if (isTaguigBranchRef(effectiveBranch)) {
+          const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
+          const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
+          return wantServices ? isService : !isService
+        }
+        return true
       })
     }
     if (dateFilter) {
