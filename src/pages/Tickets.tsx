@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -1758,6 +1758,11 @@ export default function Tickets() {
       const titleVal = `${categoryDefaultServiceType(category)} service`
       const descVal = addForm.commitTerms?.trim() || 'No additional details provided.'
       
+      const lockedBranch = resolveTicketArchiveBranchId(
+        { installerName: addForm.installerName?.trim() },
+        installerLineupIndex,
+        driverOnlyNames,
+      )
       const payload = {
         customerName: (addForm.customerName || '').trim(),
         title: titleVal,
@@ -1780,15 +1785,7 @@ export default function Tickets() {
         installationCharges: addForm.installationCharges != null && !Number.isNaN(Number(addForm.installationCharges))
           ? Number(addForm.installationCharges)
           : undefined,
-      }
-
-      const lockedBranch = resolveTicketArchiveBranchId(
-        { installerName: addForm.installerName?.trim() },
-        installerLineupIndex,
-        driverOnlyNames,
-      )
-      if (lockedBranch) {
-        payload.branchId = lockedBranch
+        ...(lockedBranch ? { branchId: lockedBranch } : {}),
       }
 
       const res = await fetch(`${API_BASE_URL}/tickets`, {
@@ -2344,14 +2341,14 @@ export default function Tickets() {
 
     if (!isScheduleImport) for (const item of importResults.needsConfirmation) {
       const { ticket, value, amount, modeOfPayment, controlNumber } = item
+      const branchId = resolveTicketArchiveBranch(ticket, {
+        installationCharges: parseFloat(amount) || 0,
+        modeOfPayment,
+      })
 
       const archivePayload = buildArchiveServiceReportPayload(
         ticket,
-        resolveTicketArchiveBranch(ticket, {
-          installerName: updatedFields.installerName,
-          installationCharges: updatedFields.installationCharges,
-          modeOfPayment: updatedFields.modeOfPayment,
-        }),
+        branchId,
         {
           installationCharges: parseFloat(amount) || 0,
           modeOfPayment: modeOfPayment,
