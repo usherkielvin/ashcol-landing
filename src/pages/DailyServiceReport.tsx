@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, isTaguigBranchRef, isTaguigServiceArchiveRecord } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, isTaguigBranchRef, isTaguigServiceArchiveRecord, branchScopesMatch, resolveArchiveWriteBranchId } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +16,7 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 interface ServiceRow {
   id: string
   branchId: string | null
+  ticketId?: string | null
   branchName: string | null
   reportDate: string | null
   customerName: string | null
@@ -278,7 +279,7 @@ export default function DailyServiceReport() {
       const payload = {
         ...updatedRow,
         id: isNew ? undefined : updatedRow.id,
-        branchId: updatedRow.branchId ? updatedRow.branchId.replace(/-sales$|-services$/, '') : null
+        branchId: resolveArchiveWriteBranchId(updatedRow.branchId) || null
       }
       const url = isNew
         ? `${API_BASE_URL}/v1/service-reports`
@@ -474,7 +475,7 @@ export default function DailyServiceReport() {
       const payload = scannedRows.map(r => ({
         ...r,
         id: undefined,
-        branchId: r.branchId ? r.branchId.replace(/-sales$|-services$/, '') : null
+        branchId: resolveArchiveWriteBranchId(r.branchId) || null
       }))
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports/bulk`, {
@@ -667,16 +668,11 @@ export default function DailyServiceReport() {
         params.set('date', todayLocal())
       }
 
-      // For TAGUIG virtual branches, preserve the -sales/-services suffix so the backend
-      // can correctly distinguish TAGUIG-SALES vs TAGUIG-SERVICES archives.
-      // For all other branches, strip the suffix as the real branch ID has none.
-      let apiBranchId = branchFilter
-      const upperFilter = (branchFilter || '').toUpperCase()
-      const isTaguigVirtual = upperFilter.includes('TAGUIG') && /-(SALES|SERVICES)$/i.test(upperFilter)
-      if (!isTaguigVirtual && branchFilter && /-(sales|services)$/i.test(branchFilter)) {
-        apiBranchId = branchFilter.replace(/-sales$|-services$/i, '')
-      }
-      if (apiBranchId && apiBranchId !== 'ALL_BRANCHES') {
+      // Resolve scoped branch id (Taguig Sales vs Services, strip virtual suffixes elsewhere).
+      const apiBranchId = branchFilter && branchFilter !== 'ALL_BRANCHES'
+        ? resolveScopedBranchId(branchFilter)
+        : ''
+      if (apiBranchId) {
         params.set('branchId', apiBranchId)
       }
 
@@ -882,7 +878,7 @@ export default function DailyServiceReport() {
       const payload = {
         ...mergedFields,
         id: isTemp ? undefined : rowId,
-        branchId: mergedFields.branchId ? mergedFields.branchId.replace(/-sales$|-services$/, '') : null
+        branchId: resolveArchiveWriteBranchId(mergedFields.branchId) || null
       }
       const url = isTemp
         ? `${API_BASE_URL}/v1/service-reports`
@@ -1274,7 +1270,7 @@ export default function DailyServiceReport() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams({ date: targetDate })
       if (!isBranchScoped && branchId) {
-        params.set('branchId', branchId.replace(/-sales$|-services$/, ''))
+        params.set('branchId', resolveScopedBranchId(branchId))
       }
       const url = `${API_BASE_URL}/v1/service-reports/import?${params.toString()}`
       const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
@@ -1372,24 +1368,28 @@ export default function DailyServiceReport() {
     let filtered = rows
 
     const filterLower = (branchFilter || '').toLowerCase()
-    if (isTaguigBranchRef(branchFilter)) {
-      const wantServices = filterLower.endsWith('-services')
-        || filterLower.endsWith('-service')
-        || filterLower === 'br-taguig-services'
-      filtered = rows.filter((r) => {
-        const isService = isTaguigServiceArchiveRecord({
-          branchId: r.branchId,
-          serviceType: r.serviceType,
-          statusCode: r.statusCode,
-          dealer: r.dealer,
-          technicianName: r.technicianName,
-          remarks: r.remarks,
-          note: r.note,
-          inputBy: r.inputBy,
-          serviceColumn: r.serviceColumn,
+    if (branchFilter && branchFilter !== 'ALL_BRANCHES') {
+      if (isTaguigBranchRef(branchFilter)) {
+        const wantServices = filterLower.endsWith('-services')
+          || filterLower.endsWith('-service')
+          || filterLower === 'br-taguig-services'
+        filtered = rows.filter((r) => {
+          const isService = isTaguigServiceArchiveRecord({
+            branchId: r.branchId,
+            serviceType: r.serviceType,
+            statusCode: r.statusCode,
+            dealer: r.dealer,
+            technicianName: r.technicianName,
+            remarks: r.remarks,
+            note: r.note,
+            inputBy: r.inputBy,
+            serviceColumn: r.serviceColumn,
+          })
+          return wantServices ? isService : !isService
         })
-        return wantServices ? isService : !isService
-      })
+      } else {
+        filtered = rows.filter((r) => branchScopesMatch(r.branchId, branchFilter))
+      }
     }
 
     if (brandFilter) {

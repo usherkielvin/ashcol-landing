@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -1081,6 +1081,7 @@ function buildArchiveServiceReportPayload(
 
   return {
     branchId,
+    ticketId: ticket.id,
     reportDate: scheduleKey,
     scheduledDate: scheduleKey,
     installedDate: installedKey,
@@ -2068,7 +2069,7 @@ export default function Tickets() {
 
       if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
         const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
-        const branchId = resolveImportBranchId(originalTicket.branchId || originalTicket.branch_id)
+        const branchId = resolveTicketArchiveBranch(originalTicket)
         const archivePayload = buildArchiveServiceReportPayload(
           originalTicket,
           branchId,
@@ -2123,12 +2124,29 @@ export default function Tickets() {
   }
 
   const resolveImportBranchId = useCallback((ticketBranchId?: string) => {
+    if (ticketBranchId) {
+      return resolveTicketArchiveBranchId(
+        { branchId: ticketBranchId },
+        globalBranchId,
+        user?.branchId,
+        localStorage.getItem('ashcol-global-branch-id'),
+      )
+    }
     const branchEmployee = isEmployee && !isAdmin && !isManager
     const branchSource = branchEmployee
       ? (user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
       : (globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
-    return resolveArchiveBranchId(ticketBranchId, branchSource, user?.branchId)
+    return resolveArchiveBranchId(branchSource, user?.branchId)
   }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
+
+  const resolveTicketArchiveBranch = useCallback((ticket: Ticket) =>
+    resolveTicketArchiveBranchId(
+      ticket,
+      globalBranchId,
+      user?.branchId,
+      localStorage.getItem('ashcol-global-branch-id'),
+    ),
+  [globalBranchId, user?.branchId])
 
   const handleApplyImport = async () => {
     if (!importResults) return
@@ -2178,7 +2196,7 @@ export default function Tickets() {
       : normalUpdates
 
     const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
-      const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+      const branchId = resolveTicketArchiveBranch(ticket)
       const merged = { ...ticket, ...updatedFields }
       const payload = buildArchiveServiceReportPayload(ticket, branchId, {
         customerName: updatedFields.customerName,
@@ -2280,7 +2298,7 @@ export default function Tickets() {
     if (!isScheduleImport) for (const item of completedUpdates) {
       const { ticket, updatedFields } = item
       const merged = { ...ticket, ...updatedFields }
-      const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+      const branchId = resolveTicketArchiveBranch(ticket)
       const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
         location: updatedFields.location,
         district: updatedFields.district,
@@ -2324,7 +2342,7 @@ export default function Tickets() {
 
       const archivePayload = buildArchiveServiceReportPayload(
         ticket,
-        resolveImportBranchId(ticket.branchId || ticket.branch_id),
+        resolveTicketArchiveBranch(ticket),
         {
           installationCharges: parseFloat(amount) || 0,
           modeOfPayment: modeOfPayment,
@@ -2782,7 +2800,7 @@ export default function Tickets() {
         && shouldArchiveCompletedSchedule(ticket, finalBody)
       ) {
         const schedKey = getPreferredDateKey(ticket) || todayDateKey()
-        const branchId = resolveImportBranchId(ticket.branchId || ticket.branch_id)
+        const branchId = resolveTicketArchiveBranch(ticket)
         const archivePayload = buildArchiveServiceReportPayload(
           ticket,
           branchId,
@@ -4120,7 +4138,7 @@ export default function Tickets() {
           
           try {
             const schedKey = getPreferredDateKey(t) || todayDateKey()
-            const branchId = resolveImportBranchId(t.branchId || t.branch_id)
+            const branchId = resolveTicketArchiveBranch(t)
             const archivePayload = buildArchiveServiceReportPayload(
               t,
               branchId,

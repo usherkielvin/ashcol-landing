@@ -207,6 +207,21 @@ export function resolveArchiveBranchId(
   return ''
 }
 
+/** Archives branch for a schedule ticket — always prefer the ticket's own branch. */
+export function resolveTicketArchiveBranchId(
+  ticket: { branchId?: string | null; branch_id?: string | null },
+  ...fallbacks: Array<string | null | undefined>
+): string {
+  const fromTicket = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+  if (fromTicket && fromTicket !== 'ALL_BRANCHES') return fromTicket
+  return resolveArchiveBranchId(...fallbacks)
+}
+
+/** Branch id for API writes (preserves Taguig Sales vs Services). */
+export function resolveArchiveWriteBranchId(branchId?: string | null): string {
+  return resolveScopedBranchId(branchId)
+}
+
 export function resolveImageUrl(path: string | null | undefined): string {
   if (!path) return ''
   if (path.startsWith('http') || path.startsWith('data:')) return path
