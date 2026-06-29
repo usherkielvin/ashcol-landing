@@ -118,6 +118,40 @@ export function branchEntryMatchesGlobal(
   }])
 }
 
+/** True when branch scope is Taguig Services (not Sales). */
+export function isTaguigServicesScope(branchId?: string | null, email?: string | null): boolean {
+  if (!isTaguigBranchRef(branchId)) return false
+  return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
+}
+
+/**
+ * Match two branch ids including Taguig Sales vs Services split.
+ * Use instead of isSameBaseBranch when filtering schedules/tickets/employees.
+ */
+export function branchScopesMatch(
+  a?: string | null,
+  b?: string | null,
+  bEmail?: string | null,
+): boolean {
+  if (!a || !b) return false
+  if (b === 'ALL_BRANCHES') return true
+
+  const aScope = parseGlobalBranchScope(a)
+  const bScope = parseGlobalBranchScope(b, bEmail)
+  const aTaguig = isTaguigBranchRef(a)
+  const bTaguig = isTaguigBranchRef(b)
+
+  if (aTaguig && bTaguig) {
+    return aScope.auditLine === bScope.auditLine && isSameBaseBranch(a, b)
+  }
+
+  if (aTaguig || bTaguig) {
+    return isSameBaseBranch(a, b) && aScope.auditLine === bScope.auditLine
+  }
+
+  return isSameBaseBranch(a, b)
+}
+
 /** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
 export function resolveArchiveBranchId(
   ...candidates: Array<string | null | undefined>

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, isSameBaseBranch } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -555,12 +555,6 @@ function normalizeCustomerKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-function branchesMatch(a?: string, b?: string): boolean {
-  if (!a || !b) return false
-  const clean = (s: string) => s.toUpperCase().replace(/-(SALES|SERVICES|SERVICE)$/g, '').trim()
-  return clean(a) === clean(b)
-}
-
 function parseImportMoney(raw?: string | number | null): number | undefined {
   if (raw == null) return undefined
   if (typeof raw === 'number' && !Number.isNaN(raw)) return raw
@@ -735,14 +729,11 @@ function fmtPhone(raw: string): string {
 
 function getBranchDisplayName(id: string | null): string {
   if (!id || id === 'ALL_BRANCHES') return 'All branches'
+  if (isTaguigBranchRef(id)) {
+    return parseGlobalBranchScope(id).branchName
+  }
   const upper = id.toUpperCase()
-  if (upper === 'BR-TAGUIG-SALES-SALES' || upper === 'BR-TAGUIG-SALES') {
-    return 'TAGUIG - SALES'
-  }
-  if (upper === 'BR-TAGUIG-SALES-SERVICES' || upper === 'BR-TAGUIG-SERVICES' || upper === 'BR-TAGUIG-SERVICE') {
-    return 'TAGUIG - SERVICES'
-  }
-  return id.replace(/^BR-/i, '').replace(/-(sales|services)$/i, '').replace(/-/g, ' ').toUpperCase()
+  return upper.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/-/g, ' ').trim()
 }
 
 function todayDateKey() {
@@ -1134,9 +1125,9 @@ export default function Tickets() {
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  const activeBranch = (globalBranchId || user?.branchId || '').toUpperCase()
-  const isTaguigServices = activeBranch.includes('TAGUIG') && (activeBranch.includes('SERVICES') || activeBranch.includes('SERVICE'))
-  const isTaguig = activeBranch.includes('TAGUIG')
+  const activeBranchId = globalBranchId || user?.branchId || ''
+  const isTaguig = isTaguigBranchRef(activeBranchId)
+  const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
 
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -2455,7 +2446,7 @@ export default function Tickets() {
   useEffect(() => {
     if (canEdit) {
       const headers = { Authorization: `Bearer ${token()}` }
-      const branchSource = resolveScopedBranchId(globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || '')
+      const branchSource = globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || ''
       fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
         .then(res => res.json())
         .then(data => {
@@ -2465,9 +2456,10 @@ export default function Tickets() {
             id: u.id,
             name: u.name,
             branchId: u.branchId || u.branch_id,
+            email: u.email,
           }))
           const filtered = branchSource
-            ? mapped.filter((u: { branchId?: string }) => branchesMatch(u.branchId, branchSource))
+            ? mapped.filter((u: { branchId?: string; email?: string }) => branchScopesMatch(u.branchId, branchSource, u.email))
             : mapped
           setBranchEmployees(filtered.length > 0 ? filtered : mapped)
         })
@@ -2507,7 +2499,7 @@ export default function Tickets() {
       list = list.filter(t => {
         const b = t.branchId || t.branch_id || ''
         if (!b) return true
-        return isSameBaseBranch(b, effectiveBranch)
+        return branchScopesMatch(b, effectiveBranch, user?.email)
       })
     }
     if (dateFilter) {
