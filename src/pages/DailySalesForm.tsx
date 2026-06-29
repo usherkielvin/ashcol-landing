@@ -14,6 +14,7 @@ import {
   findBranchListEntry,
   branchEntryMatchesGlobal,
   parseGlobalBranchScope,
+  isPortalAdmin,
   type BranchListEntry,
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -328,8 +329,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     || jobTitleLower.includes('coor')
   )
   const isManager = role === 'manager' || role === 'oic' || isSalesCoordinator
-  const canSubmit = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee' || role === 'oic'
-  const isAdmin = role === 'admin'
+  const canSubmit = role === 'manager' || role === 'staff' || isPortalAdmin(role) || role === 'employee' || role === 'oic'
+  const isAdmin = isPortalAdmin(role)
 
 
   const today = new Date().toISOString().split('T')[0]

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, isPortalAdmin } from '../utils/api'
 import {
   FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
   Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2
@@ -475,7 +475,7 @@ export default function Hris() {
   // ── Cash Advances Computations (Excel Summary) ────────────────────
   const activeBranchFilter = useMemo(() => {
     const role = (user?.role || '').toLowerCase()
-    if (role === 'admin') {
+    if (isPortalAdmin(role)) {
       return globalBranchId
     } else {
       return user?.branchId || null
@@ -661,7 +661,7 @@ export default function Hris() {
               <button
                 onClick={() => {
                   const role = (user?.role || '').toLowerCase()
-                  if (role === 'admin') {
+                  if (isPortalAdmin(role)) {
                     setEmployeeNameInput('')
                     setSelectedEmployeeId('')
                   } else {

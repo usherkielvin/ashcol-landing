@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, formatBranchName } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 interface CollectionItem {
@@ -248,7 +248,7 @@ export default function ForCollections() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING')
   const [branchFilter, setBranchFilter] = useState(() => {
     const role = (user?.role || '').toLowerCase()
-    if (role === 'admin') {
+    if (isPortalAdmin(role)) {
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
       if (activeBranch && activeBranch !== 'ALL_BRANCHES') {
         return activeBranch.replace(/-(sales|services|service)$/i, '')
@@ -270,7 +270,7 @@ export default function ForCollections() {
   // Sync branchFilter for Admin from active branch
   useEffect(() => {
     const role = (user?.role || '').toLowerCase()
-    if (role !== 'admin') return
+    if (!isPortalAdmin(role)) return
 
     const sync = () => {
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
@@ -318,7 +318,7 @@ export default function ForCollections() {
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
 
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
+  const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
   const canResolve = isAdmin || isManager || role === 'staff' || role === 'employee'
 

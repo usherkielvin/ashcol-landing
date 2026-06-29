@@ -11,7 +11,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole } from '../utils/api'
+import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
 import DailySalesForm from './DailySalesForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -276,8 +276,8 @@ export default function DailyAuditReport() {
     || jobTitleLower.includes('coor')
   )
   const isManager = role === 'manager' || isSalesCoordinator || role === 'oic'
-  const isAdmin = role === 'admin'
-  const canSubmitForm = role === 'manager' || role === 'staff' || role === 'admin' || role === 'employee' || role === 'oic'
+  const isAdmin = isPortalAdmin(role)
+  const canSubmitForm = role === 'manager' || role === 'staff' || isPortalAdmin(role) || role === 'employee' || role === 'oic'
 
   const showEditButton = useMemo(() => {
     if (!selectedRow) return false
@@ -290,11 +290,12 @@ export default function DailyAuditReport() {
       const isTaguigRow = resolvedRow.toUpperCase().includes('TAGUIG')
 
       if (isTaguigGlobal && isTaguigRow) {
-        if (globalBranchId.endsWith('-sales') || globalBranchId.endsWith('-sales-sales')) {
+        const lowerGlobal = globalBranchId.toLowerCase()
+        if (lowerGlobal.endsWith('-sales') || lowerGlobal.endsWith('-sales-sales') || lowerGlobal === 'br-taguig-sales') {
           const line = selectedRow.auditLine || ''
           return line === '' || line === 'TAGUIG_SALES'
         }
-        if (globalBranchId.endsWith('-services') || globalBranchId.endsWith('-services-services')) {
+        if (lowerGlobal.endsWith('-services') || lowerGlobal.endsWith('-services-services') || lowerGlobal === 'br-taguig-services') {
           return selectedRow.auditLine === 'TAGUIG_SERVICE'
         }
       }

@@ -13,6 +13,7 @@ import FleetMap from '../components/FleetMap'
 import GlobalSearch from '../components/GlobalSearch'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
 import { inferCategoryFromTicket, isFieldCategory } from '../constants/ticketCategories'
+import { isPortalAdmin } from '../utils/api'
 
 import { 
   FiSearch, 
@@ -159,7 +160,7 @@ export default function Dashboard() {
   const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
   const isEmployee = role === 'employee' || role === 'oic'
-  const isAdminOrManager = role === 'admin' || role === 'manager'
+  const isAdminOrManager = isPortalAdmin(role) || role === 'manager'
 
   const [statsData, setStatsData] = useState<Record<string, number> | null>(null)
   const [tickets, setTickets] = useState<Ticket[]>([])

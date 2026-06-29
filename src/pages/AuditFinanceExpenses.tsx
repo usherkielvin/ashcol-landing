@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch } from '../utils/api'
+import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
@@ -67,7 +67,7 @@ export default function AuditFinanceExpenses() {
   const currentUserLabel = user?.jobTitle
     ? `${user?.name || user?.email} - ${user.jobTitle}`
     : `${user?.name || user?.email || 'STAFF'} - ${formatRole(user?.role || 'USER')}`
-  const isAdmin = role === 'admin'
+  const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
   const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'

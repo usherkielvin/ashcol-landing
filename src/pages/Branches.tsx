@@ -3,7 +3,7 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
 
 interface AuditRow {
   id?: string | null
@@ -222,7 +222,7 @@ export default function Branches() {
   const [branchPerfItems, setBranchPerfItems] = useState<{ items: any[]; receivedBy?: string } | null>(null)
   const [branchPerfItemsLoading, setBranchPerfItemsLoading] = useState(false)
 
-  const isRoleAdmin = user?.role?.toLowerCase() === 'admin'
+  const isRoleAdmin = isPortalAdmin(user?.role)
 
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')

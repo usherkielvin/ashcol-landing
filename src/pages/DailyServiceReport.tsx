@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
   Scan, Loader2, ClipboardPaste, Save,
-  Check, ChevronDown
+  Check, ChevronDown, Tag
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -192,6 +193,21 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
   )
 }
 
+const BRANDS_LIST = [
+  'CARRIER', 'MIDEA', 'SAMSUNG', 'PANASONIC', 'KOPPEL', 'LG',
+  'DAIKIN', 'AUX', 'GREE', 'TCL', 'SHARP', 'KOLIN', 'FUJITSU', 'YORK', 'MITSUBISHI'
+] as const
+
+function getRowBrand(row: ServiceRow): string {
+  const raw = (row.unitBrandModel || '').toUpperCase().trim();
+  if (!raw) return 'OTHER';
+  for (const b of BRANDS_LIST) {
+    if (raw.includes(b)) return b;
+  }
+  const firstWord = raw.split(/\s+/)[0];
+  return firstWord || 'OTHER';
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function DailyServiceReport() {
@@ -207,7 +223,7 @@ export default function DailyServiceReport() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
 
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
+  const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
   const isAllBranchUser = isAdmin || isManager
   const isBranchScoped = role === 'staff' || role === 'employee' || role === 'oic'
@@ -225,9 +241,18 @@ export default function DailyServiceReport() {
   })
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
   const [branchFilter, setBranchFilter] = useState<string>(() => localStorage.getItem('ashcol-global-branch-id') || 'ALL_BRANCHES')
+  const [brandFilter, setBrandFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
+
+  const uniqueBrands = useMemo(() => {
+    const set = new Set<string>()
+    rows.forEach(r => {
+      set.add(getRowBrand(r))
+    })
+    return Array.from(set).sort()
+  }, [rows])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -280,7 +305,7 @@ export default function DailyServiceReport() {
 
   const handleAddRow = () => {
     if (!canEdit) return
-    let realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+    let realBranchId = resolveScopedBranchId(branchFilter) || null
     if (realBranchId === 'ALL_BRANCHES') {
       const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
       realBranchId = actualBranch ? actualBranch.id : null
@@ -317,10 +342,7 @@ export default function DailyServiceReport() {
       const formData = new FormData()
       formData.append('image', file)
       
-      let targetBranchId = branchFilter
-      if (branchFilter && /-(sales|services)$/i.test(branchFilter)) {
-        targetBranchId = branchFilter.replace(/-sales$|-services$/i, '')
-      }
+      let targetBranchId = resolveScopedBranchId(branchFilter)
       if (targetBranchId && targetBranchId !== 'ALL_BRANCHES') {
         formData.append('branchId', targetBranchId)
       }
@@ -341,7 +363,7 @@ export default function DailyServiceReport() {
 
       if (data.rows && Array.isArray(data.rows)) {
         const mapped = data.rows.map((row: any, index: number) => {
-          let realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+          let realBranchId = resolveScopedBranchId(branchFilter) || null
           if (realBranchId === 'ALL_BRANCHES') {
             const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
             realBranchId = actualBranch ? actualBranch.id : null
@@ -488,50 +510,31 @@ export default function DailyServiceReport() {
   }
 
   // Column configuration for expand / collapse functionality
-  const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
-
-  const toggleColumn = useCallback((colLabel: string) => {
-    setExpandedCols(prev => ({
-      ...prev,
-      [colLabel]: !prev[colLabel]
-    }))
-  }, [])
+  const [expandedCols] = useState<Record<string, boolean>>({})
 
   const columns = useMemo(() => {
     const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
-      { label: 'DATE INSTALLED', display: 'DATE INSTALLED', defaultW: 110, expW: 140, sticky: true, freeze: false, right: false },
-      { label: "CUSTOMER'S NAME", display: "CUSTOMER NAME", defaultW: 180, expW: 300, sticky: true, freeze: false, right: false },
-      { label: 'DESTINATION', display: "DESTINATION ADDRESS", defaultW: 250, expW: 450, sticky: true, freeze: true, right: false },
-      { label: 'DISTRICT', display: "DISTRICT", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'CONTACT NO.', display: "CONTACT NO.", defaultW: 130, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'BRAND', display: "AC UNIT / BRAND", defaultW: 150, expW: 260, sticky: false, freeze: false, right: false },
-      ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", defaultW: 160, expW: 280, sticky: false, freeze: false, right: false }] : []),
-      { label: 'DLR', display: isServices ? "ENDORSED BY" : "DEALER / VENDOR", defaultW: 130, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'INSTALLER', display: isServices ? "TECHNICIAN" : "INSTALLER NAME", defaultW: 150, expW: 260, sticky: false, freeze: false, right: false },
-      { label: 'NOTE', display: isServices ? "CONFIRMATION" : "NOTES / REMARKS", defaultW: 160, expW: 300, sticky: false, freeze: false, right: false },
-      { label: 'SERVICE', display: "SERVICE VEHICLE", defaultW: 120, expW: 200, sticky: false, freeze: false, right: false },
-      { label: 'UPDATE', display: isServices ? "SERVICE STATUS" : "UPDATE REMARKS", defaultW: 180, expW: 360, sticky: false, freeze: false, right: false },
-      { label: 'INSTALLATION CHARGES', display: "CHARGES (₱)", defaultW: 120, expW: 180, sticky: false, freeze: false, right: true },
-      { label: 'MODE OF PAYMENT', display: "PAYMENT MODE", defaultW: 130, expW: 180, sticky: false, freeze: false, right: false },
+      { label: 'DATE INSTALLED',        display: 'DATE INSTALLED',                                                  weight: 10, expMul: 1.3, sticky: true,  freeze: false, align: 'left' },
+      { label: "CUSTOMER'S NAME",       display: "CUSTOMER NAME",                                                   weight: 18, expMul: 1.5, sticky: true,  freeze: false, align: 'left' },
+      { label: 'DISTRICT',              display: "DISTRICT",                                                        weight: 12, expMul: 1.4, sticky: true,  freeze: true,  align: 'center' },
+      { label: 'BRAND',                 display: "BRAND",                                                           weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' },
+      ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' }] : []),
+      { label: 'DLR',                   display: "DEALER",                                                          weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
+      { label: 'INSTALLER',             display: "INSTALLER",                                                       weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
+      { label: 'UPDATE',                display: "REMARKS",                                                         weight: 15, expMul: 1.5, sticky: false, freeze: false, align: 'center' },
+      { label: 'INSTALLATION CHARGES',  display: "CHARGES",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'right' },
     ]
 
+    const weights = rawCols.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
+    const totalWeight = weights.reduce((s, w) => s + w, 0)
     let accumulatedLeft = 0
-    return rawCols.map(col => {
+    return rawCols.map((col, idx) => {
       const isExpanded = !!expandedCols[col.label]
-      const currentWidth = isExpanded ? col.expW : col.defaultW
+      const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
       const leftVal = col.sticky ? accumulatedLeft : 0
-
-      if (col.sticky) {
-        accumulatedLeft += currentWidth
-      }
-
-      return {
-        ...col,
-        isExpanded,
-        w: currentWidth,
-        left: leftVal
-      }
+      if (col.sticky) accumulatedLeft += (col.weight / totalWeight) * 100
+      return { ...col, isExpanded, w: pct, left: leftVal }
     })
   }, [expandedCols, branchFilter])
 
@@ -559,23 +562,21 @@ export default function DailyServiceReport() {
         const name = b.name.toUpperCase()
         return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
       })
-      const hasExplicitTaguigServices = list.some(b => {
-        const id = b.id.toUpperCase()
-        const name = b.name.toUpperCase()
-        return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
-      })
-
       const newList: BranchOption[] = []
       for (const b of list) {
+        const idUpper = b.id.toUpperCase()
         const cleanName = b.name.replace(/^(ashcol\s+)/i, '')
         const cleanNameUpper = cleanName.toUpperCase()
-        if (cleanNameUpper === 'TAGUIG' || cleanNameUpper === 'ASHCOL TAGUIG') {
-          if (!hasExplicitTaguigSales) newList.push({ id: `${b.id}-sales`, name: 'TAGUIG - SALES' })
-          if (!hasExplicitTaguigServices) newList.push({ id: `${b.id}-services`, name: 'TAGUIG - SERVICES' })
+        if (idUpper === 'BR-TAGUIG-SALES' || idUpper === '2880C29E-581C-11F1-BF8C-74D4DD6DFC0B') {
+          newList.push({ id: b.id, name: 'TAGUIG - SALES' })
+        } else if (idUpper === 'BR-TAGUIG-SERVICES' || idUpper === '2880C29E-581C-11F1-BF8C-74D4DD6DFC0B-SERVICES') {
+          newList.push({ id: b.id, name: 'TAGUIG - SERVICES' })
+        } else if (cleanNameUpper === 'TAGUIG' || cleanNameUpper === 'ASHCOL TAGUIG') {
+          if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES' })
         } else if (cleanNameUpper.includes('TAGUIG')) {
           const isServ = cleanNameUpper.includes('SERVICE')
           newList.push({
-            id: isServ ? `${b.id}-services` : `${b.id}-sales`,
+            id: b.id,
             name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
           })
         } else {
@@ -1322,7 +1323,7 @@ export default function DailyServiceReport() {
     if (!targetDate || !targetDate.trim()) return
 
     // Strip the -sales/-services virtual suffix to get the real branch UUID
-    const realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : ''
+    const realBranchId = resolveScopedBranchId(branchFilter)
     if (!realBranchId) { alert('No branch selected'); return }
     const branchLabel = branches.find(b => b.id === branchFilter)?.name || realBranchId
     const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -1370,13 +1371,14 @@ export default function DailyServiceReport() {
     const q = searchQuery.trim().toLowerCase()
     let filtered = rows
 
-    if (branchFilter && branchFilter.endsWith('-sales')) {
+    const filterLower = (branchFilter || '').toLowerCase()
+    if (filterLower.endsWith('-sales') || filterLower === 'br-taguig-sales') {
       filtered = rows.filter(r => {
         const type = (r.serviceType || '').toUpperCase()
         const code = (r.statusCode || '').toUpperCase()
         return type.includes('INSTALL') || code === 'I'
       })
-    } else if (branchFilter && branchFilter.endsWith('-services')) {
+    } else if (filterLower.endsWith('-services') || filterLower.endsWith('-service') || filterLower === 'br-taguig-services') {
       filtered = rows.filter(r => {
         const type = (r.serviceType || '').toUpperCase()
         const code = (r.statusCode || '').toUpperCase()
@@ -1384,21 +1386,13 @@ export default function DailyServiceReport() {
       })
     }
 
+    if (brandFilter) {
+      filtered = filtered.filter(r => getRowBrand(r) === brandFilter)
+    }
+
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery, branchFilter])
-
-  const totals = useMemo(() => visible.reduce(
-    (acc, r) => ({
-      count: acc.count + 1,
-      qty: acc.qty + (r.quantity || 0),
-      amount: acc.amount + (r.amountCharged || 0),
-      completed: acc.completed + (r.jobStatus === 'COMPLETED' ? 1 : 0),
-      cancelled: acc.cancelled + (r.jobStatus === 'CANCELLED' ? 1 : 0),
-      freeInstalls: acc.freeInstalls + (r.freeInstallation ? 1 : 0),
-    }),
-    { count: 0, qty: 0, amount: 0, completed: 0, cancelled: 0, freeInstalls: 0 }
-  ), [visible])
+  }, [rows, searchQuery, branchFilter, brandFilter])
 
   // Build month options from current items (+ last 12 months always available)
   const monthOptions = useMemo(() => {
@@ -1421,18 +1415,19 @@ export default function DailyServiceReport() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-5 pb-8" onClick={() => { setContextMenu(null); setAddMenuOpen(false); }}>
+    <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => { setContextMenu(null); setAddMenuOpen(false); }}>
 
-      {/* Thinner, simple design header controls */}
-      <div
-        className="rounded-2xl p-3 px-4 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-      >
-        {/* Left Side: Date picker & Branch filter */}
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Hidden file input */}
+      {canImport && (
+        <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
+      )}
+
+      {/* ── Portal: Toolbar into header slot ────────────────── */}
+      {ReactDOM.createPortal(
+        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2 w-full">
           {/* Branch Filter */}
           {isAdmin && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
               <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
               <select
@@ -1444,36 +1439,25 @@ export default function DailyServiceReport() {
                   window.dispatchEvent(new Event('ashcol-global-branch-change'))
                 }}
                 className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-                style={{
-                  color: textPrimary,
-                  backgroundColor: 'transparent',
-                }}
+                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
               >
                 {branches.map(b => (
-                  <option
-                    key={b.id}
-                    value={b.id}
-                    style={{
-                      backgroundColor: inputBg,
-                      color: textPrimary,
-                    }}
-                  >
-                    {b.name}
-                  </option>
+                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{b.name}</option>
                 ))}
               </select>
+              <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
             </div>
           )}
 
-          {/* Month Picker inline */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shadow-sm"
+          {/* Month Picker */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
             <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <select
               value={monthFilter}
               onChange={e => setMonthFilter(e.target.value)}
               className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-              style={{ color: textPrimary }}
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
             >
               <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
               {monthOptions.map(ym => (
@@ -1482,13 +1466,31 @@ export default function DailyServiceReport() {
                 </option>
               ))}
             </select>
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
-        </div>
 
-        {/* Right Side: Search bar & Actions */}
-        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Brand Filter */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            <Tag className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <select
+              value={brandFilter}
+              onChange={e => setBrandFilter(e.target.value)}
+              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+            >
+              <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Brands</option>
+              {uniqueBrands.map(b => (
+                <option key={b} value={b} style={{ backgroundColor: inputBg, color: textPrimary }}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+          </div>
+
           {/* Search bar */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs md:max-w-sm shadow-sm"
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs md:max-w-sm"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
@@ -1508,7 +1510,7 @@ export default function DailyServiceReport() {
           </div>
 
           {/* Action buttons wrapper */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             {(canEdit || canImport) && (
               <div className="relative">
                 <button
@@ -1570,83 +1572,54 @@ export default function DailyServiceReport() {
                 )}
               </div>
             )}
-
-            {canImport && (
-              <input type="file" accept=".xlsx,.xls" id="svc-import-input" className="hidden" onChange={handleImportFilePicked} />
-            )}
           </div>
-        </div>
-      </div>
-
-      {/* Simplified compact stats bar */}
-      {!loading && rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-bold px-5 py-3 rounded-2xl border shadow-sm"
-          style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }}>REPORT SUMMARY:</span>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Records:</span>
-            <span style={{ color: textPrimary }}>{totals.count}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Units:</span>
-            <span style={{ color: textPrimary }}>{totals.qty}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Charged:</span>
-            <span style={{ color: textPrimary }}>₱{peso(totals.amount)}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Free Installs:</span>
-            <span style={{ color: textPrimary }}>{totals.freeInstalls}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Completed:</span>
-            <span style={{ color: textPrimary }}>{totals.completed}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: textMuted }}>Cancelled:</span>
-            <span style={{ color: textPrimary }}>{totals.cancelled}</span>
-          </div>
-        </div>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
+      {/* Simplified compact stats bar */}
+
+
       {/* Data table */}
-      <div className="rounded-2xl overflow-hidden shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
         {loading ? (
-          <div className="flex flex-col gap-2 p-5">
+          <div className="flex flex-col gap-2 p-5 flex-1">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
             ))}
           </div>
         ) : (
-          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', position: 'relative' }}>
-            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ position: 'relative' }}>
+            <table className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+              <colgroup>
+                {columns.map(col => (
+                  <col key={col.label} style={{ width: col.w }} />
+                ))}
+              </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
                   {columns.map(col => (
                     <th key={col.label}
-                      onClick={() => toggleColumn(col.label)}
-                      title={`Click to ${col.isExpanded ? 'collapse' : 'expand'} column`}
                       style={{
                         padding: '9px 10px',
-                        textAlign: col.right ? 'right' : 'left',
-                        color: col.isExpanded ? textPrimary : textMuted,
+                        textAlign: (col.align as any) || 'left',
+                        color: textMuted,
                         fontWeight: 700,
                         whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                         borderRight: `1px solid ${border}`,
                         borderBottom: `2px solid ${border}`,
                         fontSize: '10px',
                         letterSpacing: '0.07em',
                         width: col.w,
-                        minWidth: col.w,
+                        minWidth: 0,
                         maxWidth: col.w,
                         backgroundColor: inputBg,
-                        cursor: 'pointer',
                         userSelect: 'none',
-                        transition: 'all 0.15s ease-in-out',
                         ...(col.sticky ? {
                           position: 'sticky' as const,
-                          left: col.left,
+                          left: `${col.left}%`,
                           zIndex: 15,
                         } : {}),
                         ...(col.freeze ? {
@@ -1656,12 +1629,7 @@ export default function DailyServiceReport() {
                              : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
                         } : {}),
                       }}>
-                      <div className={`flex items-center gap-1.5 ${col.right ? 'flex-row-reverse justify-start' : 'justify-between'}`}>
-                        <span>{col.display}</span>
-                        <span className="text-[9px] opacity-60 transition-transform duration-200" style={{ transform: col.isExpanded ? 'rotate(180deg)' : 'none' }}>
-                          {col.isExpanded ? '◀' : '▶'}
-                        </span>
-                      </div>
+                      <span>{col.display}</span>
                     </th>
                   ))}
                 </tr>
@@ -1732,19 +1700,20 @@ export default function DailyServiceReport() {
                                 color: textPrimary,
                                 fontSize: '11px', fontWeight: 500,
                                 backgroundColor: isThisEditing ? inputBg : rowBaseBg,
-                                textAlign: col.right ? 'right' : 'left',
+                                textAlign: (col.align as any) || 'left',
                                 borderRight: col.freeze
                                   ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
                                   : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
-                                width: col.w, minWidth: col.w, maxWidth: col.w,
+                                width: col.w, minWidth: 0, maxWidth: col.w,
                                 overflow: isThisEditing ? 'visible' : 'hidden',
+                                textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
                                 cursor: isThisEditing ? 'default' : 'pointer',
                                 verticalAlign: 'top',
                                 ...(col.sticky ? {
                                   position: 'sticky' as const,
-                                  left: col.left,
+                                  left: `${col.left}%`,
                                   zIndex: 5,
                                   backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 } : {}),
@@ -2201,7 +2170,7 @@ export default function DailyServiceReport() {
                         disabled={savingScanned}
                         onClick={() => {
                           const tempId = `scan-temp-${Date.now()}`
-                          let realBranchId = branchFilter ? branchFilter.replace(/-sales$|-services$/, '') : null
+                          let realBranchId = resolveScopedBranchId(branchFilter) || null
                           if (realBranchId === 'ALL_BRANCHES') {
                             const actualBranch = branches.find(b => b.id !== 'ALL_BRANCHES')
                             realBranchId = actualBranch ? actualBranch.id : null
@@ -2565,7 +2534,7 @@ export default function DailyServiceReport() {
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                     ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>₱{peso(detailForm.amountCharged)}</span>
+                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{peso(detailForm.amountCharged)}</span>
                     )}
                   </Field>
                   <Field label="Mode of Payment">

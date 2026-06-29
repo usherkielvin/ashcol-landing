@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
   Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
@@ -6,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -123,15 +124,51 @@ const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED
 type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
-  { value: 'SCHEDULED', label: 'Scheduled' },
-  { value: 'RESCHED', label: 'Resched' },
+  { value: 'INSTALLATION', label: 'Installation' },
   { value: 'SURVEY', label: 'Survey' },
+  { value: 'RESCHED', label: 'Resched' },
   { value: 'FOR_APPROVAL', label: 'For Approval' },
+  { value: 'SERVICES', label: 'Service' },
   { value: 'DONE_CLEANING', label: 'Cleaning' },
   { value: 'DONE_INSTALLED', label: 'Installed' },
   { value: 'DONE_SURVEY', label: 'Done Survey' },
   { value: 'CANCELLED', label: 'Cancelled' },
 ]
+
+function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
+  const kind = inferCategoryFromTicket(ticket)
+  if (kind === 'SURVEY' || kind === 'SERVICES') return kind
+  return 'INSTALLATION'
+}
+
+function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: string; backgroundColor: string; borderColor: string } {
+  const normalized = value.toUpperCase().replace(/\s+/g, '_')
+  if (normalized === 'INSTALLATION' || normalized === 'SCHEDULED') {
+    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
+  }
+  if (normalized === 'SURVEY' || normalized === 'DONE_SURVEY') {
+    return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
+  }
+  if (normalized === 'RESCHED') {
+    return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
+  }
+  if (normalized === 'FOR_APPROVAL') {
+    return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
+  }
+  if (normalized === 'DONE_INSTALLED') {
+    return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
+  }
+  if (normalized === 'DONE_CLEANING') {
+    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
+  }
+  if (normalized === 'SERVICES') {
+    return { color: isLight ? '#0e7490' : '#67e8f9', backgroundColor: isLight ? '#cffafe' : 'rgba(6,182,212,0.15)', borderColor: isLight ? '#67e8f9' : 'rgba(6,182,212,0.3)' }
+  }
+  if (normalized === 'CANCELLED') {
+    return { color: isLight ? '#b91c1c' : '#fca5a5', backgroundColor: isLight ? '#fee2e2' : 'rgba(239,68,68,0.12)', borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.3)' }
+  }
+  return { color: isLight ? '#475569' : '#94a3b8', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.25)' }
+}
 
 function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   const meta = parseAcMeta(ticket as Ticket)
@@ -152,13 +189,19 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
 function getScheduleStatusValue(ticket: Ticket): string {
   const outcome = getScheduleOutcome(ticket)
   if (outcome) return outcome
+
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
-  if (['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY', 'COMPLETED'].includes(stat)) {
-    return stat === 'COMPLETED' ? 'DONE_INSTALLED' : 'SCHEDULED'
-  }
-  if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === stat)) return stat
-  return 'SCHEDULED'
+  if (stat === 'RESCHED') return 'RESCHED'
+  if (stat === 'SURVEY') return 'SURVEY'
+  if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
+  if (stat === 'CANCELLED') return 'CANCELLED'
+  if (stat === 'COMPLETED') return 'DONE_INSTALLED'
+
+  const kind = getScheduleTicketKind(ticket)
+  if (kind === 'SURVEY') return 'SURVEY'
+  if (kind === 'SERVICES') return 'SERVICES'
+  return 'INSTALLATION'
 }
 
 function getScheduleStatusLabel(value: string): string {
@@ -190,6 +233,21 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     acUpdates.scheduleOutcome = 'DONE_SURVEY'
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'INSTALLATION') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'INSTALLATION'
+    body.serviceType = categoryDefaultServiceType('INSTALLATION')
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'SERVICES') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = categoryDefaultServiceType('SERVICES')
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'SURVEY') {
+    body.status = 'SURVEY'
+    body.ticketCategory = 'SURVEY'
+    body.serviceType = categoryDefaultServiceType('SURVEY')
     acUpdates.scheduleOutcome = ''
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     body.status = val
@@ -241,6 +299,32 @@ function getScheduleRowColors(
     return {
       baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
       accent: '#3B82F6',
+    }
+  }
+
+  const statusVal = getScheduleStatusValue(ticket)
+  if (statusVal === 'RESCHED') {
+    return {
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      accent: '#fbbf24',
+    }
+  }
+  if (statusVal === 'SURVEY') {
+    return {
+      baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.1)',
+      accent: '#8B5CF6',
+    }
+  }
+  if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
+    return {
+      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)',
+      accent: '#3B82F6',
+    }
+  }
+  if (statusVal === 'FOR_APPROVAL') {
+    return {
+      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)',
+      accent: '#10B981',
     }
   }
 
@@ -380,6 +464,7 @@ function buildReschedulePatchBody(
     acUpdates.reschedulePending = false
     acUpdates.rescheduledTo = newDateKey
     body.preferredDate = newDateKey
+    body.status = 'SCHEDULED'
     if (oldDateKey && oldDateKey !== newDateKey) {
       const existing = parseAcMeta(ticket)
       const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -387,6 +472,13 @@ function buildReschedulePatchBody(
         : []
       if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
       acUpdates.previousScheduleDates = prevDates
+      
+      const formattedOldDate = formatDateKeyLabel(oldDateKey)
+      const reschedMsg = `Scheduled moved from ${formattedOldDate}`
+      body.remarks = reschedMsg
+      body.remarksUpdate = reschedMsg
+      acUpdates.remarksUpdate = reschedMsg
+      acUpdates.update = reschedMsg
     }
   }
 
@@ -893,6 +985,7 @@ function resolveNegotiatorName(
   employees: { id: string; name: string }[],
   negotiatorId?: string,
 ): string {
+  if (negotiatorId === '') return ''
   const id = (negotiatorId ?? ticket.negotiatorId ?? ticket.negotiator_id ?? '').trim()
   if (id) {
     const match = employees.find(e => e.id === id)
@@ -1110,7 +1203,7 @@ export default function Tickets() {
 
   const role      = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
-  const isAdmin    = role === 'admin'
+  const isAdmin    = isPortalAdmin(role)
   const isManager  = role === 'manager'
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
   const canEdit    = isAdmin || isManager || isEmployee
@@ -1852,6 +1945,15 @@ export default function Tickets() {
         ? (editForm.reschedulePending ? '' : editForm.rescheduleToDate?.split('T')[0]?.trim() || '')
         : editForm.preferredDate?.split('T')[0]?.trim() || ''
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
+      
+      let remarksVal = editForm.remarks?.trim() || undefined
+      if (isDateMove) {
+        const formattedOldDate = formatDateKeyLabel(oldDateKey)
+        const reschedMsg = `Scheduled moved from ${formattedOldDate}`
+        remarksVal = reschedMsg
+        editForm.remarks = reschedMsg
+      }
+      
       const acMetaExtras: Record<string, any> = {}
 
       const body: Record<string, any> = {
@@ -1871,21 +1973,21 @@ export default function Tickets() {
         commitType: editForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
         installerName: editForm.installerName?.trim() || undefined,
-        negotiatorId: editForm.negotiatorId || undefined,
+        negotiatorId: editForm.negotiatorId,
         ticketNumber: editForm.ticketNumber?.trim() || undefined,
         controlNumber: editForm.controlNumber?.trim() || undefined,
-        remarks: editForm.remarks?.trim() || undefined,
-        remarksUpdate: editForm.remarks?.trim() || undefined,
+        remarks: remarksVal,
+        remarksUpdate: remarksVal,
       }
 
-      if (isReschedStatus) {
+      if (isDateMove) {
+        body.status = 'SCHEDULED'
+      } else if (isReschedStatus) {
         body.status = 'RESCHED'
         if (editForm.reschedulePending) {
           acMetaExtras.reschedulePending = true
           acMetaExtras.rescheduledTo = ''
         }
-      } else if (isDateMove) {
-        body.status = 'SCHEDULED'
       } else {
         Object.assign(body, applyScheduleStatusPatch((editForm as Ticket), scheduleVal))
       }
@@ -1921,7 +2023,7 @@ export default function Tickets() {
         update: editForm.remarks?.trim() || undefined,
         remarksUpdate: editForm.remarks?.trim() || undefined,
         installerName: editForm.installerName?.trim() || undefined,
-        negotiatorId: editForm.negotiatorId || undefined,
+        negotiatorId: editForm.negotiatorId,
         negotiatorName: resolveNegotiatorName(
           (originalTicket || editForm) as Ticket,
           branchEmployees,
@@ -2404,23 +2506,26 @@ export default function Tickets() {
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     const raw = [
-      { label: "CUSTOMER'S NAME", display: "CUSTOMER", w: 180, expW: 300, sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: "ADDRESS", w: 250, expW: 450, sticky: true,  freeze: true,  align: 'center' as const },
-      { label: 'BRAND',           display: "BRAND", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", w: 130, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'COMMIT',          display: isTaguigServices ? "COMMIT" : "COMMIT", w: 160, expW: 300, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", w: 150, expW: 260, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'SERVICE',         display: "DRIVER", w: 120, expW: 200, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS',          display: "STATUS", w: 100, expW: 150, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'UPDATE',          display: "REMARKS", w: 180, expW: 360, sticky: false, freeze: false, align: 'right' as const },
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
+      { label: 'DESTINATION',     display: "ADDRESS",                                   weight: 22, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT',          display: "COMMIT",                                    weight: 12, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 11, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
     ]
+    const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
+    const totalWeight = weights.reduce((s, w) => s + w, 0)
     let left = 0
-    return raw.map(c => {
+    return raw.map((c, idx) => {
       const isExpanded = !!expandedCols[c.label]
-      const width = isExpanded ? c.expW : c.w
+      const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
       const l = c.sticky ? left : 0
-      if (c.sticky) left += width
-      return { ...c, isExpanded, width, baseWidth: c.w, expWidth: c.expW, left: l }
+      // sticky columns: accumulate by base weight share only
+      if (c.sticky) left += (c.weight / totalWeight) * 100
+      return { ...c, isExpanded, w: pct, left: l }
     })
   }, [expandedCols, isTaguigServices])
 
@@ -2476,6 +2581,7 @@ export default function Tickets() {
       if (stat === 'COMPLETED') {
         return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
+      if (stat === 'CANCELLED') return false
 
       let hasFinalDate = false
       if (t.acDetails) {
@@ -2485,14 +2591,14 @@ export default function Tickets() {
         } catch {}
       }
 
-      const isScheduled = stat === 'SCHEDULED' || hasFinalDate
-      const isResched = stat === 'RESCHED'
-      const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION')
-      
-      const cat = `${t.serviceType || ''} ${t.title || ''}`.toLowerCase()
-      const isSurvey = cat.includes('survey') || stat === 'SURVEY'
+      const scheduleValue = getScheduleStatusValue(t)
+      const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
+      const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
+      const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
+      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CLEANING'
+      const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasFinalDate
 
-      return isScheduled || isResched || isForApproval || isSurvey
+      return isInstallation || isResched || isForApproval || isSurvey || isActiveSchedule
     })
     const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
     if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -2580,41 +2686,35 @@ export default function Tickets() {
   }, [visible])
 
   const counts = useMemo(() => {
-    let scheduledOrRescheduled = 0
+    let installation = 0
     let survey = 0
-    let forQuotationOrForApproval = 0
+    let resched = 0
+    let forApproval = 0
 
     visible.forEach(t => {
       if (dateFilter && isScheduleGhostOnDate(t, dateFilter)) return
-      const stat = (t.status || '').toUpperCase()
-      const category = (t.serviceType || t.title || '').toLowerCase()
-      const isSurvey = category.includes('survey') || stat === 'SURVEY'
-      
-      let hasFinalDate = false
-      if (t.acDetails) {
-        try {
-          const parsed = JSON.parse(t.acDetails)
-          hasFinalDate = !!parsed.finalDate
-        } catch {}
-      }
-
-      const isScheduled = stat === 'SCHEDULED' || hasFinalDate
-      const isResched = stat === 'RESCHED'
-      const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION')
-
-      if (isScheduled || isResched) {
-        scheduledOrRescheduled++
-      } else if (isSurvey) {
+      const scheduleValue = getScheduleStatusValue(t)
+      if (scheduleValue === 'RESCHED') {
+        resched++
+      } else if (scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY') {
         survey++
-      } else if (isForApproval) {
-        forQuotationOrForApproval++
+      } else if (scheduleValue === 'FOR_APPROVAL') {
+        forApproval++
+      } else if (
+        scheduleValue === 'INSTALLATION'
+        || scheduleValue === 'SERVICES'
+        || scheduleValue === 'DONE_INSTALLED'
+        || scheduleValue === 'DONE_CLEANING'
+      ) {
+        installation++
       }
     })
 
     return {
-      scheduledOrRescheduled,
+      installation,
       survey,
-      forQuotationOrForApproval
+      resched,
+      forApproval,
     }
   }, [visible, dateFilter])
 
@@ -2866,8 +2966,7 @@ export default function Tickets() {
   }
 
   function wrapEditingCell(editor: React.ReactNode, colLabel: string) {
-    const col = columns.find(c => c.label === colLabel)
-    const expW = col?.expWidth ?? 200
+    const expW = 200
     const isTall = colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE'
     return (
       <div
@@ -3057,14 +3156,16 @@ export default function Tickets() {
           </span>
         )
       }
-      const statusColor = outcome === 'DONE_CLEANING'
-        ? (isLight ? '#1d4ed8' : '#93c5fd')
-        : outcome === 'DONE_SURVEY'
-          ? textPrimary
-          : textPrimary
+      const statusVal = getScheduleStatusValue(ticket)
+      const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+      const display = getScheduleStatusDisplay(ticket) || '—'
       return (
-        <span style={{ ...truncStyle, fontWeight: 700, color: statusColor }} title={val}>
-          {getScheduleStatusDisplay(ticket) || '—'}
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border"
+          style={{ color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor, borderColor: badgeStyle.borderColor, maxWidth: '100%' }}
+          title={display}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
         </span>
       )
     }
@@ -3167,7 +3268,7 @@ export default function Tickets() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4 pb-8" onClick={() => {
+    <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
       setHoveredCell(null)
@@ -3195,29 +3296,208 @@ export default function Tickets() {
         </div>
       )}
 
-      {/* ── Header bar ── */}
-      <div className="rounded-xl border px-3 py-2 flex flex-col gap-2 shadow-sm"
-           style={{ backgroundColor: cardBg, borderColor: border }}>
-        {/* Row 1: branch + primary action */}
-        <div className="flex items-center justify-between gap-2">
+      {/* Hidden file inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={handleImport}
+      />
+      <input
+        ref={scanFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleScanFilePicked}
+      />
+
+      {/* ── Portal: Toolbar into header slot ────────────────── */}
+      {ReactDOM.createPortal(
+        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2 w-full">
+          {/* Branch display */}
           {isAdmin ? (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-              <Building2 className="w-3 h-3" />
-              {getBranchDisplayName(globalBranchId)}
-            </span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border"
+                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+              <span className="text-xs font-semibold" style={{ color: textPrimary }}>
+                {getBranchDisplayName(globalBranchId)}
+              </span>
+            </div>
           ) : (
-            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Schedules</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
+                 style={{ borderColor: inputBorder }}>
+              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <span className="text-xs font-semibold" style={{ color: textMuted }}>Schedules</span>
+            </div>
           )}
+
+          {/* Weekly Date Tabs Picker */}
+          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
+            {weeklyTabs.map(tab => {
+              const isActive = dateFilter === tab.key
+              return (
+                <button
+                  type="button"
+                  key={tab.key}
+                  onClick={() => setDateFilter(tab.key)}
+                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                  style={{
+                    backgroundColor: isActive ? green : 'transparent',
+                    borderColor: isActive ? green : inputBorder,
+                    color: isActive ? '#ffffff' : textMuted,
+                  }}
+                >
+                  {tab.dayName} {tab.dateLabel}
+                </button>
+              )
+            })}
+
+            {isCustomSelected && (
+              <button
+                type="button"
+                onClick={() => dateFilterInputRef.current?.showPicker?.()}
+                className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+              >
+                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => dateFilterInputRef.current?.showPicker?.()}
+              className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+              style={{ borderColor: inputBorder, color: textMuted }}
+              title="Pick date"
+            >
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+            </button>
+
+            <input
+              ref={dateFilterInputRef}
+              type="date"
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value)}
+              tabIndex={-1}
+              className="absolute opacity-0 pointer-events-none w-0 h-0"
+              aria-label="Ticket date filter"
+            />
+
+            <button
+              type="button"
+              onClick={() => setDateFilter('')}
+              className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+              style={{
+                backgroundColor: dateFilter === '' ? green : 'transparent',
+                borderColor: dateFilter === '' ? green : inputBorder,
+                color: dateFilter === '' ? '#ffffff' : textMuted,
+              }}
+            >
+              All
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs flex-1 min-w-0"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            />
+            {searchQuery && (
+              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Installer filter */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border"
+               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <select
+              value={installerFilter}
+              onChange={e => {
+                const val = e.target.value
+                setInstallerFilter(val)
+                if (val) setSortConfig(DEFAULT_TICKET_SORT)
+              }}
+              className="bg-transparent outline-none text-xs font-medium max-w-[110px] cursor-pointer"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            >
+              <option value="">All installers</option>
+              {installerOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            {installerFilter && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
+                style={{ color: textMuted }}
+                title="Clear installer filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Sort Buttons */}
+          <div className="flex rounded-lg border overflow-hidden shrink-0"
+               style={{ borderColor: inputBorder }}>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                setSortConfig({ column: 'INSTALLER', direction: 'asc' })
+              }}
+              className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
+              style={{
+                backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc'
+                  ? 'rgba(16,185,129,0.15)' : inputBg,
+                color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc' ? green : textMuted,
+              }}
+              title="Sort installer A → Z"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+            <div className="w-px self-stretch" style={{ backgroundColor: inputBorder }} />
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                setSortConfig({ column: 'INSTALLER', direction: 'desc' })
+              }}
+              className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
+              style={{
+                backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
+                  ? 'rgba(16,185,129,0.15)' : inputBg,
+                color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc' ? green : textMuted,
+              }}
+              title="Sort installer Z → A"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Action Button: Add Schedule */}
           {canEdit && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 ml-auto">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   setAddMenuOpen(!addMenuOpen)
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
                 style={{ backgroundColor: green, color: '#ffffff' }}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -3282,201 +3562,32 @@ export default function Tickets() {
                   )}
                 </div>
               )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleImport}
-              />
-              <input
-                ref={scanFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleScanFilePicked}
-              />
             </div>
           )}
-        </div>
-
-        {/* Row 2: date picker strip (full width) */}
-        <div className="flex items-center gap-1 min-w-0 -mx-1 px-1">
-          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5">
-            {weeklyTabs.map(tab => {
-              const isActive = dateFilter === tab.key
-              return (
-                <button
-                  type="button"
-                  key={tab.key}
-                  onClick={() => setDateFilter(tab.key)}
-                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                  style={{
-                    backgroundColor: isActive ? green : 'transparent',
-                    borderColor: isActive ? green : inputBorder,
-                    color: isActive ? '#ffffff' : textMuted,
-                  }}
-                >
-                  {tab.dayName} {tab.dateLabel}
-                </button>
-              )
-            })}
-
-            {isCustomSelected && (
-              <button
-                type="button"
-                onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
-              >
-                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => dateFilterInputRef.current?.showPicker?.()}
-              className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
-              style={{ borderColor: inputBorder, color: textMuted }}
-              title="Pick date"
-            >
-              <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
-            </button>
-
-            <input
-              ref={dateFilterInputRef}
-              type="date"
-              value={dateFilter}
-              onChange={e => setDateFilter(e.target.value)}
-              tabIndex={-1}
-              className="absolute opacity-0 pointer-events-none w-0 h-0"
-              aria-label="Ticket date filter"
-            />
-
-            <button
-              type="button"
-              onClick={() => setDateFilter('')}
-              className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-              style={{
-                backgroundColor: dateFilter === '' ? green : 'transparent',
-                borderColor: dateFilter === '' ? green : inputBorder,
-                color: dateFilter === '' ? '#ffffff' : textMuted,
-              }}
-            >
-              All
-            </button>
-          </div>
-        </div>
-
-        {/* Row 3: search + installer filter/sort */}
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-0"
-               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1 min-w-0"
-              style={{ color: textPrimary }}
-              onClick={e => e.stopPropagation()}
-            />
-            {searchQuery && (
-              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg border"
-                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={installerFilter}
-                onChange={e => {
-                  const val = e.target.value
-                  setInstallerFilter(val)
-                  if (val) setSortConfig(DEFAULT_TICKET_SORT)
-                }}
-                className="bg-transparent outline-none text-xs font-medium max-w-[110px] cursor-pointer"
-                style={{ color: textPrimary }}
-                onClick={e => e.stopPropagation()}
-              >
-                <option value="">All installers</option>
-                {installerOptions.map(opt => (
-                  <option key={opt.key} value={opt.key}>{opt.label}</option>
-                ))}
-              </select>
-              {installerFilter && (
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
-                  style={{ color: textMuted }}
-                  title="Clear installer filter"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            <div className="flex rounded-lg border overflow-hidden shrink-0"
-                 style={{ borderColor: inputBorder }}>
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation()
-                  setSortConfig({ column: 'INSTALLER', direction: 'asc' })
-                }}
-                className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
-                style={{
-                  backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc'
-                    ? 'rgba(16,185,129,0.15)' : inputBg,
-                  color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc' ? green : textMuted,
-                }}
-                title="Sort installer A → Z (group same names)"
-              >
-                <ArrowUp className="w-3.5 h-3.5" />
-              </button>
-              <div className="w-px self-stretch" style={{ backgroundColor: inputBorder }} />
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation()
-                  setSortConfig({ column: 'INSTALLER', direction: 'desc' })
-                }}
-                className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
-                style={{
-                  backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
-                    ? 'rgba(16,185,129,0.15)' : inputBg,
-                  color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc' ? green : textMuted,
-                }}
-                title="Sort installer Z → A"
-              >
-                <ArrowDown className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
 
       {/* Stats bar */}
       {!loading && tickets.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 py-2 rounded-xl border text-xs"
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
           <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Scheduled / Rescheduled</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.scheduledOrRescheduled}</span>
+            <span style={{ color: textMuted }}>Installation</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.installation}</span>
           </div>
           <div className="flex items-center gap-1">
             <span style={{ color: textMuted }}>Survey</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8B5CF6' }}>{counts.survey}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>For Quotation / For Approval</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forQuotationOrForApproval}</span>
+            <span style={{ color: textMuted }}>Resched</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#d97706' }}>{counts.resched}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span style={{ color: textMuted }}>For Approval</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forApproval}</span>
           </div>
           {(sortDiffersFromDefault || installerFilter) && (
             <button
@@ -3493,31 +3604,34 @@ export default function Tickets() {
 
       {/* Error */}
       {fetchError && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-semibold"
-             style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.3)' }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold shrink-0"
+             style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
           <button onClick={fetchTickets} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
         </div>
       )}
 
       {/* ── Table card ── */}
-      <div className="rounded-2xl shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, overflow: 'visible' }}
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
         {loading ? (
-          <div className="flex flex-col gap-2 p-5">
+          <div className="flex flex-col gap-2 p-5 flex-1">
             {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
           </div>
         ) : (
           <div
             ref={tableScrollRef}
-            className="overflow-x-auto rounded-2xl"
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
             style={{
-              maxHeight: 'calc(100vh - 280px)',
-              overflowY: 'auto',
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
-            <table className="text-xs" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <table className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <colgroup>
+                {columns.map(col => (
+                  <col key={col.label} style={{ width: col.w }} />
+                ))}
+              </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
                   {columns.map(rawCol => {
@@ -3547,11 +3661,12 @@ export default function Tickets() {
                           borderRight: `1px solid ${border}`,
                           borderBottom: `2px solid ${border}`,
                           fontSize: '10px', letterSpacing: '0.08em',
-                          width: col.width, minWidth: col.width, maxWidth: col.width,
+                          width: col.w, minWidth: 0, maxWidth: col.w,
+                          overflow: 'hidden', textOverflow: 'ellipsis',
                           backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
-                          ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 15 } : {}),
+                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15 } : {}),
                         }}>
                       <div className={`flex items-center gap-1 w-full ${
                         col.align === 'center' ? 'justify-center text-center' :
@@ -3632,8 +3747,6 @@ export default function Tickets() {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
-                        const isActiveCell = isEditingCell || isExpandedCell || col.isExpanded
-                        const cellWidth = isActiveCell ? (col.expWidth ?? col.width) : col.width
                         return (
                           <td key={col.label}
                               data-cell-key={`${ticket.id}:${col.label}`}
@@ -3665,19 +3778,20 @@ export default function Tickets() {
                                 backgroundColor: bg,
                                 borderRight: `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
-                                width: cellWidth,
-                                minWidth: cellWidth,
-                                maxWidth: isActiveCell ? 'none' : cellWidth,
-                                overflow: isActiveCell ? 'visible' : 'hidden',
-                                transition: 'background-color 0.1s ease, width 0.15s ease, min-height 0.15s ease',
+                                width: col.w,
+                                minWidth: 0,
+                                maxWidth: col.w,
+                                overflow: isEditingCell || isExpandedCell ? 'visible' : 'hidden',
+                                textOverflow: 'ellipsis',
+                                transition: 'background-color 0.1s ease',
                                 cursor: canEdit && !isGhost ? 'default' : 'default',
                                 verticalAlign: 'top',
                                 textAlign: col.align || 'left',
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: col.left, zIndex: isActiveCell ? 12 : 5 }
-                                  : isActiveCell ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
+                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 12 : 5 }
+                                  : (isEditingCell || isExpandedCell) ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
                           </td>
@@ -4611,7 +4725,7 @@ export default function Tickets() {
                   Customer Information
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {!(editForm.status === 'SCHEDULED' || editForm.status === 'RESCHED' || editOriginalDate) && (
+                  {!(editForm.status === 'SCHEDULED' || editForm.status === 'INSTALLATION' || editForm.status === 'RESCHED' || editOriginalDate) && (
                     <Field label="Preferred Date" required>
                       <input type="date" value={editForm.preferredDate || ''}
                         onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}

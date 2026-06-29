@@ -9,7 +9,8 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveImageUrl } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError } from '../utils/api'
+import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Employee {
@@ -39,10 +40,90 @@ interface BranchOption { id: string; name: string }
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE']
 
+type AssignableRole = 'EMPLOYEE' | 'MANAGER' | 'MANAGEMENT'
+
+const ROLE_META: Record<AssignableRole, {
+  label: string
+  hint: string
+  requiresBranch: boolean
+  requiresJobTitle: boolean
+  canDelete: boolean
+}> = {
+  EMPLOYEE: {
+    label: 'Employee',
+    hint: 'Field or office staff with a job title. Branch-scoped portal access.',
+    requiresBranch: false,
+    requiresJobTitle: true,
+    canDelete: true,
+  },
+  MANAGER: {
+    label: 'Office In Charge',
+    hint: 'Branch OIC — manages branch team, lineup, and approvals. Requires a branch.',
+    requiresBranch: true,
+    requiresJobTitle: false,
+    canDelete: true,
+  },
+  MANAGEMENT: {
+    label: 'Management',
+    hint: 'Employee with full admin portal view (all branches). Cannot manage user accounts.',
+    requiresBranch: true,
+    requiresJobTitle: true,
+    canDelete: false,
+  },
+}
+
+const ROLE_FILTER_OPTS = ['all', 'EMPLOYEE', 'MANAGER', 'MANAGEMENT'] as const
+type RoleFilter = typeof ROLE_FILTER_OPTS[number]
+
+const isProtectedFromDelete = (role: string) => {
+  const r = role.toUpperCase()
+  return r === 'ADMIN' || r === 'MANAGEMENT'
+}
+
+const isProtectedFromEdit = (role: string) => role.toUpperCase() === 'ADMIN'
+
+const formatRoleLabel = (role: string) => {
+  const key = role.toUpperCase() as AssignableRole
+  return ROLE_META[key]?.label || role
+}
+
+const describeRoleChange = (fromRole: string, toRole: string) => {
+  const from = formatRoleLabel(fromRole)
+  const to = formatRoleLabel(toRole)
+  const toMeta = ROLE_META[toRole.toUpperCase() as AssignableRole]
+  let detail = `${from} → ${to}.`
+  if (toMeta?.requiresBranch) detail += ' A branch assignment is required.'
+  if (toMeta?.requiresJobTitle) detail += ' A job title will be kept or set.'
+  if (fromRole.toUpperCase() === 'MANAGER' && toRole.toUpperCase() !== 'MANAGER') {
+    detail += ' This user will be unlinked as branch OIC.'
+  }
+  if (toRole.toUpperCase() === 'MANAGER') {
+    detail += ' This user will become the OIC for the selected branch.'
+  }
+  if (toRole.toUpperCase() === 'MANAGEMENT') {
+    detail += ' They will get admin portal access but cannot manage other accounts.'
+  }
+  return detail
+}
+
+const adaptEditFormForRole = (
+  prev: { role: string; jobTitle: string; branchId: string },
+  newRole: string,
+) => {
+  const meta = ROLE_META[newRole.toUpperCase() as AssignableRole]
+  if (!meta) return { role: newRole }
+  return {
+    role: newRole,
+    jobTitle: meta.requiresJobTitle ? (prev.jobTitle || 'TECHNICIAN') : '',
+    branchId: meta.requiresBranch ? prev.branchId : prev.branchId,
+  }
+}
+
 const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
   const j = (jobTitle || '').toUpperCase()
   if (r === 'ADMIN') return 'MANAGER'
+  if (r === 'MANAGEMENT') return j || 'MANAGEMENT'
   if (r === 'MANAGER') return 'OIC'
   if (j) return j
   return r
@@ -50,9 +131,10 @@ const resolveLabel = (role: string, jobTitle: string) => {
 
 const roleColor = (role: string) => {
   switch (role.toUpperCase()) {
-    case 'ADMIN':   return { bg: 'rgba(139,92,246,0.12)', text: '#8B5CF6', border: 'rgba(139,92,246,0.25)' }
-    case 'MANAGER': return { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', border: 'rgba(59,130,246,0.25)' }
-    default:        return { bg: 'rgba(16,185,129,0.10)', text: '#10B981', border: 'rgba(16,185,129,0.20)' }
+    case 'ADMIN':      return { bg: 'rgba(139,92,246,0.12)', text: '#8B5CF6', border: 'rgba(139,92,246,0.25)' }
+    case 'MANAGEMENT': return { bg: 'rgba(245,158,11,0.12)', text: '#F59E0B', border: 'rgba(245,158,11,0.25)' }
+    case 'MANAGER':    return { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', border: 'rgba(59,130,246,0.25)' }
+    default:           return { bg: 'rgba(16,185,129,0.10)', text: '#10B981', border: 'rgba(16,185,129,0.20)' }
   }
 }
 
@@ -99,7 +181,7 @@ export default function Employees() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight  = theme === 'light'
-  const isAdmin   = user?.role?.toLowerCase() === 'admin'
+  const isAdmin   = isSystemAdmin(user?.role)
   const isManager = user?.role?.toLowerCase() === 'manager'
 
   // Theme tokens
@@ -134,6 +216,17 @@ export default function Employees() {
   // UI Filters
   const [search,    setSearch]    = useState('')
   const [tabFilter, setTabFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
+
+  // Feedback
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [deleteSaving, setDeleteSaving] = useState(false)
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message })
+    window.setTimeout(() => setToast(null), 4500)
+  }
 
   // Modals
   const [editTarget,   setEditTarget]   = useState<Employee | null>(null)
@@ -293,13 +386,15 @@ export default function Employees() {
     setLoading(true)
     try {
       const h = { Authorization: `Bearer ${token()}` }
-      const [resEmp, resMgr] = await Promise.all([
+      const [resEmp, resMgr, resMgmt] = await Promise.all([
         fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers: h }),
         isAdmin ? fetch(`${API_BASE_URL}/user/all?role=MANAGER`, { headers: h }).catch(() => null) : null,
+        isAdmin ? fetch(`${API_BASE_URL}/user/all?role=MANAGEMENT`, { headers: h }).catch(() => null) : null,
       ])
       const empList  = resEmp.ok ? ((await resEmp.json())?.data || []) : []
       const mgrList  = resMgr && resMgr.ok ? ((await resMgr.json())?.data || []) : []
-      const combined = [...empList, ...mgrList]
+      const mgmtList = resMgmt && resMgmt.ok ? ((await resMgmt.json())?.data || []) : []
+      const combined = [...empList, ...mgrList, ...mgmtList]
 
       // Build branch map
       const branchMap: Record<string, string> = {}
@@ -414,7 +509,62 @@ export default function Employees() {
   }
 
   // ── CRUD Handlers ───────────────────────────────────────────────────────────
+  const validateAccountForm = (
+    form: { name: string; email: string; role: string; jobTitle: string; branchId: string },
+    options: { requireBranchForAdmin?: boolean } = {},
+  ) => {
+    if (!form.name.trim()) return 'Name is required.'
+    if (!form.email.trim()) return 'Login email is required.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Enter a valid email address.'
+    const meta = ROLE_META[form.role.toUpperCase() as AssignableRole]
+    if (meta?.requiresBranch && !form.branchId.trim()) {
+      return `${meta.label} must be assigned to a branch.`
+    }
+    if (meta?.requiresJobTitle && !form.jobTitle.trim()) {
+      return 'Job title is required for this role.'
+    }
+    if (options.requireBranchForAdmin && !form.branchId.trim()) {
+      return 'Branch is required.'
+    }
+    return ''
+  }
+
+  const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => ({
+    id: s.id,
+    name: s.name || 'Unknown',
+    email: s.email || '',
+    phone: s.phone || '',
+    role: (s.role || 'EMPLOYEE').toUpperCase(),
+    jobTitle: s.jobTitle || '',
+    branchId: s.branchId || '',
+    branchName: s.branchId ? (branchMap[s.branchId] || s.branchId) : '',
+    isActive: s.isActive !== false,
+    profileImage: s.profileImage,
+    personalEmail: s.personalEmail || '',
+    region: s.region || '',
+    city: s.city || '',
+    barangay: s.barangay || '',
+    street: s.street || '',
+    landmark: s.landmark || '',
+    skills: s.skills || '',
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  })
+
+  const upsertEmployeeInList = (updated: Employee) => {
+    setEmployees(prev => {
+      const idx = prev.findIndex(e => e.id === updated.id)
+      if (idx < 0) return [...prev, updated]
+      const next = [...prev]
+      next[idx] = updated
+      return next
+    })
+  }
   const openEdit = (emp: Employee) => {
+    if (isProtectedFromEdit(emp.role)) {
+      showToast('error', 'System admin accounts cannot be edited here.')
+      return
+    }
     const jt = (emp.jobTitle || '').toUpperCase()
     const validJt = allJobTitles.includes(jt) ? jt : (jt || 'TECHNICIAN')
     setEditForm({
@@ -436,17 +586,16 @@ export default function Employees() {
     setEditTarget(emp)
   }
 
-  const handleSaveEdit = async () => {
+  const executeSaveEdit = async () => {
     if (!editTarget) return
-    if (!editForm.name.trim()) { setFormErr('Name is required.'); return }
-    if (!editForm.email.trim()) { setFormErr('Email is required.'); return }
+    const validationErr = validateAccountForm(editForm)
+    if (validationErr) { setFormErr(validationErr); return }
     setSaving(true); setFormErr('')
     try {
       const url = isAdmin
         ? `${API_BASE_URL}/admin/users/${editTarget.id}`
         : `${API_BASE_URL}/manager/employees/${editTarget.id}`
 
-      // Format skills as JSON array string
       const skillsArray = editForm.skills
         .split(',')
         .map(s => s.trim().toUpperCase())
@@ -459,7 +608,7 @@ export default function Employees() {
         phone: editForm.phone.trim(),
         branchId: editForm.branchId,
         role: editForm.role,
-        jobTitle: editForm.role === 'EMPLOYEE' ? editForm.jobTitle : '',
+        jobTitle: (editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') ? editForm.jobTitle : '',
         personalEmail: editForm.personalEmail.trim(),
         region: editForm.region.trim(),
         city: editForm.city.trim(),
@@ -477,12 +626,13 @@ export default function Employees() {
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        setFormErr(d.message || d.error || 'Save failed.')
+        setFormErr(await readApiError(res))
         return
       }
 
-      // If active status changed, toggle it
+      const body = await res.json().catch(() => ({}))
+      const savedUser = body?.data
+
       if (editForm.isActive !== editTarget.isActive) {
         const toggleUrl = isAdmin
           ? `${API_BASE_URL}/admin/users/${editTarget.id}/toggle-active`
@@ -492,29 +642,86 @@ export default function Employees() {
           headers: { Authorization: `Bearer ${token()}` },
         })
         if (!toggleRes.ok) {
-          const d = await toggleRes.json().catch(() => ({}))
-          setFormErr(d.message || d.error || 'Failed to update account status.')
+          setFormErr(await readApiError(toggleRes))
           fetchEmployees()
           return
         }
       }
 
-      // Refresh drawer if it matches edit target
-      if (selectedEmployee && selectedEmployee.id === editTarget.id) {
-        const updated = {
-          ...selectedEmployee,
-          ...payload,
-          isActive: editForm.isActive,
-          skills: skillsJson,
-          branchName: branches.find(b => b.id === editForm.branchId)?.name || ''
-        } as Employee
-        setSelectedEmployee(updated)
+      const branchMap: Record<string, string> = {}
+      branches.forEach(b => { branchMap[b.id] = b.name })
+      const refreshed = savedUser
+        ? mapApiUserToEmployee({ ...savedUser, isActive: editForm.isActive }, branchMap)
+        : {
+            ...editTarget,
+            ...payload,
+            isActive: editForm.isActive,
+            skills: skillsJson,
+            role: editForm.role,
+            jobTitle: (editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') ? editForm.jobTitle : '',
+            branchName: branches.find(b => b.id === editForm.branchId)?.name || editTarget.branchName,
+          } as Employee
+
+      upsertEmployeeInList(refreshed)
+      if (selectedEmployee?.id === editTarget.id) {
+        setSelectedEmployee(refreshed)
       }
 
+      const roleChanged = editForm.role !== editTarget.role
       setEditTarget(null)
-      fetchEmployees()
-    } catch { setFormErr('Network error.') }
-    finally { setSaving(false) }
+      showToast('success', roleChanged
+        ? `${refreshed.name} updated — role changed to ${formatRoleLabel(editForm.role)}.`
+        : `${refreshed.name} saved successfully.`)
+    } catch {
+      setFormErr('Network error. Check your connection and try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveEdit = () => {
+    if (!editTarget) return
+    const validationErr = validateAccountForm(editForm)
+    if (validationErr) { setFormErr(validationErr); return }
+
+    if (editForm.role !== editTarget.role) {
+      setConfirmDialog({
+        title: 'Confirm role change',
+        message: `Change ${editTarget.name}'s system role?`,
+        detail: describeRoleChange(editTarget.role, editForm.role),
+        variant: 'info',
+        confirmText: 'Save changes',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          executeSaveEdit()
+        },
+      })
+      return
+    }
+    executeSaveEdit()
+  }
+
+  const requestToggleActive = (emp: Employee) => {
+    if (isProtectedFromEdit(emp.role)) {
+      showToast('error', 'System admin accounts cannot be deactivated.')
+      return
+    }
+    const nextActive = !emp.isActive
+    if (!nextActive) {
+      setConfirmDialog({
+        title: 'Deactivate account',
+        message: `Deactivate ${emp.name}?`,
+        detail: 'They will not be able to sign in until reactivated.',
+        variant: 'discard',
+        confirmText: 'Deactivate',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          handleToggleActive(emp)
+        },
+      })
+      return
+    }
+    handleToggleActive(emp)
   }
 
   const handleToggleActive = async (emp: Employee) => {
@@ -523,45 +730,68 @@ export default function Employees() {
         ? `${API_BASE_URL}/admin/users/${emp.id}/toggle-active`
         : `${API_BASE_URL}/manager/employees/${emp.id}/toggle-active`
       const res = await fetch(url, { method: 'PATCH', headers: { Authorization: `Bearer ${token()}` } })
-      if (res.ok) {
-        if (selectedEmployee && selectedEmployee.id === emp.id) {
-          setSelectedEmployee(prev => prev ? { ...prev, isActive: !prev.isActive } : null)
-        }
-        fetchEmployees()
+      if (!res.ok) {
+        showToast('error', await readApiError(res))
+        return
       }
-    } catch { /* silent */ }
+      const nextActive = !emp.isActive
+      const updated = { ...emp, isActive: nextActive }
+      upsertEmployeeInList(updated)
+      if (selectedEmployee?.id === emp.id) {
+        setSelectedEmployee(updated)
+      }
+      showToast('success', nextActive ? `${emp.name} reactivated.` : `${emp.name} deactivated.`)
+    } catch {
+      showToast('error', 'Could not update account status.')
+    }
+  }
+
+  const requestDelete = (emp: Employee) => {
+    if (isProtectedFromDelete(emp.role)) {
+      showToast('error', 'This account type cannot be deleted from the directory.')
+      return
+    }
+    setDeleteTarget(emp)
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
+    setDeleteSaving(true)
     try {
       const url = isAdmin
         ? `${API_BASE_URL}/admin/users/${deleteTarget.id}`
         : `${API_BASE_URL}/manager/employees/${deleteTarget.id}`
       const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } })
-      if (res.ok) {
-        if (selectedEmployee && selectedEmployee.id === deleteTarget.id) {
-          setIsDrawerOpen(false)
-          setSelectedEmployee(null)
-        }
-        setDeleteTarget(null)
-        fetchEmployees()
+      if (!res.ok) {
+        showToast('error', await readApiError(res))
+        return
       }
-    } catch { /* silent */ }
+      if (selectedEmployee?.id === deleteTarget.id) {
+        setIsDrawerOpen(false)
+        setSelectedEmployee(null)
+      }
+      setEmployees(prev => prev.filter(e => e.id !== deleteTarget.id))
+      showToast('success', `${deleteTarget.name} removed.`)
+      setDeleteTarget(null)
+    } catch {
+      showToast('error', 'Could not delete account.')
+    } finally {
+      setDeleteSaving(false)
+    }
   }
 
   const handleCreate = async () => {
-    if (!createForm.name.trim() || !createForm.email.trim()) { setFormErr('Name and email are required.'); return }
-    if (isAdmin && !createForm.branchId.trim()) { setFormErr('Branch is required.'); return }
+    const validationErr = validateAccountForm(createForm, { requireBranchForAdmin: isAdmin })
+    if (validationErr) { setFormErr(validationErr); return }
     setCreateSaving(true); setFormErr('')
     try {
       const url = isAdmin ? `${API_BASE_URL}/admin/technicians` : `${API_BASE_URL}/manager/employees`
-      const isPriv = createForm.role === 'MANAGER' || createForm.role === 'ADMIN'
+      const isPriv = createForm.role === 'MANAGER' || createForm.role === 'MANAGEMENT'
       const body: Record<string, string> = {
         name:     createForm.name.trim(),
         email:    createForm.email.trim(),
         role:     isPriv ? createForm.role : 'EMPLOYEE',
-        jobTitle: isPriv ? '' : createForm.jobTitle,
+        jobTitle: (createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') ? createForm.jobTitle : '',
       }
       if (isAdmin) body.branchId = createForm.branchId.trim()
       const res = await fetch(url, {
@@ -570,7 +800,10 @@ export default function Employees() {
         body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setFormErr(data?.message || 'Could not create account.'); return }
+      if (!res.ok) {
+        setFormErr(typeof data?.message === 'string' ? data.message : 'Could not create account.')
+        return
+      }
       const u = data?.data
 
       // Save additional profile details immediately after successful registration
@@ -603,6 +836,7 @@ export default function Employees() {
       }
 
       if (u?.temporaryPassword && u?.email) setNewTechCreds({ email: u.email, password: u.temporaryPassword })
+      showToast('success', `${createForm.name.trim()} created as ${formatRoleLabel(createForm.role)}.`)
       setShowCreate(false)
       setCreateForm({
         name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
@@ -622,6 +856,7 @@ export default function Employees() {
   const filtered = employees.filter(e => {
     if (tabFilter === 'active'   && !e.isActive) return false
     if (tabFilter === 'inactive' && e.isActive)  return false
+    if (roleFilter !== 'all' && e.role.toUpperCase() !== roleFilter) return false
     if (!search.trim()) return true
     const q = search.toLowerCase()
     return (
@@ -647,6 +882,19 @@ export default function Employees() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-3" style={{ minHeight: '100vh', backgroundColor: pageBg }}>
+
+      {toast && (
+        <div
+          className="fixed top-4 right-4 z-[70] max-w-sm px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold"
+          style={{
+            backgroundColor: toast.type === 'success' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+            borderColor: toast.type === 'success' ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)',
+            color: toast.type === 'success' ? '#10B981' : '#EF4444',
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
       
       {/* Hidden File Input for Profile Upload */}
       <input
@@ -788,6 +1036,24 @@ export default function Employees() {
             ))}
           </div>
 
+          {isAdmin && (
+            <div className="flex rounded-lg border overflow-hidden shrink-0" style={{ borderColor: border }}>
+              {ROLE_FILTER_OPTS.map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRoleFilter(r)}
+                  className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap"
+                  style={{
+                    backgroundColor: roleFilter === r ? 'rgba(59,130,246,0.15)' : 'transparent',
+                    color: roleFilter === r ? '#3B82F6' : textMuted,
+                  }}
+                >
+                  {r === 'all' ? 'All roles' : formatRoleLabel(r)}
+                </button>
+              ))}
+            </div>
+          )}
+
           <span className="text-[10px] font-semibold px-2 py-1 rounded" style={{ backgroundColor: 'rgba(16,185,129,0.08)', color: '#10B981' }}>
             {filtered.length}
           </span>
@@ -895,7 +1161,7 @@ export default function Employees() {
                     {/* Status */}
                     <td className="px-4 py-2.5">
                       <button
-                        onClick={evt => { evt.stopPropagation(); handleToggleActive(e) }}
+                        onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border transition-all"
                         style={e.isActive
                           ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }
@@ -918,7 +1184,7 @@ export default function Employees() {
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        {(isAdmin || isManager) && (
+                        {(isAdmin || isManager) && !isProtectedFromEdit(e.role) && (
                           <button
                             onClick={evt => { evt.stopPropagation(); openEdit(e) }}
                             title="Edit"
@@ -928,9 +1194,9 @@ export default function Employees() {
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {isAdmin && (
+                        {isAdmin && !isProtectedFromDelete(e.role) && (
                           <button
-                            onClick={evt => { evt.stopPropagation(); setDeleteTarget(e) }}
+                            onClick={evt => { evt.stopPropagation(); requestDelete(e) }}
                             title="Delete"
                             className="p-1.5 rounded transition-all hover:bg-red-500/10 hover:text-red-500"
                             style={{ color: textMuted }}
@@ -1028,7 +1294,7 @@ export default function Employees() {
                 <div className="w-full border-t pt-4 flex flex-col gap-2 mt-2" style={{ borderColor: border }}>
                   <div className="text-[10px] font-black uppercase tracking-widest text-left" style={{ color: textMuted }}>Status</div>
                   <button
-                    onClick={() => handleToggleActive(selectedEmployee)}
+                    onClick={() => requestToggleActive(selectedEmployee)}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all"
                     style={selectedEmployee.isActive
                       ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.2)' }
@@ -1221,7 +1487,7 @@ export default function Employees() {
               >
                 Close
               </button>
-              {(isAdmin || isManager) && (
+              {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
                 <button
                   onClick={() => openEdit(selectedEmployee)}
                   className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-85"
@@ -1230,9 +1496,9 @@ export default function Employees() {
                   Edit Profile
                 </button>
               )}
-              {isAdmin && (
+              {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
                 <button
-                  onClick={() => setDeleteTarget(selectedEmployee)}
+                  onClick={() => requestDelete(selectedEmployee)}
                   className="px-4 py-2 rounded-xl text-xs font-black text-white bg-red-500 hover:bg-red-600 transition-all"
                 >
                   Delete Account
@@ -1359,8 +1625,13 @@ export default function Employees() {
                 {/* ── Section: Job Details ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">System & Job Settings</h4>
+                  {editTarget && editForm.role !== editTarget.role && (
+                    <div className="mb-3 text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
+                      Role will change: {describeRoleChange(editTarget.role, editForm.role)}
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Branch Assignment" labelColor={textMuted}>
+                    <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'Branch Assignment *' : 'Branch Assignment'} labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
                         <option value="">— Unassigned —</option>
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -1369,14 +1640,19 @@ export default function Employees() {
                     <Field label="System Role" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle}
                         value={editForm.role}
-                        onChange={e => setEditForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}
+                        onChange={e => setEditForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}
                       >
-                        <option value="EMPLOYEE">Employee</option>
-                        <option value="MANAGER">Office In Charge</option>
-                        <option value="ADMIN">Manager (Admin)</option>
+                        <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
+                        <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
+                        {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
                       </select>
                     </Field>
-                    {editForm.role === 'EMPLOYEE' && (
+                    {ROLE_META[editForm.role as AssignableRole]?.hint && (
+                      <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                        {ROLE_META[editForm.role as AssignableRole].hint}
+                      </p>
+                    )}
+                    {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
@@ -1606,13 +1882,18 @@ export default function Employees() {
                     )}
                     <Field label="System Role" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle} value={createForm.role}
-                        onChange={e => setCreateForm(p => ({ ...p, role: e.target.value, jobTitle: e.target.value === 'EMPLOYEE' ? 'TECHNICIAN' : '' }))}>
-                        <option value="EMPLOYEE">Employee</option>
-                        <option value="MANAGER">Office In Charge</option>
-                        {isAdmin && <option value="ADMIN">Manager (Admin)</option>}
+                        onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
+                        <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
+                        <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
+                        {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
                       </select>
                     </Field>
-                    {createForm.role === 'EMPLOYEE' && (
+                    {ROLE_META[createForm.role as AssignableRole]?.hint && (
+                      <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                        {ROLE_META[createForm.role as AssignableRole].hint}
+                      </p>
+                    )}
+                    {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
@@ -1739,14 +2020,21 @@ export default function Employees() {
               <strong style={{ color: textPrimary }}>Email:</strong> {deleteTarget.email}<br />
               <strong style={{ color: textPrimary }}>Role:</strong> {resolveLabel(deleteTarget.role, deleteTarget.jobTitle)}<br />
               <strong style={{ color: textPrimary }}>Branch:</strong> {deleteTarget.branchName || 'Unassigned'}
+              {deleteTarget.role.toUpperCase() === 'MANAGER' && (
+                <p className="mt-2 text-amber-500 font-semibold">This user is linked as branch OIC. Deleting will unlink them from the branch.</p>
+              )}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all" style={{ borderColor: border, color: textMuted }}>Cancel</button>
-              <button onClick={handleDelete} className="flex-1 py-2.5 rounded-xl text-sm font-black text-white bg-red-500 hover:bg-red-600 transition-all">Delete</button>
+              <button onClick={() => setDeleteTarget(null)} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all" style={{ borderColor: border, color: textMuted }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-black text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50">
+                {deleteSaving ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
 
       {/* CSS Keyframes inline inject for animations */}
       <style>{`

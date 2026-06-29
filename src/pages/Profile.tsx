@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import type { AddressValue } from '../components/PhAddressPicker'
-import { API_BASE_URL, resolveImageUrl, formatRole } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, formatRole, isSystemAdmin } from '../utils/api'
 
 const apiUrl = API_BASE_URL
 const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -319,7 +319,7 @@ export default function Profile() {
 
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
     { key: 'profile' as Tab, label: 'Profile', icon: User },
-    ...(user?.role === 'admin' ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
+    ...(isSystemAdmin(user?.role) ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
   ]
 

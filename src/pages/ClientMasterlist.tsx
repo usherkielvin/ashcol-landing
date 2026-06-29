@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -345,7 +345,7 @@ export default function ClientMasterlist() {
   const { user } = useAuth()
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
+  const isAdmin = isPortalAdmin(role)
 
   // Colors
   const cardBg = isLight ? '#ffffff' : '#0A1120'

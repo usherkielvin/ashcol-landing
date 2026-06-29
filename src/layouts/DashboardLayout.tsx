@@ -31,7 +31,7 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, getPortalHomePath, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
+import { API_BASE_URL, formatRole, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
 
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -154,12 +154,12 @@ export default function DashboardLayout() {
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin'
+  const isPortalAdminUser = isPortalAdmin(user?.role)
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!isPortalAdminUser) return
     const loadAdminBranches = async () => {
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -212,10 +212,10 @@ export default function DashboardLayout() {
       }
     }
     loadAdminBranches()
-  }, [isAdmin])
+  }, [isPortalAdminUser])
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!isPortalAdminUser) return
     const syncLabel = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
       setGlobalBranchId(gId)
@@ -231,7 +231,7 @@ export default function DashboardLayout() {
     syncLabel()
     window.addEventListener('ashcol-global-branch-change', syncLabel)
     return () => window.removeEventListener('ashcol-global-branch-change', syncLabel)
-  }, [isAdmin, adminBranches])
+  }, [isPortalAdminUser, adminBranches])
 
   const handleGlobalBranchChange = (val: string) => {
     localStorage.setItem('ashcol-global-branch-id', val)
@@ -246,8 +246,8 @@ export default function DashboardLayout() {
   }, [user?.picture])
 
   useEffect(() => {
-    if (isAdmin || !user?.branchId) {
-      if (!isAdmin) {
+    if (isPortalAdminUser || !user?.branchId) {
+      if (!isPortalAdminUser) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setBranchLabel(null)
       }
@@ -274,7 +274,7 @@ export default function DashboardLayout() {
       }
     }
     load()
-  }, [user?.branchId, isAdmin])
+  }, [user?.branchId, isPortalAdminUser])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -288,30 +288,30 @@ export default function DashboardLayout() {
   const allLinks = [
     // { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
-    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin'] },
+    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
-    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin'] },
-    { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
+    { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
-    { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin'] },
-    { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'manager'] },
-    { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'manager'] },
-    { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'manager'] },
+    { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
+    { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
+    { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
+    { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
+  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
   const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
   const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
-  const navLinks = role === 'admin'
+  const navLinks = isPortalAdmin(role)
       ? allLinks.filter(link => {
           if (!link.roles) return true
           return link.roles.includes(role)
@@ -333,7 +333,7 @@ export default function DashboardLayout() {
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
-      const fallback = role === 'admin' ? navLinks[0].path : getPortalHomePath(user)
+      const fallback = isPortalAdmin(role) ? navLinks[0].path : getPortalHomePath(user)
       navigate(fallback, { replace: true })
     }
   }, [location.pathname, navLinks, role, user, navigate])
@@ -621,7 +621,7 @@ export default function DashboardLayout() {
         {/* ── Admin Branch Switcher (only for admin) ── */}
         {/* ── Bottom Sticky Section ─────────────────────── */}
         {(() => {
-          const showBranch = isAdmin && adminBranches.length > 0
+          const showBranch = isPortalAdminUser && adminBranches.length > 0
           return (
             <div className={`px-3 pb-5 pt-2 space-y-2 ${!showBranch ? 'mt-auto' : ''} ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
 
@@ -814,7 +814,7 @@ export default function DashboardLayout() {
         <main className={
           currentPage === 'Overview'
             ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
-            : currentPage === 'Relays'
+            : (currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
@@ -827,7 +827,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${currentPage === 'Relays' ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             <Outlet />
           </div>
         </main>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, X, Edit3, CalendarDays, Loader2, ClipboardList } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import {
   OFFICE_TICKET_CATEGORIES,
@@ -78,7 +78,7 @@ export default function OfficeTasks() {
   const textMuted = isLight ? '#64748b' : '#6B90BE'
 
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
+  const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
   const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 

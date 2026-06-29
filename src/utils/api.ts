@@ -175,6 +175,7 @@ export function formatRole(role?: string): string {
   const r = role.toUpperCase()
   if (r === 'MANAGER') return 'OIC'
   if (r === 'ADMIN') return 'ADMIN'
+  if (r === 'MANAGEMENT') return 'MANAGEMENT'
   if (r === 'OIC') return 'OIC'
   return r
 }
@@ -214,6 +215,21 @@ type PortalUserLike = {
 }
 
 const normalizeUserValue = (value?: string | null) => (value || '').trim().toLowerCase()
+
+/** System admin only — user/role management, branch create/delete. */
+export function isSystemAdmin(role?: string | null): boolean {
+  return normalizeUserValue(role) === 'admin'
+}
+
+/** Admin portal view — branch switcher, all branches, schedules, DTR, etc. */
+export function isPortalAdmin(role?: string | null): boolean {
+  const r = normalizeUserValue(role)
+  return r === 'admin' || r === 'management'
+}
+
+export function isPortalAdminUser(user?: PortalUserLike | null): boolean {
+  return isPortalAdmin(user?.role)
+}
 
 /** May DTR correction window — all assigned employees may edit their branch reports. */
 export function isMayDtrEditWindow(date?: string | null): boolean {
@@ -266,6 +282,7 @@ export function isServiceWorkspaceBranchOrTitle(user?: PortalUserLike | null): b
 
 export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isPortalAdmin(user.role)) return false
   if (isServiceWorkspaceBranchOrTitle(user)) return false
   if (isCoordinatorOrOicUser(user)) return true
   const branchId = normalizeUserValue(user.branchId)
@@ -278,6 +295,7 @@ export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
 
 export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
+  if (isPortalAdmin(user.role)) return false
   if (isServiceWorkspaceBranchOrTitle(user)) return true
   if (isCoordinatorOrOicUser(user)) return false
   const branchId = normalizeUserValue(user.branchId)
@@ -292,7 +310,7 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
 
 export function getPortalHomePath(user?: PortalUserLike | null) {
   const role = normalizeUserValue(user?.role)
-  if (role === 'admin') return '/audit-report'
+  if (isPortalAdmin(role)) return '/audit-report'
   if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
   if (isServiceWorkspaceUser(user)) return '/service-report'
   return '/audit-report?tab=submit'

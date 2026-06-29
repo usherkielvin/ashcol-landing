@@ -20,7 +20,7 @@ import { useTheme } from '../contexts/ThemeContext'
 
 import { useAuth } from '../contexts/AuthContext'
 
-import { API_BASE_URL, isSameBaseBranch } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, isPortalAdmin } from '../utils/api'
 
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -332,7 +332,7 @@ export default function LineUp() {
   const [branchId, setBranchId] = useState('')
 
   const canEdit = useMemo(() => {
-    if (role === 'admin') return true
+    if (isPortalAdmin(role)) return true
     if (!user?.branchId || !branchId) return false
     const isAllowedRole = role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
     if (!isAllowedRole) return false
