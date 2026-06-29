@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -58,6 +58,8 @@ interface Ticket {
   assignedEmployeeName?: string
   branchId?: string
   branch_id?: string
+  installerLineupBranchId?: string
+  installer_lineup_branch_id?: string
   remarks?: string
   remarksUpdate?: string
   note?: string
@@ -1778,7 +1780,15 @@ export default function Tickets() {
         installationCharges: addForm.installationCharges != null && !Number.isNaN(Number(addForm.installationCharges))
           ? Number(addForm.installationCharges)
           : undefined,
-        branchId: resolveScopedBranchId(globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id')),
+      }
+
+      const lockedBranch = resolveTicketArchiveBranchId(
+        { installerName: addForm.installerName?.trim() },
+        installerLineupIndex,
+        driverOnlyNames,
+      )
+      if (lockedBranch) {
+        payload.branchId = lockedBranch
       }
 
       const res = await fetch(`${API_BASE_URL}/tickets`, {
@@ -2004,14 +2014,6 @@ export default function Tickets() {
       }
       if (paymentMode) body.modeOfPayment = paymentMode
 
-      const negId = (editForm.negotiatorId || '').trim()
-      if (negId) {
-        const neg = branchEmployees.find((e) => e.id === negId)
-        if (neg?.branchId) {
-          body.branchId = resolveScopedBranchId(neg.branchId)
-        }
-      }
-
       if (isDateMove) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -2080,10 +2082,10 @@ export default function Tickets() {
 
       if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
         const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
-        const branchId = resolveTicketArchiveBranch(originalTicket, {
-          installerName: body.installerName as string | undefined,
-          branchId: originalTicket.branchId,
-        })
+        const branchId = resolveTicketArchiveBranch(
+          { ...originalTicket, ...body },
+          { installerName: body.installerName as string | undefined },
+        )
         const archivePayload = buildArchiveServiceReportPayload(
           originalTicket,
           branchId,
@@ -2231,7 +2233,7 @@ export default function Tickets() {
       const shouldComplete = qualifiesForInstallComplete(merged, updatedFields)
         || (updatedFields.status || '').toUpperCase() === 'COMPLETED'
 
-      let body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId, targetBranch || undefined)
+      let body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId)
       if (Object.keys(body).length === 0 && !shouldComplete) continue
 
       if (shouldComplete && isScheduleImport) {
@@ -2278,7 +2280,6 @@ export default function Tickets() {
           },
           scheduleDate,
           importerUserId,
-          targetBranch || undefined,
         )
         if (Object.keys(body).length === 0) continue
         try {
@@ -2302,7 +2303,7 @@ export default function Tickets() {
     if (!isScheduleImport) for (const item of completedUpdates) {
       const { ticket, updatedFields } = item
       const merged = { ...ticket, ...updatedFields }
-      const branchId = resolveTicketArchiveBranch(ticket)
+      const branchId = resolveTicketArchiveBranch(ticket, updatedFields)
       const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
         location: updatedFields.location,
         district: updatedFields.district,
@@ -2346,7 +2347,11 @@ export default function Tickets() {
 
       const archivePayload = buildArchiveServiceReportPayload(
         ticket,
-        resolveTicketArchiveBranch(ticket),
+        resolveTicketArchiveBranch(ticket, {
+          installerName: updatedFields.installerName,
+          installationCharges: updatedFields.installationCharges,
+          modeOfPayment: updatedFields.modeOfPayment,
+        }),
         {
           installationCharges: parseFloat(amount) || 0,
           modeOfPayment: modeOfPayment,
@@ -2428,8 +2433,14 @@ export default function Tickets() {
         const remarks = item.update || 'Installed'
         const controlNo = item.controlNo || ''
 
+        const archiveBranch = resolveTicketArchiveBranchId(
+          { installerName: item.installer },
+          installerLineupIndex,
+          driverOnlyNames,
+        ) || targetBranch
+
         const serviceReportPayload = {
-          branchId: targetBranch,
+          branchId: archiveBranch,
           reportDate: importTargetDate || todayStr,
           customerName: item.name,
           customerAddress: formatAddress(item.location),
@@ -2637,7 +2648,8 @@ export default function Tickets() {
     const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
     if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
       list = list.filter(t => {
-        const b = t.branchId || t.branch_id || ''
+        const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
+          || t.branchId || t.branch_id || ''
         if (!b) return false
         if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
         if (isTaguigBranchRef(effectiveBranch)) {
@@ -2667,7 +2679,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery])
+  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
   const installerOptions = useMemo(() => {
     const names = new Map<string, string>()
@@ -2822,7 +2834,13 @@ export default function Tickets() {
         && shouldArchiveCompletedSchedule(ticket, finalBody)
       ) {
         const schedKey = getPreferredDateKey(ticket) || todayDateKey()
-        const branchId = resolveTicketArchiveBranch(ticket)
+        const branchId = resolveTicketArchiveBranch(ticket, {
+          installerName: body.installerName as string | undefined,
+          installationCharges: finalBody.installationCharges as number | undefined,
+          modeOfPayment: finalBody.modeOfPayment as string | undefined,
+          remarks: finalBody.remarksUpdate as string | undefined,
+          remarksUpdate: finalBody.remarksUpdate as string | undefined,
+        })
         const archivePayload = buildArchiveServiceReportPayload(
           ticket,
           branchId,
@@ -4160,7 +4178,12 @@ export default function Tickets() {
           
           try {
             const schedKey = getPreferredDateKey(t) || todayDateKey()
-            const branchId = resolveTicketArchiveBranch(t)
+            const branchId = resolveTicketArchiveBranch(t, {
+              installationCharges: parseFloat(cp.amount) || 0,
+              modeOfPayment: cp.modeOfPayment,
+              remarks: cp.value || 'Installed',
+              remarksUpdate: cp.value || 'Installed',
+            })
             const archivePayload = buildArchiveServiceReportPayload(
               t,
               branchId,

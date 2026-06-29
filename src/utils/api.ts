@@ -387,6 +387,23 @@ export function isListedOnNonTaguigLineup(
   return resolveInstallerLineupBranchMatches(installerName, index, driverOnlyNames).some((id) => !isTaguigBranchRef(id))
 }
 
+/** Locked branch scope for a ticket (lineup installer roster, then stored branch_id). */
+export function resolveTicketEffectiveBranchId(
+  ticket: {
+    branchId?: string | null
+    branch_id?: string | null
+    installerLineupBranchId?: string | null
+    installer_lineup_branch_id?: string | null
+    installerName?: string | null
+    installer_name?: string | null
+    technicianName?: string | null
+  },
+  lineupIndex?: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
+): string {
+  return resolveTicketArchiveBranchId(ticket, lineupIndex, driverOnlyNames)
+}
+
 /** Archives branch for a schedule ticket — lineup installer roster, then ticket branch. */
 export function resolveTicketArchiveBranchId(
   ticket: {
