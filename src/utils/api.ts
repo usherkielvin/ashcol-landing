@@ -138,16 +138,27 @@ export type TaguigArchiveRowSignals = {
 }
 
 /** Classify a Taguig archive row as Services dept (field crew, coordinator, repair/PMS, etc.). */
-export function isTaguigServiceArchiveRecord(row: TaguigArchiveRowSignals): boolean {
+export function isTaguigServiceArchiveRecord(
+  row: TaguigArchiveRowSignals & { ticketBranchId?: string | null; installerLineupBranchId?: string | null },
+): boolean {
+  const lineup = (row.installerLineupBranchId || '').toUpperCase()
+  if (lineup === 'BR-TAGUIG-SERVICES') return true
+  if (lineup === 'BR-TAGUIG-SALES') return false
+
+  const ticketBranch = (row.ticketBranchId || '').toUpperCase()
+  if (ticketBranch === 'BR-TAGUIG-SERVICES') return true
+  if (ticketBranch === 'BR-TAGUIG-SALES') return false
+
   if (row.branchId?.toUpperCase() === 'BR-TAGUIG-SERVICES') return true
 
-  const code = (row.statusCode || '').trim().toUpperCase()
+  const code = (row.statusCode || '').trim().toUpperCase().replace(/\s+/g, '')
+  if (code === 'S/I' || code.startsWith('SI') || code === 'I' || code.startsWith('INSTALL')) return false
   if (code.startsWith('S') && !code.startsWith('SI')) return true
 
   const type = (row.serviceType || '').toUpperCase()
-  if (['REPAIR', 'MAINT', 'PMS', 'CLEANING', 'CHECK', 'SERVICE'].some((k) => type.includes(k))) {
-    return true
-  }
+  if (type.includes('INSTALL')) return false
+  if (['REPAIR', 'MAINT', 'PMS', 'CLEANING', 'CHECK'].some((k) => type.includes(k))) return true
+  if (type.includes('SERVICE') && !type.includes('INSTALL')) return true
 
   const blob = [
     row.dealer,
@@ -187,8 +198,17 @@ export function resolveEffectiveArchiveBranchId(row: ArchiveBranchRowSignals): s
 export function archiveRowMatchesBranch(
   row: ArchiveBranchRowSignals,
   branchFilter?: string | null,
+  lineupIndex: InstallerBranchIndexEntry[] = [],
+  driverOnlyNames: string[] = [],
 ): boolean {
   if (!branchFilter || branchFilter === 'ALL_BRANCHES') return false
+
+  const installer = row.technicianName || ''
+  if (isTaguigBranchRef(branchFilter)) {
+    if (!isDriverOnlyOnLineup(installer, driverOnlyNames)
+        && isListedOnNonTaguigLineup(installer, lineupIndex, driverOnlyNames)) return false
+    if (row.ticketBranchId?.trim() && !isTaguigBranchRef(row.ticketBranchId)) return false
+  }
 
   const effective = resolveEffectiveArchiveBranchId(row)
   if (!effective) return false
@@ -301,6 +321,72 @@ export function resolveArchiveBranchId(
   return ''
 }
 
+export type InstallerBranchIndexEntry = { installerName: string; branchId: string }
+
+function normalizeInstallerName(name: string): string {
+  return name.toUpperCase().trim().replace(/\s+/g, ' ')
+}
+
+function installerBaseName(name: string): string {
+  return normalizeInstallerName(name).replace(/\s+\d+$/, '').trim()
+}
+
+function installerNamesMatch(left: string, right: string): boolean {
+  const l = normalizeInstallerName(left)
+  const r = normalizeInstallerName(right)
+  if (!l || !r) return false
+  if (l === r) return true
+  if (installerBaseName(l).length >= 3 && installerBaseName(l) === installerBaseName(r)) return true
+  const wordEq = (whole: string, word: string) => {
+    const w = installerBaseName(word)
+    if (w.length < 3) return false
+    return normalizeInstallerName(whole).split(/\s+/).some((t) => installerBaseName(t) === w)
+  }
+  return wordEq(l, r) || wordEq(r, l)
+}
+
+/** True when name is on a lineup driver roster but not on any installer roster. */
+export function isDriverOnlyOnLineup(
+  name: string | null | undefined,
+  driverOnlyNames: string[] = [],
+): boolean {
+  if (!name?.trim() || driverOnlyNames.length === 0) return false
+  return driverOnlyNames.some((d) => installerNamesMatch(name, d))
+}
+
+/** Resolve branch from lineup installer roster (client-side index from /lineup/installer-branch-index). */
+export function resolveInstallerLineupBranchId(
+  installerName: string | null | undefined,
+  index: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
+): string {
+  const matches = resolveInstallerLineupBranchMatches(installerName, index, driverOnlyNames)
+  return matches.length === 1 ? matches[0] : ''
+}
+
+export function resolveInstallerLineupBranchMatches(
+  installerName: string | null | undefined,
+  index: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
+): string[] {
+  if (!installerName?.trim() || index.length === 0) return []
+  if (isDriverOnlyOnLineup(installerName, driverOnlyNames)) return []
+  const matches = index
+    .filter((e) => installerNamesMatch(installerName, e.installerName))
+    .map((e) => resolveScopedBranchId(e.branchId))
+    .filter((id) => id && id !== 'ALL_BRANCHES')
+  return [...new Set(matches)]
+}
+
+export function isListedOnNonTaguigLineup(
+  installerName: string | null | undefined,
+  index: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
+): boolean {
+  if (isDriverOnlyOnLineup(installerName, driverOnlyNames)) return false
+  return resolveInstallerLineupBranchMatches(installerName, index, driverOnlyNames).some((id) => !isTaguigBranchRef(id))
+}
+
 /** Archives branch for a schedule ticket — lineup installer roster, then ticket branch. */
 export function resolveTicketArchiveBranchId(
   ticket: {
@@ -308,12 +394,29 @@ export function resolveTicketArchiveBranchId(
     branch_id?: string | null
     installerLineupBranchId?: string | null
     installer_lineup_branch_id?: string | null
+    installerName?: string | null
+    installer_name?: string | null
+    technicianName?: string | null
   },
+  lineupIndex?: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
 ): string {
-  const fromLineup = resolveScopedBranchId(
+  const fromLineupField = resolveScopedBranchId(
     ticket.installerLineupBranchId || ticket.installer_lineup_branch_id,
   )
-  if (fromLineup && fromLineup !== 'ALL_BRANCHES') return fromLineup
+  if (fromLineupField && fromLineupField !== 'ALL_BRANCHES') return fromLineupField
+
+  const installer = (
+    ticket.installerName
+    || ticket.installer_name
+    || ticket.technicianName
+    || ''
+  ).trim()
+  if (lineupIndex && installer) {
+    const fromIndex = resolveInstallerLineupBranchId(installer, lineupIndex, driverOnlyNames)
+    if (fromIndex) return fromIndex
+  }
+
   return resolveScopedBranchId(ticket.branchId || ticket.branch_id)
 }
 

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, archiveRowMatchesBranch, resolveArchiveWriteBranchId, resolveArchivesBranchFilter } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, archiveRowMatchesBranch, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, type InstallerBranchIndexEntry } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -271,15 +271,17 @@ export default function DailyServiceReport() {
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
+  const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
+  const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const uniqueBrands = useMemo(() => {
     const set = new Set<string>()
     rows
-      .filter((r) => archiveRowMatchesBranch(archiveRowSignals(r), branchFilter))
+      .filter((r) => archiveRowMatchesBranch(archiveRowSignals(r), branchFilter, installerLineupIndex, driverOnlyNames))
       .forEach((r) => set.add(getRowBrand(r)))
     return Array.from(set).sort()
-  }, [rows, branchFilter])
+  }, [rows, branchFilter, installerLineupIndex, driverOnlyNames])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -694,6 +696,8 @@ export default function DailyServiceReport() {
         const scoped = (data as ServiceRow[]).filter((r) => archiveRowMatchesBranch(
           archiveRowSignals(r),
           resolveArchivesBranchFilter(branchFilter, branches, user),
+          installerLineupIndex,
+          driverOnlyNames,
         ))
         setRows(scoped)
       }
@@ -702,7 +706,21 @@ export default function DailyServiceReport() {
     } finally {
       setLoading(false)
     }
-  }, [monthFilter, branchFilter, branches, user])
+  }, [monthFilter, branchFilter, branches, user, installerLineupIndex, driverOnlyNames])
+
+  useEffect(() => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!token) return
+    const headers = { Authorization: `Bearer ${token}` }
+    fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
+      .catch(() => setInstallerLineupIndex([]))
+    fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
+      .catch(() => setDriverOnlyNames([]))
+  }, [])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
@@ -1393,6 +1411,8 @@ export default function DailyServiceReport() {
     let filtered = rows.filter((r) => archiveRowMatchesBranch(
       archiveRowSignals(r),
       activeBranch,
+      installerLineupIndex,
+      driverOnlyNames,
     ))
 
     if (brandFilter) {
@@ -1401,7 +1421,7 @@ export default function DailyServiceReport() {
 
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery, branchFilter, brandFilter, branches, user])
+  }, [rows, searchQuery, branchFilter, brandFilter, branches, user, installerLineupIndex, driverOnlyNames])
 
   // Build month options from current items (+ last 12 months always available)
   const monthOptions = useMemo(() => {

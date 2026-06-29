@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveScopedBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -1320,6 +1320,8 @@ export default function Tickets() {
     ticketCategory: 'INSTALLATION',
   })
   const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string }[]>([])
+  const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
+  const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [savingManual, setSavingManual] = useState(false)
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
@@ -2078,7 +2080,10 @@ export default function Tickets() {
 
       if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
         const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
-        const branchId = resolveTicketArchiveBranch(originalTicket)
+        const branchId = resolveTicketArchiveBranch(originalTicket, {
+          installerName: body.installerName as string | undefined,
+          branchId: originalTicket.branchId,
+        })
         const archivePayload = buildArchiveServiceReportPayload(
           originalTicket,
           branchId,
@@ -2143,9 +2148,9 @@ export default function Tickets() {
     return resolveArchiveBranchId(branchSource, user?.branchId)
   }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
 
-  const resolveTicketArchiveBranch = useCallback((ticket: Ticket) =>
-    resolveTicketArchiveBranchId(ticket),
-  [])
+  const resolveTicketArchiveBranch = useCallback((ticket: Ticket, fields?: Partial<Ticket>) =>
+    resolveTicketArchiveBranchId({ ...ticket, ...fields }, installerLineupIndex, driverOnlyNames),
+  [installerLineupIndex, driverOnlyNames])
 
   const handleApplyImport = async () => {
     if (!importResults) return
@@ -2195,7 +2200,7 @@ export default function Tickets() {
       : normalUpdates
 
     const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
-      const branchId = resolveTicketArchiveBranch(ticket)
+      const branchId = resolveTicketArchiveBranch(ticket, updatedFields)
       const merged = { ...ticket, ...updatedFields }
       const payload = buildArchiveServiceReportPayload(ticket, branchId, {
         customerName: updatedFields.customerName,
@@ -2588,6 +2593,18 @@ export default function Tickets() {
         .catch(err => console.error('Failed to load branch employees:', err))
     }
   }, [canEdit, token, globalBranchId, user?.branchId])
+
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${token()}` }
+    fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
+      .catch(() => setInstallerLineupIndex([]))
+    fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
+      .catch(() => setDriverOnlyNames([]))
+  }, [token])
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
