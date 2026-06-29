@@ -124,6 +124,50 @@ export function isTaguigServicesScope(branchId?: string | null, email?: string |
   return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
 }
 
+/** Signals used to classify Taguig Archives rows as Services vs Sales. */
+export type TaguigArchiveRowSignals = {
+  branchId?: string | null
+  serviceType?: string | null
+  statusCode?: string | null
+  dealer?: string | null
+  technicianName?: string | null
+  remarks?: string | null
+  note?: string | null
+  inputBy?: string | null
+  serviceColumn?: string | null
+}
+
+/** Classify a Taguig archive row as Services dept (field crew, coordinator, repair/PMS, etc.). */
+export function isTaguigServiceArchiveRecord(row: TaguigArchiveRowSignals): boolean {
+  if (row.branchId?.toUpperCase() === 'BR-TAGUIG-SERVICES') return true
+
+  const code = (row.statusCode || '').trim().toUpperCase()
+  if (code.startsWith('S') && !code.startsWith('SI')) return true
+
+  const type = (row.serviceType || '').toUpperCase()
+  if (['REPAIR', 'MAINT', 'PMS', 'CLEANING', 'CHECK', 'SERVICE'].some((k) => type.includes(k))) {
+    return true
+  }
+
+  const blob = [
+    row.dealer,
+    row.inputBy,
+    row.technicianName,
+    row.remarks,
+    row.note,
+    row.serviceColumn,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
+
+  if (blob.includes('JEYNE') || blob.includes('JANE') || blob.includes('MARTOS')) return true
+  if (blob.includes('MANNY') || blob.includes('FROILAN') || blob.includes('JUSTINE') || blob.includes('ROLDAN')) {
+    return true
+  }
+  return blob.includes('DONE BY')
+}
+
 /**
  * Match two branch ids including Taguig Sales vs Services split.
  * Use instead of isSameBaseBranch when filtering schedules/tickets/employees.

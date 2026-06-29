@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, isTaguigBranchRef, isTaguigServiceArchiveRecord } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1372,17 +1372,23 @@ export default function DailyServiceReport() {
     let filtered = rows
 
     const filterLower = (branchFilter || '').toLowerCase()
-    if (filterLower.endsWith('-sales') || filterLower === 'br-taguig-sales') {
-      filtered = rows.filter(r => {
-        const type = (r.serviceType || '').toUpperCase()
-        const code = (r.statusCode || '').toUpperCase()
-        return type.includes('INSTALL') || code === 'I'
-      })
-    } else if (filterLower.endsWith('-services') || filterLower.endsWith('-service') || filterLower === 'br-taguig-services') {
-      filtered = rows.filter(r => {
-        const type = (r.serviceType || '').toUpperCase()
-        const code = (r.statusCode || '').toUpperCase()
-        return !type.includes('INSTALL') && code !== 'I'
+    if (isTaguigBranchRef(branchFilter)) {
+      const wantServices = filterLower.endsWith('-services')
+        || filterLower.endsWith('-service')
+        || filterLower === 'br-taguig-services'
+      filtered = rows.filter((r) => {
+        const isService = isTaguigServiceArchiveRecord({
+          branchId: r.branchId,
+          serviceType: r.serviceType,
+          statusCode: r.statusCode,
+          dealer: r.dealer,
+          technicianName: r.technicianName,
+          remarks: r.remarks,
+          note: r.note,
+          inputBy: r.inputBy,
+          serviceColumn: r.serviceColumn,
+        })
+        return wantServices ? isService : !isService
       })
     }
 
