@@ -762,6 +762,14 @@ export default function LineUp() {
 
   }, [branchName, suggestions])
 
+  const getBranchDefaultRowsRef = useRef(getBranchDefaultRows)
+
+  useEffect(() => {
+
+    getBranchDefaultRowsRef.current = getBranchDefaultRows
+
+  }, [getBranchDefaultRows])
+
   const fetchSuggestions = useCallback(async (bId: string) => {
 
     if (!bId) return
@@ -1014,7 +1022,7 @@ export default function LineUp() {
 
     if (filtered.length === 0 && branchId) {
 
-      filtered = getBranchDefaultRows(date, branchId)
+      filtered = getBranchDefaultRowsRef.current(date, branchId)
 
     }
 
@@ -1066,7 +1074,7 @@ export default function LineUp() {
 
           } else {
 
-            setRows(getBranchDefaultRows(date, branchId))
+            setRows(getBranchDefaultRowsRef.current(date, branchId))
 
           }
 
@@ -1084,7 +1092,8 @@ export default function LineUp() {
 
     }
 
-  }, [date, branchId, getBranchDefaultRows])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, branchId])
 
   useEffect(() => {
 
@@ -1564,15 +1573,7 @@ export default function LineUp() {
 
           ) : (
 
-            (field === 'driverName' || field === 'installerName') ? (
-
-              value ? <EmployeeNameLink nameOrId={value} /> : '—'
-
-            ) : (
-
-              value || '—'
-
-            )
+            value || '—'
 
           )}
 
@@ -1732,15 +1733,7 @@ export default function LineUp() {
 
         ) : (
 
-          (field === 'driverName' || field === 'installerName') ? (
-
-            value ? <EmployeeNameLink nameOrId={value} /> : <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
-
-          ) : (
-
-            value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
-
-          )
+          value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
 
         )}
 
