@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { API_BASE_URL, formatPersonName, resolveImageUrl } from '../utils/api'
 
 export interface AuthUser {
   id?: string
@@ -26,6 +27,7 @@ interface AuthContextType {
   user: AuthUser | null
   setUser: (user: AuthUser | null) => void
   logout: () => void
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -96,6 +98,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(SESSION_KEY)
   }
 
+  const refreshProfile = useCallback(async () => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    if (!token) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      const body = await res.json()
+      const u = body?.data || body
+      if (!u) return
+      const name = formatPersonName(u.name || '')
+      setUserState(prev => {
+        if (!prev) return prev
+        const next = normalizeAuthUser({
+          ...prev,
+          name: name || prev.name,
+          email: u.email ?? prev.email,
+          personalEmail: u.personalEmail ?? prev.personalEmail,
+          phone: u.phone ?? prev.phone,
+          picture: resolveImageUrl(u.profileImage) || prev.picture,
+          jobTitle: u.jobTitle ?? prev.jobTitle,
+          branchId: u.branchId ?? prev.branchId,
+          region: u.region ?? prev.region,
+          city: u.city ?? prev.city,
+          barangay: u.barangay ?? prev.barangay,
+          street: u.street ?? u.address ?? prev.street,
+          landmark: u.landmark ?? prev.landmark,
+          initials: getInitials(name || prev.name),
+        })
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next))
+        if (localStorage.getItem('ashcol-token')) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(next))
+        }
+        return next
+      })
+    } catch {
+      // ignore — stale cached user is acceptable offline
+    }
+  }, [])
+
+  // Keep session avatar/name in sync after profile edits elsewhere in the app
+  useEffect(() => {
+    const onProfileUpdated = () => { refreshProfile() }
+    window.addEventListener('ashcol-profile-updated', onProfileUpdated)
+    return () => window.removeEventListener('ashcol-profile-updated', onProfileUpdated)
+  }, [refreshProfile])
+
+  // Refresh profile once when a session is restored
+  useEffect(() => {
+    if (user) refreshProfile()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Periodic token expiration check
   useEffect(() => {
     const checkToken = () => {
@@ -128,7 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, setUser, logout }}>
+    <AuthContext.Provider value={{ user, setUser, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

@@ -5,7 +5,7 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
-import { getPortalHomePath, resolveImageUrl, API_BASE_URL } from '../utils/api'
+import { getPortalHomePath, resolveImageUrl, formatPersonName, API_BASE_URL } from '../utils/api'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 export default function Login() {
@@ -86,7 +86,7 @@ export default function Login() {
         localStorage.setItem('ashcol-token', appToken)
         localStorage.setItem('ashcol-user', JSON.stringify({
           id: appUser.id,
-          name: appUser.name || email,
+          name: formatPersonName(appUser.name || email),
           email: appUser.email || email,
           personalEmail: appUser.personalEmail ?? null,
           picture: resolveImageUrl(appUser.profileImage),

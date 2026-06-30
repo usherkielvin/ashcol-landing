@@ -4,7 +4,8 @@ import {
   Wrench, Tag, Globe, Map, Home, Mailbox, MapPin, User, Calendar, RefreshCw
 } from 'lucide-react'
 import { useTheme } from './ThemeContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatPersonName } from '../utils/api'
+import UserAvatar from '../components/UserAvatar'
 
 export interface Employee {
   id: string
@@ -54,14 +55,6 @@ const roleColor = (role: string) => {
     default:        return { bg: 'rgba(16,185,129,0.10)', text: '#10B981', border: 'rgba(16,185,129,0.20)' }
   }
 }
-
-const avatarColor = (name: string) => {
-  const colors = ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6','#EF4444','#6366F1']
-  return colors[(name.charCodeAt(0) || 0) % colors.length]
-}
-
-const initials = (name: string) =>
-  name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '?'
 
 const parseSkills = (skillsStr?: string): string[] => {
   if (!skillsStr) return []
@@ -236,22 +229,10 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
               
               {/* Left Column - Profile summary & status */}
               <div className="w-full md:w-1/3 p-6 border-b md:border-b-0 md:border-r flex flex-col items-center gap-4 text-center shrink-0" style={{ borderColor: border }}>
-                <div className="relative w-24 h-24">
-                  {selectedEmployee.profileImage ? (
-                    <img
-                      src={selectedEmployee.profileImage}
-                      alt={selectedEmployee.name}
-                      className="w-24 h-24 rounded-full object-cover border border-slate-500/10"
-                    />
-                  ) : (
-                    <div className="w-24 h-24 rounded-full flex items-center justify-center text-white font-black text-2xl" style={{ backgroundColor: avatarColor(selectedEmployee.name) }}>
-                      {initials(selectedEmployee.name)}
-                    </div>
-                  )}
-                </div>
+                <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="lg" ring />
 
                 <div>
-                  <h4 className="text-base font-bold" style={{ color: textPrimary }}>{selectedEmployee.name}</h4>
+                  <h4 className="text-xl font-semibold tracking-tight" style={{ color: textPrimary }}>{formatPersonName(selectedEmployee.name)}</h4>
                   <p className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>ID: {selectedEmployee.id}</p>
                 </div>
 

@@ -9,7 +9,8 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError } from '../utils/api'
+import UserAvatar from '../components/UserAvatar'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -143,31 +144,6 @@ const roleColor = (role: string) => {
     case 'MANAGER':    return { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', border: 'rgba(59,130,246,0.25)' }
     default:           return { bg: 'rgba(16,185,129,0.10)', text: '#10B981', border: 'rgba(16,185,129,0.20)' }
   }
-}
-
-const avatarColor = (name: string) => {
-  const colors = ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6','#EF4444','#6366F1']
-  return colors[(name.charCodeAt(0) || 0) % colors.length]
-}
-
-const initials = (name: string) =>
-  name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '?'
-
-const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])
-
-const formatPersonName = (name: string) => {
-  if (!name?.trim()) return ''
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((part, index) => {
-      const bare = part.toLowerCase().replace(/\./g, '')
-      if (index > 0 && NAME_PARTICLES.has(bare)) {
-        return bare === 'sto' ? 'Sto.' : part.toLowerCase()
-      }
-      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
-    })
-    .join(' ')
 }
 
 const formatBranchLabel = (name: string) => {
@@ -1252,13 +1228,7 @@ export default function Employees() {
                     {/* Employee */}
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        {e.profileImage ? (
-                          <img src={resolveImageUrl(e.profileImage)} alt={e.name} className="w-8 h-8 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white font-bold text-[10px]" style={{ backgroundColor: avatarColor(e.name) }}>
-                            {initials(e.name)}
-                          </div>
-                        )}
+                        <UserAvatar name={e.name} imageUrl={e.profileImage} size="xs" />
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate max-w-[150px]" style={{ color: textPrimary }}>{e.name}</div>
                           <div className="text-xs truncate max-w-[150px]" style={{ color: textMuted }}>{e.email}</div>
@@ -1401,17 +1371,7 @@ export default function Employees() {
               {/* Left Column - Profile summary & status */}
               <div className="w-full md:w-1/3 p-6 border-b md:border-b-0 md:border-r flex flex-col items-center gap-4 text-center shrink-0" style={{ borderColor: border }}>
                 <div className="relative group w-24 h-24">
-                  {selectedEmployee.profileImage ? (
-                    <img
-                      src={resolveImageUrl(selectedEmployee.profileImage)}
-                      alt={selectedEmployee.name}
-                      className="w-24 h-24 rounded-full object-cover border border-slate-500/10"
-                    />
-                  ) : (
-                    <div className="w-24 h-24 rounded-full flex items-center justify-center text-white font-black text-2xl" style={{ backgroundColor: avatarColor(selectedEmployee.name) }}>
-                      {initials(selectedEmployee.name)}
-                    </div>
-                  )}
+                  <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="lg" ring className="mb-1" />
                   {/* Upload Overlay */}
                   <div
                     onClick={triggerImageUpload}
@@ -1642,9 +1602,7 @@ export default function Employees() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: border }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{ backgroundColor: avatarColor(editTarget.name) }}>
-                  {initials(editTarget.name)}
-                </div>
+                <UserAvatar name={editTarget.name} imageUrl={editForm.profileImage} size="sm" className="shrink-0" />
                 <div>
                   <h3 className="font-black text-base" style={{ color: textPrimary }}>Edit Account</h3>
                   <p className="text-xs" style={{ color: textMuted }}>{editTarget.email}</p>

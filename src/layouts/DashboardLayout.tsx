@@ -31,7 +31,8 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
+import UserAvatar from '../components/UserAvatar'
 
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -144,7 +145,6 @@ export default function DashboardLayout() {
   const [profileOpen, setProfileOpen]           = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
-  const [navPicBroken, setNavPicBroken]         = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
   const location = useLocation()
@@ -238,12 +238,6 @@ export default function DashboardLayout() {
     setGlobalBranchId(val)
     window.dispatchEvent(new Event('ashcol-global-branch-change'))
   }
-
-  // Reset broken flag whenever the picture URL changes (e.g. after a new upload)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNavPicBroken(false)
-  }, [user?.picture])
 
   useEffect(() => {
     if (isPortalAdminUser || !user?.branchId) {
@@ -699,29 +693,22 @@ export default function DashboardLayout() {
                     sidebarCollapsed ? 'p-2 justify-center w-11 h-11' : 'px-4 py-3'
                   }`}
                 >
-                  {/* Avatar */}
-                  {user?.picture && !navPicBroken ? (
-                    <img
-                      src={user.picture}
-                      alt={user.name}
-                      className="w-9 h-9 rounded-full object-cover ring-2 ring-white/30 shrink-0"
-                      referrerPolicy="no-referrer"
-                      onError={() => setNavPicBroken(true)}
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#1e732c] font-bold text-lg shrink-0">
-                      {user?.initials ?? '?'}
-                    </div>
-                  )}
+                  <UserAvatar
+                    name={user?.name}
+                    imageUrl={user?.picture}
+                    size="sm"
+                    ring
+                    variant="sidebar"
+                  />
 
                   {/* Name + Role */}
                   {!sidebarCollapsed && (
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate leading-snug text-white">
-                        {user?.name ?? 'Admin User'}
+                      <p className="text-sm font-semibold truncate leading-snug text-white">
+                        {formatPersonName(user?.name ?? '') || 'User'}
                       </p>
                       <p className="text-xs truncate leading-none mt-0.5 text-white/60 font-normal">
-                        {user?.jobTitle || formatRole(user?.role) || 'Administrator'}
+                        {user?.jobTitle ? formatPersonName(user.jobTitle) : formatRole(user?.role) || 'Staff'}
                       </p>
                     </div>
                   )}

@@ -8,7 +8,8 @@ import {
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import type { AddressValue } from '../components/PhAddressPicker'
-import { API_BASE_URL, resolveImageUrl, formatRole, isSystemAdmin } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, formatRole, formatPersonName, isSystemAdmin, PROFILE_UPDATED_EVENT } from '../utils/api'
+import UserAvatar from '../components/UserAvatar'
 
 const apiUrl = API_BASE_URL
 const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -58,7 +59,6 @@ export default function Profile() {
   const [picLoading, setPicLoading] = useState(false)
   const [picErr, setPicErr]         = useState('')
   const [cropSrc, setCropSrc]       = useState<string | null>(null)
-  const [picBroken, setPicBroken]   = useState(false)
 
   // ── Email change state ────────────────────────────────────────────────────
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -92,18 +92,18 @@ export default function Profile() {
   const [usersErr, setUsersErr]             = useState('')
   const [roleFilter, setRoleFilter]         = useState('CUSTOMER')
 
-  // Fetch latest profile on mount and after save
+  // Load latest profile into form + session on mount
   useEffect(() => {
     if (!getToken()) return
     fetch(`${apiUrl}/user/profile`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data) return
+        if (!data || !user) return
         const u = data?.data || data
-        if (u.phone !== undefined) setPhone(u.phone || '')
-        if (u.name !== undefined) setName(u.name || '')
-        if (u.personalEmail !== undefined) setPersonalEmail(u.personalEmail || '')
-        // Always update address from API, even if empty
+        const formattedName = formatPersonName(u.name || user.name || '')
+        setName(formattedName)
+        setPersonalEmail(u.personalEmail || '')
+        setPhone(u.phone || '')
         setAddress({
           region: u.region || '',
           city: u.city || '',
@@ -111,16 +111,24 @@ export default function Profile() {
           street: u.street || u.address || '',
           landmark: u.landmark || '',
         })
-        // Sync picture from server so stale/broken URLs in localStorage are replaced
-        if (u.profileImage !== undefined && user) {
-          const freshUrl = resolveImageUrl(u.profileImage)
-          if (freshUrl !== user.picture) {
-            setUser({ ...user, picture: freshUrl })
-          }
-        }
+        setUser({
+          ...user,
+          name: formattedName,
+          email: u.email ?? user.email,
+          personalEmail: u.personalEmail ?? user.personalEmail,
+          phone: u.phone ?? user.phone,
+          picture: resolveImageUrl(u.profileImage) || user.picture,
+          jobTitle: u.jobTitle ?? user.jobTitle,
+          region: u.region ?? user.region,
+          city: u.city ?? user.city,
+          barangay: u.barangay ?? user.barangay,
+          street: u.street || u.address || user.street,
+          landmark: u.landmark ?? user.landmark,
+          initials: getInitials(formattedName),
+        })
       })
       .catch(() => {})
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch users by role for admin
   useEffect(() => {
@@ -137,11 +145,12 @@ export default function Profile() {
 
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) return setNameErr('Name is required.')
+    const formattedName = formatPersonName(name)
+    if (!formattedName) return setNameErr('Name is required.')
+    setName(formattedName)
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
-      // For admin, only send name. For others, send all fields including address.
-      const payload: any = { name: name.trim() }
+      const payload: Record<string, string> = { name: formattedName }
       if (user?.role !== 'admin') {
         payload.phone = phone.trim()
         payload.region = address.region
@@ -153,7 +162,6 @@ export default function Profile() {
       if (isManager) {
         payload.personalEmail = personalEmail.trim()
       }
-      console.log('Updating profile with payload:', payload)
       const res = await fetch(`${apiUrl}/user/profile`, {
         method: 'PATCH', headers: authHeaders(),
         body: JSON.stringify(payload),
@@ -161,10 +169,9 @@ export default function Profile() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to update.')
       const data = await res.json()
       const u = data?.data || data
-      console.log('Profile update response:', data)
       const updatedUser = {
         ...user!,
-        name: u.name || name.trim(),
+        name: formatPersonName(u.name || formattedName),
         phone: u.phone || phone.trim(),
         personalEmail: isManager ? ((u.personalEmail ?? personalEmail.trim()) || null) : user!.personalEmail,
         region: u.region || address.region,
@@ -172,28 +179,10 @@ export default function Profile() {
         barangay: u.barangay || address.barangay,
         street: u.street || address.street,
         landmark: u.landmark || address.landmark,
-        initials: getInitials(u.name || name.trim())
+        initials: getInitials(u.name || formattedName)
       }
       setUser(updatedUser)
-      // Refetch profile to ensure address fields are updated from server
-      fetch(`${apiUrl}/user/profile`, { headers: authHeaders() })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data) return
-          const u = data?.data || data
-          // Use server response if available, otherwise keep current local state
-          setAddress({
-            region: u.region || address.region || '',
-            city: u.city || address.city || '',
-            barangay: u.barangay || address.barangay || '',
-            street: u.street || u.address || address.street || '',
-            landmark: u.landmark || address.landmark || '',
-          })
-        })
-        .catch(() => {
-          // If refetch fails, keep the current address state
-          console.log('Profile refetch failed, keeping local address state')
-        })
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
       setNameMsg('Profile updated!')
       setTimeout(() => setNameMsg(''), 3000)
     } catch (err: any) {
@@ -223,8 +212,8 @@ export default function Profile() {
       const data = await res.json()
       const imagePath = data?.data?.image_url || data?.image_url || ''
       const fullUrl = resolveImageUrl(imagePath)
-      setPicBroken(false)
-      setUser({ ...user!, picture: fullUrl })
+      setUser({ ...user!, picture: fullUrl, initials: getInitials(user!.name) })
+      window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
     } catch (err: any) {
       setPicErr(err.message || 'Could not upload image.')
     } finally { setPicLoading(false) }
@@ -332,24 +321,14 @@ export default function Profile() {
         ══════════════════════════════════════════════════════════════════ */}
         <aside className="w-full md:w-56 shrink-0">
           {/* User avatar + name */}
-          <div className="flex md:flex-col items-center gap-3 md:gap-1 px-4 py-5 md:pt-6 md:pb-5"
+          <div className="flex md:flex-col items-center gap-3 md:gap-2 px-4 py-5 md:pt-6 md:pb-5"
             style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
-            <div className="relative shrink-0">
-              {user?.picture && !picBroken ? (
-                <img src={user.picture} alt={user.name}
-                  className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover border-2 border-[#10B981]/40"
-                  referrerPolicy="no-referrer"
-                  onError={() => setPicBroken(true)} />
-              ) : (
-                <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-xl">
-                  {user?.initials ?? '?'}
-                </div>
-              )}
-            </div>
+            <UserAvatar name={user?.name} imageUrl={user?.picture} size="md" ring className="md:w-16 md:h-16" />
             <div className="md:text-center min-w-0">
-              <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{user?.name}</p>
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#10B981]">
-                <Shield className="w-3 h-3" />{user?.jobTitle || formatRole(user?.role)}
+              <p className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{formatPersonName(user?.name || '')}</p>
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-[#10B981] mt-0.5">
+                <Shield className="w-3 h-3" />
+                {user?.jobTitle ? formatPersonName(user.jobTitle) : formatRole(user?.role)}
               </span>
             </div>
           </div>
@@ -389,7 +368,7 @@ export default function Profile() {
             <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
               {/* Header */}
               <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
-                <h2 className="text-lg font-black" style={{ color: textPrimary }}>My Profile</h2>
+                <h2 className="text-lg font-semibold" style={{ color: textPrimary }}>My profile</h2>
                 <p className="text-sm mt-0.5" style={{ color: textMuted }}>Manage and protect your account</p>
               </div>
 
@@ -403,7 +382,8 @@ export default function Profile() {
                       <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Name</label>
                       <input
                         type="text" required value={name}
-                        onChange={e => setName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'-]/g, ''))}
+                        onChange={e => setName(e.target.value.replace(/[^a-zA-ZÀ-ÿ\s'.-]/g, ''))}
+                        onBlur={e => setName(formatPersonName(e.target.value))}
                         style={inputStyle} className={`${ic} flex-1`} placeholder="Juan Dela Cruz"
                       />
                     </div>
@@ -459,8 +439,9 @@ export default function Profile() {
                     {/* Role row (read-only) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
                       <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Role</label>
-                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
-                          <Shield className="w-3 h-3" />{user?.jobTitle || formatRole(user?.role)}
+                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20">
+                          <Shield className="w-3 h-3" />
+                          {user?.jobTitle ? formatPersonName(user.jobTitle) : formatRole(user?.role)}
                        </span>
                     </div>
 
@@ -484,19 +465,8 @@ export default function Profile() {
                   </div>
 
                   {/* Right: profile picture */}
-                  <div className="w-full md:w-52 flex flex-col items-center justify-start py-6 px-4 order-first md:order-last">
-                    <div className="relative mb-3">
-                      {user?.picture && !picBroken ? (
-                        <img src={user.picture} alt={user.name}
-                          className="w-24 h-24 rounded-full object-cover border-2 border-[#10B981]/30 shadow-md"
-                          referrerPolicy="no-referrer"
-                          onError={() => setPicBroken(true)} />
-                      ) : (
-                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center text-white font-black text-3xl shadow-md">
-                          {user?.initials ?? '?'}
-                        </div>
-                      )}
-                    </div>
+                  <div className="w-full md:w-56 flex flex-col items-center justify-start py-6 px-4 order-first md:order-last border-b md:border-b-0 md:border-l" style={{ borderColor: border }}>
+                    <UserAvatar name={user?.name} imageUrl={user?.picture} size="lg" ring className="shadow-md mb-4" />
                     <button
                       type="button"
                       onClick={() => fileRef.current?.click()}
@@ -504,13 +474,13 @@ export default function Profile() {
                       className="px-4 py-2 rounded-lg border text-sm font-medium transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50"
                       style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
                     >
-                      {picLoading ? 'Uploading...' : 'Select Image'}
+                      {picLoading ? 'Uploading…' : 'Change photo'}
                     </button>
                     <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePicChange} />
-                    <p className="text-[11px] mt-2 text-center leading-relaxed" style={{ color: textMuted }}>
-                      Max file size: 10 MB<br />Format: JPEG, PNG
+                    <p className="text-xs mt-3 text-center leading-relaxed" style={{ color: textMuted }}>
+                      JPEG or PNG · max 10 MB
                     </p>
-                    {picErr && <p className="text-xs text-red-400 mt-1 text-center">{picErr}</p>}
+                    {picErr && <p className="text-xs text-red-400 mt-2 text-center">{picErr}</p>}
                   </div>
                 </div>
               </form>

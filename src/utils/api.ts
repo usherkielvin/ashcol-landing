@@ -456,15 +456,40 @@ export function resolveImageUrl(path: string | null | undefined): string {
   return `${SERVER_BASE_URL}${path}`
 }
 
-/** Maps backend roles to user-friendly titles */
+export const PROFILE_UPDATED_EVENT = 'ashcol-profile-updated'
+
+const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])
+
+/** Title-case person names for display and save (e.g. "JUAN DELA CRUZ" → "Juan Dela Cruz"). */
+export function formatPersonName(name: string): string {
+  if (!name?.trim()) return ''
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part, index) => {
+      const bare = part.toLowerCase().replace(/\./g, '')
+      if (index > 0 && NAME_PARTICLES.has(bare)) {
+        return bare === 'sto' ? 'Sto.' : part.toLowerCase()
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
+
+/** Maps backend roles to readable labels */
 export function formatRole(role?: string): string {
   if (!role) return ''
-  const r = role.toUpperCase()
-  if (r === 'MANAGER') return 'OIC'
-  if (r === 'ADMIN') return 'ADMIN'
-  if (r === 'MANAGEMENT') return 'MANAGEMENT'
-  if (r === 'OIC') return 'OIC'
-  return r
+  const r = role.toLowerCase()
+  const labels: Record<string, string> = {
+    admin: 'Admin',
+    management: 'Management',
+    manager: 'Office In Charge',
+    oic: 'Office In Charge',
+    employee: 'Employee',
+    staff: 'Staff',
+    customer: 'Customer',
+  }
+  return labels[r] || formatPersonName(role.replace(/_/g, ' '))
 }
 
 /** Strips or replaces legacy role suffixes like " - MANAGER" with " - OIC" for UI display */
