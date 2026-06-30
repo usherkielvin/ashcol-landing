@@ -162,10 +162,21 @@ export function getTicketArchiveDateKey(ticket: TicketLike): string {
   return todayDateKey()
 }
 
+function dateInMonth(dateKey: string, month: string): boolean {
+  if (!dateKey || !month) return false
+  const normalized = dateKey.split('T')[0].split(' ')[0].trim()
+  return normalized >= `${month}-01` && normalized <= lastDayOfMonth(month)
+}
+
+/** Match installed/completion month or original schedule month. */
 function ticketInMonth(ticket: TicketLike, month: string): boolean {
-  const key = getTicketArchiveDateKey(ticket)
-  if (!key) return false
-  return key >= `${month}-01` && key <= lastDayOfMonth(month)
+  const meta = parseAcMeta(ticket)
+  const candidates = [
+    getTicketArchiveDateKey(ticket),
+    String(ticket.preferredDate ?? ticket.preferred_date ?? ''),
+    String(meta.archivedScheduleDate ?? ''),
+  ]
+  return candidates.some((key) => dateInMonth(key, month))
 }
 
 export function buildArchivePayloadFromTicket(
@@ -217,6 +228,7 @@ export function buildArchivePayloadFromTicket(
 export async function postTicketArchiveReport(
   payload: Record<string, unknown>,
   token: string,
+  options?: { silent?: boolean },
 ): Promise<Record<string, unknown>> {
   const res = await fetch(`${API_BASE_URL}/v1/service-reports`, {
     method: 'POST',
@@ -224,7 +236,7 @@ export async function postTicketArchiveReport(
     body: JSON.stringify(payload),
   })
   if (!res.ok) throw new Error(await readApiError(res))
-  notifyArchiveUpdated()
+  if (!options?.silent) notifyArchiveUpdated()
   return res.json() as Promise<Record<string, unknown>>
 }
 
@@ -236,6 +248,7 @@ export async function syncMissingTicketArchives(
   existingRows: Array<{ ticketId?: string | null }>,
   lineupIndex: InstallerBranchIndexEntry[] = [],
   driverOnlyNames: string[] = [],
+  alreadySyncedTicketIds: Set<string> = new Set(),
 ): Promise<Record<string, unknown>[]> {
   const existingIds = new Set(
     existingRows.map((r) => r.ticketId).filter((id): id is string => Boolean(id)),
@@ -251,8 +264,10 @@ export async function syncMissingTicketArchives(
   const created: Record<string, unknown>[] = []
   for (const raw of tickets) {
     const ticket = raw as TicketLike
+    const ticketId = ticket.id ? String(ticket.id) : ''
+    if (!ticketId) continue
     if (String(ticket.status || '').toUpperCase() !== 'COMPLETED') continue
-    if (ticket.id && existingIds.has(String(ticket.id))) continue
+    if (existingIds.has(ticketId) || alreadySyncedTicketIds.has(ticketId)) continue
     if (!shouldBackfillTicketArchive(ticket)) continue
     if (!ticketMatchesArchiveBranchFilter(ticket, branchFilter, lineupIndex, driverOnlyNames)) continue
     if (!ticketInMonth(ticket, month)) continue
@@ -260,8 +275,9 @@ export async function syncMissingTicketArchives(
     const payload = buildArchivePayloadFromTicket(ticket, branchFilter, lineupIndex, driverOnlyNames)
     if (!payload) continue
 
+    alreadySyncedTicketIds.add(ticketId)
     try {
-      const saved = await postTicketArchiveReport(payload, token)
+      const saved = await postTicketArchiveReport(payload, token, { silent: true })
       created.push(saved)
       if (saved.ticketId) existingIds.add(String(saved.ticketId))
     } catch (err) {

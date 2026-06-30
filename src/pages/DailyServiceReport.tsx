@@ -229,6 +229,10 @@ export default function DailyServiceReport() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
 
+  const archivesUser = useMemo(
+    () => ({ role: user?.role, branchId: user?.branchId }),
+    [user?.role, user?.branchId],
+  )
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
@@ -257,6 +261,13 @@ export default function DailyServiceReport() {
   const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
+  const lineupIndexRef = useRef<InstallerBranchIndexEntry[]>([])
+  const driverOnlyRef = useRef<string[]>([])
+  const syncedTicketIdsRef = useRef<Set<string>>(new Set())
+  const fetchSeqRef = useRef(0)
+  const hasLoadedOnceRef = useRef(false)
+  const archivesLoadKeyRef = useRef('')
+  const lineupResyncedRef = useRef(false)
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const uniqueBrands = useMemo(() => {
@@ -499,7 +510,7 @@ export default function DailyServiceReport() {
       if (!res.ok) throw new Error(`Bulk save failed (HTTP ${res.status})`)
 
       setScanSuccess(true)
-      fetchRows()
+      fetchRows({ sync: false, soft: true })
     } catch (e: any) {
       alert(`Could not save scanned rows: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -642,39 +653,61 @@ export default function DailyServiceReport() {
     const syncFromGlobal = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
       const resolved = resolveArchivesBranchFilter(gId, branches, user)
-      if (resolved) setBranchFilter(resolved)
+      if (resolved && resolved !== branchFilter) setBranchFilter(resolved)
     }
     syncFromGlobal()
     window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
     return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [isAdmin, branches, user])
+  }, [isAdmin, branches, user, branchFilter])
 
-  const fetchRows = useCallback(async () => {
+  const mergeArchiveRows = useCallback((primary: ServiceRow[], extra: ServiceRow[]) => {
+    const byId = new Map<string, ServiceRow>()
+    const byTicketId = new Map<string, ServiceRow>()
+    for (const row of primary) {
+      byId.set(row.id, row)
+      if (row.ticketId) byTicketId.set(row.ticketId, row)
+    }
+    for (const row of extra) {
+      if (row.ticketId && byTicketId.has(row.ticketId)) continue
+      if (!byId.has(row.id)) byId.set(row.id, row)
+      if (row.ticketId) byTicketId.set(row.ticketId, row)
+    }
+    return Array.from(byId.values())
+  }, [])
+
+  const fetchRows = useCallback(async (options?: { sync?: boolean; soft?: boolean }) => {
     if (branches.length === 0) {
-      setLoading(true)
+      if (!hasLoadedOnceRef.current) setLoading(true)
       return
     }
 
-    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, user)
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
     if (!effectiveBranch) {
       setRows([])
       setLoading(false)
+      hasLoadedOnceRef.current = true
       return
     }
 
-    setLoading(true)
+    const seq = ++fetchSeqRef.current
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current
+    if (showSkeleton) setLoading(true)
+
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams()
-      params.set('month', monthFilter || (() => {
+      const month = monthFilter || (() => {
         const now = new Date()
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      })())
+      })()
+      const params = new URLSearchParams()
+      params.set('month', month)
       params.set('branchId', effectiveBranch)
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
+
+      if (seq !== fetchSeqRef.current) return
 
       let loaded: ServiceRow[] = []
       if (res.ok) {
@@ -682,33 +715,37 @@ export default function DailyServiceReport() {
         loaded = Array.isArray(data) ? data as ServiceRow[] : []
       }
 
-      if (canEdit && token) {
-        const backfilled = await syncMissingTicketArchives(
+      let backfilled: ServiceRow[] = []
+      if (options?.sync !== false && canEdit && token) {
+        const created = await syncMissingTicketArchives(
           token,
           effectiveBranch,
-          monthFilter,
+          month,
           loaded,
-          installerLineupIndex,
-          driverOnlyNames,
+          lineupIndexRef.current,
+          driverOnlyRef.current,
+          syncedTicketIdsRef.current,
         )
-        if (backfilled.length > 0) {
-          const byId = new Map<string, ServiceRow>()
-          for (const row of loaded) byId.set(row.id, row)
-          for (const row of backfilled) {
-            const saved = row as unknown as ServiceRow
-            if (saved.id) byId.set(saved.id, saved)
-          }
-          loaded = Array.from(byId.values())
-        }
+        if (seq !== fetchSeqRef.current) return
+        backfilled = created as unknown as ServiceRow[]
       }
 
-      setRows(loaded)
+      const merged = backfilled.length > 0 ? mergeArchiveRows(loaded, backfilled) : loaded
+      setRows((prev) => {
+        if (options?.soft && options?.sync === false && prev.length > 0) {
+          const apiTicketIds = new Set(merged.map((r) => r.ticketId).filter(Boolean))
+          const localOnly = prev.filter((r) => r.ticketId && !apiTicketIds.has(r.ticketId))
+          return localOnly.length > 0 ? mergeArchiveRows(merged, localOnly) : merged
+        }
+        return merged
+      })
+      hasLoadedOnceRef.current = true
     } catch (e) {
       console.error(e)
     } finally {
-      setLoading(false)
+      if (seq === fetchSeqRef.current) setLoading(false)
     }
-  }, [monthFilter, branchFilter, branches, user, canEdit, installerLineupIndex, driverOnlyNames])
+  }, [monthFilter, branchFilter, branches, archivesUser, canEdit, mergeArchiveRows])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
 
@@ -718,20 +755,59 @@ export default function DailyServiceReport() {
     const headers = { Authorization: `Bearer ${token}` }
     fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
       .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
-      .catch(() => setInstallerLineupIndex([]))
+      .then((list) => {
+        const next = Array.isArray(list) ? list : []
+        lineupIndexRef.current = next
+        setInstallerLineupIndex(next)
+      })
+      .catch(() => {
+        lineupIndexRef.current = []
+        setInstallerLineupIndex([])
+      })
     fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
       .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
-      .catch(() => setDriverOnlyNames([]))
+      .then((list) => {
+        const next = Array.isArray(list) ? list : []
+        driverOnlyRef.current = next
+        setDriverOnlyNames(next)
+      })
+      .catch(() => {
+        driverOnlyRef.current = []
+        setDriverOnlyNames([])
+      })
   }, [])
 
-  useEffect(() => { fetchRows() }, [fetchRows])
+  useEffect(() => {
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
+    const loadKey = `${monthFilter}|${effectiveBranch}`
+    if (archivesLoadKeyRef.current !== loadKey) {
+      archivesLoadKeyRef.current = loadKey
+      syncedTicketIdsRef.current = new Set()
+      lineupResyncedRef.current = false
+    }
+    void fetchRows({ sync: true })
+  }, [fetchRows, monthFilter, branchFilter, branches, archivesUser])
 
   useEffect(() => {
-    const onArchiveUpdated = () => { void fetchRows() }
+    if (lineupResyncedRef.current || !hasLoadedOnceRef.current) return
+    if (installerLineupIndex.length === 0 && driverOnlyNames.length === 0) return
+    lineupResyncedRef.current = true
+    void fetchRows({ sync: true, soft: true })
+  }, [installerLineupIndex, driverOnlyNames, fetchRows])
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onArchiveUpdated = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        void fetchRows({ sync: false, soft: true })
+      }, 400)
+    }
     window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
-    return () => window.removeEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+    return () => {
+      if (timer) clearTimeout(timer)
+      window.removeEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+    }
   }, [fetchRows])
 
   const fetchInstallerSuggestions = useCallback(async (bId: string) => {
@@ -958,7 +1034,7 @@ export default function DailyServiceReport() {
       return finalRowId
     } catch (e: any) {
       // Revert optimistic update on failure
-      fetchRows()
+      fetchRows({ sync: false, soft: true })
       if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
       return null
     }
@@ -1329,7 +1405,7 @@ export default function DailyServiceReport() {
         const result = await res.json()
         const sheetMsg = result?.sheet ? ` (sheet "${result.sheet}")` : ''
         alert(`${result.message || 'Import successful!'}${sheetMsg}`)
-        fetchRows()
+        fetchRows({ sync: false, soft: true })
       } else {
         const err = await res.json().catch(() => ({}))
         alert(err.error || `Import failed (HTTP ${res.status})`)
@@ -1355,7 +1431,7 @@ export default function DailyServiceReport() {
         alert(err.error || `Delete failed (HTTP ${res.status})`)
         return
       }
-      fetchRows()
+      fetchRows({ sync: false, soft: true })
     } catch (e) {
       console.error(e); alert('Network error while deleting')
     }
@@ -1392,7 +1468,7 @@ export default function DailyServiceReport() {
       }
       const result = await res.json()
       alert(`Deleted ${result.deleted} service record${result.deleted !== 1 ? 's' : ''} for ${branchLabel}.`)
-      fetchRows()
+      fetchRows({ sync: false, soft: true })
     } catch (e) {
       console.error(e); alert('Network error while clearing records')
     }
