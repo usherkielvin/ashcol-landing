@@ -8,7 +8,8 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry } from '../utils/api'
+import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -254,6 +255,8 @@ export default function DailyServiceReport() {
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
+  const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
+  const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const uniqueBrands = useMemo(() => {
@@ -647,10 +650,13 @@ export default function DailyServiceReport() {
   }, [isAdmin, branches, user])
 
   const fetchRows = useCallback(async () => {
-    const apiBranchId = resolveScopedBranchId(
-      resolveArchivesBranchFilter(branchFilter, branches, user),
-    )
-    if (!apiBranchId) {
+    if (branches.length === 0) {
+      setLoading(true)
+      return
+    }
+
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, user)
+    if (!effectiveBranch) {
       setRows([])
       setLoading(false)
       return
@@ -660,29 +666,73 @@ export default function DailyServiceReport() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const params = new URLSearchParams()
-      if (monthFilter) {
-        params.set('month', monthFilter)
-      } else {
-        params.set('date', todayLocal())
-      }
-      params.set('branchId', apiBranchId)
+      params.set('month', monthFilter || (() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      })())
+      params.set('branchId', effectiveBranch)
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
+
+      let loaded: ServiceRow[] = []
       if (res.ok) {
         const data = await res.json()
-        setRows(Array.isArray(data) ? data as ServiceRow[] : [])
+        loaded = Array.isArray(data) ? data as ServiceRow[] : []
       }
+
+      if (canEdit && token) {
+        const backfilled = await syncMissingTicketArchives(
+          token,
+          effectiveBranch,
+          monthFilter,
+          loaded,
+          installerLineupIndex,
+          driverOnlyNames,
+        )
+        if (backfilled.length > 0) {
+          const byId = new Map<string, ServiceRow>()
+          for (const row of loaded) byId.set(row.id, row)
+          for (const row of backfilled) {
+            const saved = row as unknown as ServiceRow
+            if (saved.id) byId.set(saved.id, saved)
+          }
+          loaded = Array.from(byId.values())
+        }
+      }
+
+      setRows(loaded)
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [monthFilter, branchFilter, branches, user])
+  }, [monthFilter, branchFilter, branches, user, canEdit, installerLineupIndex, driverOnlyNames])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
+
+  useEffect(() => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!token) return
+    const headers = { Authorization: `Bearer ${token}` }
+    fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
+      .catch(() => setInstallerLineupIndex([]))
+    fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
+      .catch(() => setDriverOnlyNames([]))
+  }, [])
+
   useEffect(() => { fetchRows() }, [fetchRows])
+
+  useEffect(() => {
+    const onArchiveUpdated = () => { void fetchRows() }
+    window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+    return () => window.removeEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+  }, [fetchRows])
 
   const fetchInstallerSuggestions = useCallback(async (bId: string) => {
     if (!bId) {

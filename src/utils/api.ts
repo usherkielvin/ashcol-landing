@@ -457,6 +457,7 @@ export function resolveImageUrl(path: string | null | undefined): string {
 }
 
 export const PROFILE_UPDATED_EVENT = 'ashcol-profile-updated'
+export { ARCHIVE_UPDATED_EVENT, notifyArchiveUpdated } from './ticketArchive'
 
 const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])
 

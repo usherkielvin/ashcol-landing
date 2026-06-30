@@ -1,0 +1,272 @@
+import {
+  API_BASE_URL,
+  branchScopesMatch,
+  fetchTicketsPage,
+  isTaguigBranchRef,
+  isTaguigServiceTicket,
+  isTaguigServicesScope,
+  readApiError,
+  resolveScopedBranchId,
+  resolveTicketArchiveBranchId,
+  type InstallerBranchIndexEntry,
+} from './api'
+
+export const ARCHIVE_UPDATED_EVENT = 'ashcol-archive-updated'
+
+export function notifyArchiveUpdated(): void {
+  window.dispatchEvent(new CustomEvent(ARCHIVE_UPDATED_EVENT))
+}
+
+type TicketLike = Record<string, unknown>
+
+function parseAcMeta(ticket: TicketLike): Record<string, unknown> {
+  const raw = ticket.acDetails ?? ticket.ac_details
+  if (!raw || typeof raw !== 'string') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return (parsed[0] as Record<string, unknown>) || {}
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function ticketRemarks(ticket: TicketLike): string {
+  return [
+    ticket.remarksUpdate,
+    ticket.remarks,
+    ticket.note,
+  ].filter(Boolean).join(' ')
+}
+
+export function isInstalledRemarks(text?: string | null): boolean {
+  return (text || '').toLowerCase().includes('installed')
+}
+
+export function getTicketScheduleOutcome(ticket: TicketLike): string {
+  const meta = parseAcMeta(ticket)
+  const explicit = String(meta.scheduleOutcome || '').toUpperCase()
+  if (explicit) return explicit
+  const remarks = ticketRemarks(ticket).toLowerCase()
+  const stat = String(ticket.status || '').toUpperCase()
+  if (stat === 'COMPLETED') {
+    if (/clean/i.test(remarks)) return 'DONE_CLEANING'
+    if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
+  }
+  return ''
+}
+
+export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
+  const outcome = getTicketScheduleOutcome(ticket)
+  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY') return false
+  if (outcome === 'DONE_INSTALLED') return true
+  const remarks = ticketRemarks(ticket)
+  if (isInstalledRemarks(remarks)) return true
+  if (/clean/i.test(remarks) || /survey/i.test(remarks)) return false
+  return String(ticket.status || '').toUpperCase() === 'COMPLETED'
+}
+
+export function ticketMatchesArchiveBranchFilter(
+  ticket: TicketLike,
+  branchFilter: string,
+  lineupIndex: InstallerBranchIndexEntry[] = [],
+  driverOnlyNames: string[] = [],
+): boolean {
+  if (!branchFilter) return false
+  const archiveBranch = resolveTicketArchiveBranchId(ticket, lineupIndex, driverOnlyNames, branchFilter)
+  if (!archiveBranch) return false
+
+  if (isTaguigBranchRef(branchFilter)) {
+    if (!isTaguigBranchRef(archiveBranch)) return false
+    const wantServices = isTaguigServicesScope(branchFilter)
+    const isService = isTaguigServiceTicket(ticket)
+    return wantServices ? isService : !isService
+  }
+
+  if (isTaguigBranchRef(archiveBranch)) return false
+  return branchScopesMatch(archiveBranch, branchFilter)
+}
+
+function getField(ticket: TicketLike, ...keys: string[]): string {
+  for (const key of keys) {
+    const val = ticket[key]
+    if (typeof val === 'string' && val.trim()) return val.trim()
+  }
+  return ''
+}
+
+function formatAddress(loc: unknown): string {
+  if (!loc) return ''
+  if (typeof loc === 'string') {
+    const s = loc.trim()
+    if (!s) return ''
+    if (s.startsWith('{') || s.startsWith('[')) {
+      try {
+        const p = JSON.parse(s) as { address?: string; region?: string }
+        const addr = (p?.address ?? '').trim()
+        const region = (p?.region ?? '').trim()
+        return addr && region && !addr.toLowerCase().includes(region.toLowerCase())
+          ? `${addr}, ${region}` : addr || region || s
+      } catch { /* fall through */ }
+    }
+    return s
+  }
+  if (typeof loc === 'object' && loc) {
+    const o = loc as { address?: string; region?: string }
+    const addr = (o.address ?? '').trim()
+    const region = (o.region ?? '').trim()
+    return addr && region && !addr.toLowerCase().includes(region.toLowerCase())
+      ? `${addr}, ${region}` : addr || region || ''
+  }
+  return ''
+}
+
+function parseDistrict(ticket: TicketLike): string {
+  const explicit = getField(ticket, 'district')
+  if (explicit) return explicit
+  const loc = ticket.location
+  if (typeof loc === 'string') {
+    try {
+      const p = JSON.parse(loc) as { district?: string; city?: string }
+      return p?.district || p?.city || ''
+    } catch { return '' }
+  }
+  if (loc && typeof loc === 'object') {
+    const o = loc as { district?: string; city?: string }
+    return (o.district || o.city || '').trim()
+  }
+  return ''
+}
+
+function todayDateKey(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function lastDayOfMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  return `${month}-${String(last).padStart(2, '0')}`
+}
+
+export function getTicketArchiveDateKey(ticket: TicketLike): string {
+  const meta = parseAcMeta(ticket)
+  const installed = meta.installedDate
+  if (typeof installed === 'string' && installed.trim()) {
+    return installed.split('T')[0].split(' ')[0].trim()
+  }
+  const completion = ticket.actualCompletion ?? ticket.actual_completion ?? ticket.updatedAt ?? ticket.updated_at
+  if (completion) return String(completion).split('T')[0].split(' ')[0].trim()
+  const preferred = ticket.preferredDate ?? ticket.preferred_date
+  if (preferred) return String(preferred).split('T')[0].split(' ')[0].trim()
+  return todayDateKey()
+}
+
+function ticketInMonth(ticket: TicketLike, month: string): boolean {
+  const key = getTicketArchiveDateKey(ticket)
+  if (!key) return false
+  return key >= `${month}-01` && key <= lastDayOfMonth(month)
+}
+
+export function buildArchivePayloadFromTicket(
+  ticket: TicketLike,
+  branchFilter: string,
+  lineupIndex: InstallerBranchIndexEntry[] = [],
+  driverOnlyNames: string[] = [],
+): Record<string, unknown> | null {
+  const branchId = resolveTicketArchiveBranchId(ticket, lineupIndex, driverOnlyNames, branchFilter)
+  if (!branchId) return null
+
+  const meta = parseAcMeta(ticket)
+  const installedKey = getTicketArchiveDateKey(ticket) || todayDateKey()
+  const scheduleKey = String(meta.archivedScheduleDate || ticket.preferredDate || ticket.preferred_date || installedKey)
+    .split('T')[0].split(' ')[0].trim()
+  const mode = getField(ticket, 'modeOfPayment', 'mode_of_payment').toUpperCase() || 'CASH'
+  const charges = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged ?? 0
+  const remarks = getField(ticket, 'remarksUpdate', 'remarks') || 'Installed'
+  const commitTerms = getField(ticket, 'commitType', 'commitTerms', 'description')
+  const freeInstall = mode === 'FREE INSTALL' || mode === 'FREE' || /FREE/i.test(commitTerms)
+
+  return {
+    branchId: resolveScopedBranchId(branchId),
+    ticketId: ticket.id,
+    reportDate: installedKey,
+    scheduledDate: scheduleKey,
+    installedDate: installedKey,
+    customerName: getField(ticket, 'customerName', 'customer_name') || String(ticket.title || '').trim(),
+    customerAddress: formatAddress(ticket.location),
+    customerPhone: getField(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+    district: parseDistrict(ticket),
+    serviceType: freeInstall ? 'FREE_INSTALLATION' : 'INSTALLATION',
+    statusCode: 'I',
+    commitTerms,
+    dealer: getField(ticket, 'sourceVendor', 'source_vendor', 'dealer'),
+    unitBrandModel: getField(ticket, 'unitType', 'unit_type'),
+    technicianName: getField(ticket, 'installerName', 'installer_name') || String(meta.installerName || meta.installer || ''),
+    amountCharged: parseFloat(String(charges)) || 0,
+    paymentStatus: mode,
+    jobStatus: 'COMPLETED',
+    remarks,
+    note: getField(ticket, 'note'),
+    controlNumber: getField(ticket, 'controlNumber', 'control_number', 'ticketNumber', 'ticket_number') || undefined,
+    scheduleStatus: 'COMPLETED',
+    freeInstallation: freeInstall,
+  }
+}
+
+export async function postTicketArchiveReport(
+  payload: Record<string, unknown>,
+  token: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE_URL}/v1/service-reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(await readApiError(res))
+  notifyArchiveUpdated()
+  return res.json() as Promise<Record<string, unknown>>
+}
+
+/** Create archive rows for completed tickets that are missing from the list. */
+export async function syncMissingTicketArchives(
+  token: string,
+  branchFilter: string,
+  month: string,
+  existingRows: Array<{ ticketId?: string | null }>,
+  lineupIndex: InstallerBranchIndexEntry[] = [],
+  driverOnlyNames: string[] = [],
+): Promise<Record<string, unknown>[]> {
+  const existingIds = new Set(
+    existingRows.map((r) => r.ticketId).filter((id): id is string => Boolean(id)),
+  )
+
+  let tickets: unknown[]
+  try {
+    tickets = await fetchTicketsPage('/tickets', token, { size: 500, categoryGroup: 'FIELD' })
+  } catch {
+    return []
+  }
+
+  const created: Record<string, unknown>[] = []
+  for (const raw of tickets) {
+    const ticket = raw as TicketLike
+    if (String(ticket.status || '').toUpperCase() !== 'COMPLETED') continue
+    if (ticket.id && existingIds.has(String(ticket.id))) continue
+    if (!shouldBackfillTicketArchive(ticket)) continue
+    if (!ticketMatchesArchiveBranchFilter(ticket, branchFilter, lineupIndex, driverOnlyNames)) continue
+    if (!ticketInMonth(ticket, month)) continue
+
+    const payload = buildArchivePayloadFromTicket(ticket, branchFilter, lineupIndex, driverOnlyNames)
+    if (!payload) continue
+
+    try {
+      const saved = await postTicketArchiveReport(payload, token)
+      created.push(saved)
+      if (saved.ticketId) existingIds.add(String(saved.ticketId))
+    } catch (err) {
+      console.warn('[archives] backfill failed for ticket', ticket.id, err)
+    }
+  }
+  return created
+}

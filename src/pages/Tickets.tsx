@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -1128,6 +1129,7 @@ async function postArchiveServiceReport(
     body: JSON.stringify(payload),
   })
   if (!reportRes.ok) throw new Error(await readApiError(reportRes))
+  notifyArchiveUpdated()
 }
 
 function getCellRawValue(ticket: Ticket, colLabel: string): string {
@@ -1193,7 +1195,15 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
     case 'UPDATE':
       body.remarks = v || undefined
       body.remarksUpdate = v || undefined
-      body.acDetails = mergeAcMeta(acBase, { update: v, remarksUpdate: v })
+      if (isInstalledRemarks(v)) {
+        body.acDetails = mergeAcMeta(acBase, {
+          update: v,
+          remarksUpdate: v,
+          scheduleOutcome: 'DONE_INSTALLED',
+        })
+      } else {
+        body.acDetails = mergeAcMeta(acBase, { update: v, remarksUpdate: v })
+      }
       break
     default:
       break
@@ -2818,8 +2828,26 @@ export default function Tickets() {
       cancelEdit()
       return
     }
+
+    if (colLabel === 'UPDATE' && isInstalledRemarks(value.trim())) {
+      const merged = { ...ticket, remarksUpdate: value, remarks: value }
+      if (!hasInstallPayment(merged, { remarksUpdate: value, remarks: value })) {
+        cancelEdit()
+        setCompletionPrompt({
+          ticket,
+          value: value.trim(),
+          modeOfPayment: getPaymentMode(ticket) || 'CASH',
+          amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+        })
+        return
+      }
+    }
+
     let finalBody: Record<string, unknown> = body
-    if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
+    if (colLabel === 'UPDATE' && isInstalledRemarks(value.trim())) {
+      const schedKey = getPreferredDateKey(ticket) || todayDateKey()
+      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+    } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
       finalBody = enrichCompletePatchBody(body, ticket, getPreferredDateKey(ticket))
     }
     setSavingCellKey(key)
@@ -2833,10 +2861,13 @@ export default function Tickets() {
         body: JSON.stringify(finalBody),
       })
       if (!res.ok) throw new Error(await readApiError(res))
-      if (
-        (finalBody.status as string | undefined)?.toUpperCase() === 'COMPLETED'
-        && shouldArchiveCompletedSchedule(ticket, finalBody)
-      ) {
+      const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
+        || (
+          colLabel === 'UPDATE'
+          && isInstalledRemarks(value.trim())
+          && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
+        )
+      if (shouldArchive) {
         const schedKey = getPreferredDateKey(ticket) || todayDateKey()
         const branchId = resolveTicketArchiveBranch(ticket, {
           installerName: body.installerName as string | undefined,
@@ -4179,9 +4210,31 @@ export default function Tickets() {
           e.preventDefault()
           setCompletionPrompt(null)
           setSaving(true)
-          
+
           try {
             const schedKey = getPreferredDateKey(t) || todayDateKey()
+            const patchBody = enrichCompletePatchBody({
+              installationCharges: parseFloat(cp.amount) || 0,
+              modeOfPayment: cp.modeOfPayment,
+              remarks: cp.value || 'Installed',
+              remarksUpdate: cp.value || 'Installed',
+              acDetails: mergeAcMeta(t, {
+                scheduleOutcome: 'DONE_INSTALLED',
+                update: cp.value,
+                remarksUpdate: cp.value,
+              }),
+            }, t, schedKey)
+
+            const patchRes = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token()}`,
+              },
+              body: JSON.stringify(patchBody),
+            })
+            if (!patchRes.ok) throw new Error(await readApiError(patchRes))
+
             const branchId = resolveTicketArchiveBranch(t, {
               installationCharges: parseFloat(cp.amount) || 0,
               modeOfPayment: cp.modeOfPayment,
@@ -4203,17 +4256,15 @@ export default function Tickets() {
             if (!archivePayload) throw new Error('Select a branch before completing to Archives')
 
             await postArchiveServiceReport(archivePayload, token())
-            const deleteRes = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${token()}`
+            setTickets(prev => prev.map(x => {
+              if (x.id !== t.id) return x
+              return {
+                ...x,
+                ...(patchBody as Partial<Ticket>),
+                acDetails: typeof patchBody.acDetails === 'string' ? patchBody.acDetails : x.acDetails,
               }
-            })
-            if (!deleteRes.ok) throw new Error('Failed to delete Ticket')
-
-            // 3. Remove from local list state
-            setTickets(prev => prev.filter(x => x.id !== t.id))
-            showToast('Ticket completed & moved to Service Report ✓')
+            }))
+            showToast('Ticket completed & added to Archives ✓')
           } catch (error: any) {
             console.error('Error completing ticket:', error)
             alert(`Could not complete ticket: ${error.message || 'Unknown error'}`)

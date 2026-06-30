@@ -1922,105 +1922,71 @@ export default function LineUp() {
   }
 
   const handleSaveAll = async () => {
-
     // 1. Commit the actively-editing cell
-
     if (editingCell) {
-
       const activeRow = rows.find(r => r.id === editingCell.rowId)
-
       if (activeRow) {
-
         await saveCell(activeRow, editingCell.field, tempValue, true)
-
       }
-
     }
 
-    // 2. Persist any rows that haven't been saved to the DB yet (local-* / imported-*) or are modified
-
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    let currentRows = [...rows]
 
     // Save new rows (POST)
-
-    const unsaved = rows.filter(r => r.id && (r.id.startsWith('local-') || r.id.startsWith('imported-')))
-
+    const unsaved = currentRows.filter(r => r.id && (r.id.startsWith('local-') || r.id.startsWith('imported-')))
     if (unsaved.length > 0) {
-
       for (const row of unsaved) {
-
         try {
-
           const res = await fetch(`${API_BASE_URL}/v1/lineup`, {
-
             method: 'POST',
-
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-
             body: JSON.stringify(row),
-
           })
-
           if (res.ok) {
-
             const saved = await res.json() as LineUpRow
-
-            setRows(prev => prev.map(r => r.id === row.id ? saved : r))
-
+            currentRows = currentRows.map(r => r.id === row.id ? saved : r)
           }
-
         } catch (err) {
-
           console.error('Failed to persist new row:', err)
-
         }
-
       }
-
     }
 
     // Save modified existing rows (PUT)
-
-    const toUpdate = rows.filter(r => r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-') && dirtyRowIds.has(r.id))
-
+    const toUpdate = currentRows.filter(r => r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-') && dirtyRowIds.has(r.id))
     if (toUpdate.length > 0) {
-
       for (const row of toUpdate) {
-
         try {
-
-          await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
-
+          const res = await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
             method: 'PUT',
-
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-
             body: JSON.stringify(row),
-
           })
-
+          if (res.ok) {
+            const saved = await res.json() as LineUpRow
+            currentRows = currentRows.map(r => r.id === row.id ? saved : r)
+          }
         } catch (err) {
-
           console.error('Failed to update row:', err)
-
         }
-
       }
-
     }
 
+    // Update React state
+    setRows(currentRows)
+
+    // Save final state to localStorage (filtering out __WEEKLY_DRIVERS__ and __WEEKLY_INSTALLERS__)
+    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
+    lsSave([...all, ...currentRows])
+
     // Clear dirty set
-
     setDirtyRowIds(new Set())
-
     if (branchId) void fetchSuggestions(branchId)
 
     // 3. Save notes
-
     await handleSaveNotes()
-
     showToast("Line-up schedule saved successfully!", "success")
-
   }
 
   const performLoadDefaultTemplate = async () => {
@@ -2279,11 +2245,15 @@ export default function LineUp() {
 
     } else {
 
+      setRows(prev => prev.filter(r => r.id !== row.id))
+
+      const all = lsLoad().filter(r => r.id !== row.id)
+
+      lsSave(all)
+
       showToast('Row deleted successfully.', 'success')
 
     }
-
-    void fetchLineup()
 
     if (branchId) void fetchSuggestions(branchId)
 
