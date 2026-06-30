@@ -1128,6 +1128,8 @@ export default function LineUp() {
 
         installerTime: '',
 
+        negotiator: '',
+
         route: '',
 
         remarks: lineupNotes,
@@ -1951,6 +1953,8 @@ export default function LineUp() {
       installerName: '',
 
       installerTime: '7:00AM',
+
+      negotiator: '',
 
       route: '',
 
@@ -3752,6 +3756,8 @@ export default function LineUp() {
 
         installerTime: '',
 
+        negotiator: '',
+
         route: '',
 
         remarks: driversDataStr,
@@ -3783,6 +3789,8 @@ export default function LineUp() {
         installerName: '',
 
         installerTime: '',
+
+        negotiator: '',
 
         route: '',
 
