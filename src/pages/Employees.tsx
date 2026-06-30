@@ -129,12 +129,11 @@ const adaptEditFormForRole = (
 
 const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
-  const j = (jobTitle || '').toUpperCase()
-  if (r === 'ADMIN') return 'MANAGER'
-  if (r === 'MANAGEMENT') return j || 'MANAGEMENT'
-  if (r === 'MANAGER') return 'OIC'
-  if (j) return j
-  return r
+  if (r === 'ADMIN') return 'Admin'
+  if (r === 'MANAGEMENT') return 'Management'
+  if (r === 'MANAGER') return 'Office In Charge'
+  if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
+  return formatRoleLabel(role)
 }
 
 const roleColor = (role: string) => {
@@ -154,6 +153,67 @@ const avatarColor = (name: string) => {
 const initials = (name: string) =>
   name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '?'
 
+const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])
+
+const formatPersonName = (name: string) => {
+  if (!name?.trim()) return ''
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part, index) => {
+      const bare = part.toLowerCase().replace(/\./g, '')
+      if (index > 0 && NAME_PARTICLES.has(bare)) {
+        return bare === 'sto' ? 'Sto.' : part.toLowerCase()
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
+
+const formatBranchLabel = (name: string) => {
+  if (!name?.trim()) return ''
+  return name
+    .replace(/^ashcol\s+/i, '')
+    .trim()
+    .split(/\s*[-–]\s*/)
+    .map(segment => segment
+      .trim()
+      .toLowerCase()
+      .replace(/\b\w/g, char => char.toUpperCase()))
+    .join(' – ')
+}
+
+const formatJobTitleLabel = (title: string) => {
+  if (!title?.trim()) return ''
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+const formatRoleLevelLabel = (level: string) => {
+  if (!level?.trim() || level === '—') return '—'
+  return formatJobTitleLabel(level.replace(/_/g, ' '))
+}
+
+const formatLabelText = (text: string) => {
+  if (!text?.trim()) return ''
+  return text
+    .trim()
+    .split(/\s+/)
+    .map(word => {
+      if (word.length <= 4 && word === word.toUpperCase()) return word
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
+
+const CREATE_STEPS = [
+  { id: 1 as const, label: 'Account', hint: 'Name and login details' },
+  { id: 2 as const, label: 'Role', hint: 'Role and branch' },
+  { id: 3 as const, label: 'Details', hint: 'Optional profile info' },
+]
+
 const parseSkills = (skillsStr?: string): string[] => {
   if (!skillsStr) return []
   try {
@@ -167,7 +227,7 @@ const parseSkills = (skillsStr?: string): string[] => {
 
 const getRoleLevel = (skillsStr?: string): string => {
   const list = parseSkills(skillsStr)
-  return list[0] || '—'
+  return list[0] ? formatRoleLevelLabel(list[0]) : '—'
 }
 
 // ── Input helper ────────────────────────────────────────────────────────────
@@ -179,8 +239,31 @@ interface FieldProps {
 
 const Field = ({ label, children, labelColor }: FieldProps) => (
   <div className="flex flex-col gap-1.5 flex-1 min-w-[120px]">
-    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: labelColor }}>{label}</label>
+    <label className="text-xs font-medium" style={{ color: labelColor }}>{label}</label>
     {children}
+  </div>
+)
+
+interface DetailFieldProps {
+  label: string
+  value: string
+  icon?: React.ReactNode
+  emptyLabel?: string
+}
+
+const DetailField = ({ label, value, icon, emptyLabel = 'Not set' }: DetailFieldProps) => (
+  <div className="p-4 rounded-xl border flex items-start gap-3" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
+    {icon && (
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-icon-bg)', color: 'var(--detail-muted)' }}>
+        {icon}
+      </div>
+    )}
+    <div className="min-w-0 flex-1">
+      <div className="text-xs font-medium mb-1" style={{ color: 'var(--detail-muted)' }}>{label}</div>
+      <div className="text-sm leading-relaxed break-words" style={{ color: value ? 'var(--detail-text)' : 'var(--detail-muted)', fontWeight: value ? 400 : 400 }}>
+        {value || emptyLabel}
+      </div>
+    </div>
   </div>
 )
 
@@ -267,8 +350,31 @@ export default function Employees() {
     profileImage: '',
   })
   const [createSaving, setCreateSaving] = useState(false)
+  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
 
   const token = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  const resetCreateFlow = () => {
+    setShowCreate(false)
+    setCreateStep(1)
+    setFormErr('')
+    setCreateForm({
+      name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
+      phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
+      landmark: '', skills: '', profileImage: '',
+    })
+  }
+
+  const openCreateFlow = () => {
+    setCreateStep(1)
+    setFormErr('')
+    setCreateForm({
+      name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
+      phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
+      landmark: '', skills: '', profileImage: '',
+    })
+    setShowCreate(true)
+  }
 
   // Load custom roles on mount
   useEffect(() => {
@@ -370,14 +476,14 @@ export default function Employees() {
       const list: { id: string; name: string }[] = data?.data || []
       const result: BranchOption[] = []
       for (const b of list) {
-        const clean = b.name.replace(/^ashcol\s+/i, '').trim().toUpperCase()
+        const clean = formatBranchLabel(b.name)
         if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
           if (!result.some(item => item.id === 'BR-TAGUIG-SALES')) {
-            result.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            result.push({ id: 'BR-TAGUIG-SALES', name: 'Taguig – Sales' })
           }
         } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
           if (!result.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
-            result.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            result.push({ id: 'BR-TAGUIG-SERVICES', name: 'Taguig – Services' })
           }
         } else if (clean.startsWith('TAGUIG')) {
           // skip other taguig variants
@@ -412,15 +518,15 @@ export default function Employees() {
           const bl = (await rb.json())?.data || []
           bl.forEach((b: any) => {
             if (!b.id) return
-            const clean = (b.name || b.id).replace(/^ashcol\s+/i, '').trim().toUpperCase()
+            const clean = formatBranchLabel(b.name || b.id)
             if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
-              branchMap[b.id] = 'TAGUIG - SALES'
-              branchMap[`${b.id}-sales`] = 'TAGUIG - SALES'
-              branchMap['BR-TAGUIG-SALES-sales'] = 'TAGUIG - SALES'
+              branchMap[b.id] = 'Taguig – Sales'
+              branchMap[`${b.id}-sales`] = 'Taguig – Sales'
+              branchMap['BR-TAGUIG-SALES-sales'] = 'Taguig – Sales'
             } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
-              branchMap[b.id] = 'TAGUIG - SERVICES'
-              branchMap[`${b.id}-services`] = 'TAGUIG - SERVICES'
-              branchMap['BR-TAGUIG-SALES-services'] = 'TAGUIG - SERVICES'
+              branchMap[b.id] = 'Taguig – Services'
+              branchMap[`${b.id}-services`] = 'Taguig – Services'
+              branchMap['BR-TAGUIG-SALES-services'] = 'Taguig – Services'
             } else {
               branchMap[b.id] = clean
             }
@@ -430,7 +536,7 @@ export default function Employees() {
 
       setEmployees(combined.map((s: any) => ({
         id:          s.id,
-        name:        s.name        || 'Unknown',
+        name:        formatPersonName(s.name || 'Unknown'),
         email:       s.email       || '',
         phone:       s.phone       || '',
         role:        (s.role       || 'EMPLOYEE').toUpperCase(),
@@ -538,9 +644,42 @@ export default function Employees() {
     return ''
   }
 
+  const validateCreateStep = (step: 1 | 2 | 3): string => {
+    if (step === 1) {
+      if (!createForm.name.trim()) return 'Name is required.'
+      if (!createForm.email.trim()) return 'Login email is required.'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createForm.email.trim())) return 'Enter a valid email address.'
+      if (createForm.personalEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createForm.personalEmail.trim())) {
+        return 'Enter a valid personal email address.'
+      }
+      return ''
+    }
+    if (step === 2) {
+      const roleUpper = createForm.role.toUpperCase()
+      const meta = ROLE_META[roleUpper as AssignableRole]
+      if (meta?.requiresBranch && !createForm.branchId.trim()) {
+        return `${meta.label} must be assigned to a branch.`
+      }
+      if (isAdmin && roleUpper !== 'MANAGEMENT' && !createForm.branchId.trim()) {
+        return 'Branch is required.'
+      }
+      if (meta?.requiresJobTitle && !createForm.jobTitle.trim()) {
+        return 'Job title is required for this role.'
+      }
+    }
+    return ''
+  }
+
+  const handleCreateNext = () => {
+    const err = validateCreateStep(createStep)
+    if (err) { setFormErr(err); return }
+    setFormErr('')
+    setCreateStep(prev => (prev < 3 ? ((prev + 1) as 1 | 2 | 3) : prev))
+  }
+
   const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => ({
     id: s.id,
-    name: s.name || 'Unknown',
+    name: formatPersonName(s.name || 'Unknown'),
     email: s.email || '',
     phone: s.phone || '',
     role: (s.role || 'EMPLOYEE').toUpperCase(),
@@ -577,7 +716,7 @@ export default function Employees() {
     const jt = (emp.jobTitle || '').toUpperCase()
     const validJt = allJobTitles.includes(jt) ? jt : (jt || 'TECHNICIAN')
     setEditForm({
-      name: emp.name, email: emp.email, phone: emp.phone,
+      name: formatPersonName(emp.name), email: emp.email, phone: emp.phone,
       role: emp.role, jobTitle: validJt,
       branchId: emp.branchId, isActive: emp.isActive, newPassword: '',
       personalEmail: emp.personalEmail || '',
@@ -612,7 +751,7 @@ export default function Employees() {
       const skillsJson = JSON.stringify(skillsArray)
 
       const payload: Record<string, unknown> = {
-        name: editForm.name.trim(),
+        name: formatPersonName(editForm.name.trim()),
         email: editForm.email.trim(),
         phone: editForm.phone.trim(),
         branchId: editForm.branchId,
@@ -790,14 +929,15 @@ export default function Employees() {
   }
 
   const handleCreate = async () => {
-    const validationErr = validateAccountForm(createForm, { requireBranchForAdmin: isAdmin })
+    const validationErr = validateCreateStep(1) || validateCreateStep(2) || validateAccountForm(createForm, { requireBranchForAdmin: isAdmin })
     if (validationErr) { setFormErr(validationErr); return }
     setCreateSaving(true); setFormErr('')
     try {
+      const formattedName = formatPersonName(createForm.name.trim())
       const url = isAdmin ? `${API_BASE_URL}/admin/technicians` : `${API_BASE_URL}/manager/employees`
       const isPriv = createForm.role === 'MANAGER' || createForm.role === 'MANAGEMENT'
       const body: Record<string, string> = {
-        name:     createForm.name.trim(),
+        name:     formattedName,
         email:    createForm.email.trim(),
         role:     isPriv ? createForm.role : 'EMPLOYEE',
         jobTitle: (createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') ? createForm.jobTitle : '',
@@ -845,13 +985,8 @@ export default function Employees() {
       }
 
       if (u?.temporaryPassword && u?.email) setNewTechCreds({ email: u.email, password: u.temporaryPassword })
-      showToast('success', `${createForm.name.trim()} created as ${formatRoleLabel(createForm.role)}.`)
-      setShowCreate(false)
-      setCreateForm({
-        name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-        phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-        landmark: '', skills: '', profileImage: '',
-      })
+      showToast('success', `${formattedName} created as ${formatRoleLabel(createForm.role)}.`)
+      resetCreateFlow()
       fetchEmployees()
     } catch { setFormErr('Network error.') }
     finally { setCreateSaving(false) }
@@ -885,12 +1020,19 @@ export default function Employees() {
     inactive: employees.filter(e => !e.isActive).length,
   }
 
-  const inputCls = "w-full rounded-xl px-3 py-2 text-sm font-medium outline-none transition-all focus:ring-2 focus:ring-emerald-500/20"
+  const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm font-normal outline-none transition-all focus:ring-2 focus:ring-emerald-500/20"
   const inputStyle = { backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }
+  const detailTokens = {
+    '--detail-border': border,
+    '--detail-bg': inputBg,
+    '--detail-icon-bg': cardBg,
+    '--detail-muted': textMuted,
+    '--detail-text': textPrimary,
+  } as React.CSSProperties
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-3" style={{ minHeight: '100vh', backgroundColor: pageBg }}>
+    <div className="flex flex-col gap-3" style={{ minHeight: '100vh', backgroundColor: pageBg, fontFamily: "'Inter', system-ui, sans-serif" }}>
 
       {toast && (
         <div
@@ -952,7 +1094,7 @@ export default function Employees() {
           )}
           {(isAdmin || isManager) && (
             <button
-              onClick={() => { setShowCreate(true); setFormErr(''); setCreateForm({ name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN', phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '', landmark: '', skills: '', profileImage: '' }) }}
+              onClick={openCreateFlow}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
               style={{ backgroundColor: '#10B981' }}
             >
@@ -981,7 +1123,7 @@ export default function Employees() {
           <div className="flex flex-wrap gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Default:</span>
             {DEFAULT_JOB_TITLES.map(title => (
-              <span key={title} className="text-[10px] font-bold uppercase px-2 py-1 rounded text-emerald-500 bg-emerald-500/10 border border-emerald-500/20">{title}</span>
+              <span key={title} className="text-xs font-medium px-2 py-1 rounded text-emerald-600 bg-emerald-500/10 border border-emerald-500/20">{formatJobTitleLabel(title)}</span>
             ))}
           </div>
 
@@ -989,8 +1131,8 @@ export default function Employees() {
             <div className="flex flex-wrap gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Custom:</span>
               {customJobTitles.map(title => (
-                <span key={title} className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-1 rounded text-blue-500 bg-blue-500/10 border border-blue-500/20">
-                  {title}
+                <span key={title} className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded text-blue-600 bg-blue-500/10 border border-blue-500/20">
+                  {formatJobTitleLabel(title)}
                   <button onClick={() => handleRemoveCustomRole(title)} className="hover:text-red-500 transition-colors"><X className="w-2.5 h-2.5" /></button>
                 </span>
               ))}
@@ -1074,7 +1216,7 @@ export default function Employees() {
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
                 {['Employee', 'Role / Title', 'Branch', 'Contact', 'Level', 'Status', ''].map(h => (
-                  <th key={h} className="px-4 py-2 text-left text-[9px] font-bold uppercase tracking-widest whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1118,15 +1260,15 @@ export default function Employees() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold truncate max-w-[150px]" style={{ color: textPrimary }}>{e.name}</div>
-                          <div className="text-[9px] truncate max-w-[150px] font-mono" style={{ color: textMuted }}>{e.email}</div>
+                          <div className="text-sm font-medium truncate max-w-[150px]" style={{ color: textPrimary }}>{e.name}</div>
+                          <div className="text-xs truncate max-w-[150px]" style={{ color: textMuted }}>{e.email}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Role */}
                     <td className="px-4 py-2.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap"
                         style={{ backgroundColor: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
                         {resolveLabel(e.role, e.jobTitle)}
                       </span>
@@ -1159,7 +1301,7 @@ export default function Employees() {
                     {/* Role Level */}
                     <td className="px-4 py-2.5">
                       {e.skills && getRoleLevel(e.skills) !== '—' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase text-blue-500 bg-blue-500/10 border border-blue-500/15 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium text-blue-600 bg-blue-500/10 border border-blue-500/15 whitespace-nowrap">
                           {getRoleLevel(e.skills)}
                         </span>
                       ) : (
@@ -1171,7 +1313,7 @@ export default function Employees() {
                     <td className="px-4 py-2.5">
                       <button
                         onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border transition-all"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border transition-all"
                         style={e.isActive
                           ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }
                           : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.06)', borderColor: 'rgba(148,163,184,0.15)' }}
@@ -1240,7 +1382,10 @@ export default function Employees() {
           >
             {/* Header */}
             <div className="px-6 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
-              <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Employee Profile Details</h3>
+              <div>
+                <h3 className="text-lg font-semibold tracking-tight" style={{ color: textPrimary }}>Employee profile</h3>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>View account details and activity</p>
+              </div>
               <button
                 onClick={() => setIsDrawerOpen(false)}
                 className="p-2 rounded-xl transition-all hover:bg-slate-500/10"
@@ -1283,17 +1428,17 @@ export default function Employees() {
                 </div>
 
                 <div>
-                  <h4 className="text-base font-bold" style={{ color: textPrimary }}>{selectedEmployee.name}</h4>
-                  <p className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>ID: {selectedEmployee.id}</p>
+                  <h4 className="text-xl font-semibold tracking-tight" style={{ color: textPrimary }}>{selectedEmployee.name}</h4>
+                  <p className="text-xs mt-1" style={{ color: textMuted }}>Employee ID · {selectedEmployee.id.slice(0, 8)}…</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5 w-full mt-2">
-                  <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold"
+                  <span className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
                     style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text, border: `1px solid ${roleColor(selectedEmployee.role).border}` }}>
                     {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
                   </span>
                   {selectedEmployee.branchName && (
-                    <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold border"
+                    <span className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border"
                       style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}>
                       <Building2 className="w-3.5 h-3.5 mr-1" /> {selectedEmployee.branchName}
                     </span>
@@ -1301,10 +1446,10 @@ export default function Employees() {
                 </div>
 
                 <div className="w-full border-t pt-4 flex flex-col gap-2 mt-2" style={{ borderColor: border }}>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-left" style={{ color: textMuted }}>Status</div>
+                  <div className="text-xs font-medium text-left" style={{ color: textMuted }}>Status</div>
                   <button
                     onClick={() => requestToggleActive(selectedEmployee)}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border transition-all"
                     style={selectedEmployee.isActive
                       ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.2)' }
                       : { color: textMuted, backgroundColor: inputBg, borderColor: border }}
@@ -1318,96 +1463,68 @@ export default function Employees() {
               {/* Right Column - Categorized detail tables */}
               <div className="flex-1 flex flex-col min-w-0">
                 {/* Tabs */}
-                <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
+                <div className="flex border-b text-sm font-medium shrink-0" style={{ borderColor: border }}>
                   {(['overview', 'address', 'system', 'lineup'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveDrawerTab(tab)}
-                      className="flex-1 py-3 text-center border-b-2 transition-all"
+                      className="flex-1 py-3.5 text-center border-b-2 transition-all"
                       style={{
                         borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
                         color: activeDrawerTab === tab ? textPrimary : textMuted,
                       }}
                     >
-                      {tab.toUpperCase()}
+                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
                 </div>
 
                 {/* Tab body */}
-                <div className="flex-1 p-6 overflow-y-auto">
+                <div className="flex-1 p-6 overflow-y-auto" style={detailTokens}>
                   
                   {/* Overview tab */}
                   {activeDrawerTab === 'overview' && (
-                    <div className="flex flex-col gap-5">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[
-                          { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-4 h-4" /> },
-                          { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-4 h-4" /> },
-                          { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-4 h-4" /> },
-                          { label: 'System Role', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
-                          { label: 'Job Title', value: selectedEmployee.jobTitle || '—', icon: <Wrench className="w-4 h-4" /> },
-                          { label: 'Role Level', value: getRoleLevel(selectedEmployee.skills), icon: <Tag className="w-4 h-4" /> },
-                        ].map(item => (
-                          <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                            <div className="min-w-0">
-                              <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                              <div className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{item.value}</div>
-                            </div>
-                          </div>
-                        ))}
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <DetailField label="Work email" value={selectedEmployee.email} icon={<Mail className="w-4 h-4" />} emptyLabel="—" />
+                        <DetailField label="Personal email" value={selectedEmployee.personalEmail || ''} icon={<Mail className="w-4 h-4" />} emptyLabel="—" />
+                        <DetailField label="Phone number" value={selectedEmployee.phone} icon={<Phone className="w-4 h-4" />} emptyLabel="—" />
+                        <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck className="w-4 h-4" />} />
+                        <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench className="w-4 h-4" />} emptyLabel="—" />
+                        <DetailField label="Role level" value={getRoleLevel(selectedEmployee.skills)} icon={<Tag className="w-4 h-4" />} />
                       </div>
                     </div>
                   )}
 
                   {/* Address tab */}
                   {activeDrawerTab === 'address' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {[
-                        { label: 'Region', value: selectedEmployee.region, icon: <Globe className="w-4 h-4" /> },
-                        { label: 'City', value: selectedEmployee.city, icon: <Map className="w-4 h-4" /> },
-                        { label: 'Barangay', value: selectedEmployee.barangay, icon: <Home className="w-4 h-4" /> },
-                        { label: 'Street', value: selectedEmployee.street, icon: <Mailbox className="w-4 h-4" /> },
-                      ].map(item => (
-                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                          <div className="min-w-0">
-                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="text-sm font-semibold truncate" style={{ color: item.value ? textPrimary : textMuted }}>
-                              {item.value || 'Not Configured'}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="col-span-1 sm:col-span-2 p-3 rounded-xl border flex items-start gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}><MapPin className="w-4 h-4" /></div>
-                        <div className="min-w-0">
-                          <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Landmark Description</div>
-                          <div className="text-sm font-semibold mt-0.5" style={{ color: selectedEmployee.landmark ? textPrimary : textMuted }}>
-                            {selectedEmployee.landmark || 'No landmark description added'}
-                          </div>
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DetailField label="Region" value={selectedEmployee.region ? formatLabelText(selectedEmployee.region) : ''} icon={<Globe className="w-4 h-4" />} emptyLabel="Not configured" />
+                      <DetailField label="City" value={selectedEmployee.city ? formatLabelText(selectedEmployee.city) : ''} icon={<Map className="w-4 h-4" />} emptyLabel="Not configured" />
+                      <DetailField label="Barangay" value={selectedEmployee.barangay ? formatLabelText(selectedEmployee.barangay) : ''} icon={<Home className="w-4 h-4" />} emptyLabel="Not configured" />
+                      <DetailField label="Street" value={selectedEmployee.street ? formatLabelText(selectedEmployee.street) : ''} icon={<Mailbox className="w-4 h-4" />} emptyLabel="Not configured" />
+                      <div className="col-span-1 sm:col-span-2">
+                        <DetailField label="Landmark" value={selectedEmployee.landmark ? formatLabelText(selectedEmployee.landmark) : ''} icon={<MapPin className="w-4 h-4" />} emptyLabel="No landmark description added" />
                       </div>
                     </div>
                   )}
 
                   {/* System tab */}
                   {activeDrawerTab === 'system' && (
-                    <div className="flex flex-col gap-4">
-                      {[
-                        { label: 'Employee ID', value: selectedEmployee.id, icon: <User className="w-4 h-4" /> },
-                        { label: 'Hire Date / Registration', value: selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Unknown', icon: <Calendar className="w-4 h-4" /> },
-                        { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
-                      ].map(item => (
-                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                          <div>
-                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="text-sm font-semibold" style={{ color: textPrimary }}>{item.value}</div>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex flex-col gap-3">
+                      <DetailField label="Employee ID" value={selectedEmployee.id} icon={<User className="w-4 h-4" />} />
+                      <DetailField
+                        label="Registration date"
+                        value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : ''}
+                        icon={<Calendar className="w-4 h-4" />}
+                        emptyLabel="Unknown"
+                      />
+                      <DetailField
+                        label="Last profile update"
+                        value={selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : ''}
+                        icon={<RefreshCw className="w-4 h-4" />}
+                        emptyLabel="Unknown"
+                      />
                     </div>
                   )}
 
@@ -1451,18 +1568,18 @@ export default function Employees() {
 
                                 <div className="grid grid-cols-2 gap-3 text-xs border-t pt-2.5" style={{ borderColor: border }}>
                                   <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Assigned Vehicle</div>
+                                    <div className="text-xs font-medium mb-0.5" style={{ color: textMuted }}>Assigned vehicle</div>
                                     <div className="font-semibold flex items-center gap-1.5" style={{ color: textPrimary }}>
                                       <Truck className="w-3.5 h-3.5" style={{ color: textMuted }} />
                                       {row.vehicleName || 'No Vehicle'}
                                     </div>
                                   </div>
                                   <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Crew / Partner</div>
-                                    <div className="font-semibold truncate" style={{ color: textPrimary }} title={isDriver ? (row.installerNames || []).join(', ') : row.driverName}>
+                                    <div className="text-xs font-medium mb-0.5" style={{ color: textMuted }}>Crew / partner</div>
+                                    <div className="text-sm truncate" style={{ color: textPrimary }} title={isDriver ? (row.installerNames || []).join(', ') : row.driverName}>
                                       {isDriver 
-                                        ? (Array.isArray(row.installerNames) && row.installerNames.length > 0 ? row.installerNames.join(', ') : 'No Installers')
-                                        : (row.driverName || 'No Driver')
+                                        ? (Array.isArray(row.installerNames) && row.installerNames.length > 0 ? row.installerNames.map((n: string) => formatPersonName(n)).join(', ') : 'No installers')
+                                        : (row.driverName ? formatPersonName(row.driverName) : 'No driver')
                                       }
                                     </div>
                                   </div>
@@ -1617,7 +1734,7 @@ export default function Employees() {
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Information</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Full Name" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
+                      <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} onBlur={e => setEditForm(p => ({ ...p, name: formatPersonName(e.target.value) }))} />
                     </Field>
                     <Field label="Login Email" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
@@ -1668,7 +1785,7 @@ export default function Employees() {
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
                             {allJobTitles.map(title => (
-                              <option key={title} value={title}>{title}</option>
+                              <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
                             ))}
                           </select>
                         </Field>
@@ -1780,148 +1897,119 @@ export default function Employees() {
       {/* ── Create Modal ── */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-         <div className="w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+         <div
+           className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+           style={{ backgroundColor: cardBg, border: `1px solid ${border}`, animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+         >
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
-              <h3 className="font-black text-base" style={{ color: textPrimary }}>Add New Account</h3>
-              <button onClick={() => setShowCreate(false)} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: textPrimary }}>Create account</h3>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>{CREATE_STEPS.find(s => s.id === createStep)?.hint}</p>
+              </div>
+              <button onClick={resetCreateFlow} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col md:flex-row gap-8">
-              {/* Left Column: Profile Pic Holder */}
-              <div className="w-full md:w-72 flex flex-col items-center gap-5 text-center shrink-0 border-b md:border-b-0 md:border-r pb-8 md:pb-0 pr-0 md:pr-8" style={{ borderColor: border }}>
-                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>Profile Photo</div>
-                
-                <div 
-                  onClick={() => document.getElementById('create-modal-photo')?.click()}
-                  className="w-48 h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer transition-all hover:bg-slate-500/5 hover:border-emerald-500" 
-                  style={{ borderColor: border, backgroundColor: inputBg }}
-                >
-                  {createForm.profileImage ? (
-                    <>
-                      <img src={resolveImageUrl(createForm.profileImage)} alt="Profile Preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
-                        <Camera className="w-6 h-6 text-white" />
-                        <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
+            <div className="px-6 pt-5 pb-2">
+              <div className="flex items-center gap-2">
+                {CREATE_STEPS.map((step, index) => {
+                  const active = createStep === step.id
+                  const done = createStep > step.id
+                  return (
+                    <div key={step.id} className="flex items-center gap-2 flex-1 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-colors"
+                        style={{
+                          backgroundColor: active || done ? 'rgba(16,185,129,0.15)' : inputBg,
+                          color: active || done ? '#10B981' : textMuted,
+                          border: `1px solid ${active || done ? 'rgba(16,185,129,0.35)' : border}`,
+                        }}
+                      >
+                        {done ? <Check className="w-3.5 h-3.5" /> : step.id}
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-slate-400 p-4">
-                      <div className="w-12 h-12 rounded-full bg-slate-500/10 flex items-center justify-center">
-                        <Plus className="w-6 h-6 text-slate-400" />
+                      <div className="min-w-0 hidden sm:block">
+                        <div className="text-xs font-medium truncate" style={{ color: active ? textPrimary : textMuted }}>{step.label}</div>
                       </div>
-                      <span className="text-xs font-bold" style={{ color: textMuted }}>Click to Upload</span>
-                      <span className="text-[9px]" style={{ color: textMuted }}>PNG, JPG or WEBP</span>
+                      {index < CREATE_STEPS.length - 1 && (
+                        <div className="h-px flex-1 mx-1" style={{ backgroundColor: done ? 'rgba(16,185,129,0.35)' : border }} />
+                      )}
                     </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-2.5 w-full">
-                  <input
-                    type="file"
-                    id="create-modal-photo"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      if (file.size > 2 * 1024 * 1024) {
-                        alert("Image must be smaller than 2MB")
-                        return
-                      }
-                      const reader = new FileReader()
-                      reader.onloadend = () => {
-                        setCreateForm(p => ({ ...p, profileImage: reader.result as string }))
-                      }
-                      reader.readAsDataURL(file)
-                    }}
-                  />
-                  <button 
-                    type="button"
-                    onClick={() => document.getElementById('create-modal-photo')?.click()}
-                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 w-full text-center"
-                    style={{ borderColor: border, color: textPrimary }}
-                  >
-                    Upload Photo
-                  </button>
-                  {createForm.profileImage && (
-                    <button
-                      type="button"
-                      onClick={() => setCreateForm(p => ({ ...p, profileImage: '' }))}
-                      className="text-xs text-red-500 font-bold hover:underline"
-                    >
-                      Remove Photo
-                    </button>
-                  )}
-                </div>
+                  )
+                })}
               </div>
+            </div>
 
-              {/* Right Column: Input Fields Form */}
-              <div className="flex-1 flex flex-col gap-5">
-                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {formErr && (
+                <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4">{formErr}</div>
+              )}
 
-                {/* ── General Credentials ── */}
-                <div>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Credentials</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Full Name" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} placeholder="Juan Dela Cruz" />
-                    </Field>
-                    <Field label="Login Email" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))} placeholder="juan@ashcol.com.ph" />
-                    </Field>
-                    <Field label="Phone" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XXXXXXXXX" />
-                    </Field>
-                    <Field label="Personal Email" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} type="email" value={createForm.personalEmail} onChange={e => setCreateForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
+              {createStep === 1 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <Field label="Full name" labelColor={textMuted}>
+                      <input
+                        className={inputCls}
+                        style={inputStyle}
+                        value={createForm.name}
+                        onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
+                        onBlur={e => setCreateForm(p => ({ ...p, name: formatPersonName(e.target.value) }))}
+                        placeholder="Juan Dela Cruz"
+                        autoFocus
+                      />
                     </Field>
                   </div>
+                  <Field label="Login email" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value.trim().toLowerCase() }))} placeholder="juan@ashcol.com.ph" />
+                  </Field>
+                  <Field label="Personal email" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} type="email" value={createForm.personalEmail} onChange={e => setCreateForm(p => ({ ...p, personalEmail: e.target.value.trim().toLowerCase() }))} placeholder="personal@email.com" />
+                  </Field>
+                  <Field label="Phone" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
+                  </Field>
                 </div>
+              )}
 
-                {/* ── Role & Placement ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role & Placement</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="System Role" labelColor={textMuted}>
-                      <select className={inputCls} style={inputStyle} value={createForm.role}
-                        onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
-                        <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
-                        <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
-                        {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
+              {createStep === 2 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="System role" labelColor={textMuted}>
+                    <select className={inputCls} style={inputStyle} value={createForm.role}
+                      onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
+                      <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
+                      <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
+                      {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
+                    </select>
+                  </Field>
+                  {isAdmin && createForm.role !== 'MANAGEMENT' && (
+                    <Field label="Branch" labelColor={textMuted}>
+                      <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
+                        <option value="">Select branch</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </Field>
-                    {isAdmin && createForm.role !== 'MANAGEMENT' && (
-                      <Field label="Branch" labelColor={textMuted}>
-                        <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
-                          <option value="">— Select branch —</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  )}
+                  {createForm.role === 'EMPLOYEE' && (
+                    <div className="sm:col-span-2">
+                      <Field label="Job title" labelColor={textMuted}>
+                        <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
+                          {allJobTitles.map(title => (
+                            <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
+                          ))}
                         </select>
                       </Field>
-                    )}
-                    {ROLE_META[createForm.role as AssignableRole]?.hint && (
-                      <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>
-                        {ROLE_META[createForm.role as AssignableRole].hint}
-                      </p>
-                    )}
-                    {createForm.role === 'EMPLOYEE' && (
-                      <div className="col-span-1 sm:col-span-2">
-                        <Field label="Job Title" labelColor={textMuted}>
-                          <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                            {allJobTitles.map(title => (
-                              <option key={title} value={title}>{title}</option>
-                            ))}
-                          </select>
-                        </Field>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+                  {ROLE_META[createForm.role as AssignableRole]?.hint && (
+                    <p className="sm:col-span-2 text-sm leading-relaxed rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
+                      {ROLE_META[createForm.role as AssignableRole].hint}
+                    </p>
+                  )}
                 </div>
+              )}
 
-                {/* ── Address Details ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address Details</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {createStep === 3 && (
+                <div className="flex flex-col gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="Region" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={createForm.region} onChange={e => setCreateForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
                     </Field>
@@ -1934,47 +2022,48 @@ export default function Employees() {
                     <Field label="Street" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={createForm.street} onChange={e => setCreateForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
                     </Field>
-                    <div className="col-span-1 sm:col-span-2">
-                      <Field label="Landmark Description" labelColor={textMuted}>
+                    <div className="sm:col-span-2">
+                      <Field label="Landmark" labelColor={textMuted}>
                         <input className={inputCls} style={inputStyle} value={createForm.landmark} onChange={e => setCreateForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
                       </Field>
                     </div>
                   </div>
-                </div>
-
-                {/* ── Role Level ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role Level</h4>
-                  <Field label="Employee Role Level" labelColor={textMuted}>
-                    <select
-                      className={inputCls}
-                      style={inputStyle}
-                      value={createForm.skills}
-                      onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))}
-                    >
-                      <option value="">— Select Level —</option>
-                      <option value="JUNIOR LEVEL">JUNIOR LEVEL</option>
-                      <option value="MID LEVEL">MID LEVEL</option>
-                      <option value="SENIOR LEVEL">SENIOR LEVEL</option>
-                      <option value="LEAD LEVEL">LEAD LEVEL</option>
-                      <option value="SUPERVISOR LEVEL">SUPERVISOR LEVEL</option>
-                      <option value="EXECUTIVE LEVEL">EXECUTIVE LEVEL</option>
+                  <Field label="Role level (optional)" labelColor={textMuted}>
+                    <select className={inputCls} style={inputStyle} value={createForm.skills} onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))}>
+                      <option value="">Select level</option>
+                      {['JUNIOR LEVEL', 'MID LEVEL', 'SENIOR LEVEL', 'LEAD LEVEL', 'SUPERVISOR LEVEL', 'EXECUTIVE LEVEL'].map(level => (
+                        <option key={level} value={level}>{formatRoleLevelLabel(level)}</option>
+                      ))}
                     </select>
                   </Field>
+                  <p className="text-sm rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
+                    A temporary password will be emailed automatically. You can copy it on the next screen right after creation.
+                  </p>
                 </div>
-
-                <p className="text-xs rounded-xl p-3 border mt-2" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
-                  A temporary password will be auto-generated and emailed. You'll also see it here to copy immediately after creation.
-                </p>
-              </div>
-
+              )}
             </div>
 
             <div className="px-6 py-4 border-t flex gap-3 shrink-0" style={{ borderColor: border }}>
-              <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted }}>Cancel</button>
-              <button onClick={handleCreate} disabled={createSaving} className="flex-1 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
-                {createSaving ? 'Creating…' : 'Create Account'}
-              </button>
+              <button onClick={resetCreateFlow} className="px-4 py-2.5 rounded-xl text-sm font-medium border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted }}>Cancel</button>
+              {createStep > 1 && (
+                <button
+                  onClick={() => { setFormErr(''); setCreateStep(prev => (prev - 1) as 1 | 2 | 3) }}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium border transition-all hover:opacity-85"
+                  style={{ borderColor: border, color: textPrimary }}
+                >
+                  Back
+                </button>
+              )}
+              <div className="flex-1" />
+              {createStep < 3 ? (
+                <button onClick={handleCreateNext} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90" style={{ backgroundColor: '#10B981' }}>
+                  Continue
+                </button>
+              ) : (
+                <button onClick={handleCreate} disabled={createSaving} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+                  {createSaving ? 'Creating…' : 'Create account'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1983,23 +2072,26 @@ export default function Employees() {
       {/* ── New Credentials Modal ── */}
       {newTechCreds && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-md rounded-2xl shadow-2xl p-6 flex flex-col gap-5" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <div
+            className="w-full max-w-md rounded-2xl shadow-2xl p-6 flex flex-col gap-5"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-black text-base" style={{ color: textPrimary }}>Account Created</h3>
-                <p className="text-xs mt-0.5" style={{ color: textMuted }}>Share these credentials. This won't show again.</p>
+                <h3 className="text-lg font-semibold" style={{ color: textPrimary }}>Account created</h3>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Share these credentials — they won't be shown again.</p>
               </div>
               <button onClick={() => setNewTechCreds(null)} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
             </div>
 
             {[
-              { label: 'Login Email', value: newTechCreds.email, field: 'email' as const },
-              { label: 'Temporary Password', value: newTechCreds.password, field: 'password' as const },
+              { label: 'Login email', value: newTechCreds.email, field: 'email' as const },
+              { label: 'Temporary password', value: newTechCreds.password, field: 'password' as const },
             ].map(row => (
               <div key={row.field}>
-                <div className="text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: textMuted }}>{row.label}</div>
+                <div className="text-xs font-medium mb-1.5" style={{ color: textMuted }}>{row.label}</div>
                 <div className="flex gap-2 items-center">
-                  <code className="flex-1 text-sm px-3 py-2.5 rounded-xl border font-mono break-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>{row.value}</code>
+                  <code className="flex-1 text-sm px-3 py-2.5 rounded-xl border break-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'ui-monospace, monospace' }}>{row.value}</code>
                   <button
                     onClick={() => copyText(row.value, row.field)}
                     className="p-2.5 rounded-xl border transition-all hover:border-emerald-500 hover:text-emerald-500 shrink-0"
@@ -2011,7 +2103,7 @@ export default function Employees() {
               </div>
             ))}
 
-            <button onClick={() => setNewTechCreds(null)} className="w-full py-3 rounded-xl text-sm font-black text-white" style={{ backgroundColor: '#10B981' }}>Done</button>
+            <button onClick={() => setNewTechCreds(null)} className="w-full py-3 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#10B981' }}>Done</button>
           </div>
         </div>
       )}
