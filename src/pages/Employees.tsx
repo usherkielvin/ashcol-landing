@@ -802,7 +802,7 @@ export default function Employees() {
         role:     isPriv ? createForm.role : 'EMPLOYEE',
         jobTitle: (createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') ? createForm.jobTitle : '',
       }
-      if (isAdmin) body.branchId = createForm.branchId.trim()
+      if (isAdmin && createForm.role !== 'MANAGEMENT') body.branchId = createForm.branchId.trim()
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },

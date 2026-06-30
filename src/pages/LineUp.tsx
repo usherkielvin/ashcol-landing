@@ -207,6 +207,8 @@ const DRIVER_OPTIONS = ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC']
 
 const INSTALLER_OPTIONS = ['RANIL', 'JHUMAR', 'KENNAN', 'CRIS', 'SONNY', 'RYAN', 'ALLAN']
 
+const NEGOTIATOR_OPTIONS = ['LIZA', 'JANE', 'MARK', 'SARAH', 'ALEX']
+
 const ROUTE_OPTIONS = [
 
   'QC - MANILA',
@@ -283,6 +285,8 @@ interface LineUpRow {
 
   installerTime: string
 
+  negotiator: string
+
   route: string
 
   remarks: string
@@ -331,13 +335,24 @@ export default function LineUp() {
 
   const [branchId, setBranchId] = useState('')
 
+  const checkBranchMatch = useCallback((userBranchId: string, currentBranchId: string) => {
+    if (!userBranchId || !currentBranchId) return false
+    if (isSameBaseBranch(userBranchId, currentBranchId)) return true
+    const userBranch = branches.find(b => isSameBaseBranch(b.id, userBranchId))
+    const currentBranch = branches.find(b => isSameBaseBranch(b.id, currentBranchId))
+    if (userBranch && currentBranch) {
+      return isSameBaseBranch(userBranch.name, currentBranch.name)
+    }
+    return false
+  }, [branches])
+
   const canEdit = useMemo(() => {
     if (isPortalAdmin(role)) return true
     if (!user?.branchId || !branchId) return false
     const isAllowedRole = role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
     if (!isAllowedRole) return false
-    return isSameBaseBranch(user.branchId, branchId)
-  }, [role, user, branchId])
+    return checkBranchMatch(user.branchId, branchId)
+  }, [role, user, branchId, checkBranchMatch])
 
   const [vehicles, setVehicles] = useState<VehicleItem[]>(() => {
 
@@ -605,11 +620,13 @@ export default function LineUp() {
 
     installers: string[]
 
+    negotiators: string[]
+
     routes: string[]
 
     remarks: string[]
 
-  }>({ services: [], drivers: [], installers: [], routes: [], remarks: [] })
+  }>({ services: [], drivers: [], installers: [], negotiators: [], routes: [], remarks: [] })
 
   const finalVehicleOptions = useMemo(() => {
 
@@ -632,6 +649,14 @@ export default function LineUp() {
     [...new Set([...suggestions.installers.map(i => i.toUpperCase()), ...INSTALLER_OPTIONS])].sort(),
 
     [suggestions.installers]
+
+  )
+
+  const finalNegotiatorOptions = useMemo(() =>
+
+    [...new Set([...suggestions.negotiators.map(n => n.toUpperCase()), ...NEGOTIATOR_OPTIONS])].sort(),
+
+    [suggestions.negotiators]
 
   )
 
@@ -721,6 +746,8 @@ export default function LineUp() {
 
         installerTime: '7:00AM',
 
+        negotiator: '',
+
         route: '',
 
         remarks: '',
@@ -770,6 +797,8 @@ export default function LineUp() {
           drivers: filterSystemKeys(data.drivers),
 
           installers: filterSystemKeys(data.installers),
+
+          negotiators: filterSystemKeys(data.negotiators || []),
 
           routes: filterSystemKeys(data.routes),
 
@@ -1305,7 +1334,7 @@ export default function LineUp() {
 
     const FIELDS: (keyof LineUpRow)[] = [
 
-      'service', 'driverName', 'driverTime', 'installerName', 'installerTime', 'route', 'remarks'
+      'service', 'driverName', 'driverTime', 'installerName', 'installerTime', 'negotiator', 'route', 'remarks'
 
     ]
 
@@ -2501,6 +2530,8 @@ export default function LineUp() {
 
           installerTime: r.installerTime || r.installerScheduledTime || r.technicianTime || r.technicianScheduledTime || '7:00AM',
 
+          negotiator: r.negotiator || r.negotiatorName || r.NEGOTIATOR || '',
+
           route: r.route || r.ROUTE || '',
 
           remarks: r.remarks || r.REMARKS || '',
@@ -2938,6 +2969,7 @@ export default function LineUp() {
       'SCHEDULED TIME – IN OF DRIVER': r.driverTime,
       [isTaguigServices ? 'TECHNICIAN' : 'INSTALLER']: r.installerName,
       [isTaguigServices ? 'SCHEDULED TIME – IN OF TECHNICIAN' : 'SCHEDULED TIME – IN OF INSTALLER']: r.installerTime,
+      NEGOTIATOR: r.negotiator,
       ROUTE: r.route,
       REMARKS: r.remarks
     }))
@@ -3074,13 +3106,15 @@ export default function LineUp() {
 
           const installerTime = (k(/installer/i) || k(/technician/i)) && k(/time/i) ? '7:00AM' : '7:00AM'
 
+          const negotiator = k(/negotiator/i) ? String(row[k(/negotiator/i)!] || '').trim() : ''
+
           const route = k(/route/i) ? String(row[k(/route/i)!] || '').trim() : ''
 
           const remarks = k(/remark/i) ? String(row[k(/remark/i)!] || '').trim() : ''
 
-          if (service || route || driverName || installerName) {
+          if (service || route || driverName || installerName || negotiator) {
 
-            parsedRows.push({ id: `imported-${Date.now()}-${index}`, lineupDate: date, branchId, service, driverName, driverTime, installerName, installerTime, route, remarks, sortOrder: index })
+            parsedRows.push({ id: `imported-${Date.now()}-${index}`, lineupDate: date, branchId, service, driverName, driverTime, installerName, installerTime, negotiator, route, remarks, sortOrder: index })
 
           }
 
@@ -4911,7 +4945,7 @@ export default function LineUp() {
 
                        )}
 
-                       {(row.driverName || row.installerName) && (
+                       {(row.driverName || row.installerName || row.negotiator) && (
 
                          <p className="text-xs mt-1 truncate" style={{ color: textMuted }}>
 
@@ -4920,6 +4954,10 @@ export default function LineUp() {
                            {row.driverName && row.installerName && ' · '}
 
                            {row.installerName && <span style={{ color: currentTheme.accent }}>{row.installerName} {row.installerTime}</span>}
+
+                            {((row.driverName || row.installerName) && row.negotiator) && ' · '}
+
+                            {row.negotiator && <span style={{ color: '#F59E0B' }}>Negotiator: {row.negotiator}</span>}
 
                          </p>
 
@@ -4944,6 +4982,8 @@ export default function LineUp() {
                          {renderMobileCell(row, 'installerName', isTaguigServices ? 'Technician' : 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
 
                          {renderMobileCell(row, 'installerTime', isTaguigServices ? 'Technician in' : 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
+
+                          {renderMobileCell(row, 'negotiator', 'Negotiator', <User className="w-3 h-3" />, finalNegotiatorOptions, true)}
 
                          {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
 
@@ -5911,7 +5951,6 @@ export default function LineUp() {
             {scanError && (
 
               <div className="px-4 py-2 flex items-center justify-between gap-2"
-
                 style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderBottom: `1px solid rgba(239,68,68,0.2)` }}>
 
                 <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>{scanError}</span>
@@ -5966,19 +6005,21 @@ export default function LineUp() {
 
                 <colgroup>
 
-                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
 
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '13%' }} />
 
-                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
 
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '13%' }} />
 
-                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
 
-                  <col style={{ width: '23%' }} />
+                  <col style={{ width: '13%' }} />
 
-                  <col style={{ width: '23%' }} />
+                  <col style={{ width: '20%' }} />
+
+                  <col style={{ width: '20%' }} />
 
                 </colgroup>
 
@@ -5996,6 +6037,8 @@ export default function LineUp() {
 
                     {thOrig(isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN')}
 
+                    {thOrig('NEGOTIATOR')}
+
                     {thOrig('ROUTE', true)}
 
                     {thOrig('REMARKS', true)}
@@ -6008,13 +6051,13 @@ export default function LineUp() {
 
                   {loading ? (
 
-                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: '48px', color: textMuted, fontSize: '13px' }}>Loading deployment schedule…</td></tr>
 
                   ) : rows.length === 0 ? (
 
                     <tr>
 
-                      <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center' }}>
+                      <td colSpan={8} style={{ padding: '48px 24px', textAlign: 'center' }}>
 
                         <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
 
@@ -6395,6 +6438,8 @@ export default function LineUp() {
                           {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
 
                           {renderEditableTd(row, 'installerTime', ['7:00AM','8:00AM','6:00AM','9:00AM'], { textAlign: 'center', fontSize: '11px', color: textPrimary })}
+
+                          {renderEditableTd(row, 'negotiator',    finalNegotiatorOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
 
                           {renderEditableTd(row, 'route',   finalRouteOptions,   { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
 
@@ -7650,19 +7695,21 @@ export default function LineUp() {
 
                       <colgroup>
 
-                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '7%' }} />
 
-                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '13%' }} />
 
-                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '7%' }} />
 
-                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '13%' }} />
 
-                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '7%' }} />
 
-                        <col style={{ width: '23%' }} />
+                        <col style={{ width: '13%' }} />
 
-                        <col style={{ width: '23%' }} />
+                        <col style={{ width: '20%' }} />
+
+                        <col style={{ width: '20%' }} />
 
                       </colgroup>
 
@@ -7732,7 +7779,7 @@ export default function LineUp() {
 
                         ) : (
 
-                          ['SERVICE', 'DRIVER', 'DRIVER TIME IN', isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN', 'ROUTE', 'REMARKS'].map(label => (
+                          ['SERVICE', 'DRIVER', 'DRIVER TIME IN', isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', isTaguigServices ? 'TECHNICIAN TIME IN' : 'INSTALLER TIME IN', 'NEGOTIATOR', 'ROUTE', 'REMARKS'].map(label => (
 
                             <th
 
@@ -8118,7 +8165,7 @@ export default function LineUp() {
 
                             <td
 
-                              colSpan={7}
+                              colSpan={8}
 
                               style={{
 
@@ -8158,6 +8205,8 @@ export default function LineUp() {
 
                               row.installerTime || '-',
 
+                              row.negotiator || '-',
+
                               row.route || '-',
 
                               row.remarks || '-',
@@ -8170,23 +8219,23 @@ export default function LineUp() {
 
                                 style={{
 
-                                  padding: cellIdx >= 5 ? '24px 22px' : '24px 16px',
+                                  padding: cellIdx >= 6 ? '24px 22px' : '24px 16px',
 
                                   border: `3px solid ${isLight ? '#000000' : '#475569'}`,
 
                                   color: textPrimary,
 
-                                  fontSize: (cellIdx === 1 || cellIdx === 3) ? 'clamp(17px, 1.45vw, 26px)' : (cellIdx === 2 || cellIdx === 4) ? 'clamp(12px, 1.0vw, 16px)' : cellIdx >= 5 ? 'clamp(16px, 1.2vw, 22px)' : 'clamp(16px, 1.3vw, 24px)',
+                                  fontSize: (cellIdx === 1 || cellIdx === 3 || cellIdx === 5) ? 'clamp(17px, 1.45vw, 26px)' : (cellIdx === 2 || cellIdx === 4) ? 'clamp(12px, 1.0vw, 16px)' : cellIdx >= 6 ? 'clamp(16px, 1.2vw, 22px)' : 'clamp(16px, 1.3vw, 24px)',
 
-                                  fontWeight: (cellIdx === 1 || cellIdx === 3) ? 900 : cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 500 : 700),
+                                  fontWeight: (cellIdx === 1 || cellIdx === 3 || cellIdx === 5) ? 900 : cellIdx === 0 ? 850 : (cellIdx === 2 || cellIdx === 4 ? 500 : 700),
 
-                                  textAlign: cellIdx >= 5 ? 'left' : 'center',
+                                  textAlign: cellIdx >= 6 ? 'left' : 'center',
 
                                   lineHeight: 1.32,
 
                                   verticalAlign: 'middle',
 
-                                  minWidth: cellIdx >= 5 ? 360 : 120,
+                                  minWidth: cellIdx >= 6 ? 360 : 120,
 
                                 }}
 

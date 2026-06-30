@@ -511,7 +511,7 @@ export function isSystemAdmin(role?: string | null): boolean {
 /** Admin portal view — branch switcher, all branches, schedules, DTR, etc. */
 export function isPortalAdmin(role?: string | null): boolean {
   const r = normalizeUserValue(role)
-  return r === 'admin' || r === 'management'
+  return r === 'admin' || r === 'management' || r === 'administrator'
 }
 
 export function isPortalAdminUser(user?: PortalUserLike | null): boolean {
