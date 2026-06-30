@@ -988,110 +988,94 @@ export default function LineUp() {
 
   // ── Data ─────────────────────────────────────────────────────────────────
 
-  const fetchLineup = useCallback(async () => {
-
-    // Fallback/placeholder using local storage first
-
-    const all = lsLoad()
-
-    let filtered = branchId
-
-      ? all.filter(r => r.lineupDate === date && r.branchId === branchId)
-
-      : []
-
-    // Extract notes from cache
-
-    const cachedNotes = filtered.find(r => r.service === '__NOTES__')
-
-    if (cachedNotes) {
-
-      setLineupNotes(cachedNotes.remarks || '')
-
-      setNotesRecord(cachedNotes)
-
-    } else {
-
-      setLineupNotes('')
-
-      setNotesRecord(null)
-
-    }
-
-    filtered = filtered.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__').sort((a, b) => a.sortOrder - b.sortOrder)
-
-    if (filtered.length === 0 && branchId) {
-
-      filtered = getBranchDefaultRowsRef.current(date, branchId)
-
-    }
-
-    setRows(filtered)
-
-    if (!branchId) return
-
-    setLoading(true)
-
+    const fetchYesterdayRows = async (currentDateStr: string, bId: string): Promise<LineUpRow[]> => {
     try {
-
+      const d = new Date(currentDateStr)
+      d.setDate(d.getDate() - 1)
+      const yesterdayStr = d.toISOString().split('T')[0]
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-
-      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${branchId}`, {
-
+      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${yesterdayStr}&branchId=${bId}`, {
         headers: { Authorization: `Bearer ${token}` }
-
       })
-
       if (res.ok) {
-
         const data = await res.json()
-
         if (Array.isArray(data)) {
-
-          // Extract notes from backend data
-
-          const serverNotes = data.find(r => r.service === '__NOTES__')
-
-          if (serverNotes) {
-
-            setLineupNotes(serverNotes.remarks || '')
-
-            setNotesRecord(serverNotes)
-
-          } else {
-
-            setLineupNotes('')
-
-            setNotesRecord(null)
-
-          }
-
           const serverRows = data.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__')
-
           if (serverRows.length > 0) {
-
-            setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
-
-          } else {
-
-            setRows(getBranchDefaultRowsRef.current(date, branchId))
-
+            return serverRows.sort((a, b) => a.sortOrder - b.sortOrder).map((r, i) => ({
+              id: `local-yesterday-${Date.now()}-${i}`,
+              lineupDate: currentDateStr,
+              branchId: bId,
+              service: r.service || '',
+              driverName: r.driverName || '',
+              driverTime: r.driverTime || '8:00AM',
+              installerName: r.installerName || '',
+              installerTime: r.installerTime || '7:00AM',
+              negotiator: r.negotiator || '',
+              route: r.route || '',
+              remarks: r.remarks || '',
+              sortOrder: r.sortOrder ?? i
+            }))
           }
-
         }
-
       }
-
     } catch (e) {
-
-      console.error("Error loading lineup from backend:", e)
-
-    } finally {
-
-      setLoading(false)
-
+      console.error("Error fetching yesterday's lineup:", e)
     }
+    return []
+  }
 
+  const fetchLineup = useCallback(async () => {
+    // Fallback/placeholder using local storage first
+    const all = lsLoad()
+    let filtered = branchId
+      ? all.filter(r => r.lineupDate === date && r.branchId === branchId)
+      : []
+    // Extract notes from cache
+    const cachedNotes = filtered.find(r => r.service === '__NOTES__')
+    if (cachedNotes) {
+      setLineupNotes(cachedNotes.remarks || '')
+      setNotesRecord(cachedNotes)
+    } else {
+      setLineupNotes('')
+      setNotesRecord(null)
+    }
+    filtered = filtered.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__').sort((a, b) => a.sortOrder - b.sortOrder)
+    setRows(filtered)
+    if (!branchId) return
+    setLoading(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${branchId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          // Extract notes from backend data
+          const serverNotes = data.find(r => r.service === '__NOTES__')
+          if (serverNotes) {
+            setLineupNotes(serverNotes.remarks || '')
+            setNotesRecord(serverNotes)
+          } else {
+            setLineupNotes('')
+            setNotesRecord(null)
+          }
+          const serverRows = data.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__')
+          if (serverRows.length > 0) {
+            setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
+          } else {
+            // Fallback to yesterday's rows instead of fixed template
+            const yesterdayRows = await fetchYesterdayRows(date, branchId)
+            setRows(yesterdayRows)
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error loading lineup from backend:", e)
+    } finally {
+      setLoading(false)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, branchId])
 
@@ -2043,11 +2027,17 @@ export default function LineUp() {
 
     if (!branchId) return
 
-    const defaults = getBranchDefaultRows(date, branchId)
+    const defaults = await fetchYesterdayRows(date, branchId)
+
+    if (defaults.length === 0) {
+
+      showToast("No yesterday lineup rows found to load.", "info")
+
+    }
 
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-    // 1. Delete existing DB rows for this date+branch (non-local rows) in a single transactional request
+    // 1. Delete existing DB rows for this date+branch (non-local rows)
 
     try {
 
@@ -2065,59 +2055,29 @@ export default function LineUp() {
 
     }
 
-    // 2. Optimistically show template rows
+    // 2. Load draft rows locally
 
     setRows(defaults)
 
-    showToast('Template loaded — saving to database…', 'info')
+    showToast("Yesterday's lineup loaded as template (unsaved draft)", "info")
 
-    // 3. POST all default rows to the backend
+    // Mark all loaded rows as dirty so they can be saved when Save Schedule is clicked
 
-    const saved: LineUpRow[] = []
+    setDirtyRowIds(prev => {
 
-    for (const row of defaults) {
+      const next = new Set(prev)
 
-      try {
+      defaults.forEach(d => next.add(d.id))
 
-        const res = await fetch(`${API_BASE_URL}/v1/lineup`, {
+      return next
 
-          method: 'POST',
+    })
 
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(row),
-
-        })
-
-        if (res.ok) {
-
-          const dbRow = await res.json() as LineUpRow
-
-          saved.push(dbRow)
-
-          setRows(prev => prev.map(r => r.id === row.id ? dbRow : r))
-
-        } else {
-
-          saved.push(row)
-
-        }
-
-      } catch {
-
-        saved.push(row)
-
-      }
-
-    }
-
-    // 4. Sync localStorage
+    // 3. Cache locally in localStorage
 
     const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
 
-    lsSave([...all, ...saved])
-
-    showToast('Default template saved to database ✓', 'success')
+    lsSave([...all, ...defaults])
 
   }
 
@@ -2129,13 +2089,13 @@ export default function LineUp() {
 
       setConfirmModal({
 
-        title: 'Load Default Template',
+        title: "Load Yesterday's Lineup",
 
-        message: 'This will replace your current lineup entries with the pre-encoded defaults. Continue?',
+        message: "This will replace your current lineup entries with yesterday's layout and names. Continue?",
 
-        confirmText: 'Load Template',
+        confirmText: "Load Template",
 
-        cancelText: 'Keep Current',
+        cancelText: "Keep Current",
 
         type: 'warning',
 
@@ -5484,7 +5444,7 @@ export default function LineUp() {
 
                     }}>
 
-                    <ClipboardList className="w-4 h-4" /> Load Template
+                    <ClipboardList className="w-4 h-4" /> Load Yesterday's Lineup
 
                   </button>
 
