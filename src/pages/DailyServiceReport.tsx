@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, archiveRowMatchesBranch, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -216,23 +216,6 @@ function getRowBrand(row: ServiceRow): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-const archiveRowSignals = (r: ServiceRow) => ({
-  branchId: r.branchId,
-  branchName: r.branchName,
-  ticketBranchId: r.ticketBranchId,
-  installerLineupBranchId: r.installerLineupBranchId,
-  district: r.district,
-  customerAddress: r.customerAddress,
-  serviceType: r.serviceType,
-  statusCode: r.statusCode,
-  dealer: r.dealer,
-  technicianName: r.technicianName,
-  remarks: r.remarks,
-  note: r.note,
-  inputBy: r.inputBy,
-  serviceColumn: r.serviceColumn,
-})
-
 export default function DailyServiceReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -271,17 +254,13 @@ export default function DailyServiceReport() {
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
-  const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
-  const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
   const uniqueBrands = useMemo(() => {
     const set = new Set<string>()
-    rows
-      .filter((r) => archiveRowMatchesBranch(archiveRowSignals(r), branchFilter, installerLineupIndex, driverOnlyNames))
-      .forEach((r) => set.add(getRowBrand(r)))
+    rows.forEach((r) => set.add(getRowBrand(r)))
     return Array.from(set).sort()
-  }, [rows, branchFilter, installerLineupIndex, driverOnlyNames])
+  }, [rows])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -693,34 +672,14 @@ export default function DailyServiceReport() {
       })
       if (res.ok) {
         const data = await res.json()
-        const scoped = (data as ServiceRow[]).filter((r) => archiveRowMatchesBranch(
-          archiveRowSignals(r),
-          resolveArchivesBranchFilter(branchFilter, branches, user),
-          installerLineupIndex,
-          driverOnlyNames,
-        ))
-        setRows(scoped)
+        setRows(Array.isArray(data) ? data as ServiceRow[] : [])
       }
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [monthFilter, branchFilter, branches, user, installerLineupIndex, driverOnlyNames])
-
-  useEffect(() => {
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    if (!token) return
-    const headers = { Authorization: `Bearer ${token}` }
-    fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
-      .catch(() => setInstallerLineupIndex([]))
-    fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
-      .catch(() => setDriverOnlyNames([]))
-  }, [])
+  }, [monthFilter, branchFilter, branches, user])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
   useEffect(() => { fetchRows() }, [fetchRows])
@@ -1407,13 +1366,7 @@ export default function DailyServiceReport() {
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    const activeBranch = resolveArchivesBranchFilter(branchFilter, branches, user)
-    let filtered = rows.filter((r) => archiveRowMatchesBranch(
-      archiveRowSignals(r),
-      activeBranch,
-      installerLineupIndex,
-      driverOnlyNames,
-    ))
+    let filtered = rows
 
     if (brandFilter) {
       filtered = filtered.filter(r => getRowBrand(r) === brandFilter)
@@ -1421,7 +1374,7 @@ export default function DailyServiceReport() {
 
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery, branchFilter, brandFilter, branches, user, installerLineupIndex, driverOnlyNames])
+  }, [rows, searchQuery, brandFilter])
 
   // Build month options from current items (+ last 12 months always available)
   const monthOptions = useMemo(() => {

@@ -203,6 +203,10 @@ export function archiveRowMatchesBranch(
 ): boolean {
   if (!branchFilter || branchFilter === 'ALL_BRANCHES') return false
 
+  const stored = resolveScopedBranchId(row.branchId)
+  const filterKey = resolveScopedBranchId(branchFilter)
+  if (stored && filterKey && stored === filterKey) return true
+
   const installer = row.technicianName || ''
   if (isTaguigBranchRef(branchFilter)) {
     if (!isDriverOnlyOnLineup(installer, driverOnlyNames)
@@ -404,7 +408,7 @@ export function resolveTicketEffectiveBranchId(
   return resolveTicketArchiveBranchId(ticket, lineupIndex, driverOnlyNames)
 }
 
-/** Archives branch for a schedule ticket — lineup installer roster, then ticket branch. */
+/** Archives branch for a schedule ticket — lineup installer roster, then ticket branch, then fallbacks. */
 export function resolveTicketArchiveBranchId(
   ticket: {
     branchId?: string | null
@@ -417,6 +421,7 @@ export function resolveTicketArchiveBranchId(
   },
   lineupIndex?: InstallerBranchIndexEntry[],
   driverOnlyNames: string[] = [],
+  ...fallbackCandidates: Array<string | null | undefined>
 ): string {
   const fromLineupField = resolveScopedBranchId(
     ticket.installerLineupBranchId || ticket.installer_lineup_branch_id,
@@ -434,7 +439,10 @@ export function resolveTicketArchiveBranchId(
     if (fromIndex) return fromIndex
   }
 
-  return resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+  const fromTicket = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+  if (fromTicket && fromTicket !== 'ALL_BRANCHES') return fromTicket
+
+  return resolveArchiveBranchId(...fallbackCandidates)
 }
 
 /** Branch id for API writes (preserves Taguig Sales vs Services). */

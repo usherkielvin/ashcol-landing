@@ -1085,7 +1085,7 @@ function buildArchiveServiceReportPayload(
   return {
     branchId,
     ticketId: ticket.id,
-    reportDate: scheduleKey,
+    reportDate: installedKey,
     scheduledDate: scheduleKey,
     installedDate: installedKey,
     customerName: (fields.customerName ?? getF(ticket, 'customerName', 'customer_name') ?? ticket.title ?? '').trim(),
@@ -2148,8 +2148,15 @@ export default function Tickets() {
   }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
 
   const resolveTicketArchiveBranch = useCallback((ticket: Ticket, fields?: Partial<Ticket>) =>
-    resolveTicketArchiveBranchId({ ...ticket, ...fields }, installerLineupIndex, driverOnlyNames),
-  [installerLineupIndex, driverOnlyNames])
+    resolveTicketArchiveBranchId(
+      { ...ticket, ...fields },
+      installerLineupIndex,
+      driverOnlyNames,
+      globalBranchId,
+      user?.branchId,
+      typeof localStorage !== 'undefined' ? localStorage.getItem('ashcol-global-branch-id') : null,
+    ),
+  [installerLineupIndex, driverOnlyNames, globalBranchId, user?.branchId])
 
   const handleApplyImport = async () => {
     if (!importResults) return
