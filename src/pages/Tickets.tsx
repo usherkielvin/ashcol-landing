@@ -622,7 +622,18 @@ function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string) {
 function formatPaymentAmount(ticket: Ticket): string {
   const amt = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
   if (amt == null || Number.isNaN(Number(amt))) return ''
-  return `₱${Number(amt).toLocaleString('en-PH')}`
+  return Number(amt).toLocaleString('en-PH')
+}
+
+function formatCombinedPayment(ticket: Ticket): string {
+  const mode = getPaymentMode(ticket).trim().toUpperCase()
+  const amt = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
+  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
+  const amountStr = formatPaymentAmount(ticket)
+  if (mode && amountStr) return `${mode} ${amountStr}`
+  if (mode) return mode
+  if (amountStr && Number(amt) > 0) return amountStr
+  return ''
 }
 
 function getPaymentMode(ticket: Ticket): string {
@@ -1239,13 +1250,15 @@ export default function Tickets() {
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const border      = isLight ? '#cbd5e1' : '#334155'
+  const tableBorder = isLight ? '#94a3b8' : '#3d4f66'
+  const tableBorderStrong = isLight ? '#64748b' : '#526480'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
-  const theadBg     = isLight ? '#f1f5f9' : '#060C18'
+  const theadBg     = isLight ? '#e8edf3' : '#060C18'
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
-  const rowOdd      = isLight ? '#f9fafb' : '#0d1626'
+  const rowOdd      = isLight ? '#f4f6f8' : '#0d1626'
   const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
   const green       = '#16A34A'
 
@@ -2562,6 +2575,7 @@ export default function Tickets() {
       { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
+      { label: 'PAYMENT',         display: "PAYMENT",                                   weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
     const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
     const totalWeight = weights.reduce((s, w) => s + w, 0)
@@ -2796,7 +2810,7 @@ export default function Tickets() {
       case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
       case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
       case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
-      case 'PAYMENT':         return formatPaymentAmount(ticket)
+      case 'PAYMENT':         return formatCombinedPayment(ticket)
       case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
       case 'INSTALLER':       return getInstallerDisplay(ticket)
@@ -3323,6 +3337,35 @@ export default function Tickets() {
       )
     }
 
+    if (label === 'PAYMENT') {
+      const combined = formatCombinedPayment(ticket)
+      const mode = getPaymentMode(ticket).trim().toUpperCase()
+      const amountStr = formatPaymentAmount(ticket)
+      if (!combined) {
+        return <span style={{ ...truncStyle, color: textMuted }}>—</span>
+      }
+      if (mode === 'FREE' || mode === 'FREE INSTALL') {
+        return (
+          <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }} title={combined}>
+            FREE
+          </span>
+        )
+      }
+      return (
+        <span style={{ ...truncStyle, fontVariantNumeric: 'tabular-nums' }} title={combined}>
+          {mode && (
+            <span style={{ fontWeight: 600, color: isLight ? '#475569' : '#94a3b8', letterSpacing: '0.03em' }}>
+              {mode}
+            </span>
+          )}
+          {mode && amountStr ? ' ' : null}
+          {amountStr ? (
+            <span style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#f1f5f9' }}>{amountStr}</span>
+          ) : null}
+        </span>
+      )
+    }
+
     if (label === "CUSTOMER'S NAME") {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return withEditPencil(
@@ -3719,14 +3762,14 @@ export default function Tickets() {
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
-            <table className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <table className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
                 ))}
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${border}` }}>
+                <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${tableBorderStrong}` }}>
                   {columns.map(rawCol => {
                     const col = rawCol as any
                     const canSort = 'sortable' in col && col.sortable
@@ -3748,18 +3791,18 @@ export default function Tickets() {
                         }}
                         title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                         style={{
-                          padding: '12px 14px',
-                          color: (col.isExpanded || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : textMuted,
+                          padding: '11px 12px',
+                          color: (col.isExpanded || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : (isLight ? '#475569' : '#94a3b8'),
                           fontWeight: 700, whiteSpace: 'nowrap',
-                          borderRight: `1px solid ${border}`,
-                          borderBottom: `2px solid ${border}`,
+                          borderRight: `1px solid ${tableBorder}`,
+                          borderBottom: `2px solid ${tableBorderStrong}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.w, minWidth: 0, maxWidth: col.w,
                           overflow: 'hidden', textOverflow: 'ellipsis',
                           backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
-                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15 } : {}),
+                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${tableBorder}` } : {}),
                         }}>
                       <div className={`flex items-center gap-1 w-full ${
                         col.align === 'center' ? 'justify-center text-center' :
@@ -3793,7 +3836,7 @@ export default function Tickets() {
               <tbody>
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} style={{ borderBottom: `1px solid ${border}`, padding: '40px 10px' }}>
+                    <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
                           No records
@@ -3821,7 +3864,7 @@ export default function Tickets() {
                   return (
                     <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                         style={{
-                          borderBottom: `1px solid ${border}`,
+                          borderBottom: `1px solid ${tableBorder}`,
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
                           position: rowIsActive ? 'relative' : undefined,
                           zIndex: rowIsActive ? 6 : undefined,
@@ -3865,12 +3908,12 @@ export default function Tickets() {
                                 e.stopPropagation()
                               }}
                               style={{
-                                padding: isEditingCell ? '6px' : '10px 14px',
+                                padding: isEditingCell ? '6px' : '9px 12px',
                                 color: isGhost ? textMuted : textPrimary,
                                 fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                 backgroundColor: bg,
-                                borderRight: `1px solid ${border}`,
-                                borderBottom: `1px solid ${border}`,
+                                borderRight: `1px solid ${tableBorder}`,
+                                borderBottom: `1px solid ${tableBorder}`,
                                 width: col.w,
                                 minWidth: 0,
                                 maxWidth: col.w,
@@ -3883,7 +3926,7 @@ export default function Tickets() {
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 12 : 5 }
+                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 12 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
                                   : (isEditingCell || isExpandedCell) ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
                               }}>
                             {renderCell(ticket, col, idx, isGhost, ghostKind)}
