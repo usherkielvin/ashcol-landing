@@ -1571,6 +1571,16 @@ export default function LineUp() {
 
             onKeyDown={handleKeyDown}
 
+            onFocus={(e) => {
+
+              const len = e.currentTarget.value.length
+
+              e.currentTarget.setSelectionRange(len, len)
+
+            }}
+
+            onDoubleClick={(e) => e.stopPropagation()}
+
             autoFocus
 
             placeholder={placeholder}
@@ -1762,6 +1772,16 @@ export default function LineUp() {
             onBlur={handleBlur}
 
             onKeyDown={handleKeyDown}
+
+            onFocus={(e) => {
+
+              const len = e.currentTarget.value.length
+
+              e.currentTarget.setSelectionRange(len, len)
+
+            }}
+
+            onDoubleClick={(e) => e.stopPropagation()}
 
             autoFocus
 
