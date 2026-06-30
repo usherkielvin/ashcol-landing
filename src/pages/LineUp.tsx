@@ -542,8 +542,6 @@ export default function LineUp() {
 
   const localToRealIdRef    = useRef<Map<string, string>>(new Map())
 
-  const pendingLocalSaveRef = useRef<Set<string>>(new Set())
-
   const [scanning, setScanning]             = useState(false)
 
   const [scanPreview, setScanPreview]       = useState<string | null>(null)
@@ -565,6 +563,8 @@ export default function LineUp() {
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: keyof LineUpRow } | null>(null)
 
   const [tempValue, setTempValue] = useState<string>('')
+
+  const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(() => new Set())
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1237,85 +1237,37 @@ export default function LineUp() {
 
     if (oldVal === val) return
 
-    const isNew = !resolvedId || resolvedId.startsWith('local-')
-
-    // Prevent duplicate POSTs: if a POST is already in-flight for this local ID, skip
-
-    if (isNew && pendingLocalSaveRef.current.has(resolvedId)) return
-
-    if (isNew) pendingLocalSaveRef.current.add(resolvedId)
-
     const updatedRow = { ...resolvedRow, [field]: val }
 
     setRows(prev => prev.map(r => (r.id === row.id || r.id === resolvedId) ? updatedRow : r))
 
-    try {
+    setDirtyRowIds(prev => {
 
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const next = new Set(prev)
 
-      const url = isNew ? `${API_BASE_URL}/v1/lineup` : `${API_BASE_URL}/v1/lineup/${resolvedId}`
+      next.add(resolvedId)
 
-      const res = await fetch(url, {
+      return next
 
-        method: isNew ? 'POST' : 'PUT',
+    })
 
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    // Save draft locally in localStorage
 
-        body: JSON.stringify(updatedRow),
+    const all = lsLoad()
 
-      })
+    const idx = all.findIndex(r => r.id === row.id || r.id === resolvedId)
 
-      if (res.ok) {
+    if (idx >= 0) {
 
-        const saved = await res.json() as LineUpRow
+      all[idx] = updatedRow
 
-        // Remember the mapping so future edits on the same row use the real ID
+    } else {
 
-        if (isNew && saved.id !== resolvedId) {
-
-          localToRealIdRef.current.set(row.id, saved.id)
-
-        }
-
-        setRows(prev => prev.map(r => (r.id === row.id || r.id === resolvedId) ? saved : r))
-
-        if (branchId) void fetchSuggestions(branchId)
-
-      } else {
-
-        let errMsg = `Status ${res.status}`
-
-        try {
-
-          const data = await res.json()
-
-          errMsg = data.message || errMsg
-
-        } catch {}
-
-        throw new Error(errMsg)
-
-      }
-
-    } catch (err: any) {
-
-      console.error('Failed to save inline cell:', err)
-
-      showToast(`Saved locally — DB unreachable (${err.message || 'connection failed'})`, 'error')
-
-      const all = lsLoad()
-
-      const idx = all.findIndex(r => r.id === row.id || r.id === resolvedId)
-
-      if (idx >= 0) all[idx] = updatedRow; else all.push(updatedRow)
-
-      lsSave(all)
-
-    } finally {
-
-      if (isNew) pendingLocalSaveRef.current.delete(resolvedId)
+      all.push(updatedRow)
 
     }
+
+    lsSave(all)
 
   }
 
@@ -1981,15 +1933,15 @@ export default function LineUp() {
 
     }
 
-    // 2. Persist any rows that haven't been saved to the DB yet (local-* / imported-*)
+    // 2. Persist any rows that haven't been saved to the DB yet (local-* / imported-*) or are modified
 
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+    // Save new rows (POST)
 
     const unsaved = rows.filter(r => r.id && (r.id.startsWith('local-') || r.id.startsWith('imported-')))
 
     if (unsaved.length > 0) {
-
-      const savedRows: LineUpRow[] = []
 
       for (const row of unsaved) {
 
@@ -2009,21 +1961,55 @@ export default function LineUp() {
 
             const saved = await res.json() as LineUpRow
 
-            savedRows.push(saved)
-
             setRows(prev => prev.map(r => r.id === row.id ? saved : r))
 
           }
 
         } catch (err) {
 
-          console.error('Failed to persist row:', err)
+          console.error('Failed to persist new row:', err)
 
         }
 
       }
 
     }
+
+    // Save modified existing rows (PUT)
+
+    const toUpdate = rows.filter(r => r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-') && dirtyRowIds.has(r.id))
+
+    if (toUpdate.length > 0) {
+
+      for (const row of toUpdate) {
+
+        try {
+
+          await fetch(`${API_BASE_URL}/v1/lineup/${row.id}`, {
+
+            method: 'PUT',
+
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+
+            body: JSON.stringify(row),
+
+          })
+
+        } catch (err) {
+
+          console.error('Failed to update row:', err)
+
+        }
+
+      }
+
+    }
+
+    // Clear dirty set
+
+    setDirtyRowIds(new Set())
+
+    if (branchId) void fetchSuggestions(branchId)
 
     // 3. Save notes
 
