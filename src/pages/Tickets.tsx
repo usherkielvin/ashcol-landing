@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import {
-  Plus, Search, Trash2, X, Edit3, AlertTriangle, Building2, CalendarDays,
+  Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react'
@@ -12,7 +12,6 @@ import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
-import TicketSectionNav from '../components/TicketSectionNav'
 import {
   FIELD_TICKET_CATEGORIES,
   categoryDefaultServiceType,
@@ -492,7 +491,14 @@ function buildReschedulePatchBody(
 
 function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
-  const dateStr = ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
+  let finalDate = ''
+  if (ticket.acDetails) {
+    try {
+      const parsed = JSON.parse(ticket.acDetails)
+      finalDate = parsed.finalDate || ''
+    } catch {}
+  }
+  const dateStr = finalDate || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
   if (!dateStr) return false
 
   const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
@@ -608,7 +614,7 @@ function formatGhostRemarks(
   return base
 }
 
-function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string) {
+function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string, outcome: ScheduleOutcome | null = 'DONE_INSTALLED') {
   const existing = parseAcMeta(ticket)
   const prevDates: string[] = Array.isArray(existing.previousScheduleDates) ? [...existing.previousScheduleDates] : []
   const sched = (scheduleDateKey || getPreferredDateKey(ticket)).split('T')[0].split(' ')[0].trim()
@@ -617,6 +623,7 @@ function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string) {
     previousScheduleDates: prevDates,
     archivedScheduleDate: sched,
     installedDate: todayDateKey(),
+    scheduleOutcome: outcome || 'DONE_INSTALLED',
   }
 }
 
@@ -981,11 +988,13 @@ function enrichCompletePatchBody(
   ticket: Ticket,
   scheduleDateKey: string,
 ): Record<string, unknown> {
+  const merged = { ...ticket, ...body, acDetails: body.acDetails ?? ticket.acDetails } as Ticket
+  const outcome = getScheduleOutcome(merged) || 'DONE_INSTALLED'
   return {
     ...body,
     status: 'COMPLETED',
     actualCompletion: toApiDateTime(),
-    acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey)),
+    acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey, outcome)),
   }
 }
 
@@ -1746,6 +1755,10 @@ export default function Tickets() {
 
 
   const promptSaveManualTicket = () => {
+    if (!addForm.negotiatorId) {
+      alert('Negotiator is required')
+      return
+    }
     if (!addForm.preferredDate) {
       alert('Preferred Date is required')
       return
@@ -1929,7 +1942,6 @@ export default function Tickets() {
     }
     setAddModalOpen(false)
   }
-
   const validateEditForm = (): string | null => {
     if (!editForm.id) return 'Ticket not found'
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
@@ -1937,9 +1949,8 @@ export default function Tickets() {
       if (!editForm.reschedulePending && !editForm.rescheduleToDate?.trim()) {
         return 'Select a reschedule date or choose Pending if no slot is available yet'
       }
-    } else if (!editForm.preferredDate) {
-      return 'Preferred Date is required'
     }
+    if (!editForm.negotiatorId) return 'Negotiator is required'
     if (!editForm.customerName?.trim()) return 'Customer Name is required'
     if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
     if (!editForm.location?.trim()) return 'Destination/Address is required'
@@ -3452,25 +3463,7 @@ export default function Tickets() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <TicketSectionNav />
           <div className="flex flex-wrap items-center gap-2 w-full">
-          {/* Branch display */}
-          {isAdmin ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border"
-                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-              <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                {getBranchDisplayName(globalBranchId)}
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-not-allowed bg-slate-100 dark:bg-slate-900/50"
-                 style={{ borderColor: inputBorder }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-              <span className="text-xs font-semibold" style={{ color: textMuted }}>Schedules</span>
-            </div>
-          )}
-
           {/* Weekly Date Tabs Picker */}
           <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
             {weeklyTabs.map(tab => {
@@ -4761,11 +4754,11 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Negotiator">
+                  <Field label="Negotiator" required>
                     <select value={addForm.negotiatorId || ''}
                       onChange={e => setAddForm({ ...addForm, negotiatorId: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
                       {branchEmployees.map(emp => (
                         <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -4944,7 +4937,7 @@ export default function Tickets() {
                       value={editForm.ticketCategory || 'INSTALLATION'}
                       onChange={e => setEditForm({ ...editForm, ticketCategory: e.target.value as TicketCategoryValue })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
                     >
                       {FIELD_TICKET_CATEGORIES.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -4977,11 +4970,11 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Negotiator">
+                  <Field label="Negotiator" required>
                     <select value={editForm.negotiatorId || ''}
                       onChange={e => setEditForm({ ...editForm, negotiatorId: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
                       {branchEmployees.map(emp => (
                         <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -5016,7 +5009,7 @@ export default function Tickets() {
                           })
                         }}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                         {SCHEDULE_STATUS_OPTS.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
@@ -5110,7 +5103,7 @@ export default function Tickets() {
                           }))
                         }}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                         <option value="">-- Select --</option>
                         <option value="CASH">CASH</option>
                         <option value="BANK TRANSFER">BANK TRANSFER</option>

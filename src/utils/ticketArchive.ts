@@ -63,7 +63,9 @@ export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
   const remarks = ticketRemarks(ticket)
   if (isInstalledRemarks(remarks)) return true
   if (/clean/i.test(remarks) || /survey/i.test(remarks)) return false
-  return String(ticket.status || '').toUpperCase() === 'COMPLETED'
+  const status = String(ticket.status || '').toUpperCase()
+  if (status === 'COMPLETED') return true
+  return false
 }
 
 export function ticketMatchesArchiveBranchFilter(
@@ -85,6 +87,60 @@ export function ticketMatchesArchiveBranchFilter(
 
   if (isTaguigBranchRef(archiveBranch)) return false
   return branchScopesMatch(archiveBranch, branchFilter)
+}
+
+function parseBrandFromTicket(ticket: TicketLike): string {
+  const unit = getField(ticket, 'unitType', 'unit_type')
+  if (unit && !isGenericUnitLabel(unit)) return unit
+  const raw = ticket.acDetails ?? ticket.ac_details
+  if (!raw || typeof raw !== 'string') return unit || ''
+  try {
+    const parsed = JSON.parse(raw)
+    const units = Array.isArray(parsed) ? parsed : [parsed]
+    const brands: string[] = []
+    for (const u of units) {
+      if (!u || typeof u !== 'object') continue
+      const row = u as Record<string, unknown>
+      const joined = joinBrandCapacity(
+        typeof row.brand === 'string' ? row.brand : '',
+        typeof row.capacity === 'string' ? row.capacity : '',
+      )
+      if (joined && !isGenericUnitLabel(joined)) brands.push(joined)
+      const details = Array.isArray(row.details) ? row.details : []
+      for (const detail of details) {
+        if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>).brand === 'string') {
+          brands.push((detail as Record<string, unknown>).brand as string)
+        }
+      }
+      if (typeof row.unitType === 'string' && row.unitType.trim() && !isGenericUnitLabel(row.unitType)) {
+        return row.unitType.trim()
+      }
+    }
+    if (brands.length) return brands.join(', ')
+  } catch { /* ignore */ }
+  return unit || ''
+}
+
+function joinBrandCapacity(brand: string, capacity: string) {
+  const b = brand.trim()
+  const c = capacity.trim()
+  if (b && c) return `${b} ${c}`
+  return b || c
+}
+
+function isGenericUnitLabel(value: string) {
+  const normalized = value.trim().toLowerCase()
+  return !normalized
+    || normalized === 'split ac'
+    || normalized === 'split'
+    || normalized === 'ac'
+    || normalized === 'window ac'
+    || normalized === 'window'
+}
+
+function parseNegotiatorFromTicket(ticket: TicketLike): string {
+  const meta = parseAcMeta(ticket)
+  return String(meta.negotiatorName || meta.negotiator || '').trim()
 }
 
 function getField(ticket: TicketLike, ...keys: string[]): string {
@@ -168,8 +224,9 @@ function dateInMonth(dateKey: string, month: string): boolean {
   return normalized >= `${month}-01` && normalized <= lastDayOfMonth(month)
 }
 
-/** Match installed/completion month or original schedule month. */
-function ticketInMonth(ticket: TicketLike, month: string): boolean {
+/** Match installed/completion month or original schedule month. Skip when month is empty (all months). */
+function ticketInMonth(ticket: TicketLike, month?: string | null): boolean {
+  if (!month?.trim()) return true
   const meta = parseAcMeta(ticket)
   const candidates = [
     getTicketArchiveDateKey(ticket),
@@ -212,8 +269,9 @@ export function buildArchivePayloadFromTicket(
     statusCode: 'I',
     commitTerms,
     dealer: getField(ticket, 'sourceVendor', 'source_vendor', 'dealer'),
-    unitBrandModel: getField(ticket, 'unitType', 'unit_type'),
+    unitBrandModel: parseBrandFromTicket(ticket) || getField(ticket, 'unitType', 'unit_type'),
     technicianName: getField(ticket, 'installerName', 'installer_name') || String(meta.installerName || meta.installer || ''),
+    negotiator: parseNegotiatorFromTicket(ticket) || undefined,
     amountCharged: parseFloat(String(charges)) || 0,
     paymentStatus: mode,
     jobStatus: 'COMPLETED',
@@ -244,7 +302,7 @@ export async function postTicketArchiveReport(
 export async function syncMissingTicketArchives(
   token: string,
   branchFilter: string,
-  month: string,
+  month: string | null | undefined,
   existingRows: Array<{ ticketId?: string | null }>,
   lineupIndex: InstallerBranchIndexEntry[] = [],
   driverOnlyNames: string[] = [],
@@ -266,18 +324,17 @@ export async function syncMissingTicketArchives(
     const ticket = raw as TicketLike
     const ticketId = ticket.id ? String(ticket.id) : ''
     if (!ticketId) continue
-    if (String(ticket.status || '').toUpperCase() !== 'COMPLETED') continue
-    if (existingIds.has(ticketId) || alreadySyncedTicketIds.has(ticketId)) continue
     if (!shouldBackfillTicketArchive(ticket)) continue
+    if (existingIds.has(ticketId) || alreadySyncedTicketIds.has(ticketId)) continue
     if (!ticketMatchesArchiveBranchFilter(ticket, branchFilter, lineupIndex, driverOnlyNames)) continue
     if (!ticketInMonth(ticket, month)) continue
 
     const payload = buildArchivePayloadFromTicket(ticket, branchFilter, lineupIndex, driverOnlyNames)
     if (!payload) continue
 
-    alreadySyncedTicketIds.add(ticketId)
     try {
       const saved = await postTicketArchiveReport(payload, token, { silent: true })
+      alreadySyncedTicketIds.add(ticketId)
       created.push(saved)
       if (saved.ticketId) existingIds.add(String(saved.ticketId))
     } catch (err) {

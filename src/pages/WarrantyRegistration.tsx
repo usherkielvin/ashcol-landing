@@ -11,13 +11,20 @@ import {
   markWarrantyRegistered,
   type WarrantyTicket,
 } from '../utils/warrantyRegistration'
+import {
+  resolveControlNumber,
+  resolveScheduleTicketNo,
+  resolveWarrantyBrand,
+} from '../utils/warrantyTicketDisplay'
 
-function formatDate(raw?: string | null) {
-  if (!raw) return '—'
-  const key = raw.split('T')[0]
-  const d = new Date(`${key}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return raw
-  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+function resolveInstallerName(row: WarrantyTicket) {
+  const name = row.installerName?.trim()
+  return name ? formatPersonName(name) : '—'
+}
+
+function resolveNegotiatorName(row: WarrantyTicket) {
+  const name = row.negotiatorName?.trim()
+  return name ? formatPersonName(name) : '—'
 }
 
 export default function WarrantyRegistration() {
@@ -79,12 +86,17 @@ export default function WarrantyRegistration() {
     return rows.filter((r) => {
       const blob = [
         r.customerName,
+        r.parentCustomerName,
         r.controlNumber,
+        r.parentControlNumber,
         r.ticketNumber,
         r.parentTicketNumber,
-        r.parentControlNumber,
+        r.unitBrandDisplay,
         r.unitType,
+        r.acDetails,
         r.installerName,
+        r.negotiatorName,
+        r.sourceVendor,
         r.remarksUpdate,
       ].filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
@@ -191,7 +203,7 @@ export default function WarrantyRegistration() {
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: theadBg }}>
               <tr>
-                {['Customer', 'SI / Control', 'Brand', 'Installed', 'From schedule', 'Installer', 'Status', ''].map((h) => (
+                {['Customer', 'SI / Control', 'Brand / Model', 'Schedule #', 'Negotiator', 'Installer', 'Status', ''].map((h) => (
                   <th key={h || 'actions'}
                       className="px-3 py-2.5 text-left font-bold uppercase tracking-wide"
                       style={{ borderBottom: `2px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
@@ -208,19 +220,19 @@ export default function WarrantyRegistration() {
                     {formatPersonName(row.customerName || row.parentCustomerName || '—')}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textPrimary }}>
-                    {row.controlNumber || row.parentControlNumber || '—'}
+                    {resolveControlNumber(row)}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textPrimary }}>
-                    {row.unitType || row.brandRegisteredTo || '—'}
+                    {resolveWarrantyBrand(row)}
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
-                    {formatDate(row.preferredDate || row.preferred_date)}
-                  </td>
-                  <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
-                    {row.parentTicketNumber || row.parentTicketId?.slice(0, 8) || '—'}
+                  <td className="px-3 py-2.5 font-mono font-semibold" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
+                    {resolveScheduleTicketNo(row)}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
-                    {formatPersonName(row.installerName || '—')}
+                    {resolveNegotiatorName(row)}
+                  </td>
+                  <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
+                    {resolveInstallerName(row)}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>
                     <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"

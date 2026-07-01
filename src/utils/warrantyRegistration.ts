@@ -6,11 +6,17 @@ export type WarrantyTicket = {
   customerName?: string | null
   controlNumber?: string | null
   unitType?: string | null
+  acDetails?: string | null
+  unitBrandDisplay?: string | null
+  sourceVendor?: string | null
+  district?: string | null
   branchId?: string | null
   status?: string | null
   preferredDate?: string | null
   preferred_date?: string | null
   installerName?: string | null
+  negotiatorId?: string | null
+  negotiatorName?: string | null
   remarksUpdate?: string | null
   parentTicketId?: string | null
   parentCustomerName?: string | null

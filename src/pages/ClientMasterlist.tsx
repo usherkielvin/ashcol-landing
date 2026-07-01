@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import TicketSectionNav, { FilterPills } from '../components/TicketSectionNav'
+import { FilterPills } from '../components/TicketSectionNav'
 
 interface Ticket {
   id: string
@@ -504,6 +504,14 @@ export default function ClientMasterlist() {
   const [inlineSavingId, setInlineSavingId] = useState<string | null>(null)
   const [inlineFinalDates, setInlineFinalDates] = useState<Record<string, string>>({})
   const [employees, setEmployees] = useState<any[]>([])
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
+  useEffect(() => {
+    const sync = () => setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    window.addEventListener('ashcol-global-branch-change', sync)
+    return () => window.removeEventListener('ashcol-global-branch-change', sync)
+  }, [])
 
   const negotiators = useMemo(() => {
     return employees.filter(e => {
@@ -1043,6 +1051,10 @@ export default function ClientMasterlist() {
   // Submit parsed/manual ticket
   const handleFormCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!addForm.assignedTo) {
+      alert('Negotiator is required')
+      return
+    }
     setFormSubmitting(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1144,6 +1156,10 @@ export default function ClientMasterlist() {
   // Save changes in action drawer
   const handleDrawerActionSave = async () => {
     if (!selectedTicket) return
+    if (!assignTechId) {
+      alert('Negotiator is required')
+      return
+    }
     setActionSaving(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1334,21 +1350,27 @@ export default function ClientMasterlist() {
     let unassigned = 0
     let assigned = 0
     let mine = 0
+    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
     for (const t of tickets) {
       if (storeFilter !== 'ALL') {
         const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
         if (!vendorLower.includes(storeFilter.toLowerCase())) continue
       }
-      if (branchFilter !== 'ALL') {
+      if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
         const resolved = resolveBranch(t.branchId)
-        if (!resolved || resolved.id !== branchFilter) continue
+        if (!resolved || resolved.id !== activeBranch) continue
+      }
+      if (!isAdmin && user?.branchId) {
+        const resolved = resolveBranch(t.branchId)
+        if (!resolved || resolved.id !== user.branchId) continue
       }
       const statusLabel = getRelayStatusLabel(t)
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') continue
       allPending++
       if (statusLabel === 'Pending') unassigned++
       else assigned++
-      if (t.assignedTo === user?.id) mine++
+      if (isAdmin) mine++
+      else if (t.assignedTo === user?.id) mine++
     }
     return {
       ALL_PENDING: allPending,
@@ -1356,7 +1378,7 @@ export default function ClientMasterlist() {
       PENDING: assigned,
       MY_TICKETS: mine,
     }
-  }, [tickets, storeFilter, branchFilter, user?.id])
+  }, [tickets, storeFilter, branchFilter, globalBranchId, isMyTicketsOnly, user?.id, isAdmin])
 
   const relayPillItems = useMemo(() => {
     const myTicketsPill = {
@@ -1399,9 +1421,14 @@ export default function ClientMasterlist() {
     }
 
     // Branch filter
-    if (branchFilter !== 'ALL') {
+    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
       const resolved = resolveBranch(t.branchId)
-      if (!resolved || resolved.id !== branchFilter) return false
+      if (!resolved || resolved.id !== activeBranch) return false
+    }
+    if (!isAdmin && user?.branchId) {
+      const resolved = resolveBranch(t.branchId)
+      if (!resolved || resolved.id !== user.branchId) return false
     }
 
     // Search query
@@ -1654,22 +1681,22 @@ export default function ClientMasterlist() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <TicketSectionNav />
-
           <div className="flex flex-wrap items-center gap-2">
           {/* Branch Filter */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
-            style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
-            <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: isAdmin ? '#10B981' : textMuted }} />
-            <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-              disabled={!isAdmin}
-              className={`bg-transparent outline-none text-xs font-semibold ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-              style={{ color: isAdmin ? textPrimary : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-              <option value="ALL">All Branches</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-          </div>
+          {!isMyTicketsOnly && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
+              style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
+              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: isAdmin ? '#10B981' : textMuted }} />
+              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+                disabled={!isAdmin}
+                className={`bg-transparent outline-none text-xs font-semibold ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                style={{ color: isAdmin ? textPrimary : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
+                <option value="ALL">All Branches</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+            </div>
+          )}
 
           {/* Store Filter */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
@@ -2036,7 +2063,8 @@ export default function ClientMasterlist() {
         const inputStyle = {
           backgroundColor: inputBg,
           borderColor: inputBorder,
-          color: textPrimary
+          color: textPrimary,
+          fontFamily: 'inherit'
         };
 
         return (
@@ -2257,17 +2285,22 @@ export default function ClientMasterlist() {
                           const foundEmp = negotiators.find(emp => emp.id === val)
                           setAssignTechId(val)
                           setEditInstallerName(foundEmp ? foundEmp.name : '')
+                          if (foundEmp && foundEmp.branchId) {
+                            setAssignBranchId(foundEmp.branchId)
+                          }
                           if (val && updateStatus === 'PENDING') {
                             setUpdateStatus('ASSIGNED')
                           }
                         }}
                         className={compactInput} style={inputStyle}>
                         <option value="">Select Negotiator...</option>
-                        {negotiators
-                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
-                          .map(emp => (
-                            <option key={emp.id} value={emp.id}>{emp.name}</option>
-                          ))}
+                        {negotiators.map(emp => {
+                          const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
+                          const label = bName ? `${emp.name} (${bName})` : `${emp.name} (Global)`
+                          return (
+                            <option key={emp.id} value={emp.id}>{label}</option>
+                          )
+                        })}
                       </select>
                     </EField>
                     <EField label="Relayed Date">
@@ -2365,7 +2398,8 @@ export default function ClientMasterlist() {
         const fieldStyle = (value?: string) => ({
           backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
-          color: textPrimary
+          color: textPrimary,
+          fontFamily: 'inherit'
         })
         const categoryOptions = [
           { label: 'Survey & Install', value: 'Survey & Install', title: 'Installation service' },
@@ -2533,15 +2567,16 @@ export default function ClientMasterlist() {
                           value={addForm.branchId}
                           onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
                           className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
                         >
                           <option value="">Select Branch...</option>
                           {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator *</label>
                         <select
+                          required
                           value={addForm.assignedTo || ''}
                           onChange={e => {
                             const val = e.target.value
@@ -2550,18 +2585,21 @@ export default function ClientMasterlist() {
                               ...prev,
                               assignedTo: val,
                               installerName: foundEmp ? foundEmp.name : '',
+                              branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
                               status: val ? 'ASSIGNED' : prev.status
                             }))
                           }}
                           className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
                         >
                           <option value="">Select Negotiator...</option>
-                          {negotiators
-                            .filter(emp => !addForm.branchId || emp.branchId === addForm.branchId)
-                            .map(emp => (
-                              <option key={emp.id} value={emp.id}>{emp.name}</option>
-                            ))}
+                          {negotiators.map(emp => {
+                            const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
+                            const label = bName ? `${emp.name} (${bName})` : `${emp.name} (Global)`
+                            return (
+                              <option key={emp.id} value={emp.id}>{label}</option>
+                            )
+                          })}
                         </select>
                       </div>
                     </div>
@@ -2572,7 +2610,7 @@ export default function ClientMasterlist() {
                         value={addForm.status}
                         onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
                         className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
-                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
                       >
                         <option value="PENDING">Pending</option>
                         <option value="ASSIGNED">Assigned</option>

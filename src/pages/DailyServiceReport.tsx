@@ -13,7 +13,6 @@ import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWrite
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import TicketSectionNav from '../components/TicketSectionNav'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -700,12 +699,9 @@ export default function DailyServiceReport() {
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const month = monthFilter || (() => {
-        const now = new Date()
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      })()
+      const syncMonth = monthFilter?.trim() || null
       const params = new URLSearchParams()
-      params.set('month', month)
+      if (monthFilter?.trim()) params.set('month', monthFilter.trim())
       params.set('branchId', effectiveBranch)
 
       const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
@@ -725,7 +721,7 @@ export default function DailyServiceReport() {
         const created = await syncMissingTicketArchives(
           token,
           effectiveBranch,
-          month,
+          syncMonth,
           loaded,
           lineupIndexRef.current,
           driverOnlyRef.current,
@@ -805,7 +801,8 @@ export default function DailyServiceReport() {
     const onArchiveUpdated = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        void fetchRows({ sync: false, soft: true })
+        syncedTicketIdsRef.current = new Set()
+        void fetchRows({ sync: true, soft: true })
       }, 400)
     }
     window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
@@ -1559,7 +1556,6 @@ export default function DailyServiceReport() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <TicketSectionNav />
           <div className="flex flex-wrap items-center gap-2 w-full">
           {/* Branch Filter */}
           {isAdmin && (
