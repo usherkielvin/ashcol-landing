@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
@@ -357,11 +357,26 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
-  if ((ticket.branchId || ticket.assignedTo) && details.finalDate) return 'Scheduled'
-  if (status === 'ASSIGNED' || ticket.branchId || ticket.assignedTo) return 'Assigned'
+  if (details.finalDate && (ticket.branchId || ticket.assignedTo)) return 'Scheduled'
+  if (status === 'ASSIGNED' || ticket.assignedTo) return 'Assigned'
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
   return 'Pending'
+}
+
+function mergeRelayTicketLists(server: Ticket[], local: Ticket[]): Ticket[] {
+  const byId = new Map<string, Ticket>()
+  for (const t of server) {
+    if (t?.id) byId.set(t.id, t)
+  }
+  for (const t of local) {
+    if (t?.id && !byId.has(t.id)) byId.set(t.id, t)
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    const da = String(a.createdAt || '')
+    const db = String(b.createdAt || '')
+    return db.localeCompare(da)
+  })
 }
 
 const getTicketCategory = (ticket: Ticket) => {
@@ -695,6 +710,9 @@ export default function ClientMasterlist() {
   const headerPadY = 9
   const tableFontSize = '11px'
   const headerFontSize = '10px'
+  const TABLE_ROW_HEIGHT = 38
+
+  const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
 
   const toggleColumn = useCallback((colLabel: string) => {
     setExpandedCols(prev => ({
@@ -709,14 +727,14 @@ export default function ClientMasterlist() {
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
-      { label: 'ADDRESS / DISTRICT', weight: 14, expMul: 1.5, sticky: false, freeze: false, center: true, right: false },
+      { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'INSTALLER',        weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'DRIVER',           weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',       weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',       weight: 11, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
@@ -790,6 +808,7 @@ export default function ClientMasterlist() {
     if (next === activeTab) return
     setActiveTab(next)
     setContextMenu(null)
+    setExpandedCell(null)
     setSelectedPreviewTicket(null)
     resetTicketTableScroll()
   }, [activeTab])
@@ -801,12 +820,13 @@ export default function ClientMasterlist() {
   // Load Initial Data — cache-first, background refresh
   const fetchData = useCallback(async (options?: { soft?: boolean }) => {
     const seq = ++fetchSeqRef.current
+    const forceRefresh = options?.soft === false
     const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
     const cached = readTabCache<RelaysTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
-    if (hasCache) {
+    if (hasCache && !forceRefresh) {
       setTickets(cached!.tickets as Ticket[])
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) setEmployees(cached!.employees as any[])
@@ -820,15 +840,15 @@ export default function ClientMasterlist() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
 
-      const [ticketRes, branchRes, empRes] = await Promise.all([
-        fetch(`${API_BASE_URL}${endpoint}?page=0&size=100`, { headers: { Authorization: `Bearer ${token}` } }),
+      const [tListRaw, branchRes, empRes] = await Promise.all([
+        fetchTicketsPage(endpoint, token, { size: 200 }).catch(() => [] as unknown[]),
         fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${token}` } }),
       ])
 
       if (seq !== fetchSeqRef.current) return
 
-      let tList: Ticket[] = hasCache ? (cached!.tickets as Ticket[]) : []
+      let tList: Ticket[] = (tListRaw as Ticket[]) || []
       let bList: { id: string; name: string }[] = hasCache && cached!.branches
         ? (cached!.branches as { id: string; name: string }[])
         : []
@@ -836,11 +856,11 @@ export default function ClientMasterlist() {
         ? (cached!.employees as Array<Record<string, unknown>>)
         : []
 
-      if (ticketRes.ok) {
-        const payload = await ticketRes.json()
-        tList = payload?.data?.tickets || payload?.tickets || []
-        setTickets(tList)
-      }
+      setTickets(prev => {
+        const merged = forceRefresh ? mergeRelayTicketLists(tList, prev) : tList
+        tList = merged
+        return merged
+      })
 
       if (branchRes.ok) {
         const payload = await branchRes.json()
@@ -1201,6 +1221,7 @@ export default function ClientMasterlist() {
         user?.email,
         user?.jobTitle,
       )
+      const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -1227,6 +1248,7 @@ export default function ClientMasterlist() {
           commitType: addForm.commitType || undefined,
           installerName: addForm.installerName || undefined,
           assignedTo: addForm.assignedTo || undefined,
+          negotiatorId: addForm.assignedTo || undefined,
           serviceVehicle: addForm.serviceVehicle || undefined,
           remarksUpdate: addForm.remarksUpdate || undefined,
           installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
@@ -1236,7 +1258,7 @@ export default function ClientMasterlist() {
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
-          branchId: writeBranchId || undefined
+          branchId: relayBranchId,
         })
       })
 
@@ -1245,23 +1267,30 @@ export default function ClientMasterlist() {
       }
 
       const payload = await res.json().catch(() => null)
-      const createdTicket = payload?.data || payload
-      if (createdTicket && createdTicket.id) {
-        setLastUpdatedTicketId(createdTicket.id)
-        setTickets(prev => {
-          const exists = prev.some(t => t.id === createdTicket.id)
-          if (exists) {
-            return prev.map(t => (t.id === createdTicket.id ? { ...t, ...createdTicket } : t))
-          }
-          return [createdTicket as Ticket, ...prev]
+      const createdTicket = (payload?.data || payload) as Ticket
+      if (!createdTicket?.id) {
+        throw new Error('Ticket was created but the server returned an invalid response.')
+      }
+
+      setLastUpdatedTicketId(createdTicket.id)
+      const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+      setTickets(prev => {
+        const merged = mergeRelayTicketLists([createdTicket], prev)
+        const cached = readTabCache<RelaysTabCache>(cacheKey)
+        writeTabCache(cacheKey, {
+          tickets: merged,
+          branches: cached?.branches,
+          employees: cached?.employees,
         })
-        const statusLabel = getRelayStatusLabel(createdTicket as Ticket)
-        if (isAdmin) {
-          if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
-          else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
-        } else {
-          setActiveTab('MY_TICKETS')
-        }
+        return merged
+      })
+
+      const statusLabel = getRelayStatusLabel(createdTicket)
+      if (isAdmin) {
+        if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
+        else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
+      } else {
+        setActiveTab('MY_TICKETS')
       }
 
       setIsAddModalOpen(false)
@@ -1301,7 +1330,7 @@ export default function ClientMasterlist() {
         relayedDate: new Date().toISOString().split('T')[0],
         finalDate: ''
       })
-      fetchData({ soft: false })
+      void fetchData({ soft: true })
     } catch (e: any) {
       alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -1871,7 +1900,6 @@ export default function ClientMasterlist() {
               </select>
               <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
             </div>
-          )}
 
           {/* Store Filter */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
@@ -1889,13 +1917,11 @@ export default function ClientMasterlist() {
           </div>
 
           {/* Relay view tabs */}
-          {!isMyTicketsOnly && (
-            <FilterPills
-              value={activeTab}
-              onChange={handleRelayTabChange}
-              items={relayPillItems}
-            />
-          )}
+          <FilterPills
+            value={activeTab}
+            onChange={handleRelayTabChange}
+            items={relayPillItems}
+          />
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1917,7 +1943,7 @@ export default function ClientMasterlist() {
           <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
 
           {/* Action buttons wrapper with right alignment */}
-          {isAdmin && !isMyTicketsOnly && (
+          {isAdmin && (
             <div className="flex items-center gap-2 ml-auto shrink-0">
               <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
@@ -2041,7 +2067,13 @@ export default function ClientMasterlist() {
                   const category = getTicketCategory(ticket)
                   const categoryLabel = getCategoryLabel(ticket)
                   const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
-                  const district = ticket.district || guessDistrict(ticket.location || '') || '—'
+                  const district = (() => {
+                    if (ticket.district?.trim()) return ticket.district.trim()
+                    const loc = ticket.location || ''
+                    const paren = loc.match(/\(([^)]+)\)\s*$/)
+                    if (paren?.[1]?.trim()) return paren[1].trim()
+                    return guessDistrict(loc) || '—'
+                  })()
                   const relayedDate = formatRelayDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
                   const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatRelayDate(ticket.updatedAt)}` : '—')
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
@@ -2091,10 +2123,10 @@ export default function ClientMasterlist() {
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
-                    // ADDRESS / DISTRICT
+                    // DISTRICT
                     { value: (
-                      <span className="break-words block w-full text-center text-xs" title={displayUpper(ticket.location || '')}>
-                        {displayUpper(ticket.location || '')} {ticket.district ? `(${displayUpper(ticket.district)})` : ''}
+                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(district)}>
+                        {displayUpper(district)}
                       </span>
                     ) },
                     // BRAND
@@ -2131,10 +2163,12 @@ export default function ClientMasterlist() {
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
                     // FINAL DATE (auto-saving)
                     { value: (
-                      <div className="relative w-full flex items-center justify-center">
+                      <div className="flex items-center justify-center w-full py-0.5">
                         <input
                           type="date"
-                          value={inlineFinalDates[ticket.id] !== undefined ? inlineFinalDates[ticket.id] : (details.finalDate || '')}
+                          value={inlineFinalDates[ticket.id] !== undefined
+                            ? inlineFinalDates[ticket.id]
+                            : (details.finalDate ? String(details.finalDate).slice(0, 10) : '')}
                           disabled={inlineSavingId === ticket.id}
                           onChange={async e => {
                             const val = e.target.value
@@ -2142,19 +2176,24 @@ export default function ClientMasterlist() {
                             await handleSaveFinalDateInline(ticket, val)
                           }}
                           onClick={e => e.stopPropagation()}
-                          className="px-2 py-1 rounded text-xs border w-full text-center disabled:opacity-50"
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                          className="px-2 py-1.5 rounded-md text-[11px] font-semibold border shrink-0 disabled:opacity-50"
+                          style={{
+                            width: '10.75rem',
+                            minWidth: '10.75rem',
+                            backgroundColor: cardBg,
+                            borderColor: inputBorder,
+                            color: textPrimary,
+                            colorScheme: isLight ? 'light' : 'dark',
+                          }}
                         />
                         {inlineSavingId === ticket.id && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                            <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
-                          </div>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 ml-1.5 shrink-0" />
                         )}
                       </div>
                     ) },
                     // REMARKS
                     { value: (
-                      <span className="break-words block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
+                      <span className="truncate block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
                         {ticket.remarksUpdate || lastUpdate || '—'}
                       </span>
                     ) }
@@ -2203,6 +2242,7 @@ export default function ClientMasterlist() {
                         backgroundColor: rowBaseBg,
                         cursor: 'pointer',
                         transition: isHighlighted ? 'background-color 1.5s ease-out' : undefined,
+                        height: activeTab === 'MY_TICKETS' ? TABLE_ROW_HEIGHT : undefined,
                       }}
                       onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
@@ -2210,30 +2250,61 @@ export default function ClientMasterlist() {
                       className="transition-colors">
                       {cells.map((cell, colIdx) => {
                         const col = columns[colIdx]
+                        const isExpandedCell = activeTab === 'MY_TICKETS'
+                          && expandedCell?.ticketId === ticket.id
+                          && expandedCell?.colLabel === col.label
+                        const isInteractiveCol = col.label === 'FINAL DATE'
+                        const canExpandCell = activeTab === 'MY_TICKETS' && !isInteractiveCol
                         return (
                           <td key={col.label}
                             id={`cell-${ticket.id}-${colIdx}`}
-                            onClick={() => {
+                            onClick={(e) => {
                               setSelectedPreviewTicket(ticket)
                               setSelectedColIndex(colIdx)
+                              if (!canExpandCell) return
+                              e.stopPropagation()
+                              setExpandedCell(prev =>
+                                prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                  ? null
+                                  : { ticketId: ticket.id, colLabel: col.label },
+                              )
                             }}
                             style={{
-                              padding: `${cellPadY}px ${cellPadX}px`,
+                              padding: activeTab === 'MY_TICKETS' ? `0 ${cellPadX}px` : `${cellPadY}px ${cellPadX}px`,
                               borderRight: tableColBorder,
                               borderBottom: `1px solid ${tableRowBorder}`,
                               color: textMuted,
                               fontSize: tableFontSize,
                               lineHeight: 1.4,
                               textAlign: columnTextAlign(col, cell),
-                              overflow: 'hidden',
+                              overflow: 'visible',
                               verticalAlign: 'middle',
                               transition: 'background-color 0.15s ease-in-out',
                               backgroundColor: rowBaseBg,
+                              height: activeTab === 'MY_TICKETS' ? TABLE_ROW_HEIGHT : undefined,
+                              maxHeight: activeTab === 'MY_TICKETS' ? TABLE_ROW_HEIGHT : undefined,
                               ...columnCellStyle(col),
                               boxShadow: isSelected && selectedColIndex === colIdx ? 'inset 0 0 0 2px #10B981' : undefined,
-                              ...(col.sticky ? { position: 'sticky' as const, left: col.left, zIndex: 5 } : {})
+                              ...(col.sticky
+                                ? { position: 'sticky' as const, left: col.left, zIndex: isExpandedCell ? 30 : 5 }
+                                : { position: 'relative' as const, zIndex: isExpandedCell ? 20 : undefined }),
                             }}>
-                            {cell.value}
+                            {canExpandCell ? (
+                              <div className="relative w-full h-full flex items-center justify-center" style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
+                                <div className="w-full min-w-0 overflow-hidden">
+                                  {cell.value}
+                                </div>
+                                {isExpandedCell && (
+                                  <div
+                                    className="absolute left-1/2 -translate-x-1/2 top-full mt-0.5 z-[70] min-w-[220px] max-w-[380px] rounded-xl shadow-2xl border p-3 text-xs text-center"
+                                    style={{ backgroundColor: cardBg, borderColor: border }}
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {cell.value}
+                                  </div>
+                                )}
+                              </div>
+                            ) : cell.value}
                           </td>
                         )
                       })}
@@ -3453,8 +3524,10 @@ export default function ClientMasterlist() {
                         ))}
                       </div>
                     } green />
-                    <DField label="Address" value={t.location} className="md:col-span-2" />
-                    <DField label="District" value={t.district || guessDistrict(t.location || '')} />
+                    {activeTab !== 'MY_TICKETS' && (
+                      <DField label="Address" value={t.location} className="md:col-span-2" />
+                    )}
+                    <DField label="District" value={t.district || guessDistrict(t.location || '')} className={activeTab === 'MY_TICKETS' ? 'md:col-span-2' : ''} />
                     <DField label="Additional Notes" value={det.landmarks} className="md:col-span-2" />
                   </div>
                 </div>

@@ -126,6 +126,7 @@ type ImportUnmatchedRow = {
 
 
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
+const TABLE_ROW_HEIGHT = 38
 
 type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY'
 
@@ -429,6 +430,50 @@ function getPreferredDateKey(ticket: Ticket): string {
   const dateStr = ticket.preferredDate || ticket.preferred_date || ''
   if (!dateStr) return ''
   return dateStr.split('T')[0].split(' ')[0].trim()
+}
+
+function getFinalDateKey(ticket: Ticket): string {
+  const raw = parseAcMeta(ticket).finalDate
+  if (!raw) return ''
+  return String(raw).split('T')[0].split(' ')[0].trim()
+}
+
+function hasFinalScheduleDate(ticket: Ticket): boolean {
+  return Boolean(getFinalDateKey(ticket))
+}
+
+/** Relay-board stage — mirrors ClientMasterlist getRelayStatusLabel. */
+function getRelayQueueLabel(ticket: Ticket): string {
+  const status = (ticket.status || '').toUpperCase()
+  if (status === 'CANCELLED') return 'Cancelled'
+  if (status === 'COMPLETED') return 'Installed'
+  if (ticket.installationCharges != null && Number(ticket.installationCharges) > 0) return 'Installed'
+  const outcome = getScheduleOutcome(ticket)
+  if (outcome === 'DONE_INSTALLED' || outcome === 'DONE_CLEANING') return 'Installed'
+
+  if (hasFinalScheduleDate(ticket)) return 'Scheduled'
+  if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
+    return 'Scheduled'
+  }
+
+  if (status === 'ASSIGNED' || ticket.branchId || ticket.branch_id || ticket.assignedTo) return 'Assigned'
+  return 'Pending'
+}
+
+function shouldShowOnMyTickets(ticket: Ticket): boolean {
+  const label = getRelayQueueLabel(ticket)
+  return label === 'Pending' || label === 'Assigned'
+}
+
+function resolveTicketDistrict(ticket: Ticket): string {
+  const explicit = (ticket.district || '').trim()
+  if (explicit) return explicit
+  const parsed = parseDistrict(ticket.location, ticket.district)
+  if (parsed) return parsed
+  const addr = formatAddress(ticket.location)
+  const paren = addr.match(/\(([^)]+)\)\s*$/)
+  if (paren?.[1]?.trim()) return paren[1].trim()
+  return ''
 }
 
 function getPreviousScheduleDates(ticket: Ticket): string[] {
@@ -1401,7 +1446,7 @@ export default function Tickets() {
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
@@ -1897,6 +1942,7 @@ export default function Tickets() {
     const form = {
       id: ticket.id,
       preferredDate: preferred,
+      finalDate: getFinalDateKey(ticket),
       customerName: ticket.customerName || ticket.customer_name || ticket.title || '',
       contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
       location: formatAddress(ticket.location),
@@ -2079,12 +2125,24 @@ export default function Tickets() {
       }
 
       const originalTicket = tickets.find(t => t.id === editForm.id)
+      const hadFinalDate = originalTicket ? hasFinalScheduleDate(originalTicket) : false
+      const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
+      const addedFinalDate = Boolean(finalDateKey) && !hadFinalDate
+
       const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
       const paymentMode = editForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
       if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
         body.installationCharges = Number(paymentCharges)
       }
       if (paymentMode) body.modeOfPayment = paymentMode
+
+      if (finalDateKey && !isReschedStatus) {
+        body.preferredDate = finalDateKey
+        const origStat = (originalTicket?.status || '').toUpperCase()
+        if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove) {
+          body.status = 'SCHEDULED'
+        }
+      }
 
       if (isDateMove) {
         const existing = parseAcMeta(editForm as Ticket)
@@ -2115,6 +2173,7 @@ export default function Tickets() {
           branchEmployees,
           editForm.negotiatorId,
         ) || undefined,
+        finalDate: finalDateKey,
       })
 
       const shouldComplete = Boolean(
@@ -2196,6 +2255,8 @@ export default function Tickets() {
 
       showToast(shouldComplete
         ? 'Ticket completed — see Archives tab ✓'
+        : addedFinalDate
+          ? `Scheduled for ${formatDateKeyLabel(finalDateKey)} — see Schedules tab ✓`
         : isReschedStatus && editForm.reschedulePending
           ? 'Marked as rescheduled (pending date) ✓'
         : isDateMove
@@ -2628,7 +2689,7 @@ export default function Tickets() {
   const columns = useMemo(() => {
     const raw = [
       { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: "ADDRESS",                                   weight: 22, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'DESTINATION',     display: isMyTickets ? 'DISTRICT' : 'ADDRESS',          weight: isMyTickets ? 12 : 22, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: "COMMIT",                                    weight: 12, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
@@ -2649,7 +2710,7 @@ export default function Tickets() {
       if (c.sticky) left += (c.weight / totalWeight) * 100
       return { ...c, isExpanded, w: pct, left: l }
     })
-  }, [expandedCols, isTaguigServices])
+  }, [expandedCols, isTaguigServices, isMyTickets])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -2748,11 +2809,9 @@ export default function Tickets() {
       if (isMyTickets) {
         const uid = user?.id || ''
         const negotiatorId = String(t.negotiatorId || t.negotiator_id || '').trim()
-        const assignedId = String(t.assignedTo || t.assigned_to || '').trim()
+        const assignedId = String(t.assignedTo || '').trim()
         if (uid && negotiatorId !== uid && assignedId !== uid) return false
-        if (stat === 'COMPLETED') {
-          return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
-        }
+        if (!shouldShowOnMyTickets(t)) return false
         return true
       }
 
@@ -2910,7 +2969,7 @@ export default function Tickets() {
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
       case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
-      case 'DESTINATION':     return formatAddress(ticket.location)
+      case 'DESTINATION':     return isMyTickets ? resolveTicketDistrict(ticket) : formatAddress(ticket.location)
       case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
       case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
       case 'BRAND':           return parseBrand(ticket)
@@ -3349,7 +3408,7 @@ export default function Tickets() {
     )
   }
 
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null, cellExpanded = false) {
     const { label } = col
 
     const inlineEditor = renderInlineCellEditor(ticket, label, rowGhost)
@@ -3360,12 +3419,10 @@ export default function Tickets() {
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
       : textPrimary
-    const showExpanded =
-      col.isExpanded ||
-      (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === label)
+    const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
 
     if (label === 'STATUS') {
       const outcome = getScheduleOutcome(ticket)
@@ -3429,7 +3486,7 @@ export default function Tickets() {
     if (label === 'NOTE') {
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val} className={showExpanded ? '' : 'line-clamp-2'}>
+              title={val}>
           {val || ''}
         </span>,
         ticket, label, rowGhost,
@@ -3449,7 +3506,6 @@ export default function Tickets() {
               fontStyle: 'italic',
             }}
             title={ghostRemarks}
-            className={showExpanded ? '' : 'line-clamp-2'}
           >
             {ghostRemarks || '—'}
           </span>
@@ -3457,7 +3513,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val} className={showExpanded ? '' : 'line-clamp-2'}>
+              title={val}>
           {val || ''}
         </span>,
         ticket, label, rowGhost,
@@ -3958,7 +4014,9 @@ export default function Tickets() {
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
                           {isMyTickets
-                            ? (searchQuery || dateFilter ? 'No tickets match your filters' : 'No tickets assigned to you yet')
+                            ? (searchQuery || dateFilter
+                              ? 'No pending or assigned tickets match your filters'
+                              : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
                             : 'No records'}
                         </p>
                         {searchQuery && (
@@ -3988,6 +4046,7 @@ export default function Tickets() {
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
                           position: rowIsActive ? 'relative' : undefined,
                           zIndex: rowIsActive ? 6 : undefined,
+                          height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
                         }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
                         onMouseLeave={() => setHoveredRow(null)}
@@ -4029,7 +4088,7 @@ export default function Tickets() {
                                 e.stopPropagation()
                               }}
                               style={{
-                                padding: isEditingCell ? '6px' : '9px 12px',
+                                padding: isEditingCell ? '6px' : '0 12px',
                                 color: isGhost ? textMuted : textPrimary,
                                 fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                 backgroundColor: bg,
@@ -4038,19 +4097,38 @@ export default function Tickets() {
                                 width: col.w,
                                 minWidth: 0,
                                 maxWidth: col.w,
-                                overflow: isEditingCell || isExpandedCell ? 'visible' : 'hidden',
+                                height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
+                                maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
+                                overflow: 'visible',
                                 textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
                                 cursor: canEdit && !isGhost ? 'default' : 'default',
-                                verticalAlign: 'top',
+                                verticalAlign: 'middle',
                                 textAlign: col.align || 'left',
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
                                   ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 12 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
-                                  : (isEditingCell || isExpandedCell) ? { position: 'relative' as const, zIndex: isEditingCell ? 10 : 4 } : {}),
+                                  : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 10 : 4) : undefined }),
                               }}>
-                            {renderCell(ticket, col, idx, isGhost, ghostKind)}
+                            {isEditingCell ? (
+                              renderCell(ticket, col, idx, isGhost, ghostKind, false)
+                            ) : (
+                              <div className="relative w-full h-full flex items-center" style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
+                                <div className="w-full min-w-0 overflow-hidden">
+                                  {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
+                                </div>
+                                {isExpandedCell && (
+                                  <div
+                                    className="absolute left-0 top-full mt-0.5 z-[60] min-w-[min(100%,240px)] max-w-[380px] rounded-xl shadow-2xl border p-3"
+                                    style={{ backgroundColor: cardBg, borderColor: border }}
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {renderCell(ticket, col, idx, isGhost, ghostKind, true)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
@@ -4145,6 +4223,7 @@ export default function Tickets() {
         const negotiatorId = t.negotiatorId || t.negotiator_id || ''
         const negotiatorName = branchEmployees.find(e => e.id === negotiatorId)?.name || ''
         const preferredDate = t.preferredDate || t.preferred_date
+        const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
         const isCompleted = (t.status || '').toUpperCase() === 'COMPLETED'
         const hasPayment = ticketHasPaymentInfo(t)
@@ -4215,14 +4294,15 @@ export default function Tickets() {
                   <Row icon={Wrench}  label="Ticket No." val={t.ticketNumber || t.ticket_number || ''} />
                   <Row icon={Wrench}  label="Control No. / SI (Aircon)" val={t.controlNumber || t.control_number || ''} />
                   <Row icon={Phone}   label="Contact"    val={phone ? (fmtPhone(phone) || phone) : ''} />
-                  <Row icon={MapPin}  label="Address"    val={addr} />
-                  <Row icon={MapPin}  label="District"   val={district} />
+                  {!isMyTickets && <Row icon={MapPin}  label="Address"    val={addr} />}
+                  <Row icon={MapPin}  label="District"   val={district || resolveTicketDistrict(t)} />
                   <Row icon={Wrench}  label="Service / Driver" val={serviceDriver} />
                   <Row icon={Wrench}  label="Brand / Unit" val={brand} />
                   <Row icon={Wrench}  label={isTaguigServices ? "Endorsed By" : "Dealer"}     val={dealer} />
                   <Row icon={User}    label={isTaguigServices ? "Technician" : "Installer"}  val={installer} />
                   <Row icon={User}    label="Negotiator" val={negotiatorName} />
                   <Row icon={Clock}   label="Preferred Date" val={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''} />
+                  <Row icon={Clock}   label="Final Schedule" val={finalScheduleDate ? formatDateKeyLabel(finalScheduleDate) : ''} color={green} />
                   {isCompleted && archivedSched && (
                     <Row icon={Clock} label="Scheduled Date" val={archivedSched} />
                   )}
@@ -5131,6 +5211,26 @@ export default function Tickets() {
                       onChange={e => setEditForm({ ...editForm, controlNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Final Schedule Date" full={isMyTickets}>
+                    <input
+                      type="date"
+                      value={editForm.finalDate || ''}
+                      onChange={e => setEditForm({ ...editForm, finalDate: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full max-w-xs"
+                      style={{
+                        minWidth: '11rem',
+                        backgroundColor: isMyTickets ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
+                        border: `1px solid ${isMyTickets ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)') : inputBorder}`,
+                        color: textPrimary,
+                        colorScheme: isLight ? 'light' : 'dark',
+                      }}
+                    />
+                    {isMyTickets && (
+                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
+                        Set the install date here — once saved, this ticket moves to the Schedules tab.
+                      </p>
+                    )}
                   </Field>
                   <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
                     <Field label="Status" required>
