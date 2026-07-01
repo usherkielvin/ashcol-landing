@@ -750,7 +750,14 @@ export default function ClientMasterlist() {
       })
       if (empRes.ok) {
         const payload = await empRes.json()
-        setEmployees(payload?.data || payload || [])
+        const rawList: any[] = payload?.data || payload || []
+        // Normalize snake_case API fields → camelCase for consistent access
+        const normalized = rawList.map((e: any) => ({
+          ...e,
+          branchId: e.branchId || e.branch_id || '',
+          jobTitle: e.jobTitle || e.job_title || '',
+        }))
+        setEmployees(normalized)
       }
 
     } catch (e) {
@@ -2294,13 +2301,15 @@ export default function ClientMasterlist() {
                         }}
                         className={compactInput} style={inputStyle}>
                         <option value="">Select Negotiator...</option>
-                        {negotiators.map(emp => {
-                          const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
-                          const label = bName ? `${emp.name} (${bName})` : `${emp.name} (Global)`
-                          return (
-                            <option key={emp.id} value={emp.id}>{label}</option>
-                          )
-                        })}
+                        {negotiators
+                          .filter(emp => !assignBranchId || !emp.branchId || emp.branchId === assignBranchId)
+                          .map(emp => {
+                            const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
+                            const label = bName ? `${emp.name} (${bName})` : `${emp.name} (All)`
+                            return (
+                              <option key={emp.id} value={emp.id}>{label}</option>
+                            )
+                          })}
                       </select>
                     </EField>
                     <EField label="Relayed Date">
@@ -2311,38 +2320,34 @@ export default function ClientMasterlist() {
                       <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
                     </EField>
-                    {assignBranchId && (
-                      <>
-                        <EField label="Final Date Assigned by Branch">
-                          <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                            className={compactInput} style={inputStyle} />
-                        </EField>
-                        <EField label="Installer / Technician">
-                          <select value={editInstallerName}
-                            onChange={e => setEditInstallerName(e.target.value)}
-                            className={compactInput} style={inputStyle}>
-                            <option value="">Select Technician...</option>
-                            {installers
-                              .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
-                              .map(emp => (
-                                <option key={emp.id} value={emp.name}>{emp.name}</option>
-                              ))}
-                          </select>
-                        </EField>
-                        <EField label="Driver / Vehicle">
-                          <select value={editServiceVehicle}
-                            onChange={e => setEditServiceVehicle(e.target.value)}
-                            className={compactInput} style={inputStyle}>
-                            <option value="">Select Driver...</option>
-                            {drivers
-                              .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
-                              .map(emp => (
-                                <option key={emp.id} value={emp.name}>{emp.name}</option>
-                              ))}
-                          </select>
-                        </EField>
-                      </>
-                    )}
+                    <EField label="Final Date Assigned by Branch">
+                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                        className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Installer / Technician">
+                      <select value={editInstallerName}
+                        onChange={e => setEditInstallerName(e.target.value)}
+                        className={compactInput} style={inputStyle}>
+                        <option value="">Select Technician...</option>
+                        {installers
+                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
+                          .map(emp => (
+                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          ))}
+                      </select>
+                    </EField>
+                    <EField label="Driver / Vehicle">
+                      <select value={editServiceVehicle}
+                        onChange={e => setEditServiceVehicle(e.target.value)}
+                        className={compactInput} style={inputStyle}>
+                        <option value="">Select Driver...</option>
+                        {drivers
+                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
+                          .map(emp => (
+                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          ))}
+                      </select>
+                    </EField>
                   </div>
                 </div>
 

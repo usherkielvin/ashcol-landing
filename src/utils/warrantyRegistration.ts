@@ -1,4 +1,4 @@
-import { API_BASE_URL, readApiError } from './api'
+import { API_BASE_URL, getActivePortalBranchId, readApiError } from './api'
 
 export type WarrantyTicket = {
   id: string
@@ -33,11 +33,35 @@ function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
 
+export function resolveWarrantyBranchId(user?: { role?: string | null; branchId?: string | null } | null) {
+  const id = getActivePortalBranchId(user)
+  if (!id || id === 'ALL_BRANCHES') return undefined
+  return id
+}
+
+export async function syncWarrantyRegistrations(
+  token: string,
+  branchId?: string,
+): Promise<{ archivesCreated?: number; warrantyCreated?: number; warrantySkipped?: number }> {
+  const params = new URLSearchParams()
+  if (branchId) params.set('branchId', branchId)
+  const qs = params.toString()
+  const res = await fetch(
+    `${API_BASE_URL}/tickets/warranty-registrations/sync${qs ? `?${qs}` : ''}`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) throw new Error(await readApiError(res))
+  const payload = await res.json()
+  return payload?.data || payload || {}
+}
+
 export async function fetchWarrantyRegistrations(
   token: string,
   tab: 'pending' | 'registered',
+  branchId?: string,
 ): Promise<WarrantyTicket[]> {
   const params = new URLSearchParams({ tab, page: '0', size: '200' })
+  if (branchId) params.set('branchId', branchId)
   const res = await fetch(`${API_BASE_URL}/tickets/warranty-registrations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   })

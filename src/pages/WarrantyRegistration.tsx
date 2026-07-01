@@ -9,6 +9,8 @@ import { FilterPills } from '../components/TicketSectionNav'
 import {
   fetchWarrantyRegistrations,
   markWarrantyRegistered,
+  resolveWarrantyBranchId,
+  syncWarrantyRegistrations,
   type WarrantyTicket,
 } from '../utils/warrantyRegistration'
 import {
@@ -64,9 +66,11 @@ export default function WarrantyRegistration() {
     setLoading(true)
     setError(null)
     try {
+      const branchId = resolveWarrantyBranchId(user)
+      await syncWarrantyRegistrations(token(), branchId)
       const [pendingList, registeredList] = await Promise.all([
-        fetchWarrantyRegistrations(token(), 'pending'),
-        fetchWarrantyRegistrations(token(), 'registered'),
+        fetchWarrantyRegistrations(token(), 'pending', branchId),
+        fetchWarrantyRegistrations(token(), 'registered', branchId),
       ])
       setCounts({ pending: pendingList.length, registered: registeredList.length })
       setRows(tab === 'pending' ? pendingList : registeredList)
@@ -76,7 +80,7 @@ export default function WarrantyRegistration() {
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [tab, user])
 
   useEffect(() => { void loadRows() }, [loadRows])
 
