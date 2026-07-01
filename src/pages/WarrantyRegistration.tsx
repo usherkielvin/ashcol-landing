@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { Navigate } from 'react-router-dom'
 import { ShieldCheck, Search, Loader2, CheckCircle2, Clock, RefreshCw, X } from 'lucide-react'
@@ -20,6 +20,7 @@ import {
   resolveScheduleTicketNo,
   resolveWarrantyBrand,
 } from '../utils/warrantyTicketDisplay'
+import { resetTicketTableScroll } from '../utils/tabSwitch'
 
 function resolveInstallerName(row: WarrantyTicket) {
   const name = row.installerName?.trim()
@@ -67,6 +68,17 @@ export default function WarrantyRegistration() {
   )
 
   const rows = tab === 'pending' ? pendingRows : registeredRows
+
+  const handleTabChange = useCallback((next: 'pending' | 'registered') => {
+    if (next === tab) return
+    setTab(next)
+    setSearchQuery('')
+    resetTicketTableScroll()
+  }, [tab])
+
+  useLayoutEffect(() => {
+    resetTicketTableScroll()
+  }, [tab])
 
   const applyCache = useCallback((cache: WarrantyListsCache) => {
     setPendingRows(cache.pending)
@@ -211,7 +223,7 @@ export default function WarrantyRegistration() {
           <div className="flex flex-wrap items-center gap-2 w-full">
             <FilterPills
               value={tab}
-              onChange={setTab}
+              onChange={handleTabChange}
               items={[
                 { id: 'pending' as const, label: 'Pending', count: counts.pending, icon: <Clock className="w-3 h-3" /> },
                 { id: 'registered' as const, label: 'Registered', count: counts.registered, icon: <CheckCircle2 className="w-3 h-3" /> },
@@ -267,7 +279,7 @@ export default function WarrantyRegistration() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-auto" style={{ backgroundColor: cardBg }}>
+      <div className="flex-1 min-h-0 overflow-auto" data-ticket-table-scroll style={{ backgroundColor: cardBg }}>
         {loading && pendingRows.length === 0 && registeredRows.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-16" style={{ color: textMuted }}>
             <Loader2 className="w-5 h-5 animate-spin" /> Loading…
@@ -283,7 +295,7 @@ export default function WarrantyRegistration() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+          <table key={tab} className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: theadBg }}>
               <tr>
                 {['Customer', 'SI / Control', 'Brand / Model', 'Schedule #', 'Negotiator', 'Installer', 'Status', ''].map((h) => (

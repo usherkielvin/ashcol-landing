@@ -314,6 +314,49 @@ export function branchScopesMatch(
   return isSameBaseBranch(a, b)
 }
 
+export type BranchStaffOption = {
+  id: string
+  name: string
+  branchId?: string | null
+  email?: string | null
+  role?: string | null
+  jobTitle?: string | null
+}
+
+/** Staff who may appear as negotiator (excludes field techs/drivers/helpers/admins). */
+export function isNegotiatorCandidate(user: {
+  role?: string | null
+  jobTitle?: string | null
+}): boolean {
+  const roleLower = (user.role || '').toLowerCase()
+  if (roleLower === 'customer') return false
+  if (roleLower === 'admin' || roleLower === 'administrator') return false
+  const jtUpper = (user.jobTitle || '').toUpperCase()
+  if (['TECHNICIAN', 'DRIVER', 'HELPER'].includes(jtUpper)) return false
+  return true
+}
+
+/** Branch-scoped negotiator dropdown list (uses branchScopesMatch, not strict id equality). */
+export function filterBranchNegotiators(
+  users: BranchStaffOption[],
+  branchSource?: string | null,
+): BranchStaffOption[] {
+  const eligible = users.filter(isNegotiatorCandidate)
+  if (!branchSource || branchSource === 'ALL_BRANCHES') {
+    return eligible.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }
+  const matched = eligible.filter((u) =>
+    u.branchId && branchScopesMatch(u.branchId, branchSource, u.email),
+  )
+  if (matched.length > 0) {
+    return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }
+  // Fallback: staff without branch on file still selectable for active branch
+  const unassigned = eligible.filter((u) => !u.branchId?.trim())
+  return (unassigned.length > 0 ? unassigned : eligible)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
 /** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */
 export function resolveArchiveBranchId(
   ...candidates: Array<string | null | undefined>
@@ -632,6 +675,8 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
   if (isPortalAdmin(role)) return '/audit-report'
   if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
   if (isServiceWorkspaceUser(user)) return '/service-report'
+  // Negotiator / field-sales employees (EMPLOYEE role, not service/coordinator) → My Tickets
+  if (role === 'employee' || role === 'staff') return '/my-tickets'
   return '/audit-report?tab=submit'
 }
 

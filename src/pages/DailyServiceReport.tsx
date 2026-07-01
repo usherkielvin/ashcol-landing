@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
@@ -13,6 +13,7 @@ import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWrite
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { archivesCacheKey, readTabCache, writeTabCache, type ArchivesTabCache } from '../utils/ticketTabCache'
+import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -249,7 +250,6 @@ export default function DailyServiceReport() {
   const [rows, setRows] = useState<ServiceRow[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
@@ -681,6 +681,37 @@ export default function DailyServiceReport() {
     return Array.from(byId.values())
   }, [])
 
+  const applyArchivesScope = useCallback((branchId: string, month: string) => {
+    const cached = readTabCache<ArchivesTabCache>(archivesCacheKey(branchId, month))
+    if (Array.isArray(cached?.rows) && cached.rows.length > 0) {
+      setRows(cached.rows as ServiceRow[])
+      setLoading(false)
+    } else {
+      setRows([])
+    }
+    resetTicketTableScroll()
+  }, [])
+
+  const handleMonthFilterChange = useCallback((month: string) => {
+    setMonthFilter(month)
+    // fetchRows will be triggered by the useEffect watching monthFilter
+  }, [])
+
+  const handleBranchFilterChange = useCallback((branch: string) => {
+    setBranchFilter(branch)
+    // fetchRows will be triggered by the useEffect watching branchFilter
+  }, [])
+
+  useLayoutEffect(() => {
+    if (branches.length === 0) return
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
+    if (!effectiveBranch) {
+      setRows([])
+      return
+    }
+    applyArchivesScope(effectiveBranch, monthFilter)
+  }, [monthFilter, branchFilter, branches, archivesUser, applyArchivesScope])
+
   const fetchRows = useCallback(async (options?: { sync?: boolean; soft?: boolean }) => {
     if (branches.length === 0) {
       if (!hasLoadedOnceRef.current) setLoading(true)
@@ -700,7 +731,19 @@ export default function DailyServiceReport() {
     const cached = readTabCache<ArchivesTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.rows) && cached.rows.length > 0
 
+    const CACHE_TTL_MS = 3 * 60 * 1000 // 3 minutes
     const seq = ++fetchSeqRef.current
+    const cacheAge = cached?.lastSyncAt ? Date.now() - (cached.lastSyncAt as number) : Infinity
+    const cacheIsFresh = hasCache && cacheAge < CACHE_TTL_MS
+
+    // Cache-first: if cache is fresh and not a forced sync, show cached data immediately
+    if (cacheIsFresh && options?.soft) {
+      setRows(cached!.rows as ServiceRow[])
+      setLoading(false)
+      hasLoadedOnceRef.current = true
+      return
+    }
+
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
     if (hasCache) {
@@ -709,7 +752,6 @@ export default function DailyServiceReport() {
       if (!showSkeleton) setLoading(false)
     }
     if (showSkeleton) setLoading(true)
-    else setRefreshing(true)
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -761,7 +803,6 @@ export default function DailyServiceReport() {
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
-        setRefreshing(false)
       }
     }
   }, [monthFilter, branchFilter, branches, archivesUser, canEdit, mergeArchiveRows])
@@ -1595,7 +1636,7 @@ export default function DailyServiceReport() {
                 value={branchFilter}
                 onChange={e => {
                   const val = e.target.value
-                  setBranchFilter(val)
+                  handleBranchFilterChange(val)
                   localStorage.setItem('ashcol-global-branch-id', val)
                   window.dispatchEvent(new Event('ashcol-global-branch-change'))
                 }}
@@ -1616,7 +1657,7 @@ export default function DailyServiceReport() {
             <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <select
               value={monthFilter}
-              onChange={e => setMonthFilter(e.target.value)}
+              onChange={e => handleMonthFilterChange(e.target.value)}
               className="bg-transparent outline-none cursor-pointer font-bold pr-2"
               style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
             >
@@ -1751,13 +1792,15 @@ export default function DailyServiceReport() {
             ))}
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ position: 'relative' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" data-ticket-table-scroll style={{ position: 'relative' }}>
             {refreshing && (
               <div className="px-3 py-1 text-[10px] font-semibold sticky top-0 z-30" style={{ color: textMuted, backgroundColor: cardBg }}>
                 Syncing archives…
               </div>
             )}
-            <table className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+            <table
+              key={`${branchFilter}|${monthFilter}`}
+              className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />

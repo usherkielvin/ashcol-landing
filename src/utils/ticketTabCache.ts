@@ -58,7 +58,7 @@ export function relaysCacheKey(
   return `relays:v${VERSION}:${ticketScope}:${branchCachePart(user, globalBranchId)}`
 }
 
-export type ArchivesTabCache = { rows: unknown[] }
+export type ArchivesTabCache = { rows: unknown[]; lastSyncAt?: number }
 
 export function archivesCacheKey(branchId: string, monthFilter: string): string {
   return `archives:v${VERSION}:${branchId || 'none'}:${monthFilter?.trim() || 'all'}`

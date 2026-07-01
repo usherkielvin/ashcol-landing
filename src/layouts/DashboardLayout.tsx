@@ -821,7 +821,7 @@ export default function DashboardLayout() {
                  }} />
           )}
           <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
-            <Outlet />
+            <Outlet key={location.pathname} />
           </div>
         </main>
       </div>

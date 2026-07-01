@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import {
@@ -9,8 +9,9 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators } from '../utils/api'
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
+import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { FilterPills } from '../components/TicketSectionNav'
@@ -530,13 +531,12 @@ export default function ClientMasterlist() {
   }, [])
 
   const negotiators = useMemo(() => {
-    return employees.filter(e => {
-      const roleLower = (e.role || '').toLowerCase()
-      if (roleLower === 'customer') return false
-      const jtUpper = (e.jobTitle || '').toUpperCase()
-      return !['TECHNICIAN', 'DRIVER', 'HELPER'].includes(jtUpper)
-    })
-  }, [employees])
+    const branchSource = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const scopedBranch = branchSource && branchSource !== 'ALL' && branchSource !== 'ALL_BRANCHES'
+      ? branchSource
+      : (globalBranchId || user?.branchId || null)
+    return filterBranchNegotiators(employees, scopedBranch)
+  }, [employees, branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId])
 
   const handleSaveFinalDateInline = async (ticket: Ticket) => {
     const newFinalDate = inlineFinalDates[ticket.id]
@@ -652,12 +652,21 @@ export default function ClientMasterlist() {
 
   const columns = useMemo(() => {
     const rawCols = activeTab === 'MY_TICKETS' ? [
-      { label: 'TICKET NO',     weight: 8,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
-      { label: 'CUSTOMER NAME',  weight: 16, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'ADDRESS / DISTRICT', weight: 24, expMul: 1.6,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'PREFERRED DATE', weight: 12, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',     weight: 16, expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'ACTIONS',        weight: 10, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
+      { label: 'ADDRESS / DISTRICT', weight: 14, expMul: 1.5, sticky: false, freeze: false, center: true, right: false },
+      { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'INSTALLER',        weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'DRIVER',           weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',       weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
+      { label: 'PAYMENT',          weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'ACTIONS',          weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
@@ -727,6 +736,20 @@ export default function ClientMasterlist() {
       }
     }
   }, [user, isMyTicketsOnly])
+
+  const handleRelayTabChange = useCallback((
+    next: 'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS',
+  ) => {
+    if (next === activeTab) return
+    setActiveTab(next)
+    setContextMenu(null)
+    setSelectedPreviewTicket(null)
+    resetTicketTableScroll()
+  }, [activeTab])
+
+  useLayoutEffect(() => {
+    resetTicketTableScroll()
+  }, [activeTab, isMyTicketsOnly])
 
   // Load Initial Data — cache-first, background refresh
   const fetchData = useCallback(async (options?: { soft?: boolean }) => {
@@ -1429,11 +1452,14 @@ export default function ClientMasterlist() {
         if (!resolved || resolved.id !== activeBranch) continue
       }
       if (!isAdmin && user?.branchId) {
+        // Fuzzy match: strip -sales/-services suffix so Taguig Services sees Taguig Sales tickets
         const resolved = resolveBranch(t.branchId)
-        if (!resolved || resolved.id !== user.branchId) continue
+        const userRootBranch = user.branchId.replace(/-(sales|services|service)$/i, '')
+        const ticketRootBranch = (resolved?.id || '').replace(/-(sales|services|service)$/i, '')
+        if (!ticketRootBranch || ticketRootBranch.toLowerCase() !== userRootBranch.toLowerCase()) continue
       }
       const statusLabel = getRelayStatusLabel(t)
-      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') continue
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned' && statusLabel !== 'Scheduled') continue
       allPending++
       if (statusLabel === 'Pending') unassigned++
       else assigned++
@@ -1469,8 +1495,10 @@ export default function ClientMasterlist() {
     const statusLabel = getRelayStatusLabel(t)
     
     if (activeTab === 'MY_TICKETS') {
-      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
-      if (!isAdmin && t.assignedTo !== user?.id) return false
+      // Include Assigned, Scheduled (has finalDate) — anything not yet installed/cancelled
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned' && statusLabel !== 'Scheduled') return false
+      // For non-admin: show all branch tickets (not just own) so team can see who has what
+      // Admins always see all
     } else {
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
 
@@ -1494,9 +1522,13 @@ export default function ClientMasterlist() {
       const resolved = resolveBranch(t.branchId)
       if (!resolved || resolved.id !== activeBranch) return false
     }
+    // Branch filter for non-admin: fuzzy match root branch (strip -sales/-services suffix)
+    // so Taguig Services employees see their tickets even if branchId says TAGUIG-SALES
     if (!isAdmin && user?.branchId) {
       const resolved = resolveBranch(t.branchId)
-      if (!resolved || resolved.id !== user.branchId) return false
+      const userRootBranch = user.branchId.replace(/-(sales|services|service)$/i, '')
+      const ticketRootBranch = (resolved?.id || '').replace(/-(sales|services|service)$/i, '')
+      if (!ticketRootBranch || ticketRootBranch.toLowerCase() !== userRootBranch.toLowerCase()) return false
     }
 
     // Search query
@@ -1785,7 +1817,7 @@ export default function ClientMasterlist() {
           {!isMyTicketsOnly && (
             <FilterPills
               value={activeTab}
-              onChange={setActiveTab}
+              onChange={handleRelayTabChange}
               items={relayPillItems}
             />
           )}
@@ -1852,8 +1884,9 @@ export default function ClientMasterlist() {
       )}
 
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
-          <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto" data-ticket-table-scroll>
           <table
+            key={activeTab}
             className="w-full"
             style={{
               width: '100%',
@@ -1957,22 +1990,71 @@ export default function ClientMasterlist() {
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
+                    // TICKET NO
                     { value: (
                       <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
                         {displayUpper(ticketNo)}
                       </span>
                     ) },
+                    // STATUS
+                    { value: (
+                      <span className="font-semibold w-full truncate block text-center" style={{
+                        color: relayStatus === 'ASSIGNED' || relayStatus === 'SCHEDULED' ? '#10B981' : '#F59E0B'
+                      }}>
+                        {relayStatus}
+                      </span>
+                    ) },
+                    // NEGOTIATOR
+                    { value: (
+                      <span className="truncate block w-full text-center font-semibold" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                        {displayUpper(negotiator)}
+                      </span>
+                    ) },
+                    // CUSTOMER NAME
                     { value: (
                       <span className="truncate block font-semibold w-full text-center" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
+                    // ADDRESS / DISTRICT
                     { value: (
                       <span className="break-words block w-full text-center text-xs" title={displayUpper(ticket.location || '')}>
                         {displayUpper(ticket.location || '')} {ticket.district ? `(${displayUpper(ticket.district)})` : ''}
                       </span>
                     ) },
+                    // BRAND
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(details.brand || '')} style={{ color: textPrimary }}>
+                        {displayUpper(details.brand || details.capacity ? `${details.brand || ''} ${details.capacity || ''}`.trim() : '') || '—'}
+                      </span>
+                    ) },
+                    // STORE / SOURCE
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs" title={displayUpper(storeStyle.label)}>
+                        {displayUpper(storeStyle.label)}
+                      </span>
+                    ) },
+                    // COMMIT
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
+                        {displayUpper(ticket.commitType || '') || '—'}
+                      </span>
+                    ) },
+                    // INSTALLER
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(ticket.installerName || '')} style={{ color: textPrimary }}>
+                        {displayUpper(ticket.installerName || '') || '—'}
+                      </span>
+                    ) },
+                    // DRIVER
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.serviceVehicle || '')} style={{ color: textMuted }}>
+                        {displayUpper(ticket.serviceVehicle || '') || '—'}
+                      </span>
+                    ) },
+                    // PREFERRED DATE
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    // FINAL DATE (editable)
                     { value: (
                       <input
                         type="date"
@@ -1980,13 +2062,22 @@ export default function ClientMasterlist() {
                         onChange={e => setInlineFinalDates(prev => ({ ...prev, [ticket.id]: e.target.value }))}
                         onClick={e => e.stopPropagation()}
                         className="px-2 py-1 rounded text-xs border w-full text-center"
-                        style={{
-                          backgroundColor: cardBg,
-                          borderColor: inputBorder,
-                          color: textPrimary
-                        }}
+                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
                       />
                     ) },
+                    // REMARKS
+                    { value: (
+                      <span className="break-words block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
+                        {ticket.remarksUpdate || lastUpdate || '—'}
+                      </span>
+                    ) },
+                    // PAYMENT
+                    { value: (
+                      <span className="truncate block w-full text-center text-xs font-semibold" style={{ color: textPrimary }}>
+                        {displayUpper(ticket.modeOfPayment || '') || (ticket.installationCharges != null && ticket.installationCharges > 0 ? `₱${ticket.installationCharges.toLocaleString()}` : '—')}
+                      </span>
+                    ) },
+                    // ACTIONS
                     { value: (
                       <button
                         type="button"
@@ -2379,12 +2470,14 @@ export default function ClientMasterlist() {
                         className={compactInput} style={inputStyle}>
                         <option value="">Select Negotiator...</option>
                         {negotiators
-                          .filter(emp => !assignBranchId || !emp.branchId || emp.branchId === assignBranchId)
+                          .filter(emp => {
+                            if (!assignBranchId || assignBranchId === 'ALL') return true
+                            if (!emp.branchId?.trim()) return true
+                            return branchScopesMatch(emp.branchId, assignBranchId, emp.email)
+                          })
                           .map(emp => {
-                            const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
-                            const label = bName ? `${emp.name} (${bName})` : `${emp.name} (All)`
                             return (
-                              <option key={emp.id} value={emp.id}>{label}</option>
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
                             )
                           })}
                       </select>
@@ -2653,10 +2746,8 @@ export default function ClientMasterlist() {
                         >
                           <option value="">Select Negotiator...</option>
                           {negotiators.map(emp => {
-                            const bName = formatBranchName(resolveBranch(emp.branchId)?.name)
-                            const label = bName ? `${emp.name} (${bName})` : `${emp.name} (Global)`
                             return (
-                              <option key={emp.id} value={emp.id}>{label}</option>
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
                             )
                           })}
                         </select>

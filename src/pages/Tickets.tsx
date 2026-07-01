@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
@@ -7,8 +7,9 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
 import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache } from '../utils/ticketTabCache'
+import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -1310,6 +1311,15 @@ export default function Tickets() {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
   }, [dateFilter, weeklyTabs])
 
+  const handleDateFilterChange = useCallback((next: string) => {
+    setDateFilter(next)
+    resetTicketTableScroll()
+  }, [])
+
+  useLayoutEffect(() => {
+    resetTicketTableScroll()
+  }, [dateFilter])
+
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
   const fetchSeqRef = useRef(0)
@@ -1358,7 +1368,7 @@ export default function Tickets() {
     installationCharges: undefined,
     ticketCategory: 'INSTALLATION',
   })
-  const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string }[]>([])
+  const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string | null; email?: string | null }[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [savingManual, setSavingManual] = useState(false)
@@ -2663,21 +2673,20 @@ export default function Tickets() {
     if (canEdit) {
       const headers = { Authorization: `Bearer ${token()}` }
       const branchSource = globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || ''
-      fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers })
+      fetch(`${API_BASE_URL}/user/all`, { headers })
         .then(res => res.json())
         .then(data => {
           const list = Array.isArray(data) ? data : (data?.data || [])
           if (!Array.isArray(list)) return
-          const mapped = list.map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            branchId: u.branchId || u.branch_id,
-            email: u.email,
-          }))
-          const filtered = branchSource
-            ? mapped.filter((u: { branchId?: string; email?: string }) => branchScopesMatch(u.branchId, branchSource, u.email))
-            : mapped
-          setBranchEmployees(filtered.length > 0 ? filtered : mapped)
+          const mapped = list.map((u: Record<string, unknown>) => ({
+            id: String(u.id || ''),
+            name: String(u.name || ''),
+            branchId: (u.branchId || u.branch_id) as string | undefined,
+            email: u.email as string | undefined,
+            role: (u.role as string | undefined),
+            jobTitle: (u.jobTitle || u.job_title) as string | undefined,
+          })).filter((u) => u.id && u.name)
+          setBranchEmployees(filterBranchNegotiators(mapped, branchSource))
         })
         .catch(err => console.error('Failed to load branch employees:', err))
     }
@@ -2887,6 +2896,23 @@ export default function Tickets() {
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
     const key = cellEditKey(ticket.id, colLabel)
     if (savingCellKey === key) return
+
+    const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
+    if (colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED') {
+      cancelEdit()
+      if (!hasInstallPayment(ticket)) {
+        requestAnimationFrame(() => {
+          setCompletionPrompt({
+            ticket,
+            value: 'Installed',
+            modeOfPayment: getPaymentMode(ticket) || 'CASH',
+            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+          })
+        })
+        return
+      }
+    }
+
     const body = buildCellPatchBody(ticket, colLabel, value)
     if (Object.keys(body).length === 0) {
       cancelEdit()
@@ -2897,11 +2923,13 @@ export default function Tickets() {
       const merged = { ...ticket, remarksUpdate: value, remarks: value }
       if (!hasInstallPayment(merged, { remarksUpdate: value, remarks: value })) {
         cancelEdit()
-        setCompletionPrompt({
-          ticket,
-          value: value.trim(),
-          modeOfPayment: getPaymentMode(ticket) || 'CASH',
-          amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+        requestAnimationFrame(() => {
+          setCompletionPrompt({
+            ticket,
+            value: value.trim(),
+            modeOfPayment: getPaymentMode(ticket) || 'CASH',
+            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+          })
         })
         return
       }
@@ -3510,7 +3538,7 @@ export default function Tickets() {
                 <button
                   type="button"
                   key={tab.key}
-                  onClick={() => setDateFilter(tab.key)}
+                  onClick={() => handleDateFilterChange(tab.key)}
                   className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
                   style={{
                     backgroundColor: isActive ? green : 'transparent',
@@ -3548,7 +3576,7 @@ export default function Tickets() {
               ref={dateFilterInputRef}
               type="date"
               value={dateFilter}
-              onChange={e => setDateFilter(e.target.value)}
+              onChange={e => handleDateFilterChange(e.target.value)}
               tabIndex={-1}
               className="absolute opacity-0 pointer-events-none w-0 h-0"
               aria-label="Ticket date filter"
@@ -3556,7 +3584,7 @@ export default function Tickets() {
 
             <button
               type="button"
-              onClick={() => setDateFilter('')}
+              onClick={() => handleDateFilterChange('')}
               className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
               style={{
                 backgroundColor: dateFilter === '' ? green : 'transparent',
@@ -3793,6 +3821,7 @@ export default function Tickets() {
           <div
             ref={tableScrollRef}
             className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+            data-ticket-table-scroll
             style={{
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
@@ -3802,7 +3831,7 @@ export default function Tickets() {
                 Updating schedules…
               </div>
             )}
-            <table className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+            <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
@@ -4357,81 +4386,92 @@ export default function Tickets() {
         }
 
         return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
-            <form onSubmit={handleSubmitCompletion}
-                  className="flex flex-col w-full max-w-md rounded-3xl shadow-2xl p-6 gap-4"
-                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-                  onClick={e => e.stopPropagation()}>
-              
-              <div className="flex flex-col gap-1">
+          <div
+            className="fixed inset-0 z-[11000] flex items-center justify-center p-4 sm:p-6"
+            style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setCompletionPrompt(null)}
+            onMouseDown={e => e.preventDefault()}
+          >
+            <form
+              onSubmit={handleSubmitCompletion}
+              className="flex flex-col w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
+              style={{ backgroundColor: cardBg, border: '1px solid rgba(22,163,74,0.28)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ height: 3, background: 'linear-gradient(90deg, #16A34A, #22C55E)' }} />
+
+              <div className="px-5 py-4 flex flex-col gap-1 border-b" style={{ borderColor: border }}>
                 <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
-                  Complete Ticket: {custName}
+                  Mark installed — {custName}
                 </h3>
                 <p className="text-[10px] font-semibold" style={{ color: textMuted }}>
-                  Enter payment details to move this ticket to the Service Report.
+                  Enter payment details to complete and move this ticket to Archives.
                 </p>
               </div>
 
-              {/* Mode of Payment select */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                  Mode of Payment
-                </label>
-                <select
-                  value={cp.modeOfPayment}
-                  onChange={e => {
-                    const nextMode = e.target.value
-                    setCompletionPrompt(prev => {
-                      if (!prev) return null
-                      const nextAmount = nextMode === 'FREE' || nextMode === 'FREE INSTALL' ? '0' : prev.amount
-                      return { ...prev, modeOfPayment: nextMode, amount: nextAmount }
-                    })
-                  }}
-                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                  <option value="CASH">CASH</option>
-                  <option value="BANK TRANSFER">BANK TRANSFER</option>
-                  <option value="GCASH">GCASH</option>
-                  <option value="CHEQUE">CHEQUE</option>
-                  <option value="FREE INSTALL">FREE INSTALL</option>
-                </select>
-              </div>
- 
-              {/* Amount charged */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                  Amount Charged (₱)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  placeholder="0.00"
-                  value={cp.amount}
-                  disabled={cp.modeOfPayment === 'FREE' || cp.modeOfPayment === 'FREE INSTALL'}
-                  onChange={e => setCompletionPrompt(prev => prev ? { ...prev, amount: e.target.value } : null)}
-                  className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold disabled:opacity-60"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
-              </div>
+              <div className="px-5 py-4 flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                    Mode of Payment
+                  </label>
+                  <select
+                    value={cp.modeOfPayment}
+                    onChange={e => {
+                      const nextMode = e.target.value
+                      setCompletionPrompt(prev => {
+                        if (!prev) return null
+                        const nextAmount = nextMode === 'FREE' || nextMode === 'FREE INSTALL' ? '0' : prev.amount
+                        return { ...prev, modeOfPayment: nextMode, amount: nextAmount }
+                      })
+                    }}
+                    className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                    <option value="CASH">CASH</option>
+                    <option value="BANK TRANSFER">BANK TRANSFER</option>
+                    <option value="GCASH">GCASH</option>
+                    <option value="CHEQUE">CHEQUE</option>
+                    <option value="FREE INSTALL">FREE INSTALL</option>
+                  </select>
+                </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 mt-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setCompletionPrompt(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
-                  style={{ borderColor: inputBorder, color: textPrimary }}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
-                  style={{ backgroundColor: green }}>
-                  Confirm & Move
-                </button>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                    Amount Charged (₱)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="0.00"
+                    value={cp.amount}
+                    disabled={cp.modeOfPayment === 'FREE' || cp.modeOfPayment === 'FREE INSTALL'}
+                    onChange={e => setCompletionPrompt(prev => prev ? { ...prev, amount: e.target.value } : null)}
+                    className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold disabled:opacity-60"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCompletionPrompt(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
+                    style={{
+                      backgroundColor: isLight ? '#F1F5F9' : '#0F172A',
+                      color: textMuted,
+                      border: `1px solid ${border}`,
+                    }}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-sm disabled:opacity-50"
+                    style={{ background: 'linear-gradient(135deg, #16A34A, #15803D)' }}>
+                    {saving ? 'Saving…' : 'Confirm installed'}
+                  </button>
+                </div>
               </div>
 
             </form>
