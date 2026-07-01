@@ -1,4 +1,5 @@
 import { API_BASE_URL, getActivePortalBranchId, readApiError } from './api'
+import { readTabCache, warrantyCacheKey, writeTabCache } from './ticketTabCache'
 
 export type WarrantyTicket = {
   id: string
@@ -29,14 +30,52 @@ export type WarrantyTicket = {
   updatedAt?: string | null
 }
 
+export type WarrantyListsCache = {
+  pending: WarrantyTicket[]
+  registered: WarrantyTicket[]
+  lastSyncAt?: number
+}
+
+export const WARRANTY_CACHE_UPDATED = 'ashcol-warranty-cache-updated'
+
+/** Throttle server sync — every 3 min */
+const SYNC_INTERVAL_MS = 3 * 60 * 1000
+
+/** Statuses treated as "installed / done" for warranty — INSTALLED == COMPLETED */
+const INSTALLED_STATUSES = new Set(['INSTALLED', 'COMPLETED'])
+
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+}
+
+function warrantyCacheKeyForBranch(branchId?: string) {
+  return warrantyCacheKey(branchId)
 }
 
 export function resolveWarrantyBranchId(user?: { role?: string | null; branchId?: string | null } | null) {
   const id = getActivePortalBranchId(user)
   if (!id || id === 'ALL_BRANCHES') return undefined
   return id
+}
+
+export function readWarrantyCache(branchId?: string): WarrantyListsCache | null {
+  return readTabCache<WarrantyListsCache>(warrantyCacheKeyForBranch(branchId))
+}
+
+export function writeWarrantyCache(branchId: string | undefined, data: WarrantyListsCache): void {
+  writeTabCache(warrantyCacheKeyForBranch(branchId), data)
+  window.dispatchEvent(new CustomEvent(WARRANTY_CACHE_UPDATED, { detail: { branchId } }))
+}
+
+export function patchWarrantyCache(
+  branchId: string | undefined,
+  patch: Partial<WarrantyListsCache>,
+): WarrantyListsCache | null {
+  const current = readWarrantyCache(branchId)
+  if (!current) return null
+  const next = { ...current, ...patch }
+  writeWarrantyCache(branchId, next)
+  return next
 }
 
 export async function syncWarrantyRegistrations(
@@ -67,7 +106,63 @@ export async function fetchWarrantyRegistrations(
   })
   if (!res.ok) throw new Error(await readApiError(res))
   const payload = await res.json()
-  return payload?.data?.tickets || payload?.tickets || []
+  const rows: WarrantyTicket[] = payload?.data?.tickets || payload?.tickets || []
+
+  // Client-side safety: INSTALLED == COMPLETED for warranty purposes.
+  // The API may only put COMPLETED in the registered bucket, so we normalise here.
+  if (tab === 'pending') {
+    // pending = installed/completed but warranty NOT yet registered
+    return rows.filter(r => {
+      const s = (r.status || '').toUpperCase()
+      return INSTALLED_STATUSES.has(s) && !r.warrantyRegistrationCompleted
+    })
+  } else {
+    // registered = warranty already completed
+    return rows.filter(r => !!r.warrantyRegistrationCompleted)
+  }
+}
+
+/**
+ * Load warranty lists — uses local cache first, then refreshes from API in background.
+ */
+export async function refreshWarrantyRegistrations(
+  token: string,
+  branchId?: string,
+  options?: { forceSync?: boolean; skipSync?: boolean },
+): Promise<WarrantyListsCache> {
+  const cached = readWarrantyCache(branchId)
+  const now = Date.now()
+  const cacheAge = cached?.lastSyncAt ? now - cached.lastSyncAt : Infinity
+  const cacheIsFresh = cacheAge < SYNC_INTERVAL_MS
+
+  // If cache is fresh and not forced, return immediately — no API call
+  if (cached && cacheIsFresh && !options?.forceSync) {
+    return cached
+  }
+
+  const syncStale = !cached?.lastSyncAt || cacheAge > SYNC_INTERVAL_MS
+  const shouldSync = !options?.skipSync && (options?.forceSync || syncStale)
+
+  if (shouldSync) {
+    try {
+      await syncWarrantyRegistrations(token, branchId)
+    } catch {
+      // Best-effort — still fetch lists below
+    }
+  }
+
+  const [pending, registered] = await Promise.all([
+    fetchWarrantyRegistrations(token, 'pending', branchId),
+    fetchWarrantyRegistrations(token, 'registered', branchId),
+  ])
+
+  const result: WarrantyListsCache = {
+    pending,
+    registered,
+    lastSyncAt: now,
+  }
+  writeWarrantyCache(branchId, result)
+  return result
 }
 
 export async function createWarrantyRegistration(

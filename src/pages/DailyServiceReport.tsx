@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
+import { archivesCacheKey, readTabCache, writeTabCache, type ArchivesTabCache } from '../utils/ticketTabCache'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -248,6 +249,7 @@ export default function DailyServiceReport() {
   const [rows, setRows] = useState<ServiceRow[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
@@ -689,13 +691,25 @@ export default function DailyServiceReport() {
     if (!effectiveBranch) {
       setRows([])
       setLoading(false)
+      setRefreshing(false)
       hasLoadedOnceRef.current = true
       return
     }
 
+    const cacheKey = archivesCacheKey(effectiveBranch, monthFilter)
+    const cached = readTabCache<ArchivesTabCache>(cacheKey)
+    const hasCache = Array.isArray(cached?.rows) && cached.rows.length > 0
+
     const seq = ++fetchSeqRef.current
-    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+
+    if (hasCache) {
+      setRows(cached!.rows as ServiceRow[])
+      hasLoadedOnceRef.current = true
+      if (!showSkeleton) setLoading(false)
+    }
     if (showSkeleton) setLoading(true)
+    else setRefreshing(true)
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -740,11 +754,15 @@ export default function DailyServiceReport() {
         }
         return merged
       })
+      writeTabCache(cacheKey, { rows: merged })
       hasLoadedOnceRef.current = true
     } catch (e) {
       console.error(e)
     } finally {
-      if (seq === fetchSeqRef.current) setLoading(false)
+      if (seq === fetchSeqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [monthFilter, branchFilter, branches, archivesUser, canEdit, mergeArchiveRows])
 
@@ -781,12 +799,23 @@ export default function DailyServiceReport() {
   useEffect(() => {
     const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
     const loadKey = `${monthFilter}|${effectiveBranch}`
+    const cacheKey = effectiveBranch ? archivesCacheKey(effectiveBranch, monthFilter) : ''
+    const cached = cacheKey ? readTabCache<ArchivesTabCache>(cacheKey) : null
+    const hasCache = Array.isArray(cached?.rows) && cached.rows.length > 0
+
     if (archivesLoadKeyRef.current !== loadKey) {
       archivesLoadKeyRef.current = loadKey
       syncedTicketIdsRef.current = new Set()
       lineupResyncedRef.current = false
+      if (hasCache) {
+        setRows(cached!.rows as ServiceRow[])
+        setLoading(false)
+        hasLoadedOnceRef.current = true
+      } else {
+        hasLoadedOnceRef.current = false
+      }
     }
-    void fetchRows({ sync: true })
+    void fetchRows({ sync: true, soft: hasCache || hasLoadedOnceRef.current })
   }, [fetchRows, monthFilter, branchFilter, branches, archivesUser])
 
   useEffect(() => {
@@ -1715,7 +1744,7 @@ export default function DailyServiceReport() {
 
       {/* Data table */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <div className="flex flex-col gap-2 p-5 flex-1">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />
@@ -1723,6 +1752,11 @@ export default function DailyServiceReport() {
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ position: 'relative' }}>
+            {refreshing && (
+              <div className="px-3 py-1 text-[10px] font-semibold sticky top-0 z-30" style={{ color: textMuted, backgroundColor: cardBg }}>
+                Syncing archives…
+              </div>
+            )}
             <table className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
               <colgroup>
                 {columns.map(col => (

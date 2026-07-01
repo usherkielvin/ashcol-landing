@@ -10,6 +10,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
+import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { FilterPills } from '../components/TicketSectionNav'
@@ -436,6 +437,21 @@ export default function ClientMasterlist() {
   }
 
   const [loading, setLoading] = useState(true)
+  const [lastUpdatedTicketId, setLastUpdatedTicketId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (lastUpdatedTicketId) {
+      const timer = setTimeout(() => {
+        setLastUpdatedTicketId(null)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [lastUpdatedTicketId])
+
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchSeqRef = useRef(0)
+  const hasLoadedOnceRef = useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
@@ -522,14 +538,6 @@ export default function ClientMasterlist() {
     })
   }, [employees])
 
-  const installers = useMemo(() => {
-    return employees.filter(e => (e.jobTitle || '').toUpperCase() === 'TECHNICIAN')
-  }, [employees])
-
-  const drivers = useMemo(() => {
-    return employees.filter(e => (e.jobTitle || '').toUpperCase() === 'DRIVER')
-  }, [employees])
-
   const handleSaveFinalDateInline = async (ticket: Ticket) => {
     const newFinalDate = inlineFinalDates[ticket.id]
     if (newFinalDate === undefined) return
@@ -600,6 +608,8 @@ export default function ClientMasterlist() {
   const [editInstallerName, setEditInstallerName] = useState('')
   const [editServiceVehicle, setEditServiceVehicle] = useState('')
   const [editRemarksUpdate, setEditRemarksUpdate] = useState('')
+  const editRemarksRef = useRef<HTMLTextAreaElement>(null)
+  const editCommitRef = useRef<HTMLInputElement>(null)
   const [editPhoneNumbers, setEditPhoneNumbers] = useState<string[]>([''])
   const [editBrandHP, setEditBrandHP] = useState('')
   const [editInstallationCharges, setEditInstallationCharges] = useState(0)
@@ -718,58 +728,96 @@ export default function ClientMasterlist() {
     }
   }, [user, isMyTicketsOnly])
 
-  // Load Initial Data
-  const fetchData = async () => {
+  // Load Initial Data — cache-first, background refresh
+  const fetchData = useCallback(async (options?: { soft?: boolean }) => {
+    const seq = ++fetchSeqRef.current
+    const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+    const cached = readTabCache<RelaysTabCache>(cacheKey)
+    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+
+    if (hasCache) {
+      setTickets(cached!.tickets as Ticket[])
+      if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
+      if (cached!.employees?.length) setEmployees(cached!.employees as any[])
+      hasLoadedOnceRef.current = true
+      if (!showSkeleton) setLoading(false)
+    }
+    if (showSkeleton) setLoading(true)
+    else setRefreshing(true)
+
     try {
-      setLoading(true)
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
-      
-      // Fetch Tickets
-      const ticketRes = await fetch(`${API_BASE_URL}${endpoint}?page=0&size=100`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+
+      const [ticketRes, branchRes, empRes] = await Promise.all([
+        fetch(`${API_BASE_URL}${endpoint}?page=0&size=100`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${token}` } }),
+      ])
+
+      if (seq !== fetchSeqRef.current) return
+
+      let tList: Ticket[] = hasCache ? (cached!.tickets as Ticket[]) : []
+      let bList: { id: string; name: string }[] = hasCache && cached!.branches
+        ? (cached!.branches as { id: string; name: string }[])
+        : []
+      let eList: Array<Record<string, unknown>> = hasCache && cached!.employees
+        ? (cached!.employees as Array<Record<string, unknown>>)
+        : []
+
       if (ticketRes.ok) {
         const payload = await ticketRes.json()
-        const tList = payload?.data?.tickets || payload?.tickets || []
+        tList = payload?.data?.tickets || payload?.tickets || []
         setTickets(tList)
       }
 
-      // Fetch Branches
-      const branchRes = await fetch(`${API_BASE_URL}/branches`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
       if (branchRes.ok) {
         const payload = await branchRes.json()
-        setBranches(payload?.data || payload || [])
+        bList = payload?.data || payload || []
+        setBranches(bList)
       }
 
-      // Fetch Employees
-      const empRes = await fetch(`${API_BASE_URL}/user/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
       if (empRes.ok) {
         const payload = await empRes.json()
-        const rawList: any[] = payload?.data || payload || []
-        // Normalize snake_case API fields → camelCase for consistent access
-        const normalized = rawList.map((e: any) => ({
+        const rawList: Array<Record<string, unknown>> = payload?.data || payload || []
+        eList = rawList.map((e) => ({
           ...e,
           branchId: e.branchId || e.branch_id || '',
           jobTitle: e.jobTitle || e.job_title || '',
         }))
-        setEmployees(normalized)
+        setEmployees(eList as any[])
       }
 
+      writeTabCache(cacheKey, { tickets: tList, branches: bList, employees: eList })
+      hasLoadedOnceRef.current = true
     } catch (e) {
       console.error('Error fetching data:', e)
     } finally {
-      setLoading(false)
+      if (seq === fetchSeqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
-  }
+  }, [ticketScope, user, globalBranchId])
 
   useEffect(() => {
-    fetchData()
-  }, [ticketScope])
+    const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+    const cached = readTabCache<RelaysTabCache>(cacheKey)
+    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
+    if (hasCache) {
+      setTickets(cached!.tickets as Ticket[])
+      if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
+      if (cached!.employees?.length) {
+        setEmployees(cached!.employees as any[])
+      }
+      setLoading(false)
+      hasLoadedOnceRef.current = true
+    } else {
+      hasLoadedOnceRef.current = false
+    }
+    void fetchData({ soft: hasCache })
+  }, [fetchData, ticketScope, user, globalBranchId])
 
   // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
 
@@ -1052,7 +1100,7 @@ export default function ClientMasterlist() {
     setIsExcelModalOpen(false)
     setImportTargetBranchId('')
     setBulkUploading(false)
-    fetchData()
+    fetchData({ soft: true })
   }
 
   // Submit parsed/manual ticket
@@ -1116,6 +1164,12 @@ export default function ClientMasterlist() {
 
       if (!res.ok) throw new Error('Create request failed')
 
+      const payload = await res.json().catch(() => null)
+      const createdTicket = payload?.data || payload
+      if (createdTicket && createdTicket.id) {
+        setLastUpdatedTicketId(createdTicket.id)
+      }
+
       setIsAddModalOpen(false)
       setAddForm({
         title: 'Installation service',
@@ -1152,7 +1206,7 @@ export default function ClientMasterlist() {
         relayedDate: new Date().toISOString().split('T')[0],
         finalDate: ''
       })
-      fetchData()
+      fetchData({ soft: true })
     } catch (e) {
       alert('Could not submit ticket.')
     } finally {
@@ -1190,10 +1244,10 @@ export default function ClientMasterlist() {
       payload.preferredDate = editPreferredDate ? new Date(editPreferredDate).toISOString() : null
       payload.priorityTag = editPriorityTag || null
       payload.district = editDistrict || null
-      payload.commitType = editCommitType || null
+      payload.commitType = (editCommitRef.current ? editCommitRef.current.value : editCommitType) || null
       payload.installerName = editInstallerName || null
       payload.serviceVehicle = editServiceVehicle || null
-      payload.remarksUpdate = editRemarksUpdate || null
+      payload.remarksUpdate = (editRemarksRef.current ? editRemarksRef.current.value : editRemarksUpdate) || null
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
@@ -1232,8 +1286,9 @@ export default function ClientMasterlist() {
       }
 
       setIsActionDrawerOpen(false)
+      setLastUpdatedTicketId(selectedTicket.id)
       setSelectedTicket(null)
-      fetchData()
+      fetchData({ soft: true })
     } catch (e: any) {
       alert(`Failed to update ticket action: ${e.message}`)
     } finally {
@@ -1259,7 +1314,7 @@ export default function ClientMasterlist() {
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
-      fetchData()
+      fetchData({ soft: true })
     } catch (err: any) {
       alert(err.message || 'Error occurred while deleting ticket.')
     } finally {
@@ -1297,7 +1352,7 @@ export default function ClientMasterlist() {
       }
     }
     setActionSaving(false)
-    fetchData()
+    fetchData({ soft: true })
     alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
   }
 
@@ -1313,9 +1368,15 @@ export default function ClientMasterlist() {
     setEditPriorityTag(ticket.priorityTag || '')
     setEditDistrict(ticket.district || '')
     setEditCommitType(ticket.commitType || '')
+    if (editCommitRef.current) editCommitRef.current.value = ticket.commitType || ''
     setEditInstallerName(ticket.installerName || '')
     setEditServiceVehicle(ticket.serviceVehicle || '')
     setEditRemarksUpdate(ticket.remarksUpdate || '')
+    // Sync refs with new ticket values
+    setTimeout(() => {
+      if (editRemarksRef.current) editRemarksRef.current.value = ticket.remarksUpdate || ''
+      if (editCommitRef.current) editCommitRef.current.value = ticket.commitType || ''
+    }, 0)
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
@@ -1842,7 +1903,14 @@ export default function ClientMasterlist() {
               </tr>
             </thead>
             <tbody className="uppercase">
-              {loading ? (
+              {refreshing && tickets.length > 0 && (
+                <tr>
+                  <td colSpan={columns.length} className="py-1 text-center text-[10px] font-semibold" style={{ color: textMuted }}>
+                    Syncing relays…
+                  </td>
+                </tr>
+              )}
+              {loading && tickets.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="py-20 text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#10B981]" />
@@ -1875,9 +1943,12 @@ export default function ClientMasterlist() {
                       : category === 'Survey & Install' ? (isLight ? '#f0fdf9' : 'rgba(16,185,129,0.06)')
                       : null
                     : null
-                  const rowBaseBg = isSelected
-                    ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
-                    : categoryTint || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
+                  const isHighlighted = ticket.id === lastUpdatedTicketId
+                  const rowBaseBg = isHighlighted
+                    ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.25)') // Flash green!
+                    : isSelected
+                      ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
+                      : categoryTint || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
                   const rowHoverBg = category === 'Survey'
                     ? (isLight ? 'rgba(234,179,8,0.13)' : 'rgba(234,179,8,0.11)')
                     : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
@@ -1973,6 +2044,7 @@ export default function ClientMasterlist() {
                       style={{
                         backgroundColor: rowBaseBg,
                         cursor: 'pointer',
+                        transition: isHighlighted ? 'background-color 1.5s ease-out' : undefined,
                       }}
                       onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
@@ -2240,8 +2312,13 @@ export default function ClientMasterlist() {
                         placeholder="e.g. Survey & Install" className={compactInput} style={inputStyle} />
                     </EField>
                     <EField label="Commit Type / Promo" className="md:col-span-2">
-                      <input type="text" value={editCommitType} onChange={e => setEditCommitType(e.target.value)}
-                        placeholder="e.g. Free 10ft copper" className={compactInput} style={inputStyle} />
+                      <input
+                        ref={editCommitRef}
+                        type="text"
+                        defaultValue={editCommitType}
+                        onBlur={e => setEditCommitType(e.target.value)}
+                        placeholder="e.g. Free 10ft copper"
+                        className={compactInput} style={inputStyle} />
                     </EField>
                     {editImages && (
                       <div className="flex flex-col justify-end">
@@ -2320,34 +2397,6 @@ export default function ClientMasterlist() {
                       <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
                     </EField>
-                    <EField label="Final Date Assigned by Branch">
-                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                        className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Installer / Technician">
-                      <select value={editInstallerName}
-                        onChange={e => setEditInstallerName(e.target.value)}
-                        className={compactInput} style={inputStyle}>
-                        <option value="">Select Technician...</option>
-                        {installers
-                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
-                          .map(emp => (
-                            <option key={emp.id} value={emp.name}>{emp.name}</option>
-                          ))}
-                      </select>
-                    </EField>
-                    <EField label="Driver / Vehicle">
-                      <select value={editServiceVehicle}
-                        onChange={e => setEditServiceVehicle(e.target.value)}
-                        className={compactInput} style={inputStyle}>
-                        <option value="">Select Driver...</option>
-                        {drivers
-                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
-                          .map(emp => (
-                            <option key={emp.id} value={emp.name}>{emp.name}</option>
-                          ))}
-                      </select>
-                    </EField>
                   </div>
                 </div>
 
@@ -2355,8 +2404,13 @@ export default function ClientMasterlist() {
                 <div>
                   <ESHead title="Remarks & Updates" />
                   <EField label="Remarks / Update Notes">
-                    <textarea value={editRemarksUpdate} onChange={e => setEditRemarksUpdate(e.target.value)} rows={3}
-                      placeholder="Remarks..." className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                    <textarea
+                      ref={editRemarksRef}
+                      defaultValue={editRemarksUpdate}
+                      onBlur={e => setEditRemarksUpdate(e.target.value)}
+                      rows={3}
+                      placeholder="Remarks..."
+                      className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
                       style={inputStyle} />
                   </EField>
                 </div>

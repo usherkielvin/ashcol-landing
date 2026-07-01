@@ -7,10 +7,12 @@ import { useAuth } from '../contexts/AuthContext'
 import { formatPersonName, isPortalAdmin } from '../utils/api'
 import { FilterPills } from '../components/TicketSectionNav'
 import {
-  fetchWarrantyRegistrations,
   markWarrantyRegistered,
+  patchWarrantyCache,
+  readWarrantyCache,
+  refreshWarrantyRegistrations,
   resolveWarrantyBranchId,
-  syncWarrantyRegistrations,
+  type WarrantyListsCache,
   type WarrantyTicket,
 } from '../utils/warrantyRegistration'
 import {
@@ -44,17 +46,32 @@ export default function WarrantyRegistration() {
   const green = '#16A34A'
 
   const [tab, setTab] = useState<'pending' | 'registered'>('pending')
-  const [rows, setRows] = useState<WarrantyTicket[]>([])
-  const [counts, setCounts] = useState({ pending: 0, registered: 0 })
+  const [pendingRows, setPendingRows] = useState<WarrantyTicket[]>([])
+  const [registeredRows, setRegisteredRows] = useState<WarrantyTicket[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchSeqRef = useRef(0)
+  const hasLoadedOnceRef = useRef(false)
 
   const token = () =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  const counts = useMemo(
+    () => ({ pending: pendingRows.length, registered: registeredRows.length }),
+    [pendingRows.length, registeredRows.length],
+  )
+
+  const rows = tab === 'pending' ? pendingRows : registeredRows
+
+  const applyCache = useCallback((cache: WarrantyListsCache) => {
+    setPendingRows(cache.pending)
+    setRegisteredRows(cache.registered)
+  }, [])
 
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -62,27 +79,69 @@ export default function WarrantyRegistration() {
     toastTimerRef.current = setTimeout(() => setToast(null), 3500)
   }
 
-  const loadRows = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const branchId = resolveWarrantyBranchId(user)
-      await syncWarrantyRegistrations(token(), branchId)
-      const [pendingList, registeredList] = await Promise.all([
-        fetchWarrantyRegistrations(token(), 'pending', branchId),
-        fetchWarrantyRegistrations(token(), 'registered', branchId),
-      ])
-      setCounts({ pending: pendingList.length, registered: registeredList.length })
-      setRows(tab === 'pending' ? pendingList : registeredList)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not load warranty registrations')
-      setRows([])
-    } finally {
-      setLoading(false)
-    }
-  }, [tab, user])
+  const refreshFromServer = useCallback(async (options?: { forceSync?: boolean; soft?: boolean }) => {
+    const branchId = resolveWarrantyBranchId(user)
+    const seq = ++fetchSeqRef.current
+    const hasCache = !!readWarrantyCache(branchId)
+    // Only show full skeleton on truly cold first visit with no cache at all
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
-  useEffect(() => { void loadRows() }, [loadRows])
+    if (showSkeleton) setLoading(true)
+    else if (!hasCache) setRefreshing(true)
+    else setRefreshing(true)
+    setError(null)
+
+    try {
+      const fresh = await refreshWarrantyRegistrations(token(), branchId, {
+        forceSync: options?.forceSync,
+      })
+      if (seq !== fetchSeqRef.current) return
+      applyCache(fresh)
+      hasLoadedOnceRef.current = true
+    } catch (err: unknown) {
+      if (seq !== fetchSeqRef.current) return
+      if (!hasLoadedOnceRef.current && !hasCache) {
+        setError(err instanceof Error ? err.message : 'Could not load warranty registrations')
+        setPendingRows([])
+        setRegisteredRows([])
+      }
+    } finally {
+      if (seq === fetchSeqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    }
+  }, [applyCache, user])
+
+  useEffect(() => {
+    const branchId = resolveWarrantyBranchId(user)
+    const cached = readWarrantyCache(branchId)
+    if (cached) {
+      applyCache(cached)
+      setLoading(false)
+      hasLoadedOnceRef.current = true
+    }
+    void refreshFromServer({ soft: !!cached })
+  }, [applyCache, refreshFromServer, user])
+
+  useEffect(() => {
+    const onBranchChange = () => {
+      hasLoadedOnceRef.current = false
+      const branchId = resolveWarrantyBranchId(user)
+      const cached = readWarrantyCache(branchId)
+      if (cached) {
+        applyCache(cached)
+        setLoading(false)
+      } else {
+        setLoading(true)
+        setPendingRows([])
+        setRegisteredRows([])
+      }
+      void refreshFromServer({ soft: !!cached })
+    }
+    window.addEventListener('ashcol-global-branch-change', onBranchChange)
+    return () => window.removeEventListener('ashcol-global-branch-change', onBranchChange)
+  }, [applyCache, refreshFromServer, user])
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -109,12 +168,32 @@ export default function WarrantyRegistration() {
 
   const handleMarkRegistered = async (ticket: WarrantyTicket) => {
     if (savingId) return
+    const branchId = resolveWarrantyBranchId(user)
+    const prevPending = pendingRows
+    const prevRegistered = registeredRows
+
     setSavingId(ticket.id)
+    setPendingRows((list) => list.filter((r) => r.id !== ticket.id))
+    setRegisteredRows((list) => [
+      { ...ticket, warrantyRegistrationCompleted: true, status: 'COMPLETED' },
+      ...list,
+    ])
+    patchWarrantyCache(branchId, {
+      pending: prevPending.filter((r) => r.id !== ticket.id),
+      registered: [
+        { ...ticket, warrantyRegistrationCompleted: true, status: 'COMPLETED' },
+        ...prevRegistered,
+      ],
+    })
+
     try {
       await markWarrantyRegistered(token(), ticket.id)
       showToast('success', `${formatPersonName(ticket.customerName || ticket.parentCustomerName || 'Customer')} marked as registered`)
-      await loadRows()
+      void refreshFromServer({ soft: true })
     } catch (err: unknown) {
+      setPendingRows(prevPending)
+      setRegisteredRows(prevRegistered)
+      patchWarrantyCache(branchId, { pending: prevPending, registered: prevRegistered })
       showToast('error', err instanceof Error ? err.message : 'Could not mark as registered')
     } finally {
       setSavingId(null)
@@ -158,13 +237,13 @@ export default function WarrantyRegistration() {
 
             <button
               type="button"
-              onClick={() => void loadRows()}
-              disabled={loading}
+              onClick={() => void refreshFromServer({ forceSync: true })}
+              disabled={loading || refreshing}
               className="p-2 rounded-lg border shrink-0 disabled:opacity-50"
               style={{ borderColor: border, color: textMuted }}
               title="Refresh"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>,
@@ -189,7 +268,7 @@ export default function WarrantyRegistration() {
       )}
 
       <div className="flex-1 min-h-0 overflow-auto" style={{ backgroundColor: cardBg }}>
-        {loading ? (
+        {loading && pendingRows.length === 0 && registeredRows.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-16" style={{ color: textMuted }}>
             <Loader2 className="w-5 h-5 animate-spin" /> Loading…
           </div>
@@ -200,7 +279,7 @@ export default function WarrantyRegistration() {
               No {tab === 'pending' ? 'pending' : 'registered'} warranty tickets
             </p>
             <p className="text-xs max-w-sm text-center" style={{ color: textMuted }}>
-              Right-click an installed row in Archives and choose “Create warranty registration ticket”.
+              Installed archives sync here automatically. Use refresh to pull the latest.
             </p>
           </div>
         ) : (

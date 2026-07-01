@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache } from '../utils/ticketTabCache'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -1275,6 +1276,7 @@ export default function Tickets() {
   // ── Data state ────────────────────────────────────────────────────────────
   const [tickets, setTickets]         = useState<Ticket[]>([])
   const [loading, setLoading]         = useState(true)
+  const [refreshing, setRefreshing]   = useState(false)
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
@@ -1310,6 +1312,8 @@ export default function Tickets() {
 
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
+  const fetchSeqRef = useRef(0)
+  const hasLoadedOnceRef = useRef(false)
 
   useEffect(() => {
     if (isTaguig) {
@@ -1839,7 +1843,7 @@ export default function Tickets() {
         throw new Error(errorText || `Failed (HTTP ${res.status})`)
       }
 
-      await fetchTickets()
+      await fetchTickets({ soft: true })
       setAddModalOpen(false)
     } catch (err: any) {
       console.error(err)
@@ -2161,7 +2165,7 @@ export default function Tickets() {
         : isDateMove
           ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
           : 'Ticket updated successfully ✓')
-      await fetchTickets()
+      await fetchTickets({ soft: true })
       setEditModalOpen(false)
     } catch (err: unknown) {
       console.error(err)
@@ -2523,7 +2527,7 @@ export default function Tickets() {
     setImportResults(null)
     const failHint = failCount > 0 && importErrors.length > 0 ? ` First error: ${importErrors[0]}` : ''
     showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})${failHint}` : ''}`)
-    fetchTickets()
+    fetchTickets({ soft: true })
   }
 
   useEffect(() => {
@@ -2606,20 +2610,54 @@ export default function Tickets() {
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
-  const fetchTickets = useCallback(async () => {
+  const fetchTickets = useCallback(async (options?: { soft?: boolean }) => {
     if (!user) return
-    setLoading(true); setFetchError(null)
+    const seq = ++fetchSeqRef.current
+    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin)
+    const cached = readTabCache<SchedulesTabCache>(cacheKey)
+    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+
+    if (hasCache) {
+      setTickets(cached!.tickets as Ticket[])
+      hasLoadedOnceRef.current = true
+      if (!showSkeleton) setLoading(false)
+    }
+    if (showSkeleton) setLoading(true)
+    else setRefreshing(true)
+    setFetchError(null)
     try {
       const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
       const size = isAdmin ? 300 : 200
       const list = await fetchTicketsPage(ep, token(), { size })
+      if (seq !== fetchSeqRef.current) return
       setTickets(list as Ticket[])
-    } catch { setFetchError('Failed to load tickets. Check your connection.') }
-    finally  { setLoading(false) }
-  }, [user, isCustomer, isAdmin, token])
+      writeTabCache(cacheKey, { tickets: list })
+      hasLoadedOnceRef.current = true
+    } catch {
+      if (seq !== fetchSeqRef.current) return
+      if (!hasCache) setFetchError('Failed to load tickets. Check your connection.')
+    } finally {
+      if (seq === fetchSeqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    }
+  }, [user, isCustomer, isAdmin, globalBranchId, token])
 
-  useEffect(() => { fetchTickets() }, [fetchTickets])
-  useEffect(() => { if (isAdmin) fetchTickets() }, [globalBranchId, isAdmin])
+  useEffect(() => {
+    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin)
+    const cached = readTabCache<SchedulesTabCache>(cacheKey)
+    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
+    if (hasCache) {
+      setTickets(cached!.tickets as Ticket[])
+      setLoading(false)
+      hasLoadedOnceRef.current = true
+    } else {
+      hasLoadedOnceRef.current = false
+    }
+    void fetchTickets({ soft: hasCache })
+  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin])
 
   useEffect(() => {
     if (canEdit) {
@@ -3740,14 +3778,14 @@ export default function Tickets() {
         <div className="flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold shrink-0"
              style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
-          <button onClick={fetchTickets} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
+          <button onClick={() => void fetchTickets({ soft: false })} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
         </div>
       )}
 
       {/* ── Table card ── */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
-        {loading ? (
+        {loading && tickets.length === 0 ? (
           <div className="flex flex-col gap-2 p-5 flex-1">
             {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
           </div>
@@ -3759,6 +3797,11 @@ export default function Tickets() {
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
+            {refreshing && (
+              <div className="px-3 py-1 text-[10px] font-semibold shrink-0" style={{ color: textMuted }}>
+                Updating schedules…
+              </div>
+            )}
             <table className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
               <colgroup>
                 {columns.map(col => (
