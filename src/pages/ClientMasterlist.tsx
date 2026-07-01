@@ -596,9 +596,8 @@ export default function ClientMasterlist() {
     setIsAddModalOpen(true)
   }, [resolveRelayDefaultBranchId])
 
-  const handleSaveFinalDateInline = async (ticket: Ticket) => {
-    const newFinalDate = inlineFinalDates[ticket.id]
-    if (newFinalDate === undefined) return
+  const handleSaveFinalDateInline = async (ticket: Ticket, newFinalDate: string) => {
+    if (!newFinalDate) return
 
     setInlineSavingId(ticket.id)
     try {
@@ -2140,8 +2139,29 @@ export default function ClientMasterlist() {
                     ) },
                     // PREFERRED DATE
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
-                    // FINAL DATE
-                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(details.finalDate || ''))}</span> },
+                    // FINAL DATE (auto-saving)
+                    { value: (
+                      <div className="relative w-full flex items-center justify-center">
+                        <input
+                          type="date"
+                          value={inlineFinalDates[ticket.id] !== undefined ? inlineFinalDates[ticket.id] : (details.finalDate || '')}
+                          disabled={inlineSavingId === ticket.id}
+                          onChange={async e => {
+                            const val = e.target.value
+                            setInlineFinalDates(prev => ({ ...prev, [ticket.id]: val }))
+                            await handleSaveFinalDateInline(ticket, val)
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          className="px-2 py-1 rounded text-xs border w-full text-center disabled:opacity-50"
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        />
+                        {inlineSavingId === ticket.id && (
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                            <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+                          </div>
+                        )}
+                      </div>
+                    ) },
                     // REMARKS
                     { value: (
                       <span className="break-words block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>

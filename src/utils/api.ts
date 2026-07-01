@@ -52,7 +52,7 @@ function branchAliasKey(branchId?: string | null): string | null {
   }
   if (aliases[id]) return aliases[id]
   if (id.startsWith('br-')) return id.slice(3)
-  for (const [key, kw] of Object.entries(aliases)) {
+  for (const kw of Object.values(aliases)) {
     if (id.includes(kw)) return kw
   }
   return null
