@@ -415,9 +415,15 @@ export function filterBranchNegotiators(
   if (!branchSource || branchSource === 'ALL_BRANCHES' || branchSource === 'ALL') {
     return eligible.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
-  const matched = eligible.filter((u) =>
-    u.branchId && branchScopesMatch(u.branchId, branchSource, u.email),
-  )
+  const matched = eligible.filter((u) => {
+    const isGlobal = !u.branchId?.trim() ||
+      u.branchId.toUpperCase() === 'ALL' ||
+      u.branchId.toUpperCase() === 'ALL_BRANCHES' ||
+      u.role?.toLowerCase() === 'admin' ||
+      u.role?.toLowerCase() === 'administrator' ||
+      u.role?.toLowerCase() === 'management'
+    return isGlobal || branchScopesMatch(u.branchId, branchSource, u.email)
+  })
   if (matched.length > 0) {
     return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
