@@ -20,7 +20,42 @@ export function isSameBaseBranch(a?: string | null, b?: string | null): boolean 
   if (!a || !b) return false
   const cleanA = resolveScopedBranchId(a).replace(/-(sales|services|service)$/i, '').toLowerCase()
   const cleanB = resolveScopedBranchId(b).replace(/-(sales|services|service)$/i, '').toLowerCase()
-  return cleanA === cleanB
+  if (cleanA === cleanB) return true
+  const aliasA = branchAliasKey(a)
+  const aliasB = branchAliasKey(b)
+  return !!(aliasA && aliasB && aliasA === aliasB)
+}
+
+/** Map legacy UUID / BR-* ids to a shared branch keyword for staff matching. */
+function branchAliasKey(branchId?: string | null): string | null {
+  if (!branchId?.trim()) return null
+  const id = branchId.trim().toLowerCase()
+  const aliases: Record<string, string> = {
+    '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b': 'calauan',
+    'br-calauan': 'calauan',
+    '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b': 'silang',
+    'br-silang': 'silang',
+    '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b': 'taguig',
+    'br-taguig': 'taguig',
+    'br-taguig-sales': 'taguig',
+    'br-taguig-services': 'taguig',
+    '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b': 'rizal',
+    'br-rizal': 'rizal',
+    '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b': 'pampanga',
+    'br-pampanga': 'pampanga',
+    '2880c407-581c-11f1-bf8c-74d4dd6dfc0b': 'bulacan',
+    'br-bulacan': 'bulacan',
+    '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b': 'dasma',
+    'br-dasma': 'dasma',
+    '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b': 'candelaria',
+    'br-candelaria': 'candelaria',
+  }
+  if (aliases[id]) return aliases[id]
+  if (id.startsWith('br-')) return id.slice(3)
+  for (const [key, kw] of Object.entries(aliases)) {
+    if (id.includes(kw)) return kw
+  }
+  return null
 }
 
 export type BranchListEntry = {
@@ -345,14 +380,30 @@ export type BranchStaffOption = {
   jobTitle?: string | null
 }
 
-/** Staff who may appear as negotiator (excludes field techs/drivers/helpers/admins). */
+/** Staff who may appear as negotiator (office roles incl. OIC; excludes field crew). */
 export function isNegotiatorCandidate(user: {
   role?: string | null
   jobTitle?: string | null
 }): boolean {
-  const roleLower = (user.role || '').toLowerCase()
+  const roleLower = (user.role || '').toLowerCase().replace(/\s+/g, '_')
+  const jobLower = (user.jobTitle || '').toLowerCase()
   if (roleLower === 'customer') return false
-  return true
+
+  const officeRoles = ['admin', 'management', 'administrator', 'manager', 'oic', 'employee', 'staff']
+  if (officeRoles.includes(roleLower)) return true
+  if (
+    jobLower.includes('oic')
+    || jobLower.includes('office in charge')
+    || jobLower.includes('negotiator')
+    || jobLower.includes('manager')
+  ) {
+    return true
+  }
+
+  const fieldJobs = ['technician', 'installer', 'driver', 'helper', 'crew', 'lineman']
+  if (fieldJobs.some((k) => jobLower.includes(k))) return false
+
+  return roleLower !== ''
 }
 
 /** Branch-scoped negotiator dropdown list (uses branchScopesMatch, not strict id equality). */
@@ -361,7 +412,7 @@ export function filterBranchNegotiators(
   branchSource?: string | null,
 ): BranchStaffOption[] {
   const eligible = users.filter(isNegotiatorCandidate)
-  if (!branchSource || branchSource === 'ALL_BRANCHES') {
+  if (!branchSource || branchSource === 'ALL_BRANCHES' || branchSource === 'ALL') {
     return eligible.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
   const matched = eligible.filter((u) =>

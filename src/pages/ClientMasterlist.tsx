@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, readApiError } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId } from '../utils/api'
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
@@ -545,13 +545,56 @@ export default function ClientMasterlist() {
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  const negotiators = useMemo(() => {
-    const branchSource = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
-    const scopedBranch = branchSource && branchSource !== 'ALL' && branchSource !== 'ALL_BRANCHES'
-      ? branchSource
+  const resolveRelayDefaultBranchId = useCallback(() => {
+    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
+      return activeBranch
+    }
+    return resolvePortalWriteBranchId(globalBranchId || user?.branchId, user?.email, user?.jobTitle)
+  }, [branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId, user?.email, user?.jobTitle])
+
+  const negotiatorsForBranch = useCallback((branchId?: string | null) => {
+    const scoped = branchId && branchId !== 'ALL' && branchId !== 'ALL_BRANCHES'
+      ? branchId
+      : null
+    const pageBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const fallbackBranch = pageBranch && pageBranch !== 'ALL' && pageBranch !== 'ALL_BRANCHES'
+      ? pageBranch
       : (globalBranchId || user?.branchId || null)
-    return filterBranchNegotiators(employees, scopedBranch)
-  }, [employees, branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId])
+    const filterBranch = scoped || fallbackBranch
+    const fromFilter = filterBranchNegotiators(employees, filterBranch)
+    if (fromFilter.length > 0 || !scoped) return fromFilter
+
+    // Selected branch in form may use a different id than employee.branchId — resolve via branches list
+    const selected = resolveBranch(scoped)
+    const matched = employees.filter((emp) => {
+      if (!isNegotiatorCandidate(emp)) return false
+      if (!emp.branchId?.trim()) return true
+      if (branchScopesMatch(emp.branchId, scoped, emp.email)) return true
+      const empBranch = resolveBranch(emp.branchId)
+      return !!(selected && empBranch && selected.id === empBranch.id)
+    })
+    return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [employees, branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId, branches])
+
+  const negotiators = useMemo(
+    () => negotiatorsForBranch(),
+    [negotiatorsForBranch],
+  )
+
+  const addModalNegotiators = useMemo(
+    () => negotiatorsForBranch(addForm.branchId || resolveRelayDefaultBranchId()),
+    [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
+  )
+
+  const openAddModal = useCallback(() => {
+    const defaultBranch = resolveRelayDefaultBranchId()
+    setAddForm(prev => ({
+      ...prev,
+      branchId: defaultBranch || prev.branchId,
+    }))
+    setIsAddModalOpen(true)
+  }, [resolveRelayDefaultBranchId])
 
   const handleSaveFinalDateInline = async (ticket: Ticket) => {
     const newFinalDate = inlineFinalDates[ticket.id]
@@ -681,8 +724,6 @@ export default function ClientMasterlist() {
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',       weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
-      { label: 'PAYMENT',          weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'ACTIONS',          weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
@@ -1165,6 +1206,11 @@ export default function ClientMasterlist() {
         finalDate: addForm.finalDate || ''
       }
       const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
+      const writeBranchId = resolvePortalWriteBranchId(
+        addForm.branchId || resolveRelayDefaultBranchId(),
+        user?.email,
+        user?.jobTitle,
+      )
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -1200,7 +1246,7 @@ export default function ClientMasterlist() {
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
-          branchId: addForm.branchId || undefined
+          branchId: writeBranchId || undefined
         })
       })
 
@@ -1212,6 +1258,20 @@ export default function ClientMasterlist() {
       const createdTicket = payload?.data || payload
       if (createdTicket && createdTicket.id) {
         setLastUpdatedTicketId(createdTicket.id)
+        setTickets(prev => {
+          const exists = prev.some(t => t.id === createdTicket.id)
+          if (exists) {
+            return prev.map(t => (t.id === createdTicket.id ? { ...t, ...createdTicket } : t))
+          }
+          return [createdTicket as Ticket, ...prev]
+        })
+        const statusLabel = getRelayStatusLabel(createdTicket as Ticket)
+        if (!isMyTicketsOnly && isAdmin) {
+          if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
+          else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
+        } else {
+          setActiveTab('MY_TICKETS')
+        }
       }
 
       setIsAddModalOpen(false)
@@ -1251,7 +1311,7 @@ export default function ClientMasterlist() {
         relayedDate: new Date().toISOString().split('T')[0],
         finalDate: ''
       })
-      fetchData({ soft: true })
+      fetchData({ soft: false })
     } catch (e: any) {
       alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -1883,7 +1943,7 @@ export default function ClientMasterlist() {
                 <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
               </button>
 
-              <button type="button" onClick={() => setIsAddModalOpen(true)}
+              <button type="button" onClick={openAddModal}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm shrink-0"
                 style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
                 <Plus className="w-3.5 h-3.5" /> Add Client
@@ -2080,42 +2140,13 @@ export default function ClientMasterlist() {
                     ) },
                     // PREFERRED DATE
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
-                    // FINAL DATE (editable)
-                    { value: (
-                      <input
-                        type="date"
-                        value={inlineFinalDates[ticket.id] !== undefined ? inlineFinalDates[ticket.id] : (details.finalDate || '')}
-                        onChange={e => setInlineFinalDates(prev => ({ ...prev, [ticket.id]: e.target.value }))}
-                        onClick={e => e.stopPropagation()}
-                        className="px-2 py-1 rounded text-xs border w-full text-center"
-                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                    ) },
+                    // FINAL DATE
+                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(details.finalDate || ''))}</span> },
                     // REMARKS
                     { value: (
                       <span className="break-words block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
                         {ticket.remarksUpdate || lastUpdate || '—'}
                       </span>
-                    ) },
-                    // PAYMENT
-                    { value: (
-                      <span className="truncate block w-full text-center text-xs font-semibold" style={{ color: textPrimary }}>
-                        {displayUpper(ticket.modeOfPayment || '') || (ticket.installationCharges != null && ticket.installationCharges > 0 ? `₱${ticket.installationCharges.toLocaleString()}` : '—')}
-                      </span>
-                    ) },
-                    // ACTIONS
-                    { value: (
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation()
-                          handleSaveFinalDateInline(ticket)
-                        }}
-                        disabled={inlineSavingId === ticket.id || inlineFinalDates[ticket.id] === undefined || inlineFinalDates[ticket.id] === (details.finalDate || '')}
-                        className="px-3 py-1 rounded text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {inlineSavingId === ticket.id ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : 'SAVE'}
-                      </button>
                     ) }
                   ] : [
                     { value: (
@@ -2511,17 +2542,11 @@ export default function ClientMasterlist() {
                         }}
                         className={compactInput} style={inputStyle}>
                         <option value="">Select Negotiator...</option>
-                        {negotiators
-                          .filter(emp => {
-                            if (!assignBranchId || assignBranchId === 'ALL') return true
-                            if (!emp.branchId?.trim()) return true
-                            return branchScopesMatch(emp.branchId, assignBranchId, emp.email)
-                          })
-                          .map(emp => {
-                            return (
-                              <option key={emp.id} value={emp.id}>{emp.name}</option>
-                            )
-                          })}
+                        {negotiatorsForBranch(assignBranchId || undefined).map(emp => {
+                          return (
+                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                          )
+                        })}
                       </select>
                     </EField>
                     <EField label="Relayed Date">
@@ -2789,7 +2814,7 @@ export default function ClientMasterlist() {
                           value={addForm.assignedTo || ''}
                           onChange={e => {
                             const val = e.target.value
-                            const foundEmp = negotiators.find(emp => emp.id === val)
+                            const foundEmp = addModalNegotiators.find(emp => emp.id === val)
                             setAddForm(prev => ({
                               ...prev,
                               assignedTo: val,
@@ -2802,7 +2827,7 @@ export default function ClientMasterlist() {
                           style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
                         >
                           <option value="">Select Negotiator...</option>
-                          {negotiators.map(emp => {
+                          {addModalNegotiators.map(emp => {
                             return (
                               <option key={emp.id} value={emp.id}>{emp.name}</option>
                             )
