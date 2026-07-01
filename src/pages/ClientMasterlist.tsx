@@ -79,6 +79,30 @@ interface ParsedVoucher {
   finalDate?: string
 }
 
+type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct'
+
+const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string } => {
+  const sv = (sourceVendor || '').trim()
+  const lower = sv.toLowerCase()
+  if (lower.includes('robinsons')) {
+    const branch = sv.replace(/^robinsons(\s+b2b)?\s*/i, '').trim()
+    return { store: 'Robinsons', branch }
+  }
+  if (lower.includes('abenson')) {
+    const branch = sv.replace(/^abenson(\s+b2b)?\s*/i, '').trim()
+    return { store: 'Abenson', branch }
+  }
+  return { store: 'Direct', branch: '' }
+}
+
+const combineStoreVendor = (store: StoreCategory, branch: string): string => {
+  if (store === 'Direct') return 'Direct'
+  const b = branch.trim()
+  if (!b) return store
+  if (b.toLowerCase().startsWith(store.toLowerCase())) return b
+  return `${store} ${b}`
+}
+
 const guessDistrict = (address: string): string => {
   if (!address) return ''
   const addr = address.toLowerCase()
@@ -443,6 +467,7 @@ export default function ClientMasterlist() {
     contactPhone: '',
     locationRaw: '',
     sourceVendor: 'Robinsons',
+    storeBranch: '',
     unitType: 'Split AC',
     preferredDate: '',
     slaExpirationDate: '',
@@ -492,7 +517,8 @@ export default function ClientMasterlist() {
   const [editModeOfPayment, setEditModeOfPayment] = useState('')
   const [editControlNumber, setEditControlNumber] = useState('')
 
-  const [editSourceVendor, setEditSourceVendor] = useState('')
+  const [editStoreCategory, setEditStoreCategory] = useState<StoreCategory>('Direct')
+  const [editStoreBranch, setEditStoreBranch] = useState('')
   const [editUnitType, setEditUnitType] = useState('')
   const [editServiceType, setEditServiceType] = useState('')
   const [editCustomerName, setEditCustomerName] = useState('')
@@ -678,6 +704,7 @@ export default function ClientMasterlist() {
 
         const defaultCommit = isInstall ? 'FREE FIRST 10 FEET' : (parsed.commitType || '')
         const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
+        const parsedStore = parseStoreVendor(parsed.sourceVendor || 'Robinsons')
 
         setAddForm({
           title: `${mappedSvc} service`,
@@ -686,7 +713,8 @@ export default function ClientMasterlist() {
           customerName: customerNameVal,
           contactPhone: contactPhoneVal,
           locationRaw: locationVal,
-          sourceVendor: parsed.sourceVendor || 'Robinsons',
+          sourceVendor: parsedStore.store,
+          storeBranch: parsedStore.branch,
           unitType: parsed.unitType || (brandVal && capacityVal ? `${brandVal} ${capacityVal}` : 'Split AC'),
           preferredDate: preferredDateFormatted,
           slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -933,7 +961,10 @@ export default function ClientMasterlist() {
           unitType: addForm.unitType,
           contactPhone: addForm.contactPhone,
           location: addForm.locationRaw?.trim() || 'No Address Provided',
-          sourceVendor: addForm.sourceVendor,
+          sourceVendor: combineStoreVendor(
+            (addForm.sourceVendor || 'Direct') as StoreCategory,
+            addForm.storeBranch || ''
+          ),
           preferredDate: addForm.preferredDate || undefined,
           slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
           priorityTag: addForm.priorityTag || undefined,
@@ -963,6 +994,7 @@ export default function ClientMasterlist() {
         contactPhone: '',
         locationRaw: '',
         sourceVendor: 'Robinsons',
+        storeBranch: '',
         unitType: 'Split AC',
         preferredDate: '',
         slaExpirationDate: '',
@@ -1047,7 +1079,7 @@ export default function ClientMasterlist() {
       payload.acDetails = JSON.stringify(acDetailsObj)
       payload.images = editImages || null
       payload.contactPhone = editPhoneNumbers[0] || null
-      payload.sourceVendor = editSourceVendor || null
+      payload.sourceVendor = combineStoreVendor(editStoreCategory, editStoreBranch) || null
       payload.unitType = editUnitType || null
       payload.serviceType = editServiceType || null
 
@@ -1154,7 +1186,9 @@ export default function ClientMasterlist() {
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
-    setEditSourceVendor(ticket.sourceVendor || '')
+    const parsedStore = parseStoreVendor(ticket.sourceVendor)
+    setEditStoreCategory(parsedStore.store)
+    setEditStoreBranch(parsedStore.branch)
     setEditUnitType(ticket.unitType || '')
     setEditServiceType(ticket.serviceType || '')
 
@@ -1895,16 +1929,14 @@ export default function ClientMasterlist() {
                       </div>
                     </EField>
 
-                    <EField label="Store / Vendor Source">
+                    <EField label="Store">
                       <select
-                        value={
-                          editSourceVendor.toLowerCase().includes('robinsons')
-                            ? 'Robinsons'
-                            : editSourceVendor.toLowerCase().includes('abenson')
-                            ? 'Abenson'
-                            : 'Direct'
-                        }
-                        onChange={e => setEditSourceVendor(e.target.value)}
+                        value={editStoreCategory}
+                        onChange={e => {
+                          const next = e.target.value as StoreCategory
+                          setEditStoreCategory(next)
+                          if (next === 'Direct') setEditStoreBranch('')
+                        }}
                         className={compactInput}
                         style={inputStyle}>
                         <option value="Robinsons">Robinsons</option>
@@ -1912,6 +1944,18 @@ export default function ClientMasterlist() {
                         <option value="Direct">Direct Store</option>
                       </select>
                     </EField>
+                    {(editStoreCategory === 'Robinsons' || editStoreCategory === 'Abenson') && (
+                      <EField label="Store Branch">
+                        <input
+                          type="text"
+                          value={editStoreBranch}
+                          onChange={e => setEditStoreBranch(e.target.value)}
+                          placeholder={editStoreCategory === 'Robinsons' ? 'e.g. Ermita' : 'e.g. Silang'}
+                          className={compactInput}
+                          style={inputStyle}
+                        />
+                      </EField>
+                    )}
                     <EField label="Address" className="md:col-span-2">
                       <input type="text" value={editLocation} onChange={e => setEditLocation(e.target.value)}
                         placeholder="Installation Address" className={compactInput} style={inputStyle} />
@@ -2209,8 +2253,12 @@ export default function ClientMasterlist() {
                       <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store</label>
                         <select
-                          value={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : (addForm.sourceVendor || '').toLowerCase().includes('abenson') ? 'Abenson' : 'Direct'}
-                          onChange={e => setAddForm(prev => ({ ...prev, sourceVendor: e.target.value }))}
+                          value={addForm.sourceVendor}
+                          onChange={e => setAddForm(prev => ({
+                            ...prev,
+                            sourceVendor: e.target.value,
+                            storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch
+                          }))}
                           className={compactInput}
                           style={fieldStyle(addForm.sourceVendor)}
                         >
@@ -2232,17 +2280,14 @@ export default function ClientMasterlist() {
                       </div>
                     </div>
 
-                    {((addForm.sourceVendor || '').toLowerCase().includes('robinsons') || (addForm.sourceVendor || '').toLowerCase().includes('abenson')) && (
+                    {(addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson') && (
                       <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store Branch</label>
                         <input
                           type="text"
-                          value={addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson' ? '' : addForm.sourceVendor}
-                          onChange={e => {
-                            const prefix = (addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson'
-                            setAddForm(prev => ({ ...prev, sourceVendor: e.target.value || prefix }))
-                          }}
-                          placeholder={(addForm.sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons branch' : 'Abenson branch'}
+                          value={addForm.storeBranch}
+                          onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
+                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : 'e.g. Silang'}
                           className={compactInput}
                           style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
                         />
@@ -2760,6 +2805,7 @@ export default function ClientMasterlist() {
         const sl  = getRelayStatusLabel(t)
         const neg = t.assignedEmployeeName || t.installerName || '—'
         const bn  = formatAssignedBranchLabel(t.branchId)
+        const storeInfo = parseStoreVendor(t.sourceVendor)
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
@@ -2883,7 +2929,8 @@ export default function ClientMasterlist() {
                     <DField label="Date Relayed" value={formatDate(t.createdAt)} />
                     <DField label="Preferred Schedule" value={formatDate(t.preferredDate)} />
                     <DField label="Final Schedule" value={det.finalDate ? <span className="text-emerald-500 font-bold">{formatDate(det.finalDate)}</span> : '—'} />
-                    <DField label="Store / DLR" value={t.sourceVendor || 'Direct Store'} />
+                    <DField label="Store" value={storeInfo.store === 'Direct' ? 'Direct Store' : storeInfo.store} />
+                    <DField label="Store Branch" value={storeInfo.branch || '—'} />
                     <DField label="Commit Type" value={t.commitType} />
                     <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
                   </div>
