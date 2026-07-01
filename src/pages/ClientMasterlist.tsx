@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, readApiError } from '../utils/api'
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
@@ -1202,7 +1202,9 @@ export default function ClientMasterlist() {
         })
       })
 
-      if (!res.ok) throw new Error('Create request failed')
+      if (!res.ok) {
+        throw new Error(await readApiError(res))
+      }
 
       const payload = await res.json().catch(() => null)
       const createdTicket = payload?.data || payload
@@ -1248,8 +1250,8 @@ export default function ClientMasterlist() {
         finalDate: ''
       })
       fetchData({ soft: true })
-    } catch (e) {
-      alert('Could not submit ticket.')
+    } catch (e: any) {
+      alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
     } finally {
       setFormSubmitting(false)
     }
