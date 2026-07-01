@@ -51,8 +51,9 @@ export function schedulesCacheKey(
   globalBranchId?: string | null,
   isCustomer?: boolean,
   isAdmin?: boolean,
+  isMyTickets?: boolean,
 ): string {
-  const ep = isCustomer ? 'my' : isAdmin ? 'all' : 'branch'
+  const ep = isMyTickets ? 'assigned' : isCustomer ? 'my' : isAdmin ? 'all' : 'branch'
   return `schedules:v${VERSION}:${ep}:${branchCachePart(user, globalBranchId)}`
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
@@ -1255,6 +1256,8 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
 export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
+  const location = useLocation()
+  const isMyTickets = location.pathname === '/my-tickets'
   const isLight    = theme === 'light'
 
   const role      = (user?.role || '').toLowerCase()
@@ -1301,7 +1304,7 @@ export default function Tickets() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
   const [installerFilter, setInstallerFilter] = useState('')
-  const [dateFilter, setDateFilter]   = useState(() => todayDateKey())
+  const [dateFilter, setDateFilter]   = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
@@ -1345,10 +1348,14 @@ export default function Tickets() {
   const hasLoadedOnceRef = useRef(false)
 
   useEffect(() => {
+    if (isMyTickets) {
+      setDateFilter('')
+      return
+    }
     if (isTaguig) {
       setDateFilter(todayDateKey())
     }
-  }, [isTaguig])
+  }, [isMyTickets, isTaguig])
 
   // ── Context menu ──────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -2651,7 +2658,7 @@ export default function Tickets() {
   const fetchTickets = useCallback(async (options?: { soft?: boolean }) => {
     if (!user) return
     const seq = ++fetchSeqRef.current
-    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin)
+    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
@@ -2665,8 +2672,8 @@ export default function Tickets() {
     else setRefreshing(true)
     setFetchError(null)
     try {
-      const ep   = isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-      const size = isAdmin ? 300 : 200
+      const ep   = isMyTickets ? '/tickets/assigned' : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
+      const size = isMyTickets ? 200 : isAdmin ? 300 : 200
       const list = await fetchTicketsPage(ep, token(), { size })
       if (seq !== fetchSeqRef.current) return
       setTickets(list as Ticket[])
@@ -2681,10 +2688,10 @@ export default function Tickets() {
         setRefreshing(false)
       }
     }
-  }, [user, isCustomer, isAdmin, globalBranchId, token])
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, token])
 
   useEffect(() => {
-    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin)
+    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
@@ -2695,7 +2702,7 @@ export default function Tickets() {
       hasLoadedOnceRef.current = false
     }
     void fetchTickets({ soft: hasCache })
-  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin])
+  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets])
 
   useEffect(() => {
     if (canEdit) {
@@ -2735,13 +2742,25 @@ export default function Tickets() {
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = tickets.filter(t => {
-      if (!isFieldCategory(inferCategoryFromTicket(t))) return false
       const stat = (t.status || '').toUpperCase()
+      if (stat === 'CANCELLED') return false
+
+      if (isMyTickets) {
+        const uid = user?.id || ''
+        const negotiatorId = String(t.negotiatorId || t.negotiator_id || '').trim()
+        const assignedId = String(t.assignedTo || t.assigned_to || '').trim()
+        if (uid && negotiatorId !== uid && assignedId !== uid) return false
+        if (stat === 'COMPLETED') {
+          return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
+        }
+        return true
+      }
+
+      if (!isFieldCategory(inferCategoryFromTicket(t))) return false
 
       if (stat === 'COMPLETED') {
         return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
-      if (stat === 'CANCELLED') return false
 
       let hasFinalDate = false
       if (t.acDetails) {
@@ -2760,20 +2779,22 @@ export default function Tickets() {
 
       return isInstallation || isResched || isForApproval || isSurvey || isActiveSchedule
     })
-    const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
-    if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-      list = list.filter(t => {
-        const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
-          || t.branchId || t.branch_id || ''
-        if (!b) return false
-        if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
-        if (isTaguigBranchRef(effectiveBranch)) {
-          const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
-          const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
-          return wantServices ? isService : !isService
-        }
-        return true
-      })
+    if (!isMyTickets) {
+      const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
+      if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
+        list = list.filter(t => {
+          const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
+            || t.branchId || t.branch_id || ''
+          if (!b) return false
+          if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
+          if (isTaguigBranchRef(effectiveBranch)) {
+            const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
+            const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
+            return wantServices ? isService : !isService
+          }
+          return true
+        })
+      }
     }
     if (dateFilter) {
       list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
@@ -2794,7 +2815,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, isAdmin, globalBranchId, dateFilter, searchQuery, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
+  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
   const installerOptions = useMemo(() => {
     const names = new Map<string, string>()
@@ -3715,7 +3736,7 @@ export default function Tickets() {
           </div>
 
           {/* Action Button: Add Schedule */}
-          {canEdit && (
+          {canEdit && !isMyTickets && (
             <div className="relative shrink-0 ml-auto">
               <button
                 type="button"
@@ -3936,7 +3957,9 @@ export default function Tickets() {
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                          No records
+                          {isMyTickets
+                            ? (searchQuery || dateFilter ? 'No tickets match your filters' : 'No tickets assigned to you yet')
+                            : 'No records'}
                         </p>
                         {searchQuery && (
                           <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
@@ -3968,6 +3991,7 @@ export default function Tickets() {
                         }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
                         onMouseLeave={() => setHoveredRow(null)}
+                        onDoubleClick={() => setDetailTicket(ticket)}
                         onContextMenu={e => {
                           e.preventDefault()
                           if (canEdit || isAdmin) setContextMenu({ x: e.clientX, y: e.clientY, ticket })
@@ -4157,7 +4181,9 @@ export default function Tickets() {
               <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
                 <div className="flex flex-col gap-1.5 min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Schedule Details</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                    {isMyTickets ? 'My Ticket Details' : 'Schedule Details'}
+                  </p>
                   <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
                     Ticket No: {t.ticketNumber || t.ticket_number || '—'}

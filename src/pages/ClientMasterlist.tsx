@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
-import { useLocation } from 'react-router-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
@@ -388,8 +387,6 @@ export default function ClientMasterlist() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
   const canEdit = !!user && role !== 'customer'
-  const location = useLocation()
-  const isMyTicketsOnly = location.pathname === '/my-tickets'
 
   // Colors
   const cardBg = isLight ? '#ffffff' : '#0A1120'
@@ -470,9 +467,7 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>(
-    () => (location.pathname === '/my-tickets' ? 'MY_TICKETS' : 'ALL_PENDING')
-  )
+  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>('ALL_PENDING')
   const ticketScope: 'ALL' | 'MY' = !isAdmin ? 'MY' : 'ALL'
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
@@ -546,18 +541,18 @@ export default function ClientMasterlist() {
   }, [])
 
   const resolveRelayDefaultBranchId = useCallback(() => {
-    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const activeBranch = branchFilter
     if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
       return activeBranch
     }
     return resolvePortalWriteBranchId(globalBranchId || user?.branchId, user?.email, user?.jobTitle)
-  }, [branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId, user?.email, user?.jobTitle])
+  }, [branchFilter, globalBranchId, user?.branchId, user?.email, user?.jobTitle])
 
   const negotiatorsForBranch = useCallback((branchId?: string | null) => {
     const scoped = branchId && branchId !== 'ALL' && branchId !== 'ALL_BRANCHES'
       ? branchId
       : null
-    const pageBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const pageBranch = branchFilter
     const fallbackBranch = pageBranch && pageBranch !== 'ALL' && pageBranch !== 'ALL_BRANCHES'
       ? pageBranch
       : (globalBranchId || user?.branchId || null)
@@ -575,7 +570,7 @@ export default function ClientMasterlist() {
       return !!(selected && empBranch && selected.id === empBranch.id)
     })
     return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  }, [employees, branchFilter, globalBranchId, isMyTicketsOnly, isAdmin, user?.branchId, branches])
+  }, [employees, branchFilter, globalBranchId, user?.branchId, branches])
 
   const negotiators = useMemo(
     () => negotiatorsForBranch(),
@@ -780,10 +775,6 @@ export default function ClientMasterlist() {
   }, [])
 
   useEffect(() => {
-    if (isMyTicketsOnly) {
-      setActiveTab('MY_TICKETS')
-      return
-    }
     if (user) {
       const roleLower = (user.role || '').toLowerCase()
       const isPriv = roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator'
@@ -791,7 +782,7 @@ export default function ClientMasterlist() {
         setActiveTab('MY_TICKETS')
       }
     }
-  }, [user, isMyTicketsOnly])
+  }, [user])
 
   const handleRelayTabChange = useCallback((
     next: 'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS',
@@ -805,7 +796,7 @@ export default function ClientMasterlist() {
 
   useLayoutEffect(() => {
     resetTicketTableScroll()
-  }, [activeTab, isMyTicketsOnly])
+  }, [activeTab])
 
   // Load Initial Data — cache-first, background refresh
   const fetchData = useCallback(async (options?: { soft?: boolean }) => {
@@ -1265,7 +1256,7 @@ export default function ClientMasterlist() {
           return [createdTicket as Ticket, ...prev]
         })
         const statusLabel = getRelayStatusLabel(createdTicket as Ticket)
-        if (!isMyTicketsOnly && isAdmin) {
+        if (isAdmin) {
           if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
           else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
         } else {
@@ -1525,7 +1516,7 @@ export default function ClientMasterlist() {
     let unassigned = 0
     let assigned = 0
     let mine = 0
-    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const activeBranch = branchFilter
     for (const t of tickets) {
       if (storeFilter !== 'ALL') {
         const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
@@ -1556,7 +1547,7 @@ export default function ClientMasterlist() {
       PENDING: assigned,
       MY_TICKETS: mine,
     }
-  }, [tickets, storeFilter, branchFilter, globalBranchId, isMyTicketsOnly, user?.id, isAdmin])
+  }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin])
 
   const relayPillItems = useMemo(() => {
     const myTicketsPill = {
@@ -1565,14 +1556,14 @@ export default function ClientMasterlist() {
       count: relayTabCounts.MY_TICKETS,
       icon: <User className="w-3 h-3" />,
     }
-    if (isMyTicketsOnly || !isAdmin) return [myTicketsPill]
+    if (!isAdmin) return [myTicketsPill]
     return [
       { id: 'ALL_PENDING' as const, label: 'All pending', count: relayTabCounts.ALL_PENDING },
       { id: 'UNASSIGNED' as const, label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
       { id: 'PENDING' as const, label: 'Assigned', count: relayTabCounts.PENDING },
       myTicketsPill,
     ]
-  }, [isMyTicketsOnly, isAdmin, relayTabCounts])
+  }, [isAdmin, relayTabCounts])
 
   const filtered = tickets.filter(t => {
     // Tab filtering
@@ -1601,7 +1592,7 @@ export default function ClientMasterlist() {
     }
 
     // Branch filter
-    const activeBranch = (isMyTicketsOnly && isAdmin) ? globalBranchId : branchFilter
+    const activeBranch = branchFilter
     if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
       const resolved = resolveBranch(t.branchId)
       if (!resolved || resolved.id !== activeBranch) return false
