@@ -139,6 +139,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
   { value: 'DONE_CLEANING', label: 'Cleaning' },
   { value: 'DONE_INSTALLED', label: 'Installed' },
   { value: 'DONE_SURVEY', label: 'Done Survey' },
+  { value: 'COMPLETED', label: 'Completed' },
   { value: 'CANCELLED', label: 'Cancelled' },
 ]
 
@@ -164,6 +165,9 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   }
   if (normalized === 'DONE_INSTALLED') {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
+  }
+  if (normalized === 'COMPLETED') {
+    return { color: isLight ? '#047857' : '#34d399', backgroundColor: isLight ? '#d1fae5' : 'rgba(52,211,153,0.15)', borderColor: isLight ? '#a7f3d0' : 'rgba(52,211,153,0.3)' }
   }
   if (normalized === 'DONE_CLEANING') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
@@ -203,7 +207,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'CANCELLED') return 'CANCELLED'
-  if (stat === 'COMPLETED') return 'DONE_INSTALLED'
+  if (stat === 'COMPLETED') return 'COMPLETED'
 
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
