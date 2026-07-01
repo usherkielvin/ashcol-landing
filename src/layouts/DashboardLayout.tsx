@@ -8,7 +8,7 @@ import {
   ChevronRight, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList,
   Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
-  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -73,6 +73,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
         { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
+        { name: 'Registration', icon: <ShieldCheck size={16} />, path: findPath('Registration') },
       ].filter(s => s.path !== '#' || hasLink(s.name)),
     },
     {
@@ -285,6 +286,7 @@ export default function DashboardLayout() {
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },

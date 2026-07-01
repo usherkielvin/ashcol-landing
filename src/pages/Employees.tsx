@@ -39,7 +39,7 @@ interface Employee {
 interface BranchOption { id: string; name: string }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE']
+const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR']
 
 type AssignableRole = 'EMPLOYEE' | 'MANAGER' | 'MANAGEMENT'
 
@@ -68,7 +68,7 @@ const ROLE_META: Record<AssignableRole, {
     label: 'Management',
     hint: 'All-branch portal access (same Active Branch switcher as admin).',
     requiresBranch: false,
-    requiresJobTitle: false,
+    requiresJobTitle: true,
     canDelete: false,
   },
 }
@@ -115,7 +115,7 @@ const adaptEditFormForRole = (
   if (roleUpper === 'MANAGEMENT') {
     return {
       role: newRole,
-      jobTitle: '',
+      jobTitle: prev.jobTitle || 'WARRANTY REGISTRAR',
       branchId: '',
     }
   }
@@ -130,10 +130,10 @@ const adaptEditFormForRole = (
 
 const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
+  if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   if (r === 'ADMIN') return 'Admin'
   if (r === 'MANAGEMENT') return 'Management'
   if (r === 'MANAGER') return 'Office In Charge'
-  if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   return formatRoleLabel(role)
 }
 
@@ -510,27 +510,30 @@ export default function Employees() {
         }
       } catch { /* silent */ }
 
-      setEmployees(combined.map((s: any) => ({
-        id:          s.id,
-        name:        formatPersonName(s.name || 'Unknown'),
-        email:       s.email       || '',
-        phone:       s.phone       || '',
-        role:        (s.role       || 'EMPLOYEE').toUpperCase(),
-        jobTitle:    s.jobTitle    || '',
-        branchId:    s.branchId    || '',
-        branchName:  s.branchId ? (branchMap[s.branchId] || s.branchId) : '',
-        isActive:    s.isActive !== false,
-        profileImage: s.profileImage,
-        personalEmail: s.personalEmail || '',
-        region:      s.region      || '',
-        city:        s.city        || '',
-        barangay:    s.barangay    || '',
-        street:      s.street      || '',
-        landmark:    s.landmark    || '',
-        skills:      s.skills      || '',
-        createdAt:   s.createdAt,
-        updatedAt:   s.updatedAt,
-      })))
+      setEmployees(combined.map((s: any) => {
+        const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
+        return {
+          id:          s.id,
+          name:        formatPersonName(s.name || 'Unknown'),
+          email:       s.email       || '',
+          phone:       s.phone       || '',
+          role:        (s.role       || 'EMPLOYEE').toUpperCase(),
+          jobTitle:    isMgmtOrAdmin ? (s.jobTitle || 'WARRANTY REGISTRAR') : (s.jobTitle || ''),
+          branchId:    s.branchId    || '',
+          branchName:  isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
+          isActive:    s.isActive !== false,
+          profileImage: s.profileImage,
+          personalEmail: s.personalEmail || '',
+          region:      s.region      || '',
+          city:        s.city        || '',
+          barangay:    s.barangay    || '',
+          street:      s.street      || '',
+          landmark:    s.landmark    || '',
+          skills:      s.skills      || '',
+          createdAt:   s.createdAt,
+          updatedAt:   s.updatedAt,
+        }
+      }))
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -653,27 +656,30 @@ export default function Employees() {
     setCreateStep(prev => (prev < 3 ? ((prev + 1) as 1 | 2 | 3) : prev))
   }
 
-  const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => ({
-    id: s.id,
-    name: formatPersonName(s.name || 'Unknown'),
-    email: s.email || '',
-    phone: s.phone || '',
-    role: (s.role || 'EMPLOYEE').toUpperCase(),
-    jobTitle: s.jobTitle || '',
-    branchId: s.branchId || '',
-    branchName: s.branchId ? (branchMap[s.branchId] || s.branchId) : '',
-    isActive: s.isActive !== false,
-    profileImage: s.profileImage,
-    personalEmail: s.personalEmail || '',
-    region: s.region || '',
-    city: s.city || '',
-    barangay: s.barangay || '',
-    street: s.street || '',
-    landmark: s.landmark || '',
-    skills: s.skills || '',
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-  })
+  const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => {
+    const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
+    return {
+      id: s.id,
+      name: formatPersonName(s.name || 'Unknown'),
+      email: s.email || '',
+      phone: s.phone || '',
+      role: (s.role || 'EMPLOYEE').toUpperCase(),
+      jobTitle: isMgmtOrAdmin ? (s.jobTitle || 'WARRANTY REGISTRAR') : (s.jobTitle || ''),
+      branchId: s.branchId || '',
+      branchName: isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
+      isActive: s.isActive !== false,
+      profileImage: s.profileImage,
+      personalEmail: s.personalEmail || '',
+      region: s.region || '',
+      city: s.city || '',
+      barangay: s.barangay || '',
+      street: s.street || '',
+      landmark: s.landmark || '',
+      skills: s.skills || '',
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    }
+  }
 
   const upsertEmployeeInList = (updated: Employee) => {
     setEmployees(prev => {
@@ -776,15 +782,15 @@ export default function Employees() {
       branches.forEach(b => { branchMap[b.id] = b.name })
       const refreshed = savedUser
         ? mapApiUserToEmployee({ ...savedUser, isActive: editForm.isActive }, branchMap)
-        : {
+        : mapApiUserToEmployee({
             ...editTarget,
             ...payload,
             isActive: editForm.isActive,
             skills: skillsJson,
             role: editForm.role,
-            jobTitle: (editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') ? editForm.jobTitle : '',
-            branchName: branches.find(b => b.id === editForm.branchId)?.name || editTarget.branchName,
-          } as Employee
+            jobTitle: editForm.jobTitle,
+            branchId: editForm.branchId,
+          }, branchMap)
 
       upsertEmployeeInList(refreshed)
       if (selectedEmployee?.id === editTarget.id) {
@@ -1738,7 +1744,7 @@ export default function Employees() {
                         {ROLE_META[editForm.role as AssignableRole].hint}
                       </p>
                     )}
-                    {editForm.role === 'EMPLOYEE' && (
+                    {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="Job Title" labelColor={textMuted}>
                           <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
@@ -1946,7 +1952,7 @@ export default function Employees() {
                       </select>
                     </Field>
                   )}
-                  {createForm.role === 'EMPLOYEE' && (
+                  {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
                       <Field label="Job title" labelColor={textMuted}>
                         <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>

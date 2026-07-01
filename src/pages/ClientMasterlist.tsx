@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
@@ -435,7 +435,7 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING'>('ALL_PENDING')
+  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>('ALL_PENDING')
   const [ticketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
@@ -480,6 +480,7 @@ export default function ClientMasterlist() {
     installationCharges: 0,
     modeOfPayment: '',
     controlNumber: '',
+    ticketNumber: '',
     landmarks: '',
     brand: '',
     capacity: '',
@@ -516,6 +517,7 @@ export default function ClientMasterlist() {
   const [editInstallationCharges, setEditInstallationCharges] = useState(0)
   const [editModeOfPayment, setEditModeOfPayment] = useState('')
   const [editControlNumber, setEditControlNumber] = useState('')
+  const [editTicketNumber, setEditTicketNumber] = useState('')
 
   const [editStoreCategory, setEditStoreCategory] = useState<StoreCategory>('Direct')
   const [editStoreBranch, setEditStoreBranch] = useState('')
@@ -606,6 +608,16 @@ export default function ClientMasterlist() {
     window.addEventListener('click', handleClose)
     return () => window.removeEventListener('click', handleClose)
   }, [])
+
+  useEffect(() => {
+    if (user) {
+      const roleLower = (user.role || '').toLowerCase()
+      const isPriv = roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator'
+      if (!isPriv) {
+        setActiveTab('MY_TICKETS')
+      }
+    }
+  }, [user])
 
   // Load Initial Data
   const fetchData = async () => {
@@ -976,6 +988,7 @@ export default function ClientMasterlist() {
           installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
           modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
           controlNumber: addForm.controlNumber || undefined,
+          ticketNumber: addForm.ticketNumber?.trim() || undefined,
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
@@ -1007,6 +1020,7 @@ export default function ClientMasterlist() {
         installationCharges: 0,
         modeOfPayment: '',
         controlNumber: '',
+        ticketNumber: '',
         landmarks: '',
         brand: '',
         capacity: '',
@@ -1065,6 +1079,7 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
+      payload.ticketNumber = editTicketNumber?.trim() || null
       
       const acDetailsObj = {
         landmarks: editLandmarks || '',
@@ -1186,6 +1201,7 @@ export default function ClientMasterlist() {
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
+    setEditTicketNumber(ticket.ticketNumber || '')
     const parsedStore = parseStoreVendor(ticket.sourceVendor)
     setEditStoreCategory(parsedStore.store)
     setEditStoreBranch(parsedStore.branch)
@@ -1221,12 +1237,18 @@ export default function ClientMasterlist() {
   const filtered = tickets.filter(t => {
     // Tab filtering
     const statusLabel = getRelayStatusLabel(t)
-    if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
+    
+    if (activeTab === 'MY_TICKETS') {
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
+      if (t.assignedTo !== user?.id) return false
+    } else {
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
 
-    if (activeTab === 'UNASSIGNED') {
-      if (statusLabel !== 'Pending') return false
-    } else if (activeTab === 'PENDING') {
-      if (statusLabel !== 'Assigned') return false
+      if (activeTab === 'UNASSIGNED') {
+        if (statusLabel !== 'Pending') return false
+      } else if (activeTab === 'PENDING') {
+        if (statusLabel !== 'Assigned') return false
+      }
     }
 
     // Vendor filter
@@ -1532,6 +1554,7 @@ export default function ClientMasterlist() {
               <option value="ALL_PENDING">Pending</option>
               <option value="UNASSIGNED">Unassigned</option>
               <option value="PENDING">Assigned</option>
+              <option value="MY_TICKETS">My Tickets</option>
             </select>
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
@@ -1556,26 +1579,28 @@ export default function ClientMasterlist() {
           <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
 
           {/* Action buttons wrapper with right alignment */}
-          <div className="flex items-center gap-2 ml-auto shrink-0">
-            <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
-              style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
-              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-              {scanning ? 'Scanning...' : 'Scan PDF'}
-            </button>
+          {isAdmin && (
+            <div className="flex items-center gap-2 ml-auto shrink-0">
+              <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
+                style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
+                {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+                {scanning ? 'Scanning...' : 'Scan PDF'}
+              </button>
 
-            <button type="button" onClick={() => excelFileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 shrink-0"
-              style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
-            </button>
+              <button type="button" onClick={() => excelFileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 shrink-0"
+                style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
+              </button>
 
-            <button type="button" onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm shrink-0"
-              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-              <Plus className="w-3.5 h-3.5" /> Add Client
-            </button>
-          </div>
+              <button type="button" onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm shrink-0"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                <Plus className="w-3.5 h-3.5" /> Add Client
+              </button>
+            </div>
+          )}
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -1815,7 +1840,6 @@ export default function ClientMasterlist() {
       {/* Centered Manage/Edit Ticket Modal */}
       {isActionDrawerOpen && selectedTicket && ReactDOM.createPortal((() => {
         const ticket = selectedTicket;
-        const ticketCode = (ticket.id || '').replace(/-/g, '').slice(-6).toUpperCase();
 
         const EField = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
           <div className={`flex flex-col gap-1.5 ${className}`}>
@@ -1865,7 +1889,7 @@ export default function ClientMasterlist() {
                       Manage Client Ticket
                     </h2>
                     <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
-                      TICKET ID: ASH${ticketCode}
+                      TICKET NO: {getTicketNumber(ticket)}
                     </span>
                   </div>
                 </div>
@@ -1885,6 +1909,14 @@ export default function ClientMasterlist() {
                     <EField label="Customer Name">
                       <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
                         placeholder="Customer Name" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Ticket No.">
+                      <input type="text" value={editTicketNumber} onChange={e => setEditTicketNumber(e.target.value)}
+                        placeholder="Auto" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Control No. / SI">
+                      <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
+                        placeholder="Transaction no." className={compactInput} style={inputStyle} />
                     </EField>
                     
                     {/* Growable Contact Numbers */}
@@ -2227,17 +2259,18 @@ export default function ClientMasterlist() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>No</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No.</label>
                         <input
                           type="text"
-                          value="Auto"
-                          readOnly
+                          value={addForm.ticketNumber}
+                          onChange={e => setAddForm(prev => ({ ...prev, ticketNumber: e.target.value }))}
+                          placeholder="Auto-generated"
                           className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}
+                          style={fieldStyle(addForm.ticketNumber)}
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No</label>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control No. / SI</label>
                         <input
                           type="text"
                           value={addForm.controlNumber}
@@ -2859,14 +2892,14 @@ export default function ClientMasterlist() {
                         {t.customerName || 'Direct Client'}
                       </h2>
                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{
-                        backgroundColor: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way')
+                        backgroundColor: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way' || !!t.assignedTo)
                           ? 'rgba(16,185,129,0.12)'
                           : 'rgba(245,158,11,0.12)',
-                        color: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way')
+                        color: (sl === 'Assigned' || sl === 'Scheduled' || sl === 'Installed' || sl === 'In Progress' || sl === 'On the Way' || !!t.assignedTo)
                           ? '#10B981'
                           : '#F59E0B'
                       }}>
-                        {bn !== '—' && bn !== 'UNASSIGNED' ? bn : sl}
+                        {t.assignedTo ? 'Assigned' : (bn !== '—' && bn !== 'UNASSIGNED' ? bn : sl)}
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
                         TICKET NO: {getTicketNumber(t)}
@@ -2933,6 +2966,8 @@ export default function ClientMasterlist() {
                     <DField label="Store Branch" value={storeInfo.branch || '—'} />
                     <DField label="Commit Type" value={t.commitType} />
                     <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
+                    <DField label="Control No. / SI" value={t.controlNumber || '—'} />
+                    <DField label="Negotiator" value={neg} />
                   </div>
                 </div>
 
@@ -2951,10 +2986,12 @@ export default function ClientMasterlist() {
               {/* Footer */}
               <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0"
                 style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
-                  className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
-                  Edit
-                </button>
+                {isAdmin && (
+                  <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
+                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
+                    Edit
+                  </button>
+                )}
                 {isAdmin && (
                   <button type="button" onClick={() => { handleDeleteTicket(t.id, t.customerName); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all">
@@ -2982,11 +3019,13 @@ export default function ClientMasterlist() {
                     onClick={() => { setSelectedPreviewTicket(contextMenu.ticket); setIsViewModalOpen(true); setContextMenu(null) }}>
               <Eye className="w-3.5 h-3.5 text-blue-500" /> View details
             </button>
-            <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-[#10B981]/10"
-                    style={{ color: textPrimary }}
-                    onClick={() => { openDrawer(contextMenu.ticket); setContextMenu(null) }}>
-              <Edit3 className="w-3.5 h-3.5 text-[#10B981]" /> Edit ticket
-            </button>
+            {isAdmin && (
+              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-[#10B981]/10"
+                      style={{ color: textPrimary }}
+                      onClick={() => { openDrawer(contextMenu.ticket); setContextMenu(null) }}>
+                <Edit3 className="w-3.5 h-3.5 text-[#10B981]" /> Edit ticket
+              </button>
+            )}
           </div>
         </div>
       )}
