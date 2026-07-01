@@ -1178,7 +1178,8 @@ export default function ClientMasterlist() {
           location: addForm.locationRaw?.trim() || 'No Address Provided',
           sourceVendor: combineStoreVendor(
             (addForm.sourceVendor || 'Direct') as StoreCategory,
-            addForm.storeBranch || ''
+            addForm.storeBranch || '',
+            addForm.otherStoreName
           ),
           preferredDate: addForm.preferredDate || undefined,
           slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
@@ -1217,6 +1218,7 @@ export default function ClientMasterlist() {
         contactPhone: '',
         locationRaw: '',
         sourceVendor: 'Robinsons',
+        otherStoreName: '',
         storeBranch: '',
         unitType: 'Split AC',
         preferredDate: '',
@@ -1304,7 +1306,7 @@ export default function ClientMasterlist() {
       payload.acDetails = JSON.stringify(acDetailsObj)
       payload.images = editImages || null
       payload.contactPhone = editPhoneNumbers[0] || null
-      payload.sourceVendor = combineStoreVendor(editStoreCategory, editStoreBranch) || null
+      payload.sourceVendor = combineStoreVendor(editStoreCategory, editStoreBranch, editOtherStoreName) || null
       payload.unitType = editUnitType || null
       payload.serviceType = editServiceType || null
 
@@ -1422,6 +1424,7 @@ export default function ClientMasterlist() {
     const parsedStore = parseStoreVendor(ticket.sourceVendor)
     setEditStoreCategory(parsedStore.store)
     setEditStoreBranch(parsedStore.branch)
+    setEditOtherStoreName(parsedStore.customStore || '')
     setEditUnitType(ticket.unitType || '')
     setEditServiceType(ticket.serviceType || '')
 
@@ -2350,22 +2353,38 @@ export default function ClientMasterlist() {
                         onChange={e => {
                           const next = e.target.value as StoreCategory
                           setEditStoreCategory(next)
-                          if (next === 'Direct') setEditStoreBranch('')
+                          if (next === 'Direct') {
+                            setEditStoreBranch('')
+                            setEditOtherStoreName('')
+                          }
                         }}
                         className={compactInput}
                         style={inputStyle}>
                         <option value="Robinsons">Robinsons</option>
                         <option value="Abenson">Abenson</option>
                         <option value="Direct">Direct Store</option>
+                        <option value="Other">Other Store</option>
                       </select>
                     </EField>
-                    {(editStoreCategory === 'Robinsons' || editStoreCategory === 'Abenson') && (
+                    {editStoreCategory === 'Other' && (
+                      <EField label="Specific Store Name">
+                        <input
+                          type="text"
+                          value={editOtherStoreName}
+                          onChange={e => setEditOtherStoreName(e.target.value)}
+                          placeholder="e.g. S&R, Anson's"
+                          className={compactInput}
+                          style={inputStyle}
+                        />
+                      </EField>
+                    )}
+                    {(editStoreCategory === 'Robinsons' || editStoreCategory === 'Abenson' || editStoreCategory === 'Other') && (
                       <EField label="Store Branch">
                         <input
                           type="text"
                           value={editStoreBranch}
                           onChange={e => setEditStoreBranch(e.target.value)}
-                          placeholder={editStoreCategory === 'Robinsons' ? 'e.g. Ermita' : 'e.g. Silang'}
+                          placeholder={editStoreCategory === 'Robinsons' ? 'e.g. Ermita' : editStoreCategory === 'Abenson' ? 'e.g. Silang' : 'Branch Name'}
                           className={compactInput}
                           style={inputStyle}
                         />
@@ -2696,7 +2715,7 @@ export default function ClientMasterlist() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={`grid gap-2 ${addForm.sourceVendor === 'Other' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store</label>
                         <select
@@ -2704,7 +2723,8 @@ export default function ClientMasterlist() {
                           onChange={e => setAddForm(prev => ({
                             ...prev,
                             sourceVendor: e.target.value,
-                            storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch
+                            storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch,
+                            otherStoreName: e.target.value === 'Direct' ? '' : prev.otherStoreName
                           }))}
                           className={compactInput}
                           style={fieldStyle(addForm.sourceVendor)}
@@ -2712,8 +2732,22 @@ export default function ClientMasterlist() {
                           <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
                           <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
                           <option value="Direct" style={{ color: '#000' }}>Direct</option>
+                          <option value="Other" style={{ color: '#000' }}>Other</option>
                         </select>
                       </div>
+                      {addForm.sourceVendor === 'Other' && (
+                        <div>
+                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Specific Store Name</label>
+                          <input
+                            type="text"
+                            value={addForm.otherStoreName}
+                            onChange={e => setAddForm(prev => ({ ...prev, otherStoreName: e.target.value }))}
+                            placeholder="e.g. S&R, Anson's"
+                            className={compactInput}
+                            style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                          />
+                        </div>
+                      )}
                       <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store Branch</label>
                         <input
@@ -2721,7 +2755,7 @@ export default function ClientMasterlist() {
                           disabled={addForm.sourceVendor === 'Direct'}
                           value={addForm.storeBranch}
                           onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : addForm.sourceVendor === 'Abenson' ? 'e.g. Silang' : '—'}
+                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : addForm.sourceVendor === 'Abenson' ? 'e.g. Silang' : 'Branch Name'}
                           className={compactInput}
                           style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
                         />
