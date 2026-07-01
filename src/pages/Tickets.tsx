@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolveArchiveBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
 import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
@@ -699,11 +699,14 @@ function getInstallerDisplay(ticket: Ticket): string {
   return fromMeta
 }
 
-function applyImportFieldsFromRow(row: Pick<
-  ImportUnmatchedRow,
-  'name' | 'phone' | 'location' | 'district' | 'brand' | 'dlr' | 'note' | 'commit' | 'update' |
-  'controlNo' | 'installer' | 'service' | 'charges' | 'paymentMode' | 'status'
->): Partial<Ticket> {
+function applyImportFieldsFromRow(
+  row: Pick<
+    ImportUnmatchedRow,
+    'name' | 'phone' | 'location' | 'district' | 'brand' | 'dlr' | 'note' | 'commit' | 'update' |
+    'controlNo' | 'installer' | 'service' | 'charges' | 'paymentMode' | 'status'
+  >,
+  isTaguigServices = false,
+): Partial<Ticket> {
   const updatedFields: Partial<Ticket> = {}
   const set = (field: keyof Ticket, val?: string) => {
     if (val?.trim()) updatedFields[field] = val.trim() as any
@@ -728,8 +731,16 @@ function applyImportFieldsFromRow(row: Pick<
   if (mode) updatedFields.modeOfPayment = mode
   if (row.service?.trim()) {
     updatedFields.serviceVehicle = row.service.trim()
-    updatedFields.serviceType = 'S/I'
-    updatedFields.ticketCategory = 'INSTALLATION'
+    if (isTaguigServices) {
+      updatedFields.serviceType = categoryDefaultServiceType('SERVICES')
+      updatedFields.ticketCategory = 'SERVICES'
+    } else {
+      updatedFields.serviceType = 'S/I'
+      updatedFields.ticketCategory = 'INSTALLATION'
+    }
+  } else if (isTaguigServices) {
+    updatedFields.ticketCategory = 'SERVICES'
+    updatedFields.serviceType = categoryDefaultServiceType('SERVICES')
   }
   let statusVal = (row.status || '').toUpperCase().trim().replace(/\s+/g, '_')
   if (statusVal === 'FOR_QUOTATION') statusVal = 'FOR_APPROVAL'
@@ -873,17 +884,24 @@ function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
   )
 }
 
-function buildImportCreateRow(item: ImportUnmatchedRow, importTargetDate?: string): Record<string, unknown> {
+function buildImportCreateRow(
+  item: ImportUnmatchedRow,
+  importTargetDate?: string,
+  options?: { taguigServices?: boolean; branchId?: string },
+): Record<string, unknown> {
   const location = (item.location
     ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location)
     : '').trim() || 'No Address Provided'
 
+  const taguigServices = options?.taguigServices === true
+  const defaultServiceLabel = taguigServices ? categoryDefaultServiceType('SERVICES') : 'S/I'
+
   const row: Record<string, unknown> = {
-    title: `${item.service || 'S/I'} service`.trim(),
+    title: `${item.service || defaultServiceLabel} service`.trim(),
     description: (item.note || item.update || 'Excel imported ticket').trim(),
     customerName: (item.name || 'Unknown Customer').trim(),
-    serviceType: item.service || 'S/I',
-    ticketCategory: 'INSTALLATION',
+    serviceType: taguigServices ? defaultServiceLabel : (item.service || 'S/I'),
+    ticketCategory: taguigServices ? 'SERVICES' : 'INSTALLATION',
     unitType: item.brand || 'Split AC',
     location,
     sourceVendor: item.dlr || 'Direct',
@@ -891,6 +909,7 @@ function buildImportCreateRow(item: ImportUnmatchedRow, importTargetDate?: strin
   }
 
   if (importTargetDate) row.preferredDate = importTargetDate
+  if (options?.branchId) row.branchId = options.branchId
 
   if (item.phone?.trim()) row.contactPhone = item.phone.trim()
   if (item.district?.trim()) row.district = item.district.trim()
@@ -1484,7 +1503,7 @@ export default function Tickets() {
         usedTicketIds.add(match.id)
         matchedCount++
 
-        const updatedFields = applyImportFieldsFromRow(row)
+        const updatedFields = applyImportFieldsFromRow(row, isTaguigServices)
         const statusVal = (updatedFields.status || '').toUpperCase()
         const updateRemarks = (row.update || '').toLowerCase()
         const isInstalled = updateRemarks.includes('installed') || statusVal === 'COMPLETED'
@@ -2193,8 +2212,8 @@ export default function Tickets() {
     const branchSource = branchEmployee
       ? (user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
       : (globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id'))
-    return resolveArchiveBranchId(branchSource, user?.branchId)
-  }, [globalBranchId, user?.branchId, isEmployee, isAdmin, isManager])
+    return resolvePortalWriteBranchId(branchSource, user?.email, user?.jobTitle)
+  }, [globalBranchId, user?.branchId, user?.email, user?.jobTitle, isEmployee, isAdmin, isManager])
 
   const resolveTicketArchiveBranch = useCallback((ticket: Ticket, fields?: Partial<Ticket>) =>
     resolveTicketArchiveBranchId(
@@ -2226,6 +2245,7 @@ export default function Tickets() {
     })()
 
     const targetBranch = resolveImportBranchId()
+    const importOpts = { taguigServices: isTaguigServices, branchId: targetBranch || undefined }
     const importerUserId = user?.id
     const scheduleDate = importTargetDate?.trim() || ''
     const isScheduleImport = scheduleDate.length > 0
@@ -2286,7 +2306,13 @@ export default function Tickets() {
       const shouldComplete = qualifiesForInstallComplete(merged, updatedFields)
         || (updatedFields.status || '').toUpperCase() === 'COMPLETED'
 
-      let body = buildPatchImportBody(ticket, updatedFields, scheduleDate || undefined, importerUserId)
+      let body = buildPatchImportBody(
+        ticket,
+        updatedFields,
+        scheduleDate || undefined,
+        importerUserId,
+        isTaguigServices && targetBranch ? targetBranch : undefined,
+      )
       if (Object.keys(body).length === 0 && !shouldComplete) continue
 
       if (shouldComplete && isScheduleImport) {
@@ -2333,6 +2359,7 @@ export default function Tickets() {
           },
           scheduleDate,
           importerUserId,
+          isTaguigServices && targetBranch ? targetBranch : undefined,
         )
         if (Object.keys(body).length === 0) continue
         try {
@@ -2456,7 +2483,7 @@ export default function Tickets() {
           body: JSON.stringify({
             branchId: targetBranch,
             preferredDate: scheduleDate || undefined,
-            rows: unmatchedToCreate.map(item => buildImportCreateRow(item, scheduleDate || undefined)),
+            rows: unmatchedToCreate.map(item => buildImportCreateRow(item, scheduleDate || undefined, importOpts)),
           }),
         })
         if (res.ok) {
@@ -2537,7 +2564,8 @@ export default function Tickets() {
     setImportResults(null)
     const failHint = failCount > 0 && importErrors.length > 0 ? ` First error: ${importErrors[0]}` : ''
     showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})${failHint}` : ''}`)
-    fetchTickets({ soft: true })
+    if (scheduleDate) handleDateFilterChange(scheduleDate)
+    fetchTickets({ soft: false })
   }
 
   useEffect(() => {

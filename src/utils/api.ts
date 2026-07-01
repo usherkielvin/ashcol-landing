@@ -124,6 +124,28 @@ export function isTaguigServicesScope(branchId?: string | null, email?: string |
   return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
 }
 
+/**
+ * Resolve active portal branch to a concrete write id (Taguig Sales vs Services).
+ * Uses sidebar scope + email/job title — not raw UUID alone.
+ */
+export function resolvePortalWriteBranchId(
+  branchId?: string | null,
+  email?: string | null,
+  jobTitle?: string | null,
+): string {
+  const raw = (branchId || '').trim()
+  if (!raw || raw === 'ALL_BRANCHES') return ''
+  if (isTaguigBranchRef(raw)) {
+    const scope = parseGlobalBranchScope(raw, email)
+    const jt = (jobTitle || '').toUpperCase()
+    if (jt.includes('SERVICE') && scope.auditLine !== 'TAGUIG_SERVICE') {
+      return 'BR-TAGUIG-SERVICES'
+    }
+    return scope.branchId
+  }
+  return resolveScopedBranchId(raw)
+}
+
 /** Signals used to classify Taguig Archives rows as Services vs Sales. */
 export type TaguigArchiveRowSignals = {
   branchId?: string | null
