@@ -13,6 +13,7 @@ import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWrite
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import TicketSectionNav from '../components/TicketSectionNav'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1557,7 +1558,9 @@ export default function DailyServiceReport() {
 
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2 w-full">
+        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
+          <TicketSectionNav />
+          <div className="flex flex-wrap items-center gap-2 w-full">
           {/* Branch Filter */}
           {isAdmin && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
@@ -1705,6 +1708,7 @@ export default function DailyServiceReport() {
                 )}
               </div>
             )}
+          </div>
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body

@@ -12,6 +12,7 @@ import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import TicketSectionNav from '../components/TicketSectionNav'
 import {
   FIELD_TICKET_CATEGORIES,
   categoryDefaultServiceType,
@@ -3450,7 +3451,9 @@ export default function Tickets() {
 
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2 w-full">
+        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
+          <TicketSectionNav />
+          <div className="flex flex-wrap items-center gap-2 w-full">
           {/* Branch display */}
           {isAdmin ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border"
@@ -3700,6 +3703,7 @@ export default function Tickets() {
               )}
             </div>
           )}
+          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}

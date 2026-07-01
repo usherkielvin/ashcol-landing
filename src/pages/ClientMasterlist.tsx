@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
-  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, Filter,
+  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import TicketSectionNav, { FilterPills } from '../components/TicketSectionNav'
 
 interface Ticket {
   id: string
@@ -481,6 +482,7 @@ export default function ClientMasterlist() {
     modeOfPayment: '',
     controlNumber: '',
     ticketNumber: '',
+    assignedTo: '',
     landmarks: '',
     brand: '',
     capacity: '',
@@ -494,6 +496,79 @@ export default function ClientMasterlist() {
     finalDate: ''
   })
   const [formSubmitting, setFormSubmitting] = useState(false)
+  const [inlineSavingId, setInlineSavingId] = useState<string | null>(null)
+  const [inlineFinalDates, setInlineFinalDates] = useState<Record<string, string>>({})
+  const [employees, setEmployees] = useState<any[]>([])
+
+  const negotiators = useMemo(() => {
+    return employees.filter(e => {
+      const roleLower = (e.role || '').toLowerCase()
+      if (roleLower === 'customer') return false
+      const jtUpper = (e.jobTitle || '').toUpperCase()
+      return !['TECHNICIAN', 'DRIVER', 'HELPER'].includes(jtUpper)
+    })
+  }, [employees])
+
+  const installers = useMemo(() => {
+    return employees.filter(e => (e.jobTitle || '').toUpperCase() === 'TECHNICIAN')
+  }, [employees])
+
+  const drivers = useMemo(() => {
+    return employees.filter(e => (e.jobTitle || '').toUpperCase() === 'DRIVER')
+  }, [employees])
+
+  const handleSaveFinalDateInline = async (ticket: Ticket) => {
+    const newFinalDate = inlineFinalDates[ticket.id]
+    if (newFinalDate === undefined) return
+
+    setInlineSavingId(ticket.id)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const parsedDetails = parseAcDetails(ticket)
+      const newDetailsObj = {
+        ...parsedDetails,
+        finalDate: newFinalDate
+      }
+
+      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          acDetails: JSON.stringify(newDetailsObj)
+        })
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.message || `Status ${res.status}`)
+      }
+
+      setTickets(prev => prev.map(t => {
+        if (t.id === ticket.id) {
+          return {
+            ...t,
+            acDetails: JSON.stringify(newDetailsObj)
+          }
+        }
+        return t
+      }))
+
+      setInlineFinalDates(prev => {
+        const copy = { ...prev }
+        delete copy[ticket.id]
+        return copy
+      })
+
+      alert('Final schedule updated successfully.')
+    } catch (e: any) {
+      alert(`Failed to update final schedule: ${e.message}`)
+    } finally {
+      setInlineSavingId(null)
+    }
+  }
 
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
@@ -553,7 +628,14 @@ export default function ClientMasterlist() {
   }, [])
 
   const columns = useMemo(() => {
-    const rawCols = [
+    const rawCols = activeTab === 'MY_TICKETS' ? [
+      { label: 'TICKET NO',     weight: 8,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'CUSTOMER NAME',  weight: 16, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'ADDRESS / DISTRICT', weight: 24, expMul: 1.6,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'PREFERRED DATE', weight: 12, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',     weight: 16, expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'ACTIONS',        weight: 10, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+    ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CATEGORY',     weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
@@ -578,7 +660,7 @@ export default function ClientMasterlist() {
       w: `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`,
       left: col.sticky ? 0 : undefined,
     }))
-  }, [expandedCols])
+  }, [expandedCols, activeTab])
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
@@ -647,6 +729,15 @@ export default function ClientMasterlist() {
       if (branchRes.ok) {
         const payload = await branchRes.json()
         setBranches(payload?.data || payload || [])
+      }
+
+      // Fetch Employees
+      const empRes = await fetch(`${API_BASE_URL}/user/all`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (empRes.ok) {
+        const payload = await empRes.json()
+        setEmployees(payload?.data || payload || [])
       }
 
     } catch (e) {
@@ -739,6 +830,8 @@ export default function ClientMasterlist() {
           installationCharges: parsed.installationCharges || 0,
           modeOfPayment: parsed.modeOfPayment || '',
           controlNumber: parsed.controlNumber || '',
+          ticketNumber: '',
+          assignedTo: '',
           landmarks: parsed.landmarks || '',
           brand: brandVal,
           capacity: capacityVal,
@@ -983,6 +1076,7 @@ export default function ClientMasterlist() {
           district: addForm.district || undefined,
           commitType: addForm.commitType || undefined,
           installerName: addForm.installerName || undefined,
+          assignedTo: addForm.assignedTo || undefined,
           serviceVehicle: addForm.serviceVehicle || undefined,
           remarksUpdate: addForm.remarksUpdate || undefined,
           installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
@@ -992,7 +1086,7 @@ export default function ClientMasterlist() {
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
-          branchId: ((addForm.status !== 'PENDING' || isCollectionTicket) && addForm.status !== 'CANCELLED') ? (addForm.branchId || undefined) : undefined
+          branchId: addForm.branchId || undefined
         })
       })
 
@@ -1021,6 +1115,7 @@ export default function ClientMasterlist() {
         modeOfPayment: '',
         controlNumber: '',
         ticketNumber: '',
+        assignedTo: '',
         landmarks: '',
         brand: '',
         capacity: '',
@@ -1049,21 +1144,16 @@ export default function ClientMasterlist() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const payload: Record<string, any> = {}
       const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
+      const finalStatus = (assignTechId && updateStatus === 'PENDING') ? 'ASSIGNED' : updateStatus
 
-      if ((updateStatus === 'PENDING' && !keepPendingAssignment) || updateStatus === 'CANCELLED') {
+      if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
         payload.branchId = ""
         payload.assignedTo = ""
-        payload.status = updateStatus
+        payload.status = finalStatus
       } else {
-        if (assignBranchId) {
-          payload.branchId = assignBranchId
-        }
-        if (assignTechId !== (selectedTicket.assignedTo || '')) {
-          payload.assignedTo = assignTechId || ""
-        }
-        if (updateStatus && updateStatus !== selectedTicket.status) {
-          payload.status = updateStatus
-        }
+        payload.branchId = assignBranchId || ""
+        payload.assignedTo = assignTechId || ""
+        payload.status = finalStatus
       }
       
       // Update spreadsheet fields
@@ -1234,6 +1324,35 @@ export default function ClientMasterlist() {
 
 
   // Filtered lists
+  const relayTabCounts = useMemo(() => {
+    let allPending = 0
+    let unassigned = 0
+    let assigned = 0
+    let mine = 0
+    for (const t of tickets) {
+      if (storeFilter !== 'ALL') {
+        const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+        if (!vendorLower.includes(storeFilter.toLowerCase())) continue
+      }
+      if (branchFilter !== 'ALL') {
+        const resolved = resolveBranch(t.branchId)
+        if (!resolved || resolved.id !== branchFilter) continue
+      }
+      const statusLabel = getRelayStatusLabel(t)
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') continue
+      allPending++
+      if (statusLabel === 'Pending') unassigned++
+      else assigned++
+      if (t.assignedTo === user?.id) mine++
+    }
+    return {
+      ALL_PENDING: allPending,
+      UNASSIGNED: unassigned,
+      PENDING: assigned,
+      MY_TICKETS: mine,
+    }
+  }, [tickets, storeFilter, branchFilter, user?.id])
+
   const filtered = tickets.filter(t => {
     // Tab filtering
     const statusLabel = getRelayStatusLabel(t)
@@ -1513,8 +1632,10 @@ export default function ClientMasterlist() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 py-2">
+        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
+          <TicketSectionNav />
 
+          <div className="flex flex-wrap items-center gap-2">
           {/* Branch Filter */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
             style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
@@ -1544,20 +1665,17 @@ export default function ClientMasterlist() {
             <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <select value={activeTab} onChange={e => setActiveTab(e.target.value as typeof activeTab)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-              <option value="ALL_PENDING">Pending</option>
-              <option value="UNASSIGNED">Unassigned</option>
-              <option value="PENDING">Assigned</option>
-              <option value="MY_TICKETS">My Tickets</option>
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-          </div>
+          {/* Relay view tabs */}
+          <FilterPills
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { id: 'ALL_PENDING' as const, label: 'All pending', count: relayTabCounts.ALL_PENDING },
+              { id: 'UNASSIGNED' as const, label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
+              { id: 'PENDING' as const, label: 'Assigned', count: relayTabCounts.PENDING },
+              { id: 'MY_TICKETS' as const, label: 'My tickets', count: relayTabCounts.MY_TICKETS, icon: <User className="w-3 h-3" /> },
+            ]}
+          />
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1601,6 +1719,7 @@ export default function ClientMasterlist() {
               </button>
             </div>
           )}
+          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -1714,7 +1833,51 @@ export default function ClientMasterlist() {
                   const ticketNo = getTicketNumber(ticket)
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
-                  const cells: Array<{ value: React.ReactNode; right?: boolean }> = [
+                  const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
+                    { value: (
+                      <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
+                        {displayUpper(ticketNo)}
+                      </span>
+                    ) },
+                    { value: (
+                      <span className="truncate block font-semibold w-full text-center" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
+                        {displayUpper(ticket.customerName || 'Direct Client')}
+                      </span>
+                    ) },
+                    { value: (
+                      <span className="break-words block w-full text-center text-xs" title={displayUpper(ticket.location || '')}>
+                        {displayUpper(ticket.location || '')} {ticket.district ? `(${displayUpper(ticket.district)})` : ''}
+                      </span>
+                    ) },
+                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    { value: (
+                      <input
+                        type="date"
+                        value={inlineFinalDates[ticket.id] !== undefined ? inlineFinalDates[ticket.id] : (details.finalDate || '')}
+                        onChange={e => setInlineFinalDates(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                        onClick={e => e.stopPropagation()}
+                        className="px-2 py-1 rounded text-xs border w-full text-center"
+                        style={{
+                          backgroundColor: cardBg,
+                          borderColor: inputBorder,
+                          color: textPrimary
+                        }}
+                      />
+                    ) },
+                    { value: (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleSaveFinalDateInline(ticket)
+                        }}
+                        disabled={inlineSavingId === ticket.id || inlineFinalDates[ticket.id] === undefined || inlineFinalDates[ticket.id] === (details.finalDate || '')}
+                        className="px-3 py-1 rounded text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {inlineSavingId === ticket.id ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : 'SAVE'}
+                      </button>
+                    ) }
+                  ] : [
                     { value: (
                       <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
                         {displayUpper(ticketNo)}
@@ -1805,12 +1968,10 @@ export default function ClientMasterlist() {
           {/* Counters */}
           <div className="flex flex-wrap items-center gap-5">
             {[
-              { label: 'Unassigned', count: tickets.filter(t => getRelayStatusLabel(t) === 'Pending').length },
-              { label: 'Assigned',   count: tickets.filter(t => getRelayStatusLabel(t) === 'Assigned').length },
-              { label: 'Total',      count: tickets.filter(t => {
-                  const label = getRelayStatusLabel(t)
-                  return label === 'Pending' || label === 'Assigned'
-                }).length },
+              { label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
+              { label: 'Assigned', count: relayTabCounts.PENDING },
+              { label: 'My tickets', count: relayTabCounts.MY_TICKETS },
+              { label: 'Total', count: relayTabCounts.ALL_PENDING },
             ].map((stat, idx, arr) => (
               <span key={stat.label} className="flex items-center gap-1.5 text-xs" style={{ color: textMuted }}>
                 {stat.label}
@@ -1859,16 +2020,6 @@ export default function ClientMasterlist() {
           borderColor: inputBorder,
           color: textPrimary
         };
-
-        const activeCategory = /collect/i.test(`${editServiceType} ${ticket.title}`)
-          ? 'Collection'
-          : /install|s\/i|\bsi\b/i.test(`${editServiceType} ${ticket.title}`)
-          ? 'Survey & Install'
-          : /survey/i.test(`${editServiceType} ${ticket.title}`)
-          ? 'Survey'
-          : /service|clean/i.test(`${editServiceType} ${ticket.title}`)
-          ? 'Service'
-          : 'Survey & Install';
 
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
@@ -2073,16 +2224,34 @@ export default function ClientMasterlist() {
                         <option value="SCHEDULED">Scheduled</option>
                       </select>
                     </EField>
-                    {(updateStatus !== 'PENDING' || activeCategory === 'Collection') && updateStatus !== 'CANCELLED' && (
-                      <EField label="Branch Zone">
-                        <select value={assignBranchId}
-                          onChange={e => setAssignBranchId(e.target.value)}
-                          className={compactInput} style={inputStyle}>
-                          <option value="">Select Branch...</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
-                      </EField>
-                    )}
+                    <EField label="Branch Zone">
+                      <select value={assignBranchId}
+                        onChange={e => setAssignBranchId(e.target.value)}
+                        className={compactInput} style={inputStyle}>
+                        <option value="">Select Branch...</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </EField>
+                    <EField label="Negotiator">
+                      <select value={assignTechId}
+                        onChange={e => {
+                          const val = e.target.value
+                          const foundEmp = negotiators.find(emp => emp.id === val)
+                          setAssignTechId(val)
+                          setEditInstallerName(foundEmp ? foundEmp.name : '')
+                          if (val && updateStatus === 'PENDING') {
+                            setUpdateStatus('ASSIGNED')
+                          }
+                        }}
+                        className={compactInput} style={inputStyle}>
+                        <option value="">Select Negotiator...</option>
+                        {negotiators
+                          .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
+                          .map(emp => (
+                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                          ))}
+                      </select>
+                    </EField>
                     <EField label="Relayed Date">
                       <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
@@ -2091,11 +2260,37 @@ export default function ClientMasterlist() {
                       <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
                     </EField>
-                    {assignBranchId && (updateStatus !== 'PENDING' || activeCategory === 'Collection') && updateStatus !== 'CANCELLED' && (
-                      <EField label="Final Date Assigned by Branch" className="md:col-span-2">
-                        <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                          className={compactInput} style={inputStyle} />
-                      </EField>
+                    {assignBranchId && (
+                      <>
+                        <EField label="Final Date Assigned by Branch">
+                          <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                            className={compactInput} style={inputStyle} />
+                        </EField>
+                        <EField label="Installer / Technician">
+                          <select value={editInstallerName}
+                            onChange={e => setEditInstallerName(e.target.value)}
+                            className={compactInput} style={inputStyle}>
+                            <option value="">Select Technician...</option>
+                            {installers
+                              .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
+                              .map(emp => (
+                                <option key={emp.id} value={emp.name}>{emp.name}</option>
+                              ))}
+                          </select>
+                        </EField>
+                        <EField label="Driver / Vehicle">
+                          <select value={editServiceVehicle}
+                            onChange={e => setEditServiceVehicle(e.target.value)}
+                            className={compactInput} style={inputStyle}>
+                            <option value="">Select Driver...</option>
+                            {drivers
+                              .filter(emp => !assignBranchId || emp.branchId === assignBranchId)
+                              .map(emp => (
+                                <option key={emp.id} value={emp.name}>{emp.name}</option>
+                              ))}
+                          </select>
+                        </EField>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2149,7 +2344,6 @@ export default function ClientMasterlist() {
           : /service|clean/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Service'
           : 'Survey & Install'
-        const canAssignBranch = addForm.status !== 'CANCELLED' && (addForm.status !== 'PENDING' || addCategory === 'Collection')
         const fieldStyle = (value?: string) => ({
           backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
@@ -2301,31 +2495,58 @@ export default function ClientMasterlist() {
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator</label>
-                        <input
-                          type="text"
-                          value={addForm.installerName}
-                          onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
-                          placeholder="Assigned staff"
-                          className={compactInput}
-                          style={fieldStyle(addForm.installerName)}
-                        />
-                      </div>
-                    </div>
-
-                    {(addForm.sourceVendor === 'Robinsons' || addForm.sourceVendor === 'Abenson') && (
-                      <div>
                         <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store Branch</label>
                         <input
                           type="text"
+                          disabled={addForm.sourceVendor === 'Direct'}
                           value={addForm.storeBranch}
                           onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : 'e.g. Silang'}
+                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : addForm.sourceVendor === 'Abenson' ? 'e.g. Silang' : '—'}
                           className={compactInput}
                           style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
                         />
                       </div>
-                    )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone</label>
+                        <select
+                          value={addForm.branchId}
+                          onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
+                          className={compactInput}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        >
+                          <option value="">Select Branch...</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator</label>
+                        <select
+                          value={addForm.assignedTo || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            const foundEmp = negotiators.find(emp => emp.id === val)
+                            setAddForm(prev => ({
+                              ...prev,
+                              assignedTo: val,
+                              installerName: foundEmp ? foundEmp.name : '',
+                              status: val ? 'ASSIGNED' : prev.status
+                            }))
+                          }}
+                          className={compactInput}
+                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                        >
+                          <option value="">Select Negotiator...</option>
+                          {negotiators
+                            .filter(emp => !addForm.branchId || emp.branchId === addForm.branchId)
+                            .map(emp => (
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
 
                     <div>
                       <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Status</label>
@@ -2347,21 +2568,6 @@ export default function ClientMasterlist() {
                         <option value="CANCELLED">Cancelled</option>
                       </select>
                     </div>
-
-                    {canAssignBranch && (
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Assigned</label>
-                        <select
-                          value={addForm.branchId}
-                          onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value }))}
-                          className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                        >
-                          <option value="">Select Branch...</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
-                      </div>
-                    )}
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -2986,7 +3192,7 @@ export default function ClientMasterlist() {
               {/* Footer */}
               <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0"
                 style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                {isAdmin && (
+                {(isAdmin || (t.assignedTo && t.assignedTo === user?.id)) && (
                   <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
                     Edit
@@ -3019,7 +3225,7 @@ export default function ClientMasterlist() {
                     onClick={() => { setSelectedPreviewTicket(contextMenu.ticket); setIsViewModalOpen(true); setContextMenu(null) }}>
               <Eye className="w-3.5 h-3.5 text-blue-500" /> View details
             </button>
-            {isAdmin && (
+            {(isAdmin || (contextMenu.ticket.assignedTo && contextMenu.ticket.assignedTo === user?.id)) && (
               <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-[#10B981]/10"
                       style={{ color: textPrimary }}
                       onClick={() => { openDrawer(contextMenu.ticket); setContextMenu(null) }}>

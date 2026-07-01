@@ -803,7 +803,7 @@ export default function DashboardLayout() {
         <main className={
           currentPage === 'Overview'
             ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
-            : (currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives')
+            : (currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
@@ -816,7 +816,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             <Outlet />
           </div>
         </main>

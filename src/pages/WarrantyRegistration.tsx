@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ReactDOM from 'react-dom'
 import { Navigate } from 'react-router-dom'
-import { ShieldCheck, Search, Loader2, CheckCircle2, Clock, RefreshCw } from 'lucide-react'
+import { ShieldCheck, Search, Loader2, CheckCircle2, Clock, RefreshCw, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { isPortalAdmin } from '../utils/api'
+import { formatPersonName, isPortalAdmin } from '../utils/api'
+import TicketSectionNav, { FilterPills } from '../components/TicketSectionNav'
 import {
   fetchWarrantyRegistrations,
   markWarrantyRegistered,
@@ -34,20 +36,33 @@ export default function WarrantyRegistration() {
 
   const [tab, setTab] = useState<'pending' | 'registered'>('pending')
   const [rows, setRows] = useState<WarrantyTicket[]>([])
+  const [counts, setCounts] = useState({ pending: 0, registered: 0 })
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const token = () =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ type, message })
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500)
+  }
 
   const loadRows = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const list = await fetchWarrantyRegistrations(token(), tab)
-      setRows(list)
+      const [pendingList, registeredList] = await Promise.all([
+        fetchWarrantyRegistrations(token(), 'pending'),
+        fetchWarrantyRegistrations(token(), 'registered'),
+      ])
+      setCounts({ pending: pendingList.length, registered: registeredList.length })
+      setRows(tab === 'pending' ? pendingList : registeredList)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not load warranty registrations')
       setRows([])
@@ -81,9 +96,10 @@ export default function WarrantyRegistration() {
     setSavingId(ticket.id)
     try {
       await markWarrantyRegistered(token(), ticket.id)
+      showToast('success', `${formatPersonName(ticket.customerName || ticket.parentCustomerName || 'Customer')} marked as registered`)
       await loadRows()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Could not mark as registered')
+      showToast('error', err instanceof Error ? err.message : 'Could not mark as registered')
     } finally {
       setSavingId(null)
     }
@@ -95,70 +111,61 @@ export default function WarrantyRegistration() {
 
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b shrink-0"
-           style={{ backgroundColor: cardBg, borderColor: border }}>
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5" style={{ color: green }} />
-          <div>
-            <h1 className="text-sm font-bold" style={{ color: textPrimary }}>Warranty Registration</h1>
-            <p className="text-[11px]" style={{ color: textMuted }}>Pending and registered warranty tickets from installed jobs</p>
+      {ReactDOM.createPortal(
+        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
+          <TicketSectionNav />
+          <div className="flex flex-wrap items-center gap-2 w-full">
+            <FilterPills
+              value={tab}
+              onChange={setTab}
+              items={[
+                { id: 'pending' as const, label: 'Pending', count: counts.pending, icon: <Clock className="w-3 h-3" /> },
+                { id: 'registered' as const, label: 'Registered', count: counts.registered, icon: <CheckCircle2 className="w-3 h-3" /> },
+              ]}
+            />
+
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
+                 style={{ backgroundColor: inputBg, borderColor: border }}>
+              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search customer, SI, schedule #…"
+                className="flex-1 bg-transparent text-xs outline-none"
+                style={{ color: textPrimary }}
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery('')} className="shrink-0" style={{ color: textMuted }}>
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void loadRows()}
+              disabled={loading}
+              className="p-2 rounded-lg border shrink-0 disabled:opacity-50"
+              style={{ borderColor: border, color: textMuted }}
+              title="Refresh"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
-        </div>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
 
-        <div className="flex items-center gap-1 ml-auto">
-          <button
-            type="button"
-            onClick={() => setTab('pending')}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors"
-            style={{
-              backgroundColor: tab === 'pending' ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)') : inputBg,
-              borderColor: tab === 'pending' ? green : border,
-              color: tab === 'pending' ? green : textMuted,
-            }}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> Pending
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('registered')}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors"
-            style={{
-              backgroundColor: tab === 'registered' ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)') : inputBg,
-              borderColor: tab === 'registered' ? green : border,
-              color: tab === 'registered' ? green : textMuted,
-            }}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Registered
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void loadRows()}
-            className="p-2 rounded-lg border"
-            style={{ borderColor: border, color: textMuted }}
-            title="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+      {toast && (
+        <div className="mx-3 mt-2 px-3 py-2 rounded-lg border text-xs font-semibold shrink-0"
+             style={{
+               backgroundColor: toast.type === 'success' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+               borderColor: toast.type === 'success' ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)',
+               color: toast.type === 'success' ? green : '#EF4444',
+             }}>
+          {toast.message}
         </div>
-      </div>
-
-      <div className="px-4 py-2 border-b shrink-0" style={{ backgroundColor: cardBg, borderColor: border }}>
-        <div className="flex items-center gap-2 max-w-md px-3 py-1.5 rounded-lg border"
-             style={{ backgroundColor: inputBg, borderColor: border }}>
-          <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search customer, SI, schedule #…"
-            className="flex-1 bg-transparent text-xs outline-none"
-            style={{ color: textPrimary }}
-          />
-        </div>
-      </div>
+      )}
 
       {error && (
         <div className="px-4 py-2 text-xs font-semibold shrink-0" style={{ color: '#b45309' }}>
@@ -185,7 +192,7 @@ export default function WarrantyRegistration() {
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: theadBg }}>
               <tr>
-                {['Customer', 'SI / Control', 'Brand', 'Installed', 'From schedule', 'Status', ''].map((h) => (
+                {['Customer', 'SI / Control', 'Brand', 'Installed', 'From schedule', 'Installer', 'Status', ''].map((h) => (
                   <th key={h || 'actions'}
                       className="px-3 py-2.5 text-left font-bold uppercase tracking-wide"
                       style={{ borderBottom: `2px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted, fontSize: '10px' }}>
@@ -199,7 +206,7 @@ export default function WarrantyRegistration() {
                 <tr key={row.id}
                     style={{ backgroundColor: idx % 2 === 0 ? cardBg : (isLight ? '#f4f6f8' : '#0d1626') }}>
                   <td className="px-3 py-2.5 font-semibold" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textPrimary }}>
-                    {row.customerName || row.parentCustomerName || '—'}
+                    {formatPersonName(row.customerName || row.parentCustomerName || '—')}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textPrimary }}>
                     {row.controlNumber || row.parentControlNumber || '—'}
@@ -212,6 +219,9 @@ export default function WarrantyRegistration() {
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
                     {row.parentTicketNumber || row.parentTicketId?.slice(0, 8) || '—'}
+                  </td>
+                  <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, color: textMuted }}>
+                    {formatPersonName(row.installerName || '—')}
                   </td>
                   <td className="px-3 py-2.5" style={{ borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}` }}>
                     <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
