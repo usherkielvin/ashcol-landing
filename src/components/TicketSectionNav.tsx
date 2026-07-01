@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Radio, CalendarDays, Archive, ShieldCheck } from 'lucide-react'
+import { Radio, CalendarDays, Archive, User } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { isPortalAdmin } from '../utils/api'
@@ -14,10 +14,10 @@ type Section = {
 }
 
 const SECTIONS: Section[] = [
-  { label: 'Relays', path: '/relays', icon: Radio, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+  { label: 'Relays', path: '/relays', icon: Radio, roles: ['admin', 'management', 'manager'] },
+  { label: 'My tickets', path: '/my-tickets', icon: User, roles: ['manager', 'staff', 'employee', 'oic'] },
   { label: 'Schedules', path: '/schedules', icon: CalendarDays },
   { label: 'Archives', path: '/service-report', icon: Archive, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-  { label: 'Registration', path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
 ]
 
 function pathMatches(sectionPath: string, current: string) {

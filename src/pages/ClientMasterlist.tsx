@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom'
+import { useLocation } from 'react-router-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
@@ -371,6 +372,8 @@ export default function ClientMasterlist() {
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
+  const location = useLocation()
+  const isMyTicketsOnly = location.pathname === '/my-tickets'
 
   // Colors
   const cardBg = isLight ? '#ffffff' : '#0A1120'
@@ -436,8 +439,10 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>('ALL_PENDING')
-  const [ticketScope] = useState<'ALL' | 'MY' | 'BRANCH'>('ALL')
+  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>(
+    () => (location.pathname === '/my-tickets' ? 'MY_TICKETS' : 'ALL_PENDING')
+  )
+  const ticketScope: 'ALL' | 'MY' = !isAdmin ? 'MY' : 'ALL'
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
@@ -692,6 +697,10 @@ export default function ClientMasterlist() {
   }, [])
 
   useEffect(() => {
+    if (isMyTicketsOnly) {
+      setActiveTab('MY_TICKETS')
+      return
+    }
     if (user) {
       const roleLower = (user.role || '').toLowerCase()
       const isPriv = roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator'
@@ -699,18 +708,14 @@ export default function ClientMasterlist() {
         setActiveTab('MY_TICKETS')
       }
     }
-  }, [user])
+  }, [user, isMyTicketsOnly])
 
   // Load Initial Data
   const fetchData = async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const endpoint = ticketScope === 'MY'
-        ? '/tickets/assigned'
-        : ticketScope === 'BRANCH'
-          ? '/tickets/branch'
-          : '/tickets'
+      const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
       
       // Fetch Tickets
       const ticketRes = await fetch(`${API_BASE_URL}${endpoint}?page=0&size=100`, {
@@ -1353,13 +1358,29 @@ export default function ClientMasterlist() {
     }
   }, [tickets, storeFilter, branchFilter, user?.id])
 
+  const relayPillItems = useMemo(() => {
+    const myTicketsPill = {
+      id: 'MY_TICKETS' as const,
+      label: 'My tickets',
+      count: relayTabCounts.MY_TICKETS,
+      icon: <User className="w-3 h-3" />,
+    }
+    if (isMyTicketsOnly || !isAdmin) return [myTicketsPill]
+    return [
+      { id: 'ALL_PENDING' as const, label: 'All pending', count: relayTabCounts.ALL_PENDING },
+      { id: 'UNASSIGNED' as const, label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
+      { id: 'PENDING' as const, label: 'Assigned', count: relayTabCounts.PENDING },
+      myTicketsPill,
+    ]
+  }, [isMyTicketsOnly, isAdmin, relayTabCounts])
+
   const filtered = tickets.filter(t => {
     // Tab filtering
     const statusLabel = getRelayStatusLabel(t)
     
     if (activeTab === 'MY_TICKETS') {
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
-      if (t.assignedTo !== user?.id) return false
+      if (!isAdmin && t.assignedTo !== user?.id) return false
     } else {
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
 
@@ -1666,16 +1687,13 @@ export default function ClientMasterlist() {
           </div>
 
           {/* Relay view tabs */}
-          <FilterPills
-            value={activeTab}
-            onChange={setActiveTab}
-            items={[
-              { id: 'ALL_PENDING' as const, label: 'All pending', count: relayTabCounts.ALL_PENDING },
-              { id: 'UNASSIGNED' as const, label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
-              { id: 'PENDING' as const, label: 'Assigned', count: relayTabCounts.PENDING },
-              { id: 'MY_TICKETS' as const, label: 'My tickets', count: relayTabCounts.MY_TICKETS, icon: <User className="w-3 h-3" /> },
-            ]}
-          />
+          {!isMyTicketsOnly && (
+            <FilterPills
+              value={activeTab}
+              onChange={setActiveTab}
+              items={relayPillItems}
+            />
+          )}
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -1697,7 +1715,7 @@ export default function ClientMasterlist() {
           <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
 
           {/* Action buttons wrapper with right alignment */}
-          {isAdmin && (
+          {isAdmin && !isMyTicketsOnly && (
             <div className="flex items-center gap-2 ml-auto shrink-0">
               <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"

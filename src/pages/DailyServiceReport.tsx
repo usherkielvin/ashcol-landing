@@ -1914,7 +1914,7 @@ export default function DailyServiceReport() {
                 <Edit3 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Edit row
               </button>
             )}
-            {isAdmin && (
+            {isAdmin && contextMenu.row.statusCode?.toUpperCase() === 'I' && (
               <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors disabled:opacity-50"
                 style={{ color: textPrimary }}
                 disabled={creatingWarrantyFor === contextMenu.row.id}

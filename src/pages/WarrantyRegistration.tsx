@@ -5,7 +5,7 @@ import { ShieldCheck, Search, Loader2, CheckCircle2, Clock, RefreshCw, X } from 
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { formatPersonName, isPortalAdmin } from '../utils/api'
-import TicketSectionNav, { FilterPills } from '../components/TicketSectionNav'
+import { FilterPills } from '../components/TicketSectionNav'
 import {
   fetchWarrantyRegistrations,
   markWarrantyRegistered,
@@ -113,7 +113,6 @@ export default function WarrantyRegistration() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full">
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <TicketSectionNav />
           <div className="flex flex-wrap items-center gap-2 w-full">
             <FilterPills
               value={tab}

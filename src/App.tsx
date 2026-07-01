@@ -85,6 +85,7 @@ export default function App() {
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Tickets />} />
           <Route path="/relays" element={<ClientMasterlist />} />
+          <Route path="/my-tickets" element={<ClientMasterlist />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />

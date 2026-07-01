@@ -7,12 +7,13 @@ import {
   Menu, LogOut, X, Sun, Moon,
   ChevronRight, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList,
-  Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
+  User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
   MdOutlineLocalActivity,
+  MdOutlineAssignmentInd,
   MdOutlineCalendarMonth,
   MdOutlineArchive,
   MdOutlinePeopleAlt,
@@ -71,6 +72,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdOutlineConfirmationNumber,
       subItems: [
         { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
+        { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
         { name: 'Registration', icon: <ShieldCheck size={16} />, path: findPath('Registration') },
@@ -283,7 +285,8 @@ export default function DashboardLayout() {
   const allLinks = [
     // { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
-    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
@@ -302,8 +305,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
-  const serviceWorkspaceLinks = ['Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const salesWorkspaceLinks = ['My Tickets', 'Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const serviceWorkspaceLinks = ['My Tickets', 'Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -344,7 +347,8 @@ export default function DashboardLayout() {
   const hoverBg     = isLight ? '#f1f5f9'              : '#0f1e36'
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
-  const currentPage = navLinks.find(l => location.pathname === l.path)?.name ?? 'Dashboard'
+  const currentPage = navLinks.find(l => location.pathname === l.path)?.name
+    ?? (location.pathname === '/my-tickets' ? 'My Tickets' : 'Dashboard')
   const navGroups = buildNavGroups(navLinks)
   const collapsedNavItems = buildCollapsedNavItems(navLinks)
 
@@ -803,7 +807,7 @@ export default function DashboardLayout() {
         <main className={
           currentPage === 'Overview'
             ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
-            : (currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
+            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
@@ -816,7 +820,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             <Outlet />
           </div>
         </main>
