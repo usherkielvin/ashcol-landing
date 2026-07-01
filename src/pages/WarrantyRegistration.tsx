@@ -7,11 +7,13 @@ import { useAuth } from '../contexts/AuthContext'
 import { formatPersonName, isPortalAdmin } from '../utils/api'
 import { FilterPills } from '../components/TicketSectionNav'
 import {
+  getInitialWarrantyFromStorage,
   markWarrantyRegistered,
   patchWarrantyCache,
   readWarrantyCache,
   refreshWarrantyRegistrations,
   resolveWarrantyBranchId,
+  warrantyCacheIsFresh,
   type WarrantyListsCache,
   type WarrantyTicket,
 } from '../utils/warrantyRegistration'
@@ -46,10 +48,12 @@ export default function WarrantyRegistration() {
   const theadBg = isLight ? '#e8edf3' : '#060C18'
   const green = '#16A34A'
 
+  const initialWarranty = getInitialWarrantyFromStorage()
+
   const [tab, setTab] = useState<'pending' | 'registered'>('pending')
-  const [pendingRows, setPendingRows] = useState<WarrantyTicket[]>([])
-  const [registeredRows, setRegisteredRows] = useState<WarrantyTicket[]>([])
-  const [loading, setLoading] = useState(true)
+  const [pendingRows, setPendingRows] = useState<WarrantyTicket[]>(() => initialWarranty.pending)
+  const [registeredRows, setRegisteredRows] = useState<WarrantyTicket[]>(() => initialWarranty.registered)
+  const [loading, setLoading] = useState(() => !initialWarranty.hasCache)
   const [refreshing, setRefreshing] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -57,7 +61,7 @@ export default function WarrantyRegistration() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchSeqRef = useRef(0)
-  const hasLoadedOnceRef = useRef(false)
+  const hasLoadedOnceRef = useRef(initialWarranty.hasCache)
 
   const token = () =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -94,12 +98,22 @@ export default function WarrantyRegistration() {
   const refreshFromServer = useCallback(async (options?: { forceSync?: boolean; soft?: boolean }) => {
     const branchId = resolveWarrantyBranchId(user)
     const seq = ++fetchSeqRef.current
-    const hasCache = !!readWarrantyCache(branchId)
-    // Only show full skeleton on truly cold first visit with no cache at all
-    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+    const cached = readWarrantyCache(branchId)
+    const hasCache = Boolean(cached && (cached.pending.length > 0 || cached.registered.length > 0))
+    const cacheIsFresh = warrantyCacheIsFresh(branchId)
 
+    if (hasCache) {
+      applyCache(cached!)
+      setLoading(false)
+      hasLoadedOnceRef.current = true
+    }
+
+    if (cacheIsFresh && !options?.forceSync) {
+      return
+    }
+
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
     if (showSkeleton) setLoading(true)
-    else if (!hasCache) setRefreshing(true)
     else setRefreshing(true)
     setError(null)
 

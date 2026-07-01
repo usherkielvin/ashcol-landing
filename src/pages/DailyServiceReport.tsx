@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
-import { archivesCacheKey, readTabCache, writeTabCache, type ArchivesTabCache } from '../utils/ticketTabCache'
+import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -247,20 +247,20 @@ export default function DailyServiceReport() {
   const canDelete = isAdmin || isManager
   const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const [rows, setRows] = useState<ServiceRow[]>([])
+  const initialArchives = (() => {
+    const branch = storedArchivesBranchId()
+    const month = currentArchivesMonthKey()
+    return getInitialArchivesFromCache(branch, month)
+  })()
+
+  const [rows, setRows] = useState<ServiceRow[]>(() => initialArchives.rows as ServiceRow[])
   const [branches, setBranches] = useState<BranchOption[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !initialArchives.hasCache)
   const [refreshing, setRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [monthFilter, setMonthFilter] = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
+  const [monthFilter, setMonthFilter] = useState(() => currentArchivesMonthKey())
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
-  const [branchFilter, setBranchFilter] = useState<string>(() => {
-    const stored = localStorage.getItem('ashcol-global-branch-id')
-    return stored && stored !== 'ALL_BRANCHES' ? stored : ''
-  })
+  const [branchFilter, setBranchFilter] = useState<string>(() => storedArchivesBranchId())
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
@@ -271,7 +271,7 @@ export default function DailyServiceReport() {
   const driverOnlyRef = useRef<string[]>([])
   const syncedTicketIdsRef = useRef<Set<string>>(new Set())
   const fetchSeqRef = useRef(0)
-  const hasLoadedOnceRef = useRef(false)
+  const hasLoadedOnceRef = useRef(initialArchives.hasCache)
   const archivesLoadKeyRef = useRef('')
   const lineupResyncedRef = useRef(false)
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
@@ -683,7 +683,7 @@ export default function DailyServiceReport() {
   }, [])
 
   const applyArchivesScope = useCallback((branchId: string, month: string) => {
-    const cached = readTabCache<ArchivesTabCache>(archivesCacheKey(branchId, month))
+    const cached = readArchivesCache(branchId, month)
     if (Array.isArray(cached?.rows) && cached.rows.length > 0) {
       setRows(cached.rows as ServiceRow[])
       setLoading(false)
@@ -695,13 +695,14 @@ export default function DailyServiceReport() {
 
   const handleMonthFilterChange = useCallback((month: string) => {
     setMonthFilter(month)
-    // fetchRows will be triggered by the useEffect watching monthFilter
-  }, [])
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
+    if (effectiveBranch) applyArchivesScope(effectiveBranch, month)
+  }, [branchFilter, branches, archivesUser, applyArchivesScope])
 
   const handleBranchFilterChange = useCallback((branch: string) => {
     setBranchFilter(branch)
-    // fetchRows will be triggered by the useEffect watching branchFilter
-  }, [])
+    applyArchivesScope(branch, monthFilter)
+  }, [monthFilter, applyArchivesScope])
 
   useLayoutEffect(() => {
     if (branches.length === 0) return
@@ -713,7 +714,7 @@ export default function DailyServiceReport() {
     applyArchivesScope(effectiveBranch, monthFilter)
   }, [monthFilter, branchFilter, branches, archivesUser, applyArchivesScope])
 
-  const fetchRows = useCallback(async (options?: { sync?: boolean; soft?: boolean }) => {
+  const fetchRows = useCallback(async (options?: { sync?: boolean; soft?: boolean; forceSync?: boolean }) => {
     if (branches.length === 0) {
       if (!hasLoadedOnceRef.current) setLoading(true)
       return
@@ -728,19 +729,17 @@ export default function DailyServiceReport() {
       return
     }
 
-    const cacheKey = archivesCacheKey(effectiveBranch, monthFilter)
-    const cached = readTabCache<ArchivesTabCache>(cacheKey)
+    const cached = readArchivesCache(effectiveBranch, monthFilter)
     const hasCache = Array.isArray(cached?.rows) && cached.rows.length > 0
+    const cacheIsFresh = archivesCacheIsFresh(effectiveBranch, monthFilter)
 
-    const CACHE_TTL_MS = 3 * 60 * 1000 // 3 minutes
     const seq = ++fetchSeqRef.current
-    const cacheAge = cached?.lastSyncAt ? Date.now() - (cached.lastSyncAt as number) : Infinity
-    const cacheIsFresh = hasCache && cacheAge < CACHE_TTL_MS
 
-    // Cache-first: if cache is fresh and not a forced sync, show cached data immediately
-    if (cacheIsFresh && options?.soft) {
+    // Fresh cache + soft visit: show instantly, skip network unless forced
+    if (cacheIsFresh && options?.soft && !options?.forceSync) {
       setRows(cached!.rows as ServiceRow[])
       setLoading(false)
+      setRefreshing(false)
       hasLoadedOnceRef.current = true
       return
     }
@@ -798,7 +797,7 @@ export default function DailyServiceReport() {
         }
         return merged
       })
-      writeTabCache(cacheKey, { rows: merged })
+      writeArchivesCache(effectiveBranch, monthFilter, merged)
       hasLoadedOnceRef.current = true
     } catch (e) {
       console.error(e)
@@ -844,7 +843,7 @@ export default function DailyServiceReport() {
     const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
     const loadKey = `${monthFilter}|${effectiveBranch}`
     const cacheKey = effectiveBranch ? archivesCacheKey(effectiveBranch, monthFilter) : ''
-    const cached = cacheKey ? readTabCache<ArchivesTabCache>(cacheKey) : null
+    const cached = cacheKey ? readArchivesCache(effectiveBranch!, monthFilter) : null
     const hasCache = Array.isArray(cached?.rows) && cached.rows.length > 0
 
     if (archivesLoadKeyRef.current !== loadKey) {
@@ -875,7 +874,7 @@ export default function DailyServiceReport() {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         syncedTicketIdsRef.current = new Set()
-        void fetchRows({ sync: true, soft: true })
+        void fetchRows({ sync: true, soft: true, forceSync: true })
       }, 400)
     }
     window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)

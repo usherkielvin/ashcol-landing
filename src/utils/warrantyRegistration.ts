@@ -1,5 +1,7 @@
 import { API_BASE_URL, getActivePortalBranchId, readApiError } from './api'
-import { readTabCache, warrantyCacheKey, writeTabCache } from './ticketTabCache'
+import { readTabCache, TAB_CACHE_TTL_MS, warrantyCacheIsFresh, warrantyCacheKey, writeTabCache } from './ticketTabCache'
+
+export { warrantyCacheIsFresh } from './ticketTabCache'
 
 export type WarrantyTicket = {
   id: string
@@ -39,7 +41,7 @@ export type WarrantyListsCache = {
 export const WARRANTY_CACHE_UPDATED = 'ashcol-warranty-cache-updated'
 
 /** Throttle server sync — every 3 min */
-const SYNC_INTERVAL_MS = 3 * 60 * 1000
+export const SYNC_INTERVAL_MS = TAB_CACHE_TTL_MS
 
 /** Statuses treated as "installed / done" for warranty — INSTALLED == COMPLETED */
 const INSTALLED_STATUSES = new Set(['INSTALLED', 'COMPLETED'])
@@ -60,6 +62,19 @@ export function resolveWarrantyBranchId(user?: { role?: string | null; branchId?
 
 export function readWarrantyCache(branchId?: string): WarrantyListsCache | null {
   return readTabCache<WarrantyListsCache>(warrantyCacheKeyForBranch(branchId))
+}
+
+export function getInitialWarrantyFromStorage(): {
+  pending: WarrantyTicket[]
+  registered: WarrantyTicket[]
+  hasCache: boolean
+} {
+  const g = typeof localStorage !== 'undefined' ? localStorage.getItem('ashcol-global-branch-id') : null
+  const branchId = g && g !== 'ALL_BRANCHES' ? g : undefined
+  const cached = readWarrantyCache(branchId)
+  if (!cached) return { pending: [], registered: [], hasCache: false }
+  const hasCache = cached.pending.length > 0 || cached.registered.length > 0
+  return { pending: cached.pending, registered: cached.registered, hasCache }
 }
 
 export function writeWarrantyCache(branchId: string | undefined, data: WarrantyListsCache): void {
@@ -131,15 +146,15 @@ export async function refreshWarrantyRegistrations(
   options?: { forceSync?: boolean; skipSync?: boolean },
 ): Promise<WarrantyListsCache> {
   const cached = readWarrantyCache(branchId)
-  const now = Date.now()
-  const cacheAge = cached?.lastSyncAt ? now - cached.lastSyncAt : Infinity
-  const cacheIsFresh = cacheAge < SYNC_INTERVAL_MS
+  const cacheIsFresh = warrantyCacheIsFresh(branchId)
 
   // If cache is fresh and not forced, return immediately — no API call
   if (cached && cacheIsFresh && !options?.forceSync) {
     return cached
   }
 
+  const now = Date.now()
+  const cacheAge = cached?.lastSyncAt ? now - cached.lastSyncAt : Infinity
   const syncStale = !cached?.lastSyncAt || cacheAge > SYNC_INTERVAL_MS
   const shouldSync = !options?.skipSync && (options?.forceSync || syncStale)
 

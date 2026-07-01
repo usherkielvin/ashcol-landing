@@ -1,7 +1,8 @@
 import { getActivePortalBranchId } from './api'
-import { readLocalCache, writeLocalCache } from './localDataCache'
+import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
+export const TAB_CACHE_TTL_MS = 3 * 60 * 1000
 
 const VERSION = 1
 
@@ -17,6 +18,17 @@ export function branchCachePart(user?: PortalUserLike, globalBranchId?: string |
 
 export function readTabCache<T>(key: string): T | null {
   return readLocalCache<T>(key)
+}
+
+export function readTabCacheEntry<T>(key: string): { data: T; savedAt: number } | null {
+  const env = readLocalCacheEnvelope<T>(key)
+  if (!env) return null
+  return { data: env.data, savedAt: env.at }
+}
+
+export function isTabCacheFresh(savedAt: number | undefined, ttlMs = TAB_CACHE_TTL_MS): boolean {
+  if (!savedAt) return false
+  return Date.now() - savedAt < ttlMs
 }
 
 export function writeTabCache<T>(key: string, data: T): void {
@@ -64,6 +76,46 @@ export function archivesCacheKey(branchId: string, monthFilter: string): string 
   return `archives:v${VERSION}:${branchId || 'none'}:${monthFilter?.trim() || 'all'}`
 }
 
+export function readArchivesCache(branchId: string, monthFilter: string): ArchivesTabCache | null {
+  return readTabCache<ArchivesTabCache>(archivesCacheKey(branchId, monthFilter))
+}
+
+export function writeArchivesCache(branchId: string, monthFilter: string, rows: unknown[]): void {
+  writeTabCache(archivesCacheKey(branchId, monthFilter), {
+    rows,
+    lastSyncAt: Date.now(),
+  })
+}
+
+export function archivesCacheIsFresh(branchId: string, monthFilter: string): boolean {
+  const entry = readTabCacheEntry<ArchivesTabCache>(archivesCacheKey(branchId, monthFilter))
+  if (!entry) return false
+  const at = entry.data.lastSyncAt ?? entry.savedAt
+  return isTabCacheFresh(at)
+}
+
+export function getInitialArchivesFromCache(
+  branchId: string,
+  monthFilter: string,
+): { rows: unknown[]; hasCache: boolean } {
+  if (!branchId || branchId === 'ALL_BRANCHES') {
+    return { rows: [], hasCache: false }
+  }
+  const cached = readArchivesCache(branchId, monthFilter)
+  const rows = Array.isArray(cached?.rows) ? cached.rows : []
+  return { rows, hasCache: rows.length > 0 }
+}
+
+export function currentArchivesMonthKey(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+export function storedArchivesBranchId(): string {
+  const stored = localStorage.getItem('ashcol-global-branch-id')
+  return stored && stored !== 'ALL_BRANCHES' ? stored : ''
+}
+
 export type WarrantyTabCache = {
   pending: unknown[]
   registered: unknown[]
@@ -72,4 +124,15 @@ export type WarrantyTabCache = {
 
 export function warrantyCacheKey(branchId?: string): string {
   return `warranty-reg:v${VERSION}:${branchId || 'all'}`
+}
+
+export function readWarrantyTabCache(branchId?: string): WarrantyTabCache | null {
+  return readTabCache<WarrantyTabCache>(warrantyCacheKey(branchId))
+}
+
+export function warrantyCacheIsFresh(branchId?: string): boolean {
+  const entry = readTabCacheEntry<WarrantyTabCache>(warrantyCacheKey(branchId))
+  if (!entry) return false
+  const at = entry.data.lastSyncAt ?? entry.savedAt
+  return isTabCacheFresh(at)
 }

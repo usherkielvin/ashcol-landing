@@ -923,6 +923,7 @@ export default function ClientMasterlist() {
           contactPhone: contactPhoneVal,
           locationRaw: locationVal,
           sourceVendor: parsedStore.store,
+          otherStoreName: parsedStore.customStore || '',
           storeBranch: parsedStore.branch,
           unitType: parsed.unitType || (brandVal && capacityVal ? `${brandVal} ${capacityVal}` : 'Split AC'),
           preferredDate: preferredDateFormatted,
