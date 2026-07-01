@@ -250,6 +250,7 @@ export default function DailyServiceReport() {
   const [rows, setRows] = useState<ServiceRow[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
@@ -752,6 +753,7 @@ export default function DailyServiceReport() {
       if (!showSkeleton) setLoading(false)
     }
     if (showSkeleton) setLoading(true)
+    else setRefreshing(true)
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -803,6 +805,7 @@ export default function DailyServiceReport() {
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
+        setRefreshing(false)
       }
     }
   }, [monthFilter, branchFilter, branches, archivesUser, canEdit, mergeArchiveRows])

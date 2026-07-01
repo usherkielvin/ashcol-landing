@@ -83,9 +83,9 @@ interface ParsedVoucher {
   finalDate?: string
 }
 
-type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct'
+type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
 
-const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string } => {
+const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string; customStore?: string } => {
   const sv = (sourceVendor || '').trim()
   const lower = sv.toLowerCase()
   if (lower.includes('robinsons')) {
@@ -96,11 +96,24 @@ const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch
     const branch = sv.replace(/^abenson(\s+b2b)?\s*/i, '').trim()
     return { store: 'Abenson', branch }
   }
-  return { store: 'Direct', branch: '' }
+  if (lower === 'direct' || !sv) {
+    return { store: 'Direct', branch: '' }
+  }
+  // It's a custom store! Try to split by ' - ' to separate store name and branch name
+  const parts = sv.split(' - ')
+  const customStore = parts[0]?.trim() || ''
+  const branch = parts.slice(1).join(' - ').trim()
+  return { store: 'Other', branch, customStore }
 }
 
-const combineStoreVendor = (store: StoreCategory, branch: string): string => {
+const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: string): string => {
   if (store === 'Direct') return 'Direct'
+  if (store === 'Other') {
+    const s = (customStore || '').trim()
+    const b = branch.trim()
+    if (!s) return 'Other'
+    return b ? `${s} - ${b}` : s
+  }
   const b = branch.trim()
   if (!b) return store
   if (b.toLowerCase().startsWith(store.toLowerCase())) return b
@@ -490,6 +503,7 @@ export default function ClientMasterlist() {
     contactPhone: '',
     locationRaw: '',
     sourceVendor: 'Robinsons',
+    otherStoreName: '',
     storeBranch: '',
     unitType: 'Split AC',
     preferredDate: '',
@@ -619,6 +633,7 @@ export default function ClientMasterlist() {
 
   const [editStoreCategory, setEditStoreCategory] = useState<StoreCategory>('Direct')
   const [editStoreBranch, setEditStoreBranch] = useState('')
+  const [editOtherStoreName, setEditOtherStoreName] = useState('')
   const [editUnitType, setEditUnitType] = useState('')
   const [editServiceType, setEditServiceType] = useState('')
   const [editCustomerName, setEditCustomerName] = useState('')
@@ -1719,6 +1734,7 @@ export default function ClientMasterlist() {
     const label = getRelayStatusLabel(ticket)
     if (label === 'Pending') return 'PENDING'
     if (label === 'Cancelled') return 'CANCELLED'
+    if (label === 'Scheduled') return 'SCHEDULED'
     return 'ASSIGNED'
   }
 
@@ -1999,7 +2015,7 @@ export default function ClientMasterlist() {
                     // STATUS
                     { value: (
                       <span className="font-semibold w-full truncate block text-center" style={{
-                        color: relayStatus === 'ASSIGNED' || relayStatus === 'SCHEDULED' ? '#10B981' : '#F59E0B'
+                        color: statusIsAssigned || relayStatus === 'SCHEDULED' ? '#10B981' : '#F59E0B'
                       }}>
                         {relayStatus}
                       </span>
