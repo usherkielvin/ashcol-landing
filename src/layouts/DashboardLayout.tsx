@@ -283,7 +283,7 @@ export default function DashboardLayout() {
   const allLinks = [
     // { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
-    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
+    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
