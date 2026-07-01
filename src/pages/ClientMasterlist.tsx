@@ -387,6 +387,7 @@ export default function ClientMasterlist() {
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
+  const canEdit = !!user && role !== 'customer'
   const location = useLocation()
   const isMyTicketsOnly = location.pathname === '/my-tickets'
 
@@ -1145,7 +1146,8 @@ export default function ClientMasterlist() {
   // Submit parsed/manual ticket
   const handleFormCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!addForm.assignedTo) {
+    const isAssignedOrScheduled = addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED'
+    if (isAssignedOrScheduled && !addForm.assignedTo) {
       alert('Negotiator is required')
       return
     }
@@ -1260,7 +1262,11 @@ export default function ClientMasterlist() {
   // Save changes in action drawer
   const handleDrawerActionSave = async () => {
     if (!selectedTicket) return
-    if (!assignTechId) {
+    const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
+    const finalStatus = (assignTechId && updateStatus === 'PENDING') ? 'ASSIGNED' : updateStatus
+
+    const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
+    if (isAssignedOrScheduled && !assignTechId) {
       alert('Negotiator is required')
       return
     }
@@ -1268,8 +1274,6 @@ export default function ClientMasterlist() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const payload: Record<string, any> = {}
-      const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
-      const finalStatus = (assignTechId && updateStatus === 'PENDING') ? 'ASSIGNED' : updateStatus
 
       if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
         payload.branchId = ""
@@ -3451,7 +3455,7 @@ export default function ClientMasterlist() {
               {/* Footer */}
               <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0"
                 style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                {(isAdmin || (t.assignedTo && t.assignedTo === user?.id)) && (
+                {canEdit && (
                   <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
                     Edit
@@ -3484,7 +3488,7 @@ export default function ClientMasterlist() {
                     onClick={() => { setSelectedPreviewTicket(contextMenu.ticket); setIsViewModalOpen(true); setContextMenu(null) }}>
               <Eye className="w-3.5 h-3.5 text-blue-500" /> View details
             </button>
-            {(isAdmin || (contextMenu.ticket.assignedTo && contextMenu.ticket.assignedTo === user?.id)) && (
+            {canEdit && (
               <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-[#10B981]/10"
                       style={{ color: textPrimary }}
                       onClick={() => { openDrawer(contextMenu.ticket); setContextMenu(null) }}>

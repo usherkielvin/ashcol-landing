@@ -330,9 +330,6 @@ export function isNegotiatorCandidate(user: {
 }): boolean {
   const roleLower = (user.role || '').toLowerCase()
   if (roleLower === 'customer') return false
-  if (roleLower === 'admin' || roleLower === 'administrator') return false
-  const jtUpper = (user.jobTitle || '').toUpperCase()
-  if (['TECHNICIAN', 'DRIVER', 'HELPER'].includes(jtUpper)) return false
   return true
 }
 
