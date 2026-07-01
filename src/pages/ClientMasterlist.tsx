@@ -1859,8 +1859,7 @@ export default function ClientMasterlist() {
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2">
           {/* Branch Filter */}
-          {!isMyTicketsOnly && (
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
               style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
               <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: isAdmin ? '#10B981' : textMuted }} />
               <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
