@@ -3,13 +3,13 @@ import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, MapPin,
-  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp,
+  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
-import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from '../utils/ticketTabCache'
+import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -659,6 +659,20 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
+  const [monthFilter, setMonthFilter] = useState<string>('all')
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    return Array.from(seen).sort().reverse()
+  }, [])
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
   const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>(() => {
     const roleLower = (localStorage.getItem('ashcol-role') || sessionStorage.getItem('ashcol-role') || '').toLowerCase()
     const isPriv = roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator'
@@ -1646,6 +1660,9 @@ export default function ClientMasterlist() {
         throw new Error(errMsg)
       }
 
+      clearRelaysCache()
+      clearWarrantyCache()
+
       setIsActionDrawerOpen(false)
       setLastUpdatedTicketId(selectedTicket.id)
       setSelectedTicket(null)
@@ -1815,6 +1832,14 @@ export default function ClientMasterlist() {
     let mine = 0
     const activeBranch = branchFilter
     for (const t of tickets) {
+      const status = (t.status || '').toUpperCase()
+      if (status === 'COMPLETED' || status === 'CANCELLED') continue
+
+      if (monthFilter !== 'all') {
+        const ticketMonth = (t.createdAt || '').slice(0, 7)
+        if (ticketMonth !== monthFilter) continue
+      }
+
       if (storeFilter !== 'ALL') {
         const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
         if (!vendorLower.includes(storeFilter.toLowerCase())) continue
@@ -1844,11 +1869,20 @@ export default function ClientMasterlist() {
       PENDING: assigned,
       MY_TICKETS: mine,
     }
-  }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin])
+  }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin, monthFilter])
 
   // relayPillItems removed
 
   const filtered = tickets.filter(t => {
+    const status = (t.status || '').toUpperCase()
+    if (status === 'COMPLETED' || status === 'CANCELLED') return false
+
+    // Month filter
+    if (monthFilter !== 'all') {
+      const ticketMonth = (t.createdAt || '').slice(0, 7)
+      if (ticketMonth !== monthFilter) return false
+    }
+
     // Tab filtering
     const statusLabel = getRelayStatusLabel(t)
     
@@ -2282,6 +2316,26 @@ export default function ClientMasterlist() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Month Filter */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold shadow-sm shrink-0"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            <CalendarDays className="w-4 h-4 shrink-0 text-amber-500" />
+            <select
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
+              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+            >
+              <option value="all" style={{ backgroundColor: cardBg, color: textPrimary }}>All Months</option>
+              {monthOptions.map(ym => (
+                <option key={ym} value={ym} style={{ backgroundColor: cardBg, color: textPrimary }}>
+                  {monthLabel(ym)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none opacity-60" style={{ color: textMuted }} />
           </div>
 
           {/* Search */}
@@ -3035,7 +3089,6 @@ export default function ClientMasterlist() {
                           const val = e.target.value
                           const foundEmp = negotiators.find(emp => emp.id === val)
                           setAssignTechId(val)
-                          setEditInstallerName(foundEmp ? foundEmp.name : '')
                           if (foundEmp && foundEmp.branchId) {
                             setAssignBranchId(foundEmp.branchId)
                           }
@@ -3046,8 +3099,10 @@ export default function ClientMasterlist() {
                         className={compactInput} style={inputStyle}>
                         <option value="">Select Negotiator...</option>
                         {negotiatorsForBranch(assignBranchId || undefined).map(emp => {
+                          const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                          const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
                           return (
-                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
                           )
                         })}
                       </select>
@@ -3489,9 +3544,13 @@ export default function ClientMasterlist() {
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       >
                         <option value="">Select negotiator...</option>
-                        {addModalNegotiators.map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.name}</option>
-                        ))}
+                        {addModalNegotiators.map(emp => {
+                          const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                          const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                          return (
+                            <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                          )
+                        })}
                       </select>
                     </RelayFormField>
                     <RelayFormField label="Control No. / SI" compact className="md:col-span-4">

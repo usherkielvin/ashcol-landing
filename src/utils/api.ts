@@ -291,6 +291,9 @@ export function resolveArchivesBranchFilter(
   branchList: Array<{ id: string; name?: string }>,
   user?: { role?: string | null; branchId?: string | null } | null,
 ): string {
+  const isAdmin = user && (String(user.role).toUpperCase() === 'ADMIN' || String(user.role).toUpperCase() === 'MANAGEMENT')
+  if (raw === 'ALL_BRANCHES' && isAdmin) return 'ALL_BRANCHES'
+
   const realBranches = branchList.filter((b) => b.id && b.id !== 'ALL_BRANCHES')
   if (realBranches.length === 0) return ''
 

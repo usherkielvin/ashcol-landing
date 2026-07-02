@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
-import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache } from '../utils/ticketTabCache'
+import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
@@ -1215,9 +1215,6 @@ function buildArchiveServiceReportPayload(
     fields.controlNumber ??
     ticket.controlNumber ??
     ticket.control_number ??
-    fields.ticketNumber ??
-    ticket.ticketNumber ??
-    ticket.ticket_number ??
     ''
   const unitSerial =
     fields.unitSerial ??
@@ -2276,6 +2273,9 @@ export default function Tickets() {
         throw new Error(await readApiError(res))
       }
 
+      clearRelaysCache()
+      clearWarrantyCache()
+
       if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
         const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
         const branchId = resolveTicketArchiveBranch(
@@ -2698,6 +2698,8 @@ export default function Tickets() {
     const failHint = failCount > 0 && importErrors.length > 0 ? ` First error: ${importErrors[0]}` : ''
     showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})${failHint}` : ''}`)
     if (scheduleDate) handleDateFilterChange(scheduleDate)
+    clearRelaysCache()
+    clearWarrantyCache()
     fetchTickets({ soft: false })
   }
 
@@ -3125,6 +3127,8 @@ export default function Tickets() {
         body: JSON.stringify(finalBody),
       })
       if (!res.ok) throw new Error(await readApiError(res))
+      clearRelaysCache()
+      clearWarrantyCache()
       const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
         || (
           colLabel === 'UPDATE'
@@ -5053,9 +5057,13 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
-                      {branchEmployees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
+                      {branchEmployees.map(emp => {
+                        const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
+                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                        return (
+                          <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                        )
+                      })}
                     </select>
                   </Field>
                   <Field label="Ticket No.">
@@ -5269,9 +5277,13 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
-                      {branchEmployees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
+                      {branchEmployees.map(emp => {
+                        const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
+                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                        return (
+                          <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                        )
+                      })}
                     </select>
                   </Field>
                   <Field label="Ticket No.">

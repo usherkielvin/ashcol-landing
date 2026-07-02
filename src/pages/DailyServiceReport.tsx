@@ -23,6 +23,7 @@ interface ServiceRow {
   branchId: string | null
   ticketId?: string | null
   ticketBranchId?: string | null
+  ticketNumber?: string | null
   installerLineupBranchId?: string | null
   branchName: string | null
   reportDate: string | null
@@ -75,6 +76,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
   'COMPLAIN/REQUEST':     'complainRequest',
   'DLR':                  'dealer',
   'INSTALLER':            'technicianName',
+  'NEGOTIATOR':           'negotiator',
   'NOTE':                 'note',
   'SERVICE':              'serviceColumn',
   'UPDATE':               'remarks',
@@ -84,7 +86,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 
 const EDITABLE_COLS = [
   'DATE INSTALLED', "CUSTOMER'S NAME", 'REF NO.', 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
-  'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NOTE', 'SERVICE', 'UPDATE',
+  'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NEGOTIATOR', 'NOTE', 'SERVICE', 'UPDATE',
   'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
 
@@ -549,11 +551,13 @@ export default function DailyServiceReport() {
       { label: 'DATE INSTALLED',        display: 'DATE INSTALLED',                                                  weight: 10, expMul: 1.3, sticky: true,  freeze: false, align: 'left' },
       { label: "CUSTOMER'S NAME",       display: "CUSTOMER NAME",                                                   weight: 18, expMul: 1.5, sticky: true,  freeze: false, align: 'left' },
       { label: 'DISTRICT',              display: "DISTRICT",                                                        weight: 12, expMul: 1.4, sticky: true,  freeze: true,  align: 'center' },
+      { label: 'TICKET NO.',            display: "TICKET NO.",                                                      weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'REF NO.',               display: "REF NO.",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'BRAND',                 display: "BRAND",                                                           weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' },
       ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' }] : []),
       { label: 'DLR',                   display: "DEALER",                                                          weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'INSTALLER',             display: "INSTALLER",                                                       weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
+      { label: 'NEGOTIATOR',            display: "NEGOTIATOR",                                                      weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'UPDATE',                display: "REMARKS",                                                         weight: 15, expMul: 1.5, sticky: false, freeze: false, align: 'center' },
       { label: 'INSTALLATION CHARGES',  display: "CHARGES",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'right' },
     ]
@@ -974,6 +978,7 @@ export default function DailyServiceReport() {
     switch (colLabel) {
       case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
+      case 'TICKET NO.':      return row.ticketNumber || ''
       case 'REF NO.':         return row.controlNumber || ''
       case 'DESTINATION':     return row.customerAddress || ''
       case 'DISTRICT':        return row.district || ''
@@ -982,6 +987,7 @@ export default function DailyServiceReport() {
       case 'COMPLAIN/REQUEST': return row.complainRequest || ''
       case 'DLR':             return row.dealer || ''
       case 'INSTALLER':       return row.technicianName || ''
+      case 'NEGOTIATOR':      return row.negotiator || ''
       case 'NOTE':            return row.note || ''
       case 'SERVICE':         return row.serviceColumn || ''
       case 'UPDATE':          return row.remarks || ''
@@ -1257,7 +1263,7 @@ export default function DailyServiceReport() {
         <input
           ref={el => { inputRef.current = el }}
           type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
-          list={label === 'INSTALLER' ? 'installer-options' : undefined}
+          list={label === 'INSTALLER' ? 'installer-options' : label === 'NEGOTIATOR' ? 'negotiator-options' : undefined}
           value={cellValue}
           onChange={e => setCellValue(e.target.value)}
           onBlur={() => saveCell(r.id, label, cellValue)}
@@ -1342,6 +1348,14 @@ export default function DailyServiceReport() {
     }
 
     if (label === 'INSTALLER') {
+      return (
+        <span style={{ ...truncStyle, ...editHint }} title={val}>
+          <EmployeeNameLink nameOrId={val} />
+        </span>
+      )
+    }
+
+    if (label === 'NEGOTIATOR') {
       return (
         <span style={{ ...truncStyle, ...editHint }} title={val}>
           <EmployeeNameLink nameOrId={val} />
@@ -1645,6 +1659,9 @@ export default function DailyServiceReport() {
                 className="bg-transparent outline-none cursor-pointer font-bold pr-2"
                 style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
               >
+                {isAdmin && (
+                  <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
+                )}
                 {branches.map(b => (
                   <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{b.name}</option>
                 ))}
@@ -1952,7 +1969,7 @@ export default function DailyServiceReport() {
               <span className="text-xs" style={{ color: textMuted }}>
                 Permanently delete all service records for a specific date under{' '}
                 <strong style={{ color: textPrimary }}>
-                  {branches.find(b => b.id === branchFilter)?.name || 'this branch'}
+                  {branchFilter === 'ALL_BRANCHES' ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'this branch')}
                 </strong>. This cannot be undone.
               </span>
             </div>
@@ -2245,7 +2262,7 @@ export default function DailyServiceReport() {
                     <div className="flex items-center gap-4 text-xs font-semibold">
                       <span style={{ color: textMuted }}>Target Branch:</span>
                       <span className="font-bold" style={{ color: textPrimary }}>
-                        {branches.find(b => b.id === branchFilter)?.name || 'None'}
+                        {branchFilter === 'ALL_BRANCHES' ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'None')}
                       </span>
                       <span style={{ color: textMuted }}>Target Date:</span>
                       <input

@@ -96,7 +96,15 @@ export function patchWarrantyCache(
 export async function syncWarrantyRegistrations(
   token: string,
   branchId?: string,
-): Promise<{ archivesCreated?: number; warrantyCreated?: number; warrantySkipped?: number }> {
+): Promise<{
+  archivesCreated?: number
+  warrantyCreated?: number
+  warrantySkipped?: number
+  archivesLinked?: number
+  wtyLinked?: number
+  wtyDeduped?: number
+  parentStatusUpdated?: number
+}> {
   const params = new URLSearchParams()
   if (branchId) params.set('branchId', branchId)
   const qs = params.toString()

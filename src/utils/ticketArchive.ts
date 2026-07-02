@@ -277,7 +277,7 @@ export function buildArchivePayloadFromTicket(
     jobStatus: 'COMPLETED',
     remarks,
     note: getField(ticket, 'note'),
-    controlNumber: getField(ticket, 'controlNumber', 'control_number', 'ticketNumber', 'ticket_number') || undefined,
+    controlNumber: getField(ticket, 'controlNumber', 'control_number') || undefined,
     scheduleStatus: 'COMPLETED',
     freeInstallation: freeInstall,
   }

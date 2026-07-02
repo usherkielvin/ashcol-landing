@@ -137,3 +137,33 @@ export function warrantyCacheIsFresh(branchId?: string): boolean {
   const at = entry.data.lastSyncAt ?? entry.savedAt
   return isTabCacheFresh(at)
 }
+
+export function clearRelaysCache(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('relays:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+  } catch (e) {
+    console.warn('Error clearing relays cache:', e)
+  }
+}
+
+export function clearWarrantyCache(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('warranty-reg:') || key.startsWith('warranty:'))) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+  } catch (e) {
+    console.warn('Error clearing warranty cache:', e)
+  }
+}
