@@ -517,6 +517,7 @@ function buildReschedulePatchBody(
     if (!newDateKey) return {}
     acUpdates.reschedulePending = false
     acUpdates.rescheduledTo = newDateKey
+    acUpdates.finalDate = ''
     body.preferredDate = newDateKey
     body.status = 'RESCHED'
     if (oldDateKey && oldDateKey !== newDateKey) {
@@ -549,7 +550,8 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
       finalDate = parsed.finalDate || ''
     } catch {}
   }
-  const dateStr = finalDate || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
+  const isResched = (ticket.status || '').toUpperCase() === 'RESCHED'
+  const dateStr = (!isResched && finalDate) || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
   if (!dateStr) return false
 
   const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
@@ -748,6 +750,46 @@ function getInstallerDisplay(ticket: Ticket): string {
   return fromMeta
 }
 
+function resolveNegotiatorDisplayName(ticket: Ticket): string {
+  const direct = (
+    ticket.assignedEmployeeName
+    || ticket.assigned_employee_name
+    || (ticket as Ticket & { negotiatorName?: string }).negotiatorName
+    || ''
+  ).trim()
+  if (direct) return direct
+  const meta = parseAcMeta(ticket)
+  return String(meta.negotiatorName || meta.negotiator || '').trim()
+}
+
+function isNegotiatorInstallerName(ticket: Ticket, installer: string): boolean {
+  const val = installer.trim()
+  if (!val) return false
+  const negotiator = resolveNegotiatorDisplayName(ticket)
+  return Boolean(negotiator && val.localeCompare(negotiator, undefined, { sensitivity: 'base' }) === 0)
+}
+
+function getMyTicketsInstallerDisplay(ticket: Ticket): string {
+  const installer = getInstallerDisplay(ticket).trim()
+  if (!installer || isNegotiatorInstallerName(ticket, installer)) return ''
+  return installer
+}
+
+function formatRelayTicketTypeShort(ticket: Ticket): string {
+  const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
+  if (/collect/.test(raw)) return 'COLLECTION'
+  if (/install|s\/i|\bsi\b|survey\s*&\s*install/.test(raw)) return 'S/I'
+  if (/survey/.test(raw)) return 'SURVEY'
+  if (/service|clean/.test(raw)) return 'SERVICE'
+  const st = String(ticket.serviceType || ticket.service_type || '').trim()
+  if (st) return /install|s\/i/i.test(st) ? 'S/I' : st.toUpperCase()
+  return 'S/I'
+}
+
+function getTicketNumberDisplay(ticket: Ticket): string {
+  return String(ticket.ticketNumber || ticket.ticket_number || '').trim()
+}
+
 function applyImportFieldsFromRow(
   row: Pick<
     ImportUnmatchedRow,
@@ -833,24 +875,32 @@ function compareNameSiteStrings(a: string, b: string): number {
   return pa.site - pb.site
 }
 
-function ticketColumnText(ticket: Ticket, colLabel: string): string {
+function ticketColumnText(ticket: Ticket, colLabel: string, options?: { myTickets?: boolean }): string {
+  const myTickets = options?.myTickets ?? false
   switch (colLabel) {
+    case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
     case 'DESTINATION': return formatAddress(ticket.location)
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
     case 'STATUS': return ticket.status || ''
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
-    case 'INSTALLER': return getInstallerDisplay(ticket)
-    case 'SERVICE': return formatServiceDriver(ticket)
+    case 'FINAL DATE': return getFinalDateKey(ticket)
+    case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
     default: return ''
   }
 }
 
-function compareTicketsByColumn(a: Ticket, b: Ticket, colLabel: string): number {
-  const av = ticketColumnText(a, colLabel)
-  const bv = ticketColumnText(b, colLabel)
+function compareTicketsByColumn(
+  a: Ticket,
+  b: Ticket,
+  colLabel: string,
+  options?: { myTickets?: boolean },
+): number {
+  const av = ticketColumnText(a, colLabel, options)
+  const bv = ticketColumnText(b, colLabel, options)
   if (colLabel === 'INSTALLER' || colLabel === 'SERVICE') {
     return compareNameSiteStrings(av, bv)
   }
@@ -998,7 +1048,7 @@ function buildPatchImportBody(
   set('remarksUpdate', updatedFields.remarksUpdate ?? updatedFields.remarks)
   set('controlNumber', updatedFields.controlNumber)
   set('ticketNumber', (updatedFields as Ticket).ticketNumber)
-  set('installerName', updatedFields.installerName ?? updatedFields.assignedEmployeeName)
+  set('installerName', updatedFields.installerName)
   set('negotiatorId', (updatedFields as Ticket).negotiatorId)
   if (updatedFields.serviceVehicle) body.serviceType = updatedFields.serviceType || 'S/I'
   if (updatedFields.installationCharges != null) body.installationCharges = updatedFields.installationCharges
@@ -1223,16 +1273,18 @@ async function postArchiveServiceReport(
   notifyArchiveUpdated()
 }
 
-function getCellRawValue(ticket: Ticket, colLabel: string): string {
+function getCellRawValue(ticket: Ticket, colLabel: string, myTickets = false): string {
   switch (colLabel) {
+    case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
     case 'DESTINATION': return formatAddress(ticket.location)
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
     case 'STATUS': return getScheduleStatusValue(ticket)
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
-    case 'INSTALLER': return getInstallerDisplay(ticket)
-    case 'SERVICE': return formatServiceDriver(ticket)
+    case 'FINAL DATE': return getFinalDateKey(ticket)
+    case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
     default: return ''
   }
@@ -1955,8 +2007,10 @@ export default function Tickets() {
       commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
       unitType: ticket.unitType || ticket.unit_type || parseBrand(ticket) || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
-      serviceDriver: formatServiceDriver(ticket),
-      installerName: getInstallerDisplay(ticket) || ticket.installerName || getF(ticket, 'assignedEmployeeName', 'assigned_employee_name') || '',
+      serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
+      installerName: isMyTickets
+        ? getMyTicketsInstallerDisplay(ticket)
+        : (getInstallerDisplay(ticket) || ticket.installerName || ''),
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
@@ -2182,7 +2236,7 @@ export default function Tickets() {
           branchEmployees,
           editForm.negotiatorId,
         ) || undefined,
-        finalDate: finalDateKey,
+        finalDate: isReschedStatus ? '' : finalDateKey,
       })
 
       const shouldComplete = Boolean(
@@ -2696,7 +2750,7 @@ export default function Tickets() {
 
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
-    const raw = [
+    const scheduleCols = [
       { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
       { label: 'DESTINATION',     display: 'DISTRICT',                                    weight: 12, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
@@ -2708,11 +2762,24 @@ export default function Tickets() {
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT',         display: "PAYMENT",                                   weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
-    const base = isMyTickets ? raw.filter(c => c.label !== 'PAYMENT') : raw
-    const weights = base.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
+    const myTicketsCols = [
+      { label: 'TICKET NO',       display: 'TICKET NO',                                 weight: 9,  expMul: 1.2,  sticky: true,  freeze: false, align: 'center' as const },
+      { label: "CUSTOMER'S NAME", display: 'CUSTOMER',                                  weight: 14, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
+      { label: 'DESTINATION',     display: 'DISTRICT',                                  weight: 11, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'BRAND',           display: 'BRAND',                                     weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR',             display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT',          display: 'COMMIT',                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'FINAL DATE',      display: 'FINAL DATE',                                weight: 10, expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'SERVICE',         display: 'TYPE',                                      weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS',          display: 'STATUS',                                    weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE',          display: 'REMARKS',                                   weight: 13, expMul: 1.5,  sticky: false, freeze: false, align: 'right' as const },
+    ]
+    const raw = isMyTickets ? myTicketsCols : scheduleCols
+    const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
     const totalWeight = weights.reduce((s, w) => s + w, 0)
     let left = 0
-    return base.map((c, idx) => {
+    return raw.map((c, idx) => {
       const isExpanded = !!expandedCols[c.label]
       const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
       const l = c.sticky ? left : 0
@@ -2890,10 +2957,11 @@ export default function Tickets() {
     let list = filtered
     if (sortConfig) {
       list = [...list].sort((a, b) => {
-        const cmp = compareTicketsByColumn(a, b, sortConfig.column)
+        const cmpOpts = { myTickets: isMyTickets }
+        const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
         if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
         if (sortConfig.column !== "CUSTOMER'S NAME") {
-          const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME")
+          const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME", cmpOpts)
           if (byCustomer !== 0) return byCustomer
         }
         return 0
@@ -2961,6 +3029,7 @@ export default function Tickets() {
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
+      case 'TICKET NO':       return getTicketNumberDisplay(ticket)
       case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
       case 'DESTINATION':     return resolveTicketDistrict(ticket)
       case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
@@ -2970,12 +3039,13 @@ export default function Tickets() {
       case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
       case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
       case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
+      case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
       case 'PAYMENT':         return formatCombinedPayment(ticket)
       case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-      case 'INSTALLER':       return getInstallerDisplay(ticket)
+      case 'INSTALLER':       return isMyTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
       case 'NOTE':            return ticket.note || ''
-      case 'SERVICE':         return formatServiceDriver(ticket)
+      case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
       case 'UPDATE':          return ticket.remarksUpdate || ticket.remarks || ''
       default: return ''
     }
@@ -2991,7 +3061,7 @@ export default function Tickets() {
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCell(null)
-    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel) })
+    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets) })
   }
 
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
@@ -3308,31 +3378,32 @@ export default function Tickets() {
     }
 
     if (colLabel === 'STATUS') {
+      const handleSelectStatus = (next: string) => {
+        if (next === 'RESCHED') {
+          cancelEdit()
+          openReschedDialog(ticket)
+          return
+        }
+        if (next === 'DONE_INSTALLED') {
+          cancelEdit()
+          setCompletionPrompt({
+            ticket,
+            value: 'Installed',
+            modeOfPayment: getPaymentMode(ticket) || 'CASH',
+            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+          })
+          return
+        }
+        if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+        void saveCellEdit(ticket, colLabel, next)
+      }
+
       return wrapEditingCell(
         <select
           autoFocus
           disabled={isSaving}
           value={editingCell.value}
-          onChange={e => {
-            const next = e.target.value
-            if (next === 'RESCHED') {
-              cancelEdit()
-              openReschedDialog(ticket)
-              return
-            }
-            if (next === 'DONE_INSTALLED') {
-              cancelEdit()
-              setCompletionPrompt({
-                ticket,
-                value: 'Installed',
-                modeOfPayment: getPaymentMode(ticket) || 'CASH',
-                amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-              })
-              return
-            }
-            if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-            void saveCellEdit(ticket, colLabel, next)
-          }}
+          onChange={e => handleSelectStatus(e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onKeyDown={onKeyDown}
@@ -3340,7 +3411,9 @@ export default function Tickets() {
           style={inputStyle}
         >
           {SCHEDULE_STATUS_OPTS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <option key={opt.value} value={opt.value} onClick={() => handleSelectStatus(opt.value)} style={{ color: '#111', backgroundColor: '#fff' }}>
+              {opt.label}
+            </option>
           ))}
         </select>,
         colLabel,
@@ -3423,8 +3496,8 @@ export default function Tickets() {
       : textPrimary
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
-      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
+      ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
 
     if (label === 'DESTINATION') {
       const fullAddress = formatAddress(ticket.location)
@@ -3479,6 +3552,41 @@ export default function Tickets() {
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
         </span>
+      )
+    }
+
+    if (label === 'TICKET NO') {
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={val}>
+          {val || '—'}
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
+
+    if (label === 'FINAL DATE') {
+      const hasDate = Boolean(val)
+      return withEditPencil(
+        <span
+          style={{
+            ...truncStyle,
+            fontWeight: hasDate ? 700 : 500,
+            color: hasDate ? green : textMuted,
+          }}
+          title={val}
+        >
+          {val || '—'}
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
+
+    if (label === 'SERVICE' && isMyTickets) {
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 700, letterSpacing: '0.04em' }} title={val}>
+          {val || 'S/I'}
+        </span>,
+        ticket, label, rowGhost,
       )
     }
 
@@ -3571,7 +3679,9 @@ export default function Tickets() {
     }
 
     if (label === "CUSTOMER'S NAME") {
-      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
+      const ticketNo = ticket.ticketNumber || ticket.ticket_number || ''
+      const tNoPart = ticketNo ? `[${ticketNo}] ` : ''
+      const prefix = idx !== undefined ? `${idx + 1}. ${tNoPart}` : tNoPart
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>,
         ticket, label, rowGhost,
@@ -3579,10 +3689,14 @@ export default function Tickets() {
     }
 
     if (label === 'INSTALLER') {
-      const curToken = parseNameSiteToken(val)
-      const prevInstaller = idx != null && idx > 0 ? getInstallerDisplay(visible[idx - 1]) : ''
+      const curInstaller = isMyTickets ? getMyTicketsInstallerDisplay(ticket) : val
+      const prevInstaller = idx != null && idx > 0
+        ? (isMyTickets ? getMyTicketsInstallerDisplay(visible[idx - 1]) : getInstallerDisplay(visible[idx - 1]))
+        : ''
+      const curToken = parseNameSiteToken(curInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
+      const displayInstaller = isMyTickets ? curInstaller : val
       return withEditPencil(
         <span
           style={{
@@ -3592,9 +3706,9 @@ export default function Tickets() {
             paddingTop: isNewInstallerGroup ? 8 : 0,
             marginTop: isNewInstallerGroup ? 4 : 0,
           }}
-          title={val}
+          title={displayInstaller}
         >
-          {val}
+          {displayInstaller || '—'}
         </span>,
         ticket, label, rowGhost,
       )
@@ -4034,20 +4148,6 @@ export default function Tickets() {
                                 e.stopPropagation()
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
-                                  const currentStatus = getScheduleStatusValue(ticket)
-                                  if (currentStatus === 'RESCHED') {
-                                    openReschedDialog(ticket)
-                                    return
-                                  }
-                                  if (currentStatus === 'DONE_INSTALLED') {
-                                    setCompletionPrompt({
-                                      ticket,
-                                      value: 'Installed',
-                                      modeOfPayment: getPaymentMode(ticket) || 'CASH',
-                                      amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-                                    })
-                                    return
-                                  }
                                   startCellEdit(ticket, 'STATUS')
                                   return
                                 }

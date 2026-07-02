@@ -52,6 +52,15 @@ interface Ticket {
   warrantyRegistrationCompleted?: boolean
   warrantyRegistrationCompletedAt?: string
   warrantyRegistrationCompletedBy?: string
+  warrantyDocsStatus?: string
+  assignedAt?: string
+  negotiatorId?: string
+  negotiator_id?: string
+  negotiatorName?: string
+  storeReferralFee?: number | string
+  store_referral_fee?: number | string
+  promodiserCommission?: number | string
+  promodiser_commission?: number | string
 }
 
 interface ParsedVoucher {
@@ -342,13 +351,111 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
 
 
 const parseAcDetails = (ticket: Ticket) => {
-  const fallback = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
+  const fallback = {
+    landmarks: '',
+    brand: '',
+    capacity: '',
+    sku: '',
+    serialNumber: '',
+    alternatePhone: '',
+    relayedDate: '',
+    finalDate: '',
+    promodiserName: '',
+    referralFeeRecipient: '',
+    referralFeeAmount: '',
+    referralFeeStatus: '',
+    referralFeeDatePaid: '',
+    referralFeeReferenceNo: '',
+    forRebatesClaim: 'YES',
+    rebatesCompany: '',
+    rebatesAmountDue: '',
+    rebatesStatus: '',
+    rebatesReferenceNo: '',
+    warrantyRegistrationStatus: '',
+    warrantyRegisteredBy: '',
+  }
   if (!ticket.acDetails) return fallback
   try {
     return { ...fallback, ...JSON.parse(ticket.acDetails) }
   } catch (e) {
     return fallback
   }
+}
+
+const resolveRelayActorName = (raw: string | undefined, employees: Array<Record<string, unknown>>) => {
+  const value = (raw || '').trim()
+  if (!value) return 'System'
+  const match = employees.find(e =>
+    String(e.id || '') === value
+    || String(e.email || '').toLowerCase() === value.toLowerCase()
+    || String(e.name || '').toLowerCase() === value.toLowerCase(),
+  )
+  return match?.name ? String(match.name) : value
+}
+
+const buildRelayHistoryTimeline = (
+  ticket: Ticket,
+  history: any[],
+  employees: Array<Record<string, unknown>>,
+  formatBranchLabel: (branchId?: string) => string,
+) => {
+  const list = [...history]
+  const branchLabel = formatBranchLabel(ticket.branchId)
+  const negotiatorName = (
+    ticket.negotiatorName
+    || ticket.assignedEmployeeName
+    || resolveRelayActorName(ticket.assignedTo || ticket.negotiatorId || ticket.negotiator_id, employees)
+    || ''
+  ).trim()
+
+  const hasSubmission = list.some(h => {
+    const note = String(h.changeNote || '').toLowerCase()
+    return note.includes('submitted') || note.includes('created') || (!h.previousStatus && h.newStatus === 'PENDING')
+  })
+
+  if (!hasSubmission && ticket.createdAt) {
+    list.push({
+      id: 'initial-sub',
+      changeNote: 'Ticket submitted',
+      changedByUserName: resolveRelayActorName(ticket.createdBy || ticket.customerEmail, employees),
+      createdAt: ticket.createdAt,
+      newPreferredDate: ticket.preferredDate,
+    })
+  }
+
+  const hasBranchAssignment = list.some(h => {
+    const note = String(h.changeNote || '').toLowerCase()
+    return note.includes('assigned to') || (h.newAssignedToName && h.newStatus === 'ASSIGNED')
+  })
+
+  if (!hasBranchAssignment && branchLabel && branchLabel !== '—' && (ticket.assignedTo || ticket.negotiatorId || ticket.negotiator_id)) {
+    list.push({
+      id: 'branch-assignment',
+      changeNote: `Assigned to ${branchLabel}${negotiatorName ? ` — ${negotiatorName}` : ''}`,
+      changedByUserName: negotiatorName || resolveRelayActorName(ticket.createdBy, employees),
+      createdAt: ticket.assignedAt || ticket.updatedAt || ticket.createdAt,
+      newStatus: 'ASSIGNED',
+      newAssignedToName: negotiatorName || undefined,
+    })
+  }
+
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+const resolveNegotiatorUserId = (ticket: Pick<Ticket, 'negotiatorId' | 'negotiator_id' | 'assignedTo'>) =>
+  String(ticket.negotiatorId || ticket.negotiator_id || ticket.assignedTo || '').trim()
+
+const resolveEmployeePhone = (employees: Array<Record<string, unknown>>, userId?: string) => {
+  if (!userId) return ''
+  const emp = employees.find(e => String(e.id || '') === userId)
+  return String(emp?.phone || '').trim()
+}
+
+const formatMoney = (val?: string | number | null) => {
+  if (val == null || val === '') return '—'
+  const n = Number(val)
+  if (Number.isNaN(n)) return String(val)
+  return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 const getRelayStatusLabel = (ticket: Ticket) => {
@@ -734,6 +841,20 @@ export default function ClientMasterlist() {
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
   const [editFinalDate, setEditFinalDate] = useState('')
+  const [editStoreReferralFee, setEditStoreReferralFee] = useState('')
+  const [editPromodiserName, setEditPromodiserName] = useState('')
+  const [editReferralRecipient, setEditReferralRecipient] = useState('')
+  const [editReferralAmount, setEditReferralAmount] = useState('')
+  const [editReferralStatus, setEditReferralStatus] = useState('')
+  const [editReferralDatePaid, setEditReferralDatePaid] = useState('')
+  const [editReferralReferenceNo, setEditReferralReferenceNo] = useState('')
+  const [editRebatesClaim, setEditRebatesClaim] = useState('YES')
+  const [editRebatesCompany, setEditRebatesCompany] = useState('')
+  const [editRebatesAmountDue, setEditRebatesAmountDue] = useState('')
+  const [editRebatesStatus, setEditRebatesStatus] = useState('')
+  const [editRebatesReferenceNo, setEditRebatesReferenceNo] = useState('')
+  const [editWarrantyStatus, setEditWarrantyStatus] = useState('')
+  const [editWarrantyRegisteredBy, setEditWarrantyRegisteredBy] = useState('')
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
@@ -761,6 +882,7 @@ export default function ClientMasterlist() {
       { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',       weight: 10, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
       { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
@@ -769,7 +891,6 @@ export default function ClientMasterlist() {
       { label: 'INSTALLER',        weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'DRIVER',           weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',       weight: 11, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
@@ -781,7 +902,8 @@ export default function ClientMasterlist() {
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'LAST UPDATE',  weight: 15, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
     ]
 
     const weights = rawCols.map(col => {
@@ -1422,9 +1544,25 @@ export default function ClientMasterlist() {
         serialNumber: editSerialNumber || '',
         alternatePhone: editPhoneNumbers.slice(1).filter(Boolean).join(', '),
         relayedDate: editRelayedDate || '',
-        finalDate: editFinalDate || ''
+        finalDate: editFinalDate || '',
+        promodiserName: editReferralRecipient || editPromodiserName || '',
+        referralFeeRecipient: editReferralRecipient || editPromodiserName || '',
+        referralFeeAmount: editReferralAmount || editStoreReferralFee || '',
+        referralFeeStatus: editReferralStatus || '',
+        referralFeeDatePaid: editReferralDatePaid || '',
+        referralFeeReferenceNo: editReferralReferenceNo || '',
+        forRebatesClaim: editRebatesClaim || 'YES',
+        rebatesCompany: editRebatesCompany || '',
+        rebatesAmountDue: editRebatesAmountDue || '',
+        rebatesStatus: editRebatesStatus || '',
+        rebatesReferenceNo: editRebatesReferenceNo || '',
+        warrantyRegistrationStatus: editWarrantyStatus || '',
+        warrantyRegisteredBy: editWarrantyRegisteredBy || '',
       }
       payload.acDetails = JSON.stringify(acDetailsObj)
+      payload.negotiatorId = assignTechId || ''
+      payload.storeReferralFee = (editReferralAmount || editStoreReferralFee).trim() ? (editReferralAmount || editStoreReferralFee).trim() : '0'
+      payload.warrantyDocsStatus = editWarrantyStatus || null
       payload.images = editImages || null
       payload.contactPhone = editPhoneNumbers[0] || null
       payload.sourceVendor = combineStoreVendor(editStoreCategory, editStoreBranch, editOtherStoreName) || null
@@ -1524,7 +1662,7 @@ export default function ClientMasterlist() {
     setEditCustomerName(ticket.customerName || '')
     setEditLocation(ticket.location || '')
     setEditPreferredDate(ticket.preferredDate ? ticket.preferredDate.split('T')[0] : '')
-    setAssignTechId(ticket.assignedTo || '')
+    setAssignTechId(ticket.assignedTo || ticket.negotiatorId || ticket.negotiator_id || '')
     setUpdateStatus(ticket.status)
     setEditPriorityTag(ticket.priorityTag || '')
     setEditDistrict(ticket.district || '')
@@ -1550,7 +1688,7 @@ export default function ClientMasterlist() {
     setEditServiceType(ticket.serviceType || '')
 
     // Parse acDetails JSON
-    let parsedDetails = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '' }
+    let parsedDetails: any = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '', promodiserName: '' }
     if (ticket.acDetails) {
       try {
         parsedDetails = { ...parsedDetails, ...JSON.parse(ticket.acDetails) }
@@ -1563,12 +1701,34 @@ export default function ClientMasterlist() {
     setEditCapacity(parsedDetails.capacity || '')
     setEditSku(parsedDetails.sku || '')
     setEditSerialNumber(parsedDetails.serialNumber || '')
-    const phonesList = [ticket.contactPhone || ''].concat(parsedDetails.alternatePhone ? parsedDetails.alternatePhone.split(',').map(s => s.trim()) : []).filter(Boolean)
+    const phonesList = [ticket.contactPhone || ''].concat(parsedDetails.alternatePhone ? parsedDetails.alternatePhone.split(',').map((s: any) => s.trim()) : []).filter(Boolean)
     setEditPhoneNumbers(phonesList.length ? phonesList : [''])
     setEditBrandHP(`${parsedDetails.brand || ''} ${parsedDetails.capacity || ''}`.trim())
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
     setEditFinalDate(parsedDetails.finalDate || '')
+    setEditStoreReferralFee(String(ticket.storeReferralFee ?? ticket.store_referral_fee ?? ''))
+    setEditPromodiserName(String(parsedDetails.promodiserName || ''))
+    setEditReferralRecipient(String(parsedDetails.referralFeeRecipient || parsedDetails.promodiserName || ''))
+    setEditReferralAmount(String(parsedDetails.referralFeeAmount || ticket.storeReferralFee || ticket.store_referral_fee || ''))
+    setEditReferralStatus(String(parsedDetails.referralFeeStatus || ''))
+    setEditReferralDatePaid(String(parsedDetails.referralFeeDatePaid || ''))
+    setEditReferralReferenceNo(String(parsedDetails.referralFeeReferenceNo || ''))
+    setEditRebatesClaim(String(parsedDetails.forRebatesClaim || 'YES'))
+    setEditRebatesCompany(String(parsedDetails.rebatesCompany || ''))
+    setEditRebatesAmountDue(String(parsedDetails.rebatesAmountDue || ''))
+    setEditRebatesStatus(String(parsedDetails.rebatesStatus || ''))
+    setEditRebatesReferenceNo(String(parsedDetails.rebatesReferenceNo || ''))
+    setEditWarrantyStatus(String(
+      parsedDetails.warrantyRegistrationStatus
+      || ticket.warrantyDocsStatus
+      || (ticket.warrantyRegistrationCompleted ? 'REGISTERED' : ''),
+    ))
+    setEditWarrantyRegisteredBy(String(
+      parsedDetails.warrantyRegisteredBy
+      || ticket.warrantyRegistrationCompletedBy
+      || '',
+    ))
 
     setIsActionDrawerOpen(true)
   }
@@ -2204,6 +2364,34 @@ export default function ClientMasterlist() {
                         {displayUpper(negotiator)}
                       </span>
                     ) },
+                    // FINAL DATE (auto-saving)
+                    { value: (
+                      <div className="flex items-center justify-center w-full py-0.5">
+                        <input
+                          type="date"
+                          value={inlineFinalDates[ticket.id] !== undefined
+                            ? inlineFinalDates[ticket.id]
+                            : (details.finalDate ? String(details.finalDate).slice(0, 10) : '')}
+                          disabled={inlineSavingId === ticket.id}
+                          onClick={e => e.stopPropagation()}
+                          onChange={async e => {
+                            const val = e.target.value
+                            setInlineFinalDates(prev => ({ ...prev, [ticket.id]: val }))
+                            await handleSaveFinalDateInline(ticket, val)
+                          }}
+                          className="text-[10px] font-semibold rounded border px-1 py-0.5 outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[120px]"
+                          style={{
+                            backgroundColor: cardBg,
+                            borderColor: inputBorder,
+                            color: textPrimary,
+                            colorScheme: isLight ? 'light' : 'dark',
+                          }}
+                        />
+                        {inlineSavingId === ticket.id && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 ml-1.5 shrink-0" />
+                        )}
+                      </div>
+                    ) },
                     // CUSTOMER NAME
                     { value: (
                       <span className="truncate block font-semibold w-full text-center" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
@@ -2248,36 +2436,6 @@ export default function ClientMasterlist() {
                     ) },
                     // PREFERRED DATE
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
-                    // FINAL DATE (auto-saving)
-                    { value: (
-                      <div className="flex items-center justify-center w-full py-0.5">
-                        <input
-                          type="date"
-                          value={inlineFinalDates[ticket.id] !== undefined
-                            ? inlineFinalDates[ticket.id]
-                            : (details.finalDate ? String(details.finalDate).slice(0, 10) : '')}
-                          disabled={inlineSavingId === ticket.id}
-                          onChange={async e => {
-                            const val = e.target.value
-                            setInlineFinalDates(prev => ({ ...prev, [ticket.id]: val }))
-                            await handleSaveFinalDateInline(ticket, val)
-                          }}
-                          onClick={e => e.stopPropagation()}
-                          className="px-2 py-1.5 rounded-md text-[11px] font-semibold border shrink-0 disabled:opacity-50"
-                          style={{
-                            width: '10.75rem',
-                            minWidth: '10.75rem',
-                            backgroundColor: cardBg,
-                            borderColor: inputBorder,
-                            color: textPrimary,
-                            colorScheme: isLight ? 'light' : 'dark',
-                          }}
-                        />
-                        {inlineSavingId === ticket.id && (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 ml-1.5 shrink-0" />
-                        )}
-                      </div>
-                    ) },
                     // REMARKS
                     { value: (
                       <span className="truncate block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
@@ -2316,7 +2474,8 @@ export default function ClientMasterlist() {
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(negotiator)}>{displayUpper(negotiator)}</span> },
-                    { value: <span className={`${!columns[9].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={displayUpper(lastUpdate)}>{displayUpper(lastUpdate)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full text-center font-semibold" style={{ color: details.finalDate ? '#10B981' : textMuted }}>{displayUpper(formatRelayDate(details.finalDate || ''))}</span> },
+                    { value: <span className={`${!columns[10].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -2461,6 +2620,8 @@ export default function ClientMasterlist() {
           color: textPrimary,
           fontFamily: 'inherit'
         };
+        const editNegotiatorId = assignTechId || resolveNegotiatorUserId(ticket)
+        const editNegotiatorPhone = resolveEmployeePhone(employees, editNegotiatorId)
 
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
@@ -2717,6 +2878,13 @@ export default function ClientMasterlist() {
                         })}
                       </select>
                     </EField>
+                    <EField label="Negotiator Number">
+                      <div className={`${compactInput} flex items-center min-h-[30px]`} style={{ ...inputStyle, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                        {editNegotiatorPhone
+                          ? <FormatPhone raw={editNegotiatorPhone} />
+                          : <span className="text-[11px] font-medium" style={{ color: textMuted }}>No number on negotiator account</span>}
+                      </div>
+                    </EField>
                     <EField label="Relayed Date">
                       <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
@@ -2724,6 +2892,73 @@ export default function ClientMasterlist() {
                     <EField label="Preferred Date">
                       <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Final Schedule Date">
+                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
+                        className={compactInput} style={{ ...inputStyle, backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }} />
+                    </EField>
+                  </div>
+                </div>
+
+                {/* Section 3b: Referral Fee */}
+                <div>
+                  <ESHead title="Referral Fee" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <EField label="Referral Fee">
+                      <input type="text" value={editStoreReferralFee} onChange={e => setEditStoreReferralFee(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Recipient">
+                      <input type="text" value={editReferralRecipient} onChange={e => setEditReferralRecipient(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Amount">
+                      <input type="number" min="0" step="0.01" value={editReferralAmount} onChange={e => setEditReferralAmount(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Status">
+                      <input type="text" value={editReferralStatus} onChange={e => setEditReferralStatus(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Date Paid">
+                      <input type="date" value={editReferralDatePaid} onChange={e => setEditReferralDatePaid(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Reference No">
+                      <input type="text" value={editReferralReferenceNo} onChange={e => setEditReferralReferenceNo(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                  </div>
+                </div>
+
+                {/* Section 3c: Rebates Claim */}
+                <div>
+                  <ESHead title="Rebates Claim" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <EField label="For Rebates Claim">
+                      <select value={editRebatesClaim} onChange={e => setEditRebatesClaim(e.target.value)} className={compactInput} style={inputStyle}>
+                        <option value="YES">YES</option>
+                        <option value="NO">NO</option>
+                      </select>
+                    </EField>
+                    <EField label="Company">
+                      <input type="text" value={editRebatesCompany} onChange={e => setEditRebatesCompany(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Amount Due">
+                      <input type="number" min="0" step="0.01" value={editRebatesAmountDue} onChange={e => setEditRebatesAmountDue(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Status">
+                      <input type="text" value={editRebatesStatus} onChange={e => setEditRebatesStatus(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Reference No">
+                      <input type="text" value={editRebatesReferenceNo} onChange={e => setEditRebatesReferenceNo(e.target.value)} className={compactInput} style={inputStyle} />
+                    </EField>
+                  </div>
+                </div>
+
+                {/* Section 3d: Warranty Registration */}
+                <div>
+                  <ESHead title="Warranty Registration" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <EField label="Warranty Registration Status">
+                      <input type="text" value={editWarrantyStatus} onChange={e => setEditWarrantyStatus(e.target.value)} placeholder="REGISTERED" className={compactInput} style={inputStyle} />
+                    </EField>
+                    <EField label="Registered By">
+                      <input type="text" value={editWarrantyRegisteredBy} onChange={e => setEditWarrantyRegisteredBy(e.target.value)} className={compactInput} style={inputStyle} />
                     </EField>
                   </div>
                 </div>
@@ -2783,382 +3018,300 @@ export default function ClientMasterlist() {
           ? 'Service'
           : 'Survey & Install'
         const fieldStyle = (value?: string) => ({
-          backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.04)') : inputBg,
+          backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.08)') : inputBg,
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
           color: textPrimary,
-          fontFamily: 'inherit'
+          fontFamily: 'inherit',
         })
+        const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
+        const addLabel = 'text-[11px] font-bold uppercase tracking-wide block mb-1.5'
         const categoryOptions = [
           { label: 'Survey & Install', value: 'Survey & Install', title: 'Installation service' },
           { label: 'Service', value: 'Service', title: 'Service ticket' },
           { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
-          { label: 'Collection', value: 'Collection', title: 'Collection ticket' }
+          { label: 'Collection', value: 'Collection', title: 'Collection ticket' },
         ]
+        const applyCategory = (value: string) => {
+          const option = categoryOptions.find(item => item.value === value)
+          if (!option) return
+          setAddForm(prev => ({
+            ...prev,
+            serviceType: option.value,
+            title: option.title,
+            status: option.value === 'Collection' ? 'PENDING' : prev.status,
+            commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
+            installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
+            modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
+          }))
+        }
+        const AddField = ({ label, required, className = '', children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) => (
+          <div className={className}>
+            <label className={addLabel} style={{ color: textMuted }}>
+              {label}{required ? ' *' : ''}
+            </label>
+            {children}
+          </div>
+        )
+        const SectionHead = ({ title }: { title: string }) => (
+          <div className="pt-1 pb-2 border-b mb-4" style={{ borderColor: border }}>
+            <p className="text-xs font-black uppercase tracking-wider text-emerald-600">{title}</p>
+          </div>
+        )
 
         return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="flex flex-col w-full max-w-5xl max-h-[92vh] rounded-xl overflow-hidden shadow-2xl border transition-all"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/65 backdrop-blur-sm">
+          <div className="flex flex-col w-full max-w-6xl max-h-[94vh] rounded-2xl overflow-hidden shadow-2xl border"
             style={{ backgroundColor: cardBg, borderColor: border }}>
             {/* Header */}
-            <div className="shrink-0 px-5 py-3 flex items-center justify-between border-b" style={{ backgroundColor: cardBg, borderColor: border }}>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500">
-                  <User className="w-4 h-4" />
+            <div className="shrink-0 px-6 sm:px-8 py-5 flex items-center justify-between border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500">
+                  <Plus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-sm leading-none" style={{ color: textPrimary }}>Encode Ticket</h2>
-                  <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>Fast manual entry for relay monitoring</p>
+                  <h2 className="font-black text-lg leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
+                  <p className="text-xs mt-0.5" style={{ color: textMuted }}>Ticket number and relay date are added automatically</p>
                 </div>
               </div>
               <button type="button" onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 rounded-lg border text-slate-400 hover:text-slate-600 transition-colors"
-                style={{ borderColor: inputBorder, backgroundColor: inputBg }}>
-                <X className="w-3.5 h-3.5" />
+                className="p-2 rounded-xl border transition-colors hover:bg-slate-500/10"
+                style={{ borderColor: inputBorder, color: textMuted }}>
+                <X className="w-5 h-5" />
               </button>
             </div>
+
+            {addForm.images && (
+              <div className="mx-6 sm:mx-8 mt-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-3"
+                style={{ borderColor: 'rgba(16,185,129,0.3)', backgroundColor: isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.1)' }}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>AI extracted fields applied</span>
+                </div>
+                <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
+                  target="_blank" rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
+                  View voucher
+                </a>
+              </div>
+            )}
             
             {/* Form */}
-            <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="grid grid-cols-1 lg:grid-cols-[310px_1fr] gap-4">
-                  <aside className="rounded-lg border p-3 space-y-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                    {addForm.images && (
-                      <div className="rounded-lg border p-2.5 flex items-center justify-between gap-2" style={{ borderColor: 'rgba(16, 185, 129, 0.25)', backgroundColor: isLight ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.08)' }}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                          <span className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>AI extracted fields</span>
-                        </div>
-                        <a href={addForm.images.startsWith('http') ? addForm.images : `${API_BASE_URL.replace('/api', '')}${addForm.images}`}
-                          target="_blank" rel="noreferrer"
-                          className="px-2 py-1 border rounded-md text-[10px] font-bold shrink-0 flex items-center gap-1"
-                          style={{ borderColor: inputBorder, color: textMuted }}>
-                          <FileText className="w-3 h-3" /> View
-                        </a>
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Category</label>
-                        <select
-                          value={addCategory}
-                          onChange={e => {
-                            const option = categoryOptions.find(item => item.value === e.target.value)
-                            if (!option) return
-                            setAddForm(prev => ({
-                              ...prev,
-                              serviceType: option.value,
-                              title: option.title,
-                              status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
-                              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
-                              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
-                            }))
-                          }}
-                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                        >
-                          {categoryOptions.map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
+            <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
+              <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-8">
+                {/* Ticket type & status */}
+                <section>
+                  <SectionHead title="Ticket Type" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <AddField label="Category" required>
+                      <select
+                        value={addCategory}
+                        onChange={e => applyCategory(e.target.value)}
+                        className={`${addInput} font-semibold`}
+                        style={fieldStyle(addCategory)}
+                      >
                         {categoryOptions.map(option => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setAddForm(prev => ({
-                              ...prev,
-                              serviceType: option.value,
-                              title: option.title,
-                              status: option.value === 'Collection' ? 'PENDING' : prev.status,
-                              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
-                              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
-                              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : ''
-                            }))}
-                            className="h-8 rounded-md border text-[10px] font-bold transition-all"
-                            style={{
-                              borderColor: addCategory === option.value ? '#10B981' : inputBorder,
-                              backgroundColor: addCategory === option.value ? (isLight ? '#ECFDF5' : 'rgba(16,185,129,0.12)') : cardBg,
-                              color: addCategory === option.value ? '#059669' : textMuted
-                            }}
-                          >
-                            {option.label}
-                          </button>
+                          <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Ticket No.</label>
-                        <input
-                          type="text"
-                          value={addForm.ticketNumber}
-                          onChange={e => setAddForm(prev => ({ ...prev, ticketNumber: e.target.value }))}
-                          placeholder="Auto-generated"
-                          className={compactInput}
-                          style={fieldStyle(addForm.ticketNumber)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Control No. / SI</label>
-                        <input
-                          type="text"
-                          value={addForm.controlNumber}
-                          onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))}
-                          placeholder="Transaction no."
-                          className={`${compactInput} whitespace-nowrap`}
-                          style={fieldStyle(addForm.controlNumber)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className={`grid gap-2 ${addForm.sourceVendor === 'Other' ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store</label>
-                        <select
-                          value={addForm.sourceVendor}
-                          onChange={e => setAddForm(prev => ({
-                            ...prev,
-                            sourceVendor: e.target.value,
-                            storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch,
-                            otherStoreName: e.target.value === 'Direct' ? '' : prev.otherStoreName
-                          }))}
-                          className={compactInput}
-                          style={fieldStyle(addForm.sourceVendor)}
-                        >
-                          <option value="Robinsons" style={{ color: '#000' }}>Robinsons</option>
-                          <option value="Abenson" style={{ color: '#000' }}>Abenson</option>
-                          <option value="Direct" style={{ color: '#000' }}>Direct</option>
-                          <option value="Other" style={{ color: '#000' }}>Other</option>
-                        </select>
-                      </div>
-                      {addForm.sourceVendor === 'Other' && (
-                        <div>
-                          <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Specific Store Name</label>
-                          <input
-                            type="text"
-                            value={addForm.otherStoreName}
-                            onChange={e => setAddForm(prev => ({ ...prev, otherStoreName: e.target.value }))}
-                            placeholder="e.g. S&R, Anson's"
-                            className={compactInput}
-                            style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Store Branch</label>
-                        <input
-                          type="text"
-                          disabled={addForm.sourceVendor === 'Direct'}
-                          value={addForm.storeBranch}
-                          onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                          placeholder={addForm.sourceVendor === 'Robinsons' ? 'e.g. Ermita' : addForm.sourceVendor === 'Abenson' ? 'e.g. Silang' : 'Branch Name'}
-                          className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Branch Zone</label>
-                        <select
-                          value={addForm.branchId}
-                          onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
-                          className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
-                        >
-                          <option value="">Select Branch...</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Negotiator *</label>
-                        <select
-                          required
-                          value={addForm.assignedTo || ''}
-                          onChange={e => {
-                            const val = e.target.value
-                            const foundEmp = addModalNegotiators.find(emp => emp.id === val)
-                            setAddForm(prev => ({
-                              ...prev,
-                              assignedTo: val,
-                              installerName: foundEmp ? foundEmp.name : '',
-                              branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
-                              status: val ? 'ASSIGNED' : prev.status
-                            }))
-                          }}
-                          className={compactInput}
-                          style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
-                        >
-                          <option value="">Select Negotiator...</option>
-                          {addModalNegotiators.map(emp => {
-                            return (
-                              <option key={emp.id} value={emp.id}>{emp.name}</option>
-                            )
-                          })}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Status</label>
+                      </select>
+                    </AddField>
+                    <AddField label="Status">
                       <select
                         value={addForm.status}
                         onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                        className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none font-bold"
-                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'inherit' }}
+                        className={`${addInput} font-semibold`}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       >
                         <option value="PENDING">Pending</option>
                         <option value="ASSIGNED">Assigned</option>
                         <option value="SCHEDULED">Scheduled</option>
-                        <option value="RESCHED">Resched</option>
-                        <option value="FOR APPROVAL">For Approval</option>
-                        <option value="SURVEY">Survey</option>
-                        <option value="ON_THE_WAY">On the Way</option>
-                        <option value="IN_PROGRESS">In Progress</option>
-                        <option value="COMPLETED">Completed</option>
-                        <option value="CANCELLED">Cancelled</option>
                       </select>
-                    </div>
+                    </AddField>
+                  </div>
+                </section>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Date Relayed</label>
-                        <input type="date" value={addForm.relayedDate} onChange={e => setAddForm(prev => ({ ...prev, relayedDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Requested Schedule</label>
-                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
-                    </div>
+                {/* Customer */}
+                <section>
+                  <SectionHead title="Customer Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <AddField label="Customer Name" required className="sm:col-span-2 lg:col-span-2">
+                      <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full customer name" className={addInput} style={fieldStyle(addForm.customerName)} />
+                    </AddField>
+                    <AddField label="Contact Number">
+                      <input type="text" value={addForm.contactPhone} onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))} placeholder="09xx xxx xxxx" className={addInput} style={fieldStyle(addForm.contactPhone)} />
+                    </AddField>
+                    <AddField label="Alternate Contact">
+                      <input type="text" value={addForm.alternatePhone} onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))} placeholder="Optional second contact" className={addInput} style={fieldStyle(addForm.alternatePhone)} />
+                    </AddField>
+                    <AddField label="District">
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area / district" className={addInput} style={fieldStyle(addForm.district)} />
+                    </AddField>
+                    <AddField label="Landmark">
+                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
+                    </AddField>
+                    <AddField label="Address" required className="sm:col-span-2 lg:col-span-3">
+                      <textarea
+                        required
+                        value={addForm.locationRaw}
+                        onChange={e => {
+                          const val = e.target.value
+                          setAddForm(prev => {
+                            const guessed = guessDistrict(val)
+                            return { ...prev, locationRaw: val, district: guessed || prev.district }
+                          })
+                        }}
+                        placeholder="Complete installation address"
+                        rows={3}
+                        className={`${addInput} resize-none`}
+                        style={fieldStyle(addForm.locationRaw)}
+                      />
+                    </AddField>
+                  </div>
+                </section>
 
-                    {addForm.status !== 'CANCELLED' && (
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Final Schedule</label>
-                        <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={compactInput} style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }} />
-                      </div>
+                {/* Store & assignment */}
+                <section>
+                  <SectionHead title="Store & Assignment" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <AddField label="Store">
+                      <select
+                        value={addForm.sourceVendor}
+                        onChange={e => setAddForm(prev => ({
+                          ...prev,
+                          sourceVendor: e.target.value,
+                          storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch,
+                          otherStoreName: e.target.value === 'Direct' ? '' : prev.otherStoreName,
+                        }))}
+                        className={addInput}
+                        style={fieldStyle(addForm.sourceVendor)}
+                      >
+                        <option value="Robinsons">Robinsons</option>
+                        <option value="Abenson">Abenson</option>
+                        <option value="Direct">Direct</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </AddField>
+                    {addForm.sourceVendor === 'Other' && (
+                      <AddField label="Store Name">
+                        <input type="text" value={addForm.otherStoreName} onChange={e => setAddForm(prev => ({ ...prev, otherStoreName: e.target.value }))} placeholder="Store name" className={addInput} style={fieldStyle(addForm.otherStoreName)} />
+                      </AddField>
                     )}
-                  </aside>
+                    <AddField label="Store Branch">
+                      <input
+                        type="text"
+                        disabled={addForm.sourceVendor === 'Direct'}
+                        value={addForm.storeBranch}
+                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
+                        placeholder={addForm.sourceVendor === 'Direct' ? 'N/A for Direct' : 'Branch name'}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                    </AddField>
+                    <AddField label="Branch Zone">
+                      <select
+                        value={addForm.branchId}
+                        onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Select branch...</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </AddField>
+                    <AddField label="Negotiator" required>
+                      <select
+                        required
+                        value={addForm.assignedTo || ''}
+                        onChange={e => {
+                          const val = e.target.value
+                          const foundEmp = addModalNegotiators.find(emp => emp.id === val)
+                          setAddForm(prev => ({
+                            ...prev,
+                            assignedTo: val,
+                            installerName: foundEmp ? foundEmp.name : '',
+                            branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
+                            status: val ? 'ASSIGNED' : prev.status,
+                          }))
+                        }}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Select negotiator...</option>
+                        {addModalNegotiators.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </AddField>
+                    <AddField label="Control No. / SI">
+                      <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Transaction / SI number" className={addInput} style={fieldStyle(addForm.controlNumber)} />
+                    </AddField>
+                  </div>
+                </section>
 
-                  <main className="rounded-lg border p-3 space-y-3" style={{ borderColor: border }}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                      <div className="md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Customer Name *</label>
-                        <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Customer name" className={compactInput} style={fieldStyle(addForm.customerName)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Phone</label>
-                        <input type="text" value={addForm.contactPhone} onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))} placeholder="Contact number" className={compactInput} style={fieldStyle(addForm.contactPhone)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Alt Contact</label>
-                        <input type="text" value={addForm.alternatePhone} onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))} placeholder="Email or phone" className={compactInput} style={fieldStyle(addForm.alternatePhone)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>District</label>
-                        <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area / district" className={compactInput} style={fieldStyle(addForm.district)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Landmark</label>
-                        <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={compactInput} style={fieldStyle(addForm.landmarks)} />
-                      </div>
-                      <div className="md:col-span-3">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Address *</label>
-                        <textarea
-                          required
-                          value={addForm.locationRaw}
-                          onChange={e => {
-                            const val = e.target.value
-                            setAddForm(prev => {
-                              const guessed = guessDistrict(val)
-                              return { ...prev, locationRaw: val, district: guessed || prev.district }
-                            })
-                          }}
-                          placeholder="Full destination address"
-                          rows={3}
-                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                          style={fieldStyle(addForm.locationRaw)}
-                        />
-                      </div>
-                    </div>
+                {/* Schedule */}
+                <section>
+                  <SectionHead title="Scheduling" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <AddField label="Requested Schedule">
+                      <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
+                    </AddField>
+                    {addForm.status !== 'CANCELLED' && (
+                      <AddField label="Final Schedule">
+                        <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={addInput} style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)', color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
+                      </AddField>
+                    )}
+                  </div>
+                </section>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t" style={{ borderColor: border }}>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Brand</label>
-                        <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={compactInput} style={fieldStyle(addForm.brand)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Capacity</label>
-                        <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5HP" className={compactInput} style={fieldStyle(addForm.capacity)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>SKU</label>
-                        <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={compactInput} style={fieldStyle(addForm.sku)} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Serial No</label>
-                        <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={compactInput} style={fieldStyle(addForm.serialNumber)} />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Commit</label>
-                        <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / amount / promo" className={compactInput} style={fieldStyle(addForm.commitType)} />
-                      </div>
-                      {addCategory === 'Collection' && (
-                        <>
-                          <div>
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Collection Amount</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={addForm.installationCharges}
-                              onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))}
-                              placeholder="0.00"
-                              className={compactInput}
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Payment Mode</label>
-                            <input
-                              type="text"
-                              value={addForm.modeOfPayment}
-                              onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))}
-                              placeholder="Cash / GCash / Bank"
-                              className={compactInput}
-                              style={fieldStyle(addForm.modeOfPayment)}
-                            />
-                          </div>
-                        </>
-                      )}
-                      <div className="md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: textMuted }}>Last Update</label>
-                        <input
-                          type="text"
-                          value={addForm.description}
-                          onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                          placeholder="Latest update / dispatch notes"
-                          className={compactInput}
-                          style={fieldStyle(addForm.description)}
-                        />
-                      </div>
-                    </div>
-                  </main>
-                </div>
+                {/* Product */}
+                <section>
+                  <SectionHead title="Unit & Job Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <AddField label="Brand">
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
+                    </AddField>
+                    <AddField label="Capacity">
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="e.g. 1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
+                    </AddField>
+                    <AddField label="SKU">
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
+                    </AddField>
+                    <AddField label="Serial No.">
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial number" className={addInput} style={fieldStyle(addForm.serialNumber)} />
+                    </AddField>
+                    <AddField label="Commit / Promo" className="sm:col-span-2 lg:col-span-2">
+                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
+                    </AddField>
+                    {addCategory === 'Collection' && (
+                      <>
+                        <AddField label="Collection Amount">
+                          <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+                        </AddField>
+                        <AddField label="Payment Mode">
+                          <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash / Bank" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
+                        </AddField>
+                      </>
+                    )}
+                    <AddField label="Remarks / Update" className="sm:col-span-2 lg:col-span-4">
+                      <input type="text" value={addForm.description} onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))} placeholder="Latest notes or dispatch update" className={addInput} style={fieldStyle(addForm.description)} />
+                    </AddField>
+                  </div>
+                </section>
               </div>
 
               {/* Footer */}
-              <div className="shrink-0 px-5 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: cardBg }}>
-                <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800" style={{ borderColor: inputBorder, color: textMuted }}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={formSubmitting} className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: "linear-gradient(135deg, #10B981, #059669)" }}>
-                  {formSubmitting ? "Creating..." : "+ Create Ticket"}
-                </button>
+              <div className="shrink-0 px-6 sm:px-8 py-4 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                <p className="text-[11px] font-medium hidden sm:block" style={{ color: textMuted }}>
+                  Required: customer name, address, negotiator
+                </p>
+                <div className="flex items-center gap-3 ml-auto">
+                  <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-slate-500/10" style={{ borderColor: inputBorder, color: textMuted }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={formSubmitting} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                    {formSubmitting ? 'Creating...' : 'Create Ticket'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -3498,7 +3651,11 @@ export default function ClientMasterlist() {
         const t   = selectedPreviewTicket
         const det = previewDetails
         const sl  = getRelayStatusLabel(t)
-        const neg = t.assignedEmployeeName || t.installerName || '—'
+        const neg = t.negotiatorName || t.assignedEmployeeName || t.installerName || '—'
+        const negotiatorId = resolveNegotiatorUserId(t)
+        const negotiatorPhone = resolveEmployeePhone(employees, negotiatorId)
+        const referralFee = t.storeReferralFee ?? t.store_referral_fee
+        const promodiserName = det.promodiserName || '—'
         const bn  = formatAssignedBranchLabel(t.branchId)
         const storeInfo = parseStoreVendor(t.sourceVendor)
 
@@ -3592,6 +3749,13 @@ export default function ClientMasterlist() {
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
                     <span className="font-semibold text-xs" style={{ color: textPrimary }}>{neg}</span>
                   </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
+                    <span className="font-semibold text-xs" style={{ color: textPrimary }}>
+                      {negotiatorPhone ? <FormatPhone raw={negotiatorPhone} /> : '—'}
+                    </span>
+                  </div>
                 </div>
 
               </div>
@@ -3635,6 +3799,39 @@ export default function ClientMasterlist() {
                       <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
                       <DField label="Negotiator" value={neg} />
+                      <DField label="Negotiator Number" value={negotiatorPhone ? <FormatPhone raw={negotiatorPhone} /> : '—'} green />
+                      <DField label="Branch" value={bn} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <SHead title="Referral Fee" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+                      <DField label="Referral Fee" value={formatMoney(referralFee)} />
+                      <DField label="Recipient" value={det.referralFeeRecipient || promodiserName} />
+                      <DField label="Amount" value={formatMoney(det.referralFeeAmount || referralFee)} />
+                      <DField label="Status" value={det.referralFeeStatus} />
+                      <DField label="Date Paid" value={det.referralFeeDatePaid ? formatDate(det.referralFeeDatePaid) : '—'} />
+                      <DField label="Reference No" value={det.referralFeeReferenceNo} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <SHead title="Rebates Claim" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                      <DField label="For Rebates Claim" value={det.forRebatesClaim || 'YES'} />
+                      <DField label="Company" value={det.rebatesCompany} />
+                      <DField label="Amount Due" value={formatMoney(det.rebatesAmountDue)} />
+                      <DField label="Status" value={det.rebatesStatus} />
+                      <DField label="Reference No" value={det.rebatesReferenceNo} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <SHead title="Warranty Registration" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DField label="Warranty Registration Status" value={det.warrantyRegistrationStatus || t.warrantyDocsStatus || (t.warrantyRegistrationCompleted ? 'REGISTERED' : '—')} green />
+                      <DField label="Registered By" value={det.warrantyRegisteredBy || t.warrantyRegistrationCompletedBy} />
                     </div>
                   </div>
 
@@ -3665,20 +3862,7 @@ export default function ClientMasterlist() {
                   ) : (
                     <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
                       {(() => {
-                        const listToRender = [...history]
-                        const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
-                        
-                        if (!hasSubmission && t.createdAt) {
-                          listToRender.push({
-                            id: 'initial-sub',
-                            changeNote: 'Submitted',
-                            changedByUserName: t.createdBy || t.customerEmail || 'System',
-                            createdAt: t.createdAt,
-                            newPreferredDate: t.preferredDate
-                          })
-                        }
-                        
-                        listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        const listToRender = buildRelayHistoryTimeline(t, history, employees, formatBranchTableLabel)
                         
                         if (listToRender.length === 0) {
                           return (
@@ -3688,11 +3872,14 @@ export default function ClientMasterlist() {
                           )
                         }
 
-                        return listToRender.map((h, idx) => {
+                        return listToRender.map((h: any, idx: number) => {
                           const dt = new Date(h.createdAt).toLocaleString('en-PH', {
                             month: 'short', day: 'numeric', year: 'numeric',
                             hour: 'numeric', minute: '2-digit', hour12: true
                           })
+                          const note = String(h.changeNote || '').toLowerCase()
+                          const isSubmission = note.includes('submitted') || note.includes('created')
+                          const isAssignment = note.includes('assigned to')
                           
                           return (
                             <div key={h.id || idx} className="relative">
@@ -3714,7 +3901,10 @@ export default function ClientMasterlist() {
                                 
                                 <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
                                   <p className="text-[10px] font-semibold">
-                                    By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
+                                    {isSubmission ? 'Submitted by: ' : isAssignment ? 'Assigned by: ' : 'By: '}
+                                    <span className="font-bold" style={{ color: textPrimary }}>
+                                      <EmployeeNameLink nameOrId={h.changedByUserName} />
+                                    </span>
                                   </p>
                                   {h.newStatus && h.newStatus !== h.previousStatus && (
                                     <p className="text-[10px]">
