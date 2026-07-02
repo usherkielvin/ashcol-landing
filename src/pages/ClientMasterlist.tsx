@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } fr
 import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
-  Building2, Trash2, User, MapPin,
+  Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp,
-  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -13,7 +13,56 @@ import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache } from
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import { FilterPills } from '../components/TicketSectionNav'
+import type { ReactNode } from 'react'
+
+function RelayFormField({
+  label,
+  required,
+  compact,
+  className = '',
+  children,
+}: {
+  label: string
+  required?: boolean
+  compact?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={className}>
+      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10px] mb-1' : 'text-[11px] mb-1.5'}`}>
+        {label}{required ? ' *' : ''}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function RelayFormSectionHead({ title }: { title: string }) {
+  return (
+    <div className="pt-0.5 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-3">
+      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{title}</p>
+    </div>
+  )
+}
+
+const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
+const RELAY_CUSTOM_STORES_KEY = 'ashcol-relay-custom-stores'
+
+function readRelayCustomStores(): string[] {
+  try {
+    const raw = localStorage.getItem(RELAY_CUSTOM_STORES_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(parsed)) return []
+    return [...new Set(parsed.map((s) => String(s).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  } catch {
+    return []
+  }
+}
+
+function persistRelayCustomStores(stores: string[]) {
+  localStorage.setItem(RELAY_CUSTOM_STORES_KEY, JSON.stringify(stores))
+}
 
 interface Ticket {
   id: string
@@ -126,6 +175,14 @@ const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: 
   if (!b) return store
   if (b.toLowerCase().startsWith(store.toLowerCase())) return b
   return `${store} ${b}`
+}
+
+function resolveRelayStoreForSubmit(sourceVendor: string, storeBranch: string) {
+  const vendor = (sourceVendor || 'Direct').trim()
+  if ((BUILT_IN_RELAY_STORES as readonly string[]).includes(vendor)) {
+    return combineStoreVendor(vendor as StoreCategory, storeBranch)
+  }
+  return combineStoreVendor('Other', storeBranch, vendor)
 }
 
 const guessDistrict = (address: string): string => {
@@ -349,6 +406,18 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
   )
 }
 
+function formatPhilippinePhoneInput(raw: string): string {
+  let digits = raw.replace(/\D/g, '')
+  if (digits.startsWith('63')) {
+    digits = `0${digits.slice(2)}`
+  } else if (digits.startsWith('9') && !digits.startsWith('09')) {
+    digits = `0${digits}`
+  }
+  digits = digits.slice(0, 11)
+  if (digits.length <= 4) return digits
+  if (digits.length <= 7) return `${digits.slice(0, 4)} ${digits.slice(4)}`
+  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+}
 
 const parseAcDetails = (ticket: Ticket) => {
   const fallback = {
@@ -583,16 +652,6 @@ export default function ClientMasterlist() {
     }
   }, [lastUpdatedTicketId])
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
-        setIsCreateDropdownOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchSeqRef = useRef(0)
@@ -600,13 +659,34 @@ export default function ClientMasterlist() {
   const [searchQuery, setSearchQuery] = useState('')
   const [storeFilter, setStoreFilter] = useState('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
-  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>('ALL_PENDING')
+  const [activeTab, setActiveTab] = useState<'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS'>(() => {
+    const roleLower = (localStorage.getItem('ashcol-role') || sessionStorage.getItem('ashcol-role') || '').toLowerCase()
+    const isPriv = roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator'
+    return isPriv ? 'ALL_PENDING' : 'MY_TICKETS'
+  })
+  const [isStoreFilterOpen, setIsStoreFilterOpen] = useState(false)
+  const [toolbarStoreDraft, setToolbarStoreDraft] = useState('')
+  const storeFilterRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
+        setIsCreateDropdownOpen(false)
+      }
+      if (storeFilterRef.current && !storeFilterRef.current.contains(event.target as Node)) {
+        setIsStoreFilterOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
   const ticketScope: 'ALL' | 'MY' = !isAdmin ? 'MY' : 'ALL'
 
   // New States for Row-click Quick Actions and read-only Job Sheet View
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
   const [selectedColIndex, setSelectedColIndex] = useState<number>(-1)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
@@ -648,6 +728,10 @@ export default function ClientMasterlist() {
 
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
+  const [addStoreDraft, setAddStoreDraft] = useState('')
+  const [showAddStoreField, setShowAddStoreField] = useState(false)
+  const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
   const [addForm, setAddForm] = useState({
     title: 'S/I service',
     description: '',
@@ -739,8 +823,28 @@ export default function ClientMasterlist() {
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
+  const handleAddStoreFromToolbar = useCallback(() => {
+    const name = toolbarStoreDraft.trim()
+    if (!name) return
+    const isBuiltIn = (BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())
+    const isCustom = relayCustomStores.some(s => s.toLowerCase() === name.toLowerCase())
+    if (isBuiltIn || isCustom) {
+      alert('That store is already in the list.')
+      return
+    }
+    const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
+    setRelayCustomStores(next)
+    persistRelayCustomStores(next)
+    setStoreFilter(name)
+    setToolbarStoreDraft('')
+    setIsStoreFilterOpen(false)
+  }, [toolbarStoreDraft, relayCustomStores])
+
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
+    setAddPhoneNumbers([''])
+    setShowAddStoreField(false)
+    setAddStoreDraft('')
     setAddForm(prev => ({
       ...prev,
       branchId: defaultBranch || prev.branchId,
@@ -824,11 +928,11 @@ export default function ClientMasterlist() {
   const [editInstallationCharges, setEditInstallationCharges] = useState(0)
   const [editModeOfPayment, setEditModeOfPayment] = useState('')
   const [editControlNumber, setEditControlNumber] = useState('')
-  const [editTicketNumber, setEditTicketNumber] = useState('')
 
-  const [editStoreCategory, setEditStoreCategory] = useState<StoreCategory>('Direct')
+  const [editStoreVendor, setEditStoreVendor] = useState('Robinsons')
   const [editStoreBranch, setEditStoreBranch] = useState('')
-  const [editOtherStoreName, setEditOtherStoreName] = useState('')
+  const [editShowAddStoreField, setEditShowAddStoreField] = useState(false)
+  const [editStoreDraft, setEditStoreDraft] = useState('')
   const [editUnitType, setEditUnitType] = useState('')
   const [editServiceType, setEditServiceType] = useState('')
   const [editCustomerName, setEditCustomerName] = useState('')
@@ -959,16 +1063,7 @@ export default function ClientMasterlist() {
     }
   }, [user])
 
-  const handleRelayTabChange = useCallback((
-    next: 'ALL_PENDING' | 'UNASSIGNED' | 'PENDING' | 'MY_TICKETS',
-  ) => {
-    if (next === activeTab) return
-    setActiveTab(next)
-    setContextMenu(null)
-    setExpandedCell(null)
-    setSelectedPreviewTicket(null)
-    resetTicketTableScroll()
-  }, [activeTab])
+
 
   useLayoutEffect(() => {
     resetTicketTableScroll()
@@ -1123,16 +1218,35 @@ export default function ClientMasterlist() {
         const defaultCommit = isInstall ? 'FREE FIRST 10 FEET' : (parsed.commitType || '')
         const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
         const parsedStore = parseStoreVendor(parsed.sourceVendor || 'Robinsons')
+        const scannedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
+          ? parsedStore.customStore
+          : parsedStore.store
+        if (parsedStore.store === 'Other' && parsedStore.customStore) {
+          setRelayCustomStores(prev => {
+            const name = parsedStore.customStore!.trim()
+            if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
+            const next = [...prev, name].sort((a, b) => a.localeCompare(b))
+            persistRelayCustomStores(next)
+            return next
+          })
+        }
+
+        const scannedPhones = [contactPhoneVal, (parsed as any).alternatePhone || '']
+          .flatMap(p => String(p || '').split(','))
+          .map(p => p.trim())
+          .filter(Boolean)
+          .map(formatPhilippinePhoneInput)
+        setAddPhoneNumbers(scannedPhones.length ? scannedPhones : [''])
 
         setAddForm({
           title: `${mappedSvc} service`,
           description: parsed.description || 'Voucher scanned via Gemini AI.',
           serviceType: mappedSvc,
           customerName: customerNameVal,
-          contactPhone: contactPhoneVal,
+          contactPhone: '',
           locationRaw: locationVal,
-          sourceVendor: parsedStore.store,
-          otherStoreName: parsedStore.customStore || '',
+          sourceVendor: scannedStoreVendor,
+          otherStoreName: '',
           storeBranch: parsedStore.branch,
           unitType: parsed.unitType || (brandVal && capacityVal ? `${brandVal} ${capacityVal}` : 'Split AC'),
           preferredDate: preferredDateFormatted,
@@ -1362,13 +1476,14 @@ export default function ClientMasterlist() {
     setFormSubmitting(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const cleanedPhones = addPhoneNumbers.map(p => p.trim()).filter(Boolean)
       const acDetailsObj = {
         landmarks: addForm.landmarks || '',
         brand: addForm.brand || '',
         capacity: addForm.capacity || '',
         sku: addForm.sku || '',
         serialNumber: addForm.serialNumber || '',
-        alternatePhone: addForm.alternatePhone || '',
+        alternatePhone: cleanedPhones.slice(1).join(', '),
         relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
         finalDate: addForm.finalDate || ''
       }
@@ -1391,13 +1506,9 @@ export default function ClientMasterlist() {
           customerName: addForm.customerName,
           serviceType: addForm.serviceType,
           unitType: addForm.unitType,
-          contactPhone: addForm.contactPhone,
+          contactPhone: cleanedPhones[0] || undefined,
           location: addForm.locationRaw?.trim() || 'No Address Provided',
-          sourceVendor: combineStoreVendor(
-            (addForm.sourceVendor || 'Direct') as StoreCategory,
-            addForm.storeBranch || '',
-            addForm.otherStoreName
-          ),
+          sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
           preferredDate: addForm.preferredDate || undefined,
           slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
           priorityTag: addForm.priorityTag || undefined,
@@ -1450,6 +1561,9 @@ export default function ClientMasterlist() {
       }
 
       setIsAddModalOpen(false)
+      setShowAddStoreField(false)
+      setAddStoreDraft('')
+      setAddPhoneNumbers([''])
       setAddForm({
         title: 'Installation service',
         description: '',
@@ -1533,7 +1647,6 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(editInstallationCharges)
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
-      payload.ticketNumber = editTicketNumber?.trim() || null
       
       const acDetailsObj = {
         landmarks: editLandmarks || '',
@@ -1564,7 +1677,7 @@ export default function ClientMasterlist() {
       payload.warrantyDocsStatus = editWarrantyStatus || null
       payload.images = editImages || null
       payload.contactPhone = editPhoneNumbers[0] || null
-      payload.sourceVendor = combineStoreVendor(editStoreCategory, editStoreBranch, editOtherStoreName) || null
+      payload.sourceVendor = resolveRelayStoreForSubmit(editStoreVendor, editStoreBranch) || null
       payload.unitType = editUnitType || null
       payload.serviceType = editServiceType || null
 
@@ -1678,11 +1791,23 @@ export default function ClientMasterlist() {
     setEditInstallationCharges(ticket.installationCharges || 0)
     setEditModeOfPayment(ticket.modeOfPayment || '')
     setEditControlNumber(ticket.controlNumber || '')
-    setEditTicketNumber(ticket.ticketNumber || '')
     const parsedStore = parseStoreVendor(ticket.sourceVendor)
-    setEditStoreCategory(parsedStore.store)
+    const openedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
+      ? parsedStore.customStore
+      : parsedStore.store
+    if (parsedStore.store === 'Other' && parsedStore.customStore) {
+      setRelayCustomStores(prev => {
+        const name = parsedStore.customStore!.trim()
+        if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
+        const next = [...prev, name].sort((a, b) => a.localeCompare(b))
+        persistRelayCustomStores(next)
+        return next
+      })
+    }
+    setEditStoreVendor(openedStoreVendor)
     setEditStoreBranch(parsedStore.branch)
-    setEditOtherStoreName(parsedStore.customStore || '')
+    setEditShowAddStoreField(false)
+    setEditStoreDraft('')
     setEditUnitType(ticket.unitType || '')
     setEditServiceType(ticket.serviceType || '')
 
@@ -1772,21 +1897,7 @@ export default function ClientMasterlist() {
     }
   }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin])
 
-  const relayPillItems = useMemo(() => {
-    const myTicketsPill = {
-      id: 'MY_TICKETS' as const,
-      label: 'My tickets',
-      count: relayTabCounts.MY_TICKETS,
-      icon: <User className="w-3 h-3" />,
-    }
-    if (!isAdmin) return [myTicketsPill]
-    return [
-      { id: 'ALL_PENDING' as const, label: 'All pending', count: relayTabCounts.ALL_PENDING },
-      { id: 'UNASSIGNED' as const, label: 'Unassigned', count: relayTabCounts.UNASSIGNED },
-      { id: 'PENDING' as const, label: 'Assigned', count: relayTabCounts.PENDING },
-      myTicketsPill,
-    ]
-  }, [isAdmin, relayTabCounts])
+  // relayPillItems removed
 
   const filtered = tickets.filter(t => {
     // Tab filtering
@@ -2095,27 +2206,93 @@ export default function ClientMasterlist() {
               <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
             </div>
 
-          {/* Store Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Package className="w-3.5 h-3.5 shrink-0" style={{ color: '#3B82F6' }} />
-            <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}
-              className="bg-transparent outline-none text-xs font-semibold cursor-pointer"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-              <option value="ALL">All Stores</option>
-              <option value="Robinsons">Robinsons</option>
-              <option value="Abenson">Abenson</option>
-              <option value="Direct">Direct Store</option>
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+          {/* Enhanced Store Filter */}
+          <div className="relative shrink-0" ref={storeFilterRef}>
+            <button
+              type="button"
+              onClick={() => setIsStoreFilterOpen(prev => !prev)}
+              className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            >
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>{storeFilter === 'ALL' ? 'All Stores' : storeFilter === 'Direct' ? 'Direct Store' : storeFilter}</span>
+              </div>
+              <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />
+            </button>
+            
+            {isStoreFilterOpen && (
+              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
+                style={{ backgroundColor: cardBg, borderColor: border }}>
+                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Filter by Store</span>
+                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
+                  <button
+                    type="button"
+                    onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === 'ALL' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                  >
+                    <span>All Stores</span>
+                    {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                  </button>
+                  {['Robinsons', 'Abenson', 'Direct'].map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                    >
+                      <span>{st === 'Direct' ? 'Direct Store' : st}</span>
+                      {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                    </button>
+                  ))}
+                  {/* Custom Stores */}
+                  {relayCustomStores.map(st => {
+                    if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
+                    return (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                      >
+                        <span>{st}</span>
+                        {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                {/* Add Custom Store directly in filter */}
+                <div className="border-t pt-2.5" style={{ borderColor: border }}>
+                  <span className="text-[9px] font-bold uppercase tracking-wide px-2 block mb-1.5" style={{ color: textMuted }}>Add New Store</span>
+                  <div className="flex gap-1.5 px-1">
+                    <input
+                      type="text"
+                      value={toolbarStoreDraft}
+                      onChange={e => setToolbarStoreDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleAddStoreFromToolbar()
+                        }
+                      }}
+                      placeholder="e.g. S&R, Anson's"
+                      className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddStoreFromToolbar}
+                      className="px-3 rounded-lg text-xs font-bold text-white shrink-0 hover:opacity-90 transition-all"
+                      style={{ background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)' }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Relay view tabs */}
-          <FilterPills
-            value={activeTab}
-            onChange={handleRelayTabChange}
-            items={relayPillItems}
-          />
 
           {/* Search */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
@@ -2621,6 +2798,27 @@ export default function ClientMasterlist() {
         };
         const editNegotiatorId = assignTechId || resolveNegotiatorUserId(ticket)
         const editNegotiatorPhone = resolveEmployeePhone(employees, editNegotiatorId)
+        const editStoreOptions = [
+          ...BUILT_IN_RELAY_STORES,
+          ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s as typeof BUILT_IN_RELAY_STORES[number])),
+        ]
+        if (editStoreVendor && !editStoreOptions.includes(editStoreVendor as typeof BUILT_IN_RELAY_STORES[number])) {
+          editStoreOptions.push(editStoreVendor)
+        }
+        const addEditCustomStore = () => {
+          const name = editStoreDraft.trim()
+          if (!name) return
+          if ((BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())) {
+            alert('That store is already in the list.')
+            return
+          }
+          const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
+          setRelayCustomStores(next)
+          persistRelayCustomStores(next)
+          setEditStoreVendor(name)
+          setEditStoreDraft('')
+          setEditShowAddStoreField(false)
+        }
 
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
@@ -2661,10 +2859,6 @@ export default function ClientMasterlist() {
                     <EField label="Customer Name">
                       <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
                         placeholder="Customer Name" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Ticket No.">
-                      <input type="text" value={editTicketNumber} onChange={e => setEditTicketNumber(e.target.value)}
-                        placeholder="Auto" className={compactInput} style={inputStyle} />
                     </EField>
                     <EField label="Control No. / SI">
                       <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
@@ -2715,47 +2909,57 @@ export default function ClientMasterlist() {
 
                     <EField label="Store">
                       <select
-                        value={editStoreCategory}
+                        value={editShowAddStoreField ? '__add_store__' : editStoreVendor}
                         onChange={e => {
-                          const next = e.target.value as StoreCategory
-                          setEditStoreCategory(next)
-                          if (next === 'Direct') {
-                            setEditStoreBranch('')
-                            setEditOtherStoreName('')
+                          const val = e.target.value
+                          if (val === '__add_store__') {
+                            setEditShowAddStoreField(true)
+                            return
                           }
+                          setEditShowAddStoreField(false)
+                          setEditStoreDraft('')
+                          setEditStoreVendor(val)
                         }}
                         className={compactInput}
                         style={inputStyle}>
-                        <option value="Robinsons">Robinsons</option>
-                        <option value="Abenson">Abenson</option>
-                        <option value="Direct">Direct Store</option>
-                        <option value="Other">Other Store</option>
+                        {editStoreOptions.map(store => (
+                          <option key={store} value={store}>{store}</option>
+                        ))}
+                        <option value="__add_store__">+ Add store...</option>
                       </select>
                     </EField>
-                    {editStoreCategory === 'Other' && (
-                      <EField label="Specific Store Name">
-                        <input
-                          type="text"
-                          value={editOtherStoreName}
-                          onChange={e => setEditOtherStoreName(e.target.value)}
-                          placeholder="e.g. S&R, Anson's"
-                          className={compactInput}
-                          style={inputStyle}
-                        />
+                    {editShowAddStoreField && (
+                      <EField label="New Store Name">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={editStoreDraft}
+                            onChange={e => setEditStoreDraft(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEditCustomStore() } }}
+                            placeholder="e.g. S&R, Anson's"
+                            className={compactInput}
+                            style={inputStyle}
+                          />
+                          <button
+                            type="button"
+                            onClick={addEditCustomStore}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            Add
+                          </button>
+                        </div>
                       </EField>
                     )}
-                    {(editStoreCategory === 'Robinsons' || editStoreCategory === 'Abenson' || editStoreCategory === 'Other') && (
-                      <EField label="Store Branch">
-                        <input
-                          type="text"
-                          value={editStoreBranch}
-                          onChange={e => setEditStoreBranch(e.target.value)}
-                          placeholder={editStoreCategory === 'Robinsons' ? 'e.g. Ermita' : editStoreCategory === 'Abenson' ? 'e.g. Silang' : 'Branch Name'}
-                          className={compactInput}
-                          style={inputStyle}
-                        />
-                      </EField>
-                    )}
+                    <EField label="Store Branch">
+                      <input
+                        type="text"
+                        value={editStoreBranch}
+                        onChange={e => setEditStoreBranch(e.target.value)}
+                        placeholder="e.g. Ermita"
+                        className={compactInput}
+                        style={inputStyle}
+                      />
+                    </EField>
                     <EField label="Address" className="md:col-span-2">
                       <input type="text" value={editLocation} onChange={e => setEditLocation(e.target.value)}
                         placeholder="Installation Address" className={compactInput} style={inputStyle} />
@@ -3022,14 +3226,29 @@ export default function ClientMasterlist() {
           color: textPrimary,
           fontFamily: 'inherit',
         })
-        const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
-        const addLabel = 'text-[11px] font-bold uppercase tracking-wide block mb-1.5'
+        const addInput = 'w-full border rounded-lg px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
+        const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15'
         const categoryOptions = [
-          { label: 'Survey & Install', value: 'Survey & Install', title: 'Installation service' },
+          { label: 'S / I', value: 'Survey & Install', title: 'Installation service' },
           { label: 'Service', value: 'Service', title: 'Service ticket' },
           { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
           { label: 'Collection', value: 'Collection', title: 'Collection ticket' },
         ]
+        const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
+        const addCustomStore = () => {
+          const name = addStoreDraft.trim()
+          if (!name) return
+          if ((BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())) {
+            alert('That store is already in the list.')
+            return
+          }
+          const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
+          setRelayCustomStores(next)
+          persistRelayCustomStores(next)
+          setAddForm(prev => ({ ...prev, sourceVendor: name }))
+          setAddStoreDraft('')
+          setShowAddStoreField(false)
+        }
         const applyCategory = (value: string) => {
           const option = categoryOptions.find(item => item.value === value)
           if (!option) return
@@ -3043,20 +3262,6 @@ export default function ClientMasterlist() {
             modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
           }))
         }
-        const AddField = ({ label, required, className = '', children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) => (
-          <div className={className}>
-            <label className={addLabel} style={{ color: textMuted }}>
-              {label}{required ? ' *' : ''}
-            </label>
-            {children}
-          </div>
-        )
-        const SectionHead = ({ title }: { title: string }) => (
-          <div className="pt-1 pb-2 border-b mb-4" style={{ borderColor: border }}>
-            <p className="text-xs font-black uppercase tracking-wider text-emerald-600">{title}</p>
-          </div>
-        )
-
         return (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
@@ -3064,26 +3269,56 @@ export default function ClientMasterlist() {
           onClick={() => setIsAddModalOpen(false)}
         >
           <div
-            className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
             style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="shrink-0 px-6 sm:px-8 py-5 flex items-center justify-between border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500">
-                  <Plus className="w-5 h-5" />
+            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
+                    <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>Ticket no. & relay date auto-filled</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="font-black text-lg leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
-                  <p className="text-xs mt-0.5" style={{ color: textMuted }}>Ticket number and relay date are added automatically</p>
+                <button type="button" onClick={() => setIsAddModalOpen(false)}
+                  className="p-1.5 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-5 sm:px-6 pb-3 flex flex-wrap items-end gap-3">
+                <div className="w-36">
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Category *</label>
+                  <select
+                    value={addCategory}
+                    onChange={e => applyCategory(e.target.value)}
+                    className={`${addInputSm} font-semibold`}
+                    style={fieldStyle(addCategory)}
+                  >
+                    {categoryOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-32">
+                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Status</label>
+                  <select
+                    value={addForm.status}
+                    onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
+                    className={`${addInputSm} font-semibold`}
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="PENDING">Pending</option>
+                    <option value="ASSIGNED">Assigned</option>
+                    <option value="SCHEDULED">Scheduled</option>
+                  </select>
                 </div>
               </div>
-              <button type="button" onClick={() => setIsAddModalOpen(false)}
-                className="p-2 rounded-xl border transition-colors hover:bg-slate-500/10"
-                style={{ borderColor: inputBorder, color: textMuted }}>
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
             {addForm.images && (
@@ -3104,58 +3339,78 @@ export default function ClientMasterlist() {
             
             {/* Form */}
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
-              <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-8">
-                {/* Ticket type & status */}
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-5">
+                {/* Customer + aircon */}
                 <section>
-                  <SectionHead title="Ticket Type" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <AddField label="Category" required className="md:col-span-8">
-                      <select
-                        value={addCategory}
-                        onChange={e => applyCategory(e.target.value)}
-                        className={`${addInput} font-semibold`}
-                        style={fieldStyle(addCategory)}
-                      >
-                        {categoryOptions.map(option => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
+                  <RelayFormSectionHead title="Customer & Unit" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <RelayFormField label="Customer Name" required compact className="md:col-span-5">
+                      <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
+                    </RelayFormField>
+                    <RelayFormField label="Contact Number" compact className="md:col-span-7">
+                      <div className="flex flex-col gap-2">
+                        {addPhoneNumbers.map((phone, pIdx) => (
+                          <div key={pIdx} className="flex gap-2 items-center">
+                            <input
+                              type="tel"
+                              inputMode="tel"
+                              value={phone}
+                              onChange={e => {
+                                const formatted = formatPhilippinePhoneInput(e.target.value)
+                                setAddPhoneNumbers(prev => {
+                                  const next = [...prev]
+                                  next[pIdx] = formatted
+                                  return next
+                                })
+                              }}
+                              placeholder="0917 869 4260"
+                              className={`${addInput} font-mono tracking-wide`}
+                              style={fieldStyle(phone)}
+                            />
+                            {pIdx === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setAddPhoneNumbers(prev => [...prev, ''])}
+                                className="px-3 py-2 rounded-lg text-xs font-bold text-white shrink-0"
+                                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                              >
+                                Add
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setAddPhoneNumbers(prev => prev.filter((_, idx) => idx !== pIdx))}
+                                className="px-3 py-2 rounded-lg text-xs font-bold text-white bg-red-500 hover:bg-red-600 shrink-0"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
                         ))}
-                      </select>
-                    </AddField>
-                    <AddField label="Status" className="md:col-span-4">
-                      <select
-                        value={addForm.status}
-                        onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                        className={`${addInput} font-semibold`}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="PENDING">Pending</option>
-                        <option value="ASSIGNED">Assigned</option>
-                        <option value="SCHEDULED">Scheduled</option>
-                      </select>
-                    </AddField>
-                  </div>
-                </section>
-
-                {/* Customer */}
-                <section>
-                  <SectionHead title="Customer Details" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <AddField label="Customer Name" required className="md:col-span-8">
-                      <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full customer name" className={addInput} style={fieldStyle(addForm.customerName)} />
-                    </AddField>
-                    <AddField label="Contact Number" className="md:col-span-4">
-                      <input type="text" value={addForm.contactPhone} onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))} placeholder="09xx xxx xxxx" className={addInput} style={fieldStyle(addForm.contactPhone)} />
-                    </AddField>
-                    <AddField label="Alternate Contact" className="md:col-span-4">
-                      <input type="text" value={addForm.alternatePhone} onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))} placeholder="Optional second contact" className={addInput} style={fieldStyle(addForm.alternatePhone)} />
-                    </AddField>
-                    <AddField label="District" className="md:col-span-4">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area / district" className={addInput} style={fieldStyle(addForm.district)} />
-                    </AddField>
-                    <AddField label="Landmark" className="md:col-span-4">
+                      </div>
+                    </RelayFormField>
+                    <RelayFormField label="Brand" compact className="md:col-span-3">
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
+                    </RelayFormField>
+                    <RelayFormField label="Capacity" compact className="md:col-span-2">
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
+                    </RelayFormField>
+                    <RelayFormField label="SKU" compact className="md:col-span-3">
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
+                    </RelayFormField>
+                    <RelayFormField label="Serial No." compact className="md:col-span-4">
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
+                    </RelayFormField>
+                    <RelayFormField label="District" compact className="md:col-span-4">
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
+                    </RelayFormField>
+                    <RelayFormField label="Landmark" compact className="md:col-span-4">
                       <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
-                    </AddField>
-                    <AddField label="Address" required className="md:col-span-12">
+                    </RelayFormField>
+                    <RelayFormField label="Commit / Promo" compact className="md:col-span-4">
+                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
+                    </RelayFormField>
+                    <RelayFormField label="Address" required compact className="md:col-span-12">
                       <textarea
                         required
                         value={addForm.locationRaw}
@@ -3167,53 +3422,77 @@ export default function ClientMasterlist() {
                           })
                         }}
                         placeholder="Complete installation address"
-                        rows={3}
+                        rows={2}
                         className={`${addInput} resize-none`}
                         style={fieldStyle(addForm.locationRaw)}
                       />
-                    </AddField>
+                    </RelayFormField>
                   </div>
                 </section>
 
                 {/* Store & assignment */}
                 <section>
-                  <SectionHead title="Store & Assignment" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <AddField label="Store" className="md:col-span-4">
+                  <RelayFormSectionHead title="Store & Assignment" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <RelayFormField label="Store" compact className="md:col-span-3">
                       <select
-                        value={addForm.sourceVendor}
-                        onChange={e => setAddForm(prev => ({
-                          ...prev,
-                          sourceVendor: e.target.value,
-                          storeBranch: e.target.value === 'Direct' ? '' : prev.storeBranch,
-                          otherStoreName: e.target.value === 'Direct' ? '' : prev.otherStoreName,
-                        }))}
+                        value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (val === '__add_store__') {
+                            setShowAddStoreField(true)
+                            return
+                          }
+                          setShowAddStoreField(false)
+                          setAddStoreDraft('')
+                          setAddForm(prev => ({
+                            ...prev,
+                            sourceVendor: val,
+                          }))
+                        }}
                         className={addInput}
                         style={fieldStyle(addForm.sourceVendor)}
                       >
-                        <option value="Robinsons">Robinsons</option>
-                        <option value="Abenson">Abenson</option>
-                        <option value="Direct">Direct</option>
-                        <option value="Other">Other</option>
+                        {storeOptions.map(store => (
+                          <option key={store} value={store}>{store}</option>
+                        ))}
+                        <option value="__add_store__">+ Add store...</option>
                       </select>
-                    </AddField>
-                    {addForm.sourceVendor === 'Other' && (
-                      <AddField label="Store Name" className="md:col-span-4">
-                        <input type="text" value={addForm.otherStoreName} onChange={e => setAddForm(prev => ({ ...prev, otherStoreName: e.target.value }))} placeholder="Store name" className={addInput} style={fieldStyle(addForm.otherStoreName)} />
-                      </AddField>
+                    </RelayFormField>
+                    {showAddStoreField && (
+                      <RelayFormField label="New Store Name" compact className="md:col-span-4">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={addStoreDraft}
+                            onChange={e => setAddStoreDraft(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
+                            placeholder="e.g. S&R, Anson's"
+                            className={addInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                          />
+                          <button
+                            type="button"
+                            onClick={addCustomStore}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
+                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </RelayFormField>
                     )}
-                    <AddField label="Store Branch" className="md:col-span-4">
+                    <RelayFormField label="Store Branch" compact className="md:col-span-3">
                       <input
                         type="text"
-                        disabled={addForm.sourceVendor === 'Direct'}
                         value={addForm.storeBranch}
                         onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                        placeholder={addForm.sourceVendor === 'Direct' ? 'N/A for Direct' : 'Branch name'}
+                        placeholder="Branch"
                         className={addInput}
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       />
-                    </AddField>
-                    <AddField label="Branch Zone" className="md:col-span-4">
+                    </RelayFormField>
+                    <RelayFormField label="Branch Zone" compact className="md:col-span-3">
                       <select
                         value={addForm.branchId}
                         onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
@@ -3223,8 +3502,8 @@ export default function ClientMasterlist() {
                         <option value="">Select branch...</option>
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
-                    </AddField>
-                    <AddField label="Negotiator" required className="md:col-span-6">
+                    </RelayFormField>
+                    <RelayFormField label="Negotiator" required compact className="md:col-span-5">
                       <select
                         required
                         value={addForm.assignedTo || ''}
@@ -3247,66 +3526,44 @@ export default function ClientMasterlist() {
                           <option key={emp.id} value={emp.id}>{emp.name}</option>
                         ))}
                       </select>
-                    </AddField>
-                    <AddField label="Control No. / SI" className="md:col-span-6">
-                      <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Transaction / SI number" className={addInput} style={fieldStyle(addForm.controlNumber)} />
-                    </AddField>
+                    </RelayFormField>
+                    <RelayFormField label="Control No. / SI" compact className="md:col-span-4">
+                      <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="SI / transaction #" className={addInput} style={fieldStyle(addForm.controlNumber)} />
+                    </RelayFormField>
                   </div>
                 </section>
 
-                {/* Schedule */}
+                {/* Schedule & notes */}
                 <section>
-                  <SectionHead title="Scheduling" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <AddField label="Requested Schedule" className="md:col-span-6">
+                  <RelayFormSectionHead title="Schedule & Notes" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <RelayFormField label="Requested" compact className="md:col-span-3">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
-                    </AddField>
+                    </RelayFormField>
                     {addForm.status !== 'CANCELLED' && (
-                      <AddField label="Final Schedule" className="md:col-span-6">
+                      <RelayFormField label="Final Schedule" compact className="md:col-span-3">
                         <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={addInput} style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)', color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
-                      </AddField>
+                      </RelayFormField>
                     )}
-                  </div>
-                </section>
-
-                {/* Product */}
-                <section>
-                  <SectionHead title="Unit & Job Details" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <AddField label="Brand" className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
-                    </AddField>
-                    <AddField label="Capacity" className="md:col-span-3">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="e.g. 1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
-                    </AddField>
-                    <AddField label="SKU" className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
-                    </AddField>
-                    <AddField label="Serial No." className="md:col-span-3">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial number" className={addInput} style={fieldStyle(addForm.serialNumber)} />
-                    </AddField>
-                    <AddField label="Commit / Promo" className="md:col-span-6">
-                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
-                    </AddField>
                     {addCategory === 'Collection' && (
                       <>
-                        <AddField label="Collection Amount" className="md:col-span-3">
+                        <RelayFormField label="Amount" compact className="md:col-span-3">
                           <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </AddField>
-                        <AddField label="Payment Mode" className="md:col-span-3">
-                          <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash / Bank" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
-                        </AddField>
+                        </RelayFormField>
+                        <RelayFormField label="Payment" compact className="md:col-span-3">
+                          <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
+                        </RelayFormField>
                       </>
                     )}
-                    <AddField label="Remarks / Update" className="md:col-span-12">
+                    <RelayFormField label="Remarks" compact className="md:col-span-12">
                       <input type="text" value={addForm.description} onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))} placeholder="Latest notes or dispatch update" className={addInput} style={fieldStyle(addForm.description)} />
-                    </AddField>
+                    </RelayFormField>
                   </div>
                 </section>
               </div>
 
               {/* Footer */}
-              <div className="shrink-0 px-6 sm:px-8 py-4 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
                 <p className="text-[11px] font-medium hidden sm:block" style={{ color: textMuted }}>
                   Required: customer name, address, negotiator
                 </p>
@@ -3698,10 +3955,10 @@ export default function ClientMasterlist() {
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
             style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-            onClick={() => setIsViewModalOpen(false)}>
+            onClick={() => { setIsViewModalOpen(false); setShowHistoryPanel(false); }}>
 
             {/* Modal Box */}
-            <div className="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            <div className={`w-full ${showHistoryPanel ? 'max-w-5xl' : 'max-w-2xl'} rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95`}
               style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
               onClick={e => e.stopPropagation()}>
 
@@ -3854,8 +4111,9 @@ export default function ClientMasterlist() {
                 </div>
 
                 {/* Right Column: Update History */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
-                  style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
+                {showHistoryPanel && (
+                  <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
                     Update History
                   </h4>
@@ -3935,13 +4193,20 @@ export default function ClientMasterlist() {
                       })()}
                     </div>
                   )}
-                </div>
+                  </div>
+                )}
 
               </div>
 
               {/* Footer */}
               <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0"
                 style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
+                  className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
+                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
+                  <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                  {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
+                </button>
                 {canEdit && (
                   <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">

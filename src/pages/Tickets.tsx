@@ -2753,6 +2753,7 @@ export default function Tickets() {
   // ── Column config ─────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     const scheduleCols = [
+      { label: 'TICKET NO',       display: 'TICKET NO',                                 weight: 9,  expMul: 1.2,  sticky: true,  freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
       { label: 'DESTINATION',     display: 'DISTRICT',                                    weight: 12, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
@@ -3681,9 +3682,7 @@ export default function Tickets() {
     }
 
     if (label === "CUSTOMER'S NAME") {
-      const ticketNo = ticket.ticketNumber || ticket.ticket_number || ''
-      const tNoPart = ticketNo ? `[${ticketNo}] ` : ''
-      const prefix = idx !== undefined ? `${idx + 1}. ${tNoPart}` : tNoPart
+      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>,
         ticket, label, rowGhost,
