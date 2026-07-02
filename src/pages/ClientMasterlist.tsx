@@ -4,7 +4,7 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, User, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp,
-  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -465,7 +465,8 @@ export default function ClientMasterlist() {
 
   const [loading, setLoading] = useState(true)
   const [lastUpdatedTicketId, setLastUpdatedTicketId] = useState<string | null>(null)
-
+  const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false)
+  const createDropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (lastUpdatedTicketId) {
       const timer = setTimeout(() => {
@@ -474,6 +475,16 @@ export default function ClientMasterlist() {
       return () => clearTimeout(timer)
     }
   }, [lastUpdatedTicketId])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
+        setIsCreateDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const [refreshing, setRefreshing] = useState(false)
 
@@ -489,6 +500,30 @@ export default function ClientMasterlist() {
   const [selectedPreviewTicket, setSelectedPreviewTicket] = useState<Ticket | null>(null)
   const [selectedColIndex, setSelectedColIndex] = useState<number>(-1)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [history, setHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  useEffect(() => {
+    if (!selectedPreviewTicket || !isViewModalOpen) {
+      setHistory([])
+      return
+    }
+    setLoadingHistory(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    fetch(`${API_BASE_URL}/tickets/${selectedPreviewTicket.id}/history`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+      .then(res => res.json())
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setHistory(res.data)
+        }
+      })
+      .catch(err => console.error('Error fetching history:', err))
+      .finally(() => setLoadingHistory(false))
+  }, [selectedPreviewTicket, isViewModalOpen])
 
   // Scanner State
   const [scanning, setScanning] = useState(false)
@@ -1944,25 +1979,77 @@ export default function ClientMasterlist() {
 
           {/* Action buttons wrapper with right alignment */}
           {isAdmin && (
-            <div className="flex items-center gap-2 ml-auto shrink-0">
-              <button type="button" onClick={() => scanFileInputRef.current?.click()} disabled={scanning}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 disabled:opacity-60 shrink-0"
-                style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#bbf7d0' : 'rgba(16,185,129,0.25)', color: '#059669' }}>
-                {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
-                {scanning ? 'Scanning...' : 'Scan PDF'}
-              </button>
+            <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={createDropdownRef}>
+              <div className="flex items-center rounded-lg overflow-hidden shadow-sm border transition-all"
+                style={{
+                  borderColor: isLight ? '#059669' : '#10B981',
+                  background: 'linear-gradient(135deg, #10B981, #059669)'
+                }}>
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  disabled={scanning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0 border-r"
+                  style={{ borderColor: 'rgba(255,255,255,0.15)' }}
+                >
+                  {scanning ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Scanning...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create Ticket</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateDropdownOpen(prev => !prev)}
+                  disabled={scanning}
+                  className="flex items-center justify-center px-2.5 py-1.5 text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-              <button type="button" onClick={() => excelFileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:opacity-80 shrink-0"
-                style={{ backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', borderColor: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.25)', color: '#2563EB' }}>
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Import Excel
-              </button>
+              {/* Dropdown Menu */}
+              {isCreateDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl shadow-2xl overflow-hidden py-1 border transition-all animate-fade-in"
+                  style={{ backgroundColor: cardBg, borderColor: border }}>
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    onClick={() => {
+                      setIsCreateDropdownOpen(false)
+                      scanFileInputRef.current?.click()
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-60"
+                    style={{ color: textPrimary }}
+                  >
+                    {scanning ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                    ) : (
+                      <FileUp className="w-3.5 h-3.5 text-emerald-500" />
+                    )}
+                    <span>{scanning ? 'Scanning...' : 'Scan PDF'}</span>
+                  </button>
 
-              <button type="button" onClick={openAddModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs text-white transition-all hover:opacity-90 shadow-sm shrink-0"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                <Plus className="w-3.5 h-3.5" /> Add Client
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreateDropdownOpen(false)
+                      excelFileInputRef.current?.click()
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                    style={{ color: textPrimary }}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Import Excel</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
           </div>
@@ -3509,55 +3596,151 @@ export default function ClientMasterlist() {
 
               </div>
 
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Two Column Body */}
+              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x" style={{ borderColor: border }}>
 
-                {/* Grid 1: Client & Location Info */}
-                <div>
-                  <SHead title="Client & Location Details" />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <DField label="Contact Number" value={
-                      <div className="flex flex-col gap-0.5">
-                        <FormatPhone raw={t.contactPhone} />
-                        {det.alternatePhone && det.alternatePhone.split(',').map((p: string) => p.trim()).filter(Boolean).map((p: string, pIdx: number) => (
-                          <FormatPhone key={pIdx} raw={p} />
-                        ))}
-                      </div>
-                    } green />
-                    {activeTab !== 'MY_TICKETS' && (
-                      <DField label="Address" value={t.location} className="md:col-span-2" />
-                    )}
-                    <DField label="District" value={t.district || guessDistrict(t.location || '')} className={activeTab === 'MY_TICKETS' ? 'md:col-span-2' : ''} />
-                    <DField label="Additional Notes" value={det.landmarks} className="md:col-span-2" />
-                  </div>
-                </div>
+                {/* Left Column: Details */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-                {/* Grid 2: Job Scheduling Info */}
-                <div>
-                  <SHead title="Scheduling Details" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-                    <DField label="Date Relayed" value={formatDate(t.createdAt)} />
-                    <DField label="Preferred Schedule" value={formatDate(t.preferredDate)} />
-                    <DField label="Final Schedule" value={det.finalDate ? <span className="text-emerald-500 font-bold">{formatDate(det.finalDate)}</span> : '—'} />
-                    <DField label="Store" value={storeInfo.store === 'Direct' ? 'Direct Store' : storeInfo.store} />
-                    <DField label="Store Branch" value={storeInfo.branch || '—'} />
-                    <DField label="Commit Type" value={t.commitType} />
-                    <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
-                    <DField label="Control No. / SI" value={t.controlNumber || '—'} />
-                    <DField label="Negotiator" value={neg} />
-                  </div>
-                </div>
-
-                {/* Remarks */}
-                {(t.remarksUpdate || t.description) && (
+                  {/* Grid 1: Client & Location Info */}
                   <div>
-                    <SHead title="Remarks & Updates" />
-                    <p className="text-xs leading-relaxed rounded-xl p-4"
-                      style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
-                      {t.remarksUpdate || t.description}
-                    </p>
+                    <SHead title="Client & Location Details" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <DField label="Contact Number" value={
+                        <div className="flex flex-col gap-0.5">
+                          <FormatPhone raw={t.contactPhone} />
+                          {det.alternatePhone && det.alternatePhone.split(',').map((p: string) => p.trim()).filter(Boolean).map((p: string, pIdx: number) => (
+                            <FormatPhone key={pIdx} raw={p} />
+                          ))}
+                        </div>
+                      } green />
+                      {activeTab !== 'MY_TICKETS' && (
+                        <DField label="Address" value={t.location} className="sm:col-span-2" />
+                      )}
+                      <DField label="District" value={t.district || guessDistrict(t.location || '')} className={activeTab === 'MY_TICKETS' ? 'sm:col-span-2' : ''} />
+                      <DField label="Additional Notes" value={det.landmarks} className="sm:col-span-2" />
+                    </div>
                   </div>
-                )}
+
+                  {/* Grid 2: Job Scheduling Info */}
+                  <div>
+                    <SHead title="Scheduling Details" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <DField label="Date Relayed" value={formatDate(t.createdAt)} />
+                      <DField label="Preferred Schedule" value={formatDate(t.preferredDate)} />
+                      <DField label="Final Schedule" value={det.finalDate ? <span className="text-emerald-500 font-bold">{formatDate(det.finalDate)}</span> : '—'} />
+                      <DField label="Store" value={storeInfo.store === 'Direct' ? 'Direct Store' : storeInfo.store} />
+                      <DField label="Store Branch" value={storeInfo.branch || '—'} />
+                      <DField label="Commit Type" value={t.commitType} />
+                      <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
+                      <DField label="Control No. / SI" value={t.controlNumber || '—'} />
+                      <DField label="Negotiator" value={neg} />
+                    </div>
+                  </div>
+
+                  {/* Remarks */}
+                  {(t.remarksUpdate || t.description) && (
+                    <div>
+                      <SHead title="Remarks & Updates" />
+                      <p className="text-xs leading-relaxed rounded-xl p-4"
+                        style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
+                        {t.remarksUpdate || t.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Update History */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
+                  style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
+                    Update History
+                  </h4>
+                  
+                  {loadingHistory ? (
+                    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2">
+                      <Clock className="w-5 h-5 animate-spin" style={{ color: textMuted }} />
+                      <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs...</span>
+                    </div>
+                  ) : (
+                    <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
+                      {(() => {
+                        const listToRender = [...history]
+                        const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
+                        
+                        if (!hasSubmission && t.createdAt) {
+                          listToRender.push({
+                            id: 'initial-sub',
+                            changeNote: 'Submitted',
+                            changedByUserName: t.createdBy || t.customerEmail || 'System',
+                            createdAt: t.createdAt,
+                            newPreferredDate: t.preferredDate
+                          })
+                        }
+                        
+                        listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        
+                        if (listToRender.length === 0) {
+                          return (
+                            <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
+                              No update history recorded.
+                            </div>
+                          )
+                        }
+
+                        return listToRender.map((h, idx) => {
+                          const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                            month: 'short', day: 'numeric', year: 'numeric',
+                            hour: 'numeric', minute: '2-digit', hour12: true
+                          })
+                          
+                          return (
+                            <div key={h.id || idx} className="relative">
+                              <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
+                                    style={{
+                                      borderColor: idx === 0 ? '#10B981' : border,
+                                      backgroundColor: idx === 0 ? '#10B981' : cardBg
+                                    }} />
+                              
+                              <div className="text-xs">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                    {h.changeNote || 'Ticket details updated'}
+                                  </span>
+                                  <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                    {dt}
+                                  </span>
+                                </div>
+                                
+                                <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                                  <p className="text-[10px] font-semibold">
+                                    By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
+                                  </p>
+                                  {h.newStatus && h.newStatus !== h.previousStatus && (
+                                    <p className="text-[10px]">
+                                      Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                    </p>
+                                  )}
+                                  {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                    <p className="text-[10px]">
+                                      Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
+                                    </p>
+                                  )}
+                                  {h.newAssignedToName && (
+                                    <p className="text-[10px]">
+                                      Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               {/* Footer */}

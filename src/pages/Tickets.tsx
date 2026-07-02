@@ -519,7 +519,7 @@ function buildReschedulePatchBody(
     acUpdates.reschedulePending = false
     acUpdates.rescheduledTo = newDateKey
     body.preferredDate = newDateKey
-    body.status = 'SCHEDULED'
+    body.status = 'RESCHED'
     if (oldDateKey && oldDateKey !== newDateKey) {
       const existing = parseAcMeta(ticket)
       const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -1352,7 +1352,6 @@ export default function Tickets() {
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
-  const [installerFilter, setInstallerFilter] = useState('')
   const [dateFilter, setDateFilter]   = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
@@ -2086,8 +2085,8 @@ export default function Tickets() {
       if (isDateMove) {
         const formattedOldDate = formatDateKeyLabel(oldDateKey)
         const reschedMsg = `Scheduled moved from ${formattedOldDate}`
-        remarksVal = reschedMsg
-        editForm.remarks = reschedMsg
+        remarksVal = remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg
+        editForm.remarks = remarksVal
       }
       
       const acMetaExtras: Record<string, any> = {}
@@ -2116,14 +2115,17 @@ export default function Tickets() {
         remarksUpdate: remarksVal,
       }
 
-      if (isDateMove) {
-        body.status = 'SCHEDULED'
-      } else if (isReschedStatus) {
+      if (isReschedStatus) {
         body.status = 'RESCHED'
         if (editForm.reschedulePending) {
           acMetaExtras.reschedulePending = true
           acMetaExtras.rescheduledTo = ''
+        } else {
+          acMetaExtras.reschedulePending = false
+          acMetaExtras.rescheduledTo = newDateKey
         }
+      } else if (isDateMove) {
+        body.status = 'SCHEDULED'
       } else {
         Object.assign(body, applyScheduleStatusPatch((editForm as Ticket), scheduleVal))
       }
@@ -2880,25 +2882,8 @@ export default function Tickets() {
     return list
   }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
-  const installerOptions = useMemo(() => {
-    const names = new Map<string, string>()
-    filtered.forEach(t => {
-      const raw = getInstallerDisplay(t).trim()
-      if (!raw) return
-      const { name, label } = parseNameSiteToken(raw)
-      if (!name) return
-      if (!names.has(name)) names.set(name, label || raw)
-    })
-    return [...names.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
-      .map(([key, label]) => ({ key, label }))
-  }, [filtered])
-
   const visible = useMemo(() => {
     let list = filtered
-    if (installerFilter) {
-      list = list.filter(t => parseNameSiteToken(getInstallerDisplay(t)).name === installerFilter)
-    }
     if (sortConfig) {
       list = [...list].sort((a, b) => {
         const cmp = compareTicketsByColumn(a, b, sortConfig.column)
@@ -2911,7 +2896,7 @@ export default function Tickets() {
       })
     }
     return list
-  }, [filtered, installerFilter, sortConfig])
+  }, [filtered, sortConfig])
 
   const sortDiffersFromDefault =
     sortConfig.column !== DEFAULT_TICKET_SORT.column || sortConfig.direction !== DEFAULT_TICKET_SORT.direction
@@ -3636,7 +3621,7 @@ export default function Tickets() {
       />
 
       {/* ── Portal: Toolbar into header slot ────────────────── */}
-      {ReactDOM.createPortal(
+      {!isMyTickets && ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2 w-full">
           {/* Weekly Date Tabs Picker */}
@@ -3725,76 +3710,6 @@ export default function Tickets() {
             )}
           </div>
 
-          {/* Installer filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border"
-               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <select
-              value={installerFilter}
-              onChange={e => {
-                const val = e.target.value
-                setInstallerFilter(val)
-                if (val) setSortConfig(DEFAULT_TICKET_SORT)
-              }}
-              className="bg-transparent outline-none text-xs font-medium max-w-[110px] cursor-pointer"
-              style={{ color: textPrimary }}
-              onClick={e => e.stopPropagation()}
-            >
-              <option value="">All installers</option>
-              {installerOptions.map(opt => (
-                <option key={opt.key} value={opt.key}>{opt.label}</option>
-              ))}
-            </select>
-            {installerFilter && (
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); setInstallerFilter('') }}
-                style={{ color: textMuted }}
-                title="Clear installer filter"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Sort Buttons */}
-          <div className="flex rounded-lg border overflow-hidden shrink-0"
-               style={{ borderColor: inputBorder }}>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation()
-                setSortConfig({ column: 'INSTALLER', direction: 'asc' })
-              }}
-              className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
-              style={{
-                backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc'
-                  ? 'rgba(16,185,129,0.15)' : inputBg,
-                color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'asc' ? green : textMuted,
-              }}
-              title="Sort installer A → Z"
-            >
-              <ArrowUp className="w-3.5 h-3.5" />
-            </button>
-            <div className="w-px self-stretch" style={{ backgroundColor: inputBorder }} />
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation()
-                setSortConfig({ column: 'INSTALLER', direction: 'desc' })
-              }}
-              className="flex items-center justify-center px-1.5 py-1.5 transition-colors hover:bg-emerald-500/10"
-              style={{
-                backgroundColor: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
-                  ? 'rgba(16,185,129,0.15)' : inputBg,
-                color: sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc' ? green : textMuted,
-              }}
-              title="Sort installer Z → A"
-            >
-              <ArrowDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
           {/* Action Button: Add Schedule */}
           {canEdit && !isMyTickets && (
             <div className="relative shrink-0 ml-auto">
@@ -3877,7 +3792,7 @@ export default function Tickets() {
       )}
 
       {/* Stats bar */}
-      {!loading && tickets.length > 0 && (
+      {!isMyTickets && !loading && tickets.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
@@ -3897,14 +3812,14 @@ export default function Tickets() {
             <span style={{ color: textMuted }}>For Approval</span>
             <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forApproval}</span>
           </div>
-          {(sortDiffersFromDefault || installerFilter) && (
+          {sortDiffersFromDefault && (
             <button
               type="button"
-              onClick={() => { setSortConfig(DEFAULT_TICKET_SORT); setInstallerFilter('') }}
+              onClick={() => setSortConfig(DEFAULT_TICKET_SORT)}
               className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
               style={{ color: green }}
             >
-              Reset sort / filter
+              Reset sort
             </button>
           )}
         </div>
@@ -4018,8 +3933,8 @@ export default function Tickets() {
                       <div className="flex flex-col items-center justify-center gap-3">
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
                           {isMyTickets
-                            ? (searchQuery || dateFilter
-                              ? 'No pending or assigned tickets match your filters'
+                            ? (searchQuery
+                              ? 'No pending or assigned tickets match your search'
                               : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
                             : 'No records'}
                         </p>
