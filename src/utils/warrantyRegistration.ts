@@ -43,9 +43,6 @@ export const WARRANTY_CACHE_UPDATED = 'ashcol-warranty-cache-updated'
 /** Throttle server sync — every 3 min */
 export const SYNC_INTERVAL_MS = TAB_CACHE_TTL_MS
 
-/** Statuses treated as "installed / done" for warranty — INSTALLED == COMPLETED */
-const INSTALLED_STATUSES = new Set(['INSTALLED', 'COMPLETED'])
-
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
@@ -131,18 +128,15 @@ export async function fetchWarrantyRegistrations(
   const payload = await res.json()
   const rows: WarrantyTicket[] = payload?.data?.tickets || payload?.tickets || []
 
-  // Client-side safety: INSTALLED == COMPLETED for warranty purposes.
-  // The API may only put COMPLETED in the registered bucket, so we normalise here.
   if (tab === 'pending') {
-    // pending = installed/completed but warranty NOT yet registered
-    return rows.filter(r => {
-      const s = (r.status || '').toUpperCase()
-      return INSTALLED_STATUSES.has(s) && !r.warrantyRegistrationCompleted
+    // API pending tab = WTY_REGISTRATION tickets awaiting registration (status PENDING).
+    return rows.filter((r) => {
+      if (r.warrantyRegistrationCompleted) return false
+      return (r.status || '').toUpperCase() !== 'CANCELLED'
     })
-  } else {
-    // registered = warranty already completed
-    return rows.filter(r => !!r.warrantyRegistrationCompleted)
   }
+
+  return rows.filter((r) => !!r.warrantyRegistrationCompleted)
 }
 
 /**

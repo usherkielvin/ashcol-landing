@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, appendCurrentNegotiator, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
@@ -1495,18 +1495,63 @@ export default function Tickets() {
     installationCharges: undefined,
     ticketCategory: 'INSTALLATION',
   })
-  const [branchEmployees, setBranchEmployees] = useState<{ id: string; name: string; branchId?: string | null; email?: string | null }[]>([])
+  const [branchEmployees, setBranchEmployees] = useState<BranchStaffOption[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [savingManual, setSavingManual] = useState(false)
 
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+
+  const resolveSchedulesNegotiatorBranch = useCallback((overrideBranchId?: string | null): string | null => {
+    const scoped = (overrideBranchId || '').trim()
+    if (scoped && scoped !== 'ALL' && scoped !== 'ALL_BRANCHES') {
+      return resolvePortalWriteBranchId(scoped, user?.email, user?.jobTitle) || scoped
+    }
+    const raw = (globalBranchId || user?.branchId || '').trim()
+    if (!raw || raw === 'ALL_BRANCHES' || raw === 'ALL') {
+      return resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle) || user?.branchId || null
+    }
+    return resolvePortalWriteBranchId(raw, user?.email, user?.jobTitle) || raw
+  }, [globalBranchId, user?.branchId, user?.email, user?.jobTitle])
+
+  const currentNegotiatorOption = useMemo((): BranchStaffOption | null => {
+    if (!user?.id) return null
+    return {
+      id: user.id,
+      name: user.name,
+      branchId: user.branchId,
+      email: user.email,
+      role: user.role,
+      jobTitle: user.jobTitle,
+    }
+  }, [user?.id, user?.name, user?.branchId, user?.email, user?.role, user?.jobTitle])
+
+  const negotiatorsForBranch = useCallback((branchId?: string | null) => {
+    const filterBranch =
+      resolveSchedulesNegotiatorBranch(branchId)
+      || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
+      || user?.branchId
+      || null
+    const filtered = filterBranchNegotiators(branchEmployees, filterBranch, { strict: !!filterBranch })
+    return appendCurrentNegotiator(filtered, currentNegotiatorOption)
+  }, [branchEmployees, resolveSchedulesNegotiatorBranch, currentNegotiatorOption, user?.branchId, user?.email, user?.jobTitle])
+
+  const addModalNegotiators = useMemo(
+    () => negotiatorsForBranch(activeBranchId),
+    [negotiatorsForBranch, activeBranchId],
+  )
+
+  const editModalNegotiators = useMemo(
+    () => negotiatorsForBranch(editForm.branchId || activeBranchId),
+    [negotiatorsForBranch, editForm.branchId, activeBranchId],
+  )
+
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
   const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
   const [reschedToDate, setReschedToDate] = useState('')
@@ -2011,6 +2056,7 @@ export default function Tickets() {
         ? getMyTicketsInstallerDisplay(ticket)
         : (getInstallerDisplay(ticket) || ticket.installerName || ''),
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
+      branchId: ticket.branchId || ticket.branch_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
       ticketCategory: inferCategoryFromTicket(ticket),
@@ -2850,13 +2896,12 @@ export default function Tickets() {
   useEffect(() => {
     if (canEdit) {
       const headers = { Authorization: `Bearer ${token()}` }
-      const branchSource = globalBranchId || user?.branchId || localStorage.getItem('ashcol-global-branch-id') || ''
       fetch(`${API_BASE_URL}/user/all`, { headers })
         .then(res => res.json())
         .then(data => {
           const list = Array.isArray(data) ? data : (data?.data || [])
           if (!Array.isArray(list)) return
-          const mapped = list.map((u: Record<string, unknown>) => ({
+          const mapped: BranchStaffOption[] = list.map((u: Record<string, unknown>) => ({
             id: String(u.id || ''),
             name: String(u.name || ''),
             branchId: (u.branchId || u.branch_id) as string | undefined,
@@ -2864,11 +2909,11 @@ export default function Tickets() {
             role: (u.role as string | undefined),
             jobTitle: (u.jobTitle || u.job_title) as string | undefined,
           })).filter((u) => u.id && u.name)
-          setBranchEmployees(filterBranchNegotiators(mapped, branchSource))
+          setBranchEmployees(mapped)
         })
         .catch(err => console.error('Failed to load branch employees:', err))
     }
-  }, [canEdit, token, globalBranchId, user?.branchId])
+  }, [canEdit, token])
 
   useEffect(() => {
     const headers = { Authorization: `Bearer ${token()}` }
@@ -5057,7 +5102,7 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
-                      {branchEmployees.map(emp => {
+                      {addModalNegotiators.map(emp => {
                         const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
                         const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
                         return (
@@ -5277,7 +5322,7 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
-                      {branchEmployees.map(emp => {
+                      {editModalNegotiators.map(emp => {
                         const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
                         const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
                         return (

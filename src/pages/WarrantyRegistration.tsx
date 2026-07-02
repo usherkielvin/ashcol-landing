@@ -13,6 +13,7 @@ import {
   readWarrantyCache,
   refreshWarrantyRegistrations,
   resolveWarrantyBranchId,
+  WARRANTY_CACHE_UPDATED,
   warrantyCacheIsFresh,
   type WarrantyListsCache,
   type WarrantyTicket,
@@ -168,6 +169,14 @@ export default function WarrantyRegistration() {
     window.addEventListener('ashcol-global-branch-change', onBranchChange)
     return () => window.removeEventListener('ashcol-global-branch-change', onBranchChange)
   }, [applyCache, refreshFromServer, user])
+
+  useEffect(() => {
+    const onWarrantyUpdated = () => {
+      void refreshFromServer({ forceSync: true, soft: true })
+    }
+    window.addEventListener(WARRANTY_CACHE_UPDATED, onWarrantyUpdated)
+    return () => window.removeEventListener(WARRANTY_CACHE_UPDATED, onWarrantyUpdated)
+  }, [refreshFromServer])
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()

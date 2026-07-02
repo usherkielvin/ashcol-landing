@@ -57,6 +57,11 @@ export function getTicketScheduleOutcome(ticket: TicketLike): string {
 }
 
 export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
+  const remarks = ticketRemarks(ticket)
+  const remarksLower = remarks.toLowerCase()
+  if (remarksLower.includes('pending warranty') || remarksLower.includes('warranty regi')) {
+    return true
+  }
   const outcome = getTicketScheduleOutcome(ticket)
   if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY') return false
   if (outcome === 'DONE_INSTALLED') return true
@@ -207,6 +212,10 @@ function lastDayOfMonth(month: string): string {
 
 export function getTicketArchiveDateKey(ticket: TicketLike): string {
   const meta = parseAcMeta(ticket)
+  const finalDate = meta.finalDate
+  if (typeof finalDate === 'string' && finalDate.trim()) {
+    return finalDate.split('T')[0].split(' ')[0].trim()
+  }
   const installed = meta.installedDate
   if (typeof installed === 'string' && installed.trim()) {
     return installed.split('T')[0].split(' ')[0].trim()
@@ -232,6 +241,7 @@ function ticketInMonth(ticket: TicketLike, month?: string | null): boolean {
     getTicketArchiveDateKey(ticket),
     String(ticket.preferredDate ?? ticket.preferred_date ?? ''),
     String(meta.archivedScheduleDate ?? ''),
+    String(meta.finalDate ?? ''),
   ]
   return candidates.some((key) => dateInMonth(key, month))
 }

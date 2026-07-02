@@ -413,9 +413,11 @@ export function isNegotiatorCandidate(user: {
 export function filterBranchNegotiators(
   users: BranchStaffOption[],
   branchSource?: string | null,
+  options?: { strict?: boolean },
 ): BranchStaffOption[] {
   const eligible = users.filter(isNegotiatorCandidate)
   if (!branchSource || branchSource === 'ALL_BRANCHES' || branchSource === 'ALL') {
+    if (options?.strict) return []
     return eligible.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
   const matched = eligible.filter((u) => {
@@ -430,10 +432,23 @@ export function filterBranchNegotiators(
   if (matched.length > 0) {
     return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
+  if (options?.strict) {
+    return []
+  }
   // Fallback: staff without branch on file still selectable for active branch
   const unassigned = eligible.filter((u) => !u.branchId?.trim())
   return (unassigned.length > 0 ? unassigned : eligible)
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+}
+
+/** Ensure the signed-in negotiator can select themselves on branch schedules. */
+export function appendCurrentNegotiator(
+  users: BranchStaffOption[],
+  current?: BranchStaffOption | null,
+): BranchStaffOption[] {
+  if (!current?.id || !current.name?.trim() || !isNegotiatorCandidate(current)) return users
+  if (users.some((u) => u.id === current.id)) return users
+  return [...users, current].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 }
 
 /** Pick a concrete branch id for archive writes (never ALL_BRANCHES). */

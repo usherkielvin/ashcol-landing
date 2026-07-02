@@ -10,6 +10,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED } from '../utils/warrantyRegistration'
+import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -74,6 +76,8 @@ interface Ticket {
   title: string
   description: string
   serviceType: string
+  ticketCategory?: string
+  ticket_category?: string
   status: string
   branchId?: string
   assignedTo?: string
@@ -539,6 +543,44 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (status === 'ON_THE_WAY') return 'On the Way'
   return 'Pending'
 }
+
+const ticketCategoryOf = (ticket: Ticket) =>
+  (ticket.ticketCategory || ticket.ticket_category || '').trim().toUpperCase()
+
+const isWarrantyRegistrationTicket = (ticket: Ticket) => {
+  if (ticketCategoryOf(ticket) === 'WTY_REGISTRATION') return true
+  const svc = (ticket.serviceType || '').toLowerCase()
+  return svc.includes('wty') || svc.includes('warranty registration')
+}
+
+const hasPendingWarrantySignal = (ticket: Ticket) => {
+  const details = parseAcDetails(ticket)
+  const blob = [
+    ticket.remarksUpdate,
+    ticket.description,
+    ticket.title,
+    ticket.warrantyDocsStatus,
+    details.warrantyRegistrationStatus,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (blob.includes('pending warranty')) return true
+  if (blob.includes('warranty regi')) return true
+  if (blob.includes('warranty') && blob.includes('pending')) return true
+
+  const wStatus = (details.warrantyRegistrationStatus || ticket.warrantyDocsStatus || '').trim().toUpperCase()
+  if (wStatus === 'PENDING') return true
+
+  return false
+}
+
+/** Warranty queue rows belong on Archives + Registration, not the Relays masterlist. */
+const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
+  if (isWarrantyRegistrationTicket(ticket)) return true
+  if (hasPendingWarrantySignal(ticket)) return true
+  return false
+}
+
+const filterRelaysTickets = (list: Ticket[]) => list.filter(t => !shouldExcludeFromRelaysTab(t))
 
 function mergeRelayTicketLists(server: Ticket[], local: Ticket[]): Ticket[] {
   const byId = new Map<string, Ticket>()
@@ -1042,7 +1084,7 @@ export default function ClientMasterlist() {
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
     if (hasCache && !forceRefresh) {
-      setTickets(cached!.tickets as Ticket[])
+      setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) setEmployees(cached!.employees as any[])
       hasLoadedOnceRef.current = true
@@ -1054,9 +1096,25 @@ export default function ClientMasterlist() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
+      const branchForSync = globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? globalBranchId : undefined
+
+      if (isAdmin && token && (forceRefresh || !hasCache)) {
+        try {
+          await syncWarrantyRegistrations(token, branchForSync)
+          clearWarrantyCache()
+          clearRelaysCache()
+          window.dispatchEvent(new CustomEvent(WARRANTY_CACHE_UPDATED))
+          notifyArchiveUpdated()
+        } catch {
+          // Best-effort — still load relays below
+        }
+      }
 
       const [tListRaw, branchRes, empRes] = await Promise.all([
-        fetchTicketsPage(endpoint, token, { size: 200 }).catch(() => [] as unknown[]),
+        fetchTicketsPage(endpoint, token, {
+          size: 200,
+          categoryGroup: ticketScope === 'ALL' ? 'FIELD' : undefined,
+        }).catch(() => [] as unknown[]),
         fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${token}` } }),
       ])
@@ -1073,8 +1131,8 @@ export default function ClientMasterlist() {
 
       setTickets(prev => {
         const merged = forceRefresh ? mergeRelayTicketLists(tList, prev) : tList
-        tList = merged
-        return merged
+        tList = filterRelaysTickets(merged)
+        return tList
       })
 
       if (branchRes.ok) {
@@ -1104,14 +1162,14 @@ export default function ClientMasterlist() {
         setRefreshing(false)
       }
     }
-  }, [ticketScope, user, globalBranchId])
+  }, [ticketScope, user, globalBranchId, isAdmin])
 
   useEffect(() => {
     const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
     const cached = readTabCache<RelaysTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
-      setTickets(cached!.tickets as Ticket[])
+      setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) {
         setEmployees(cached!.employees as any[])
@@ -1832,6 +1890,7 @@ export default function ClientMasterlist() {
     let mine = 0
     const activeBranch = branchFilter
     for (const t of tickets) {
+      if (shouldExcludeFromRelaysTab(t)) continue
       const status = (t.status || '').toUpperCase()
       if (status === 'COMPLETED' || status === 'CANCELLED') continue
 
@@ -1874,6 +1933,7 @@ export default function ClientMasterlist() {
   // relayPillItems removed
 
   const filtered = tickets.filter(t => {
+    if (shouldExcludeFromRelaysTab(t)) return false
     const status = (t.status || '').toUpperCase()
     if (status === 'COMPLETED' || status === 'CANCELLED') return false
 
