@@ -620,11 +620,16 @@ const isRelayPostInstallWarranty = (ticket: Ticket) => {
     || (ticket.commitType || '').toLowerCase().includes('warranty')
 }
 
+/** Negotiator set install date — ticket belongs on Schedules, not Relays. */
+const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(parseAcDetails(ticket).finalDate?.trim())
+
 /** Warranty queue rows belong on Archives + Registration, not the Relays masterlist. */
 const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
   if (isWarrantyRegistrationTicket(ticket)) return true
   if (hasPendingWarrantySignal(ticket)) return true
   if (isRelayPostInstallWarranty(ticket)) return true
+  if (hasRelayFinalScheduleDate(ticket)) return true
+  if (getRelayStatusLabel(ticket) === 'Installed') return true
   return false
 }
 
@@ -2026,12 +2031,14 @@ export default function ClientMasterlist() {
     }))
     for (const t of eligible) {
       const statusLabel = getRelayStatusLabel(t)
-      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned' && statusLabel !== 'Scheduled') continue
+      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') continue
       allPending++
       if (statusLabel === 'Pending') unassigned++
       else assigned++
       if (isAdmin) mine++
-      else if (t.assignedTo === user?.id) mine++
+      else if (t.assignedTo === user?.id || t.negotiatorId === user?.id || t.negotiator_id === user?.id) {
+        if (statusLabel === 'Assigned') mine++
+      }
     }
     return {
       ALL_PENDING: allPending,
@@ -2058,10 +2065,12 @@ export default function ClientMasterlist() {
     const statusLabel = getRelayStatusLabel(t)
     
     if (activeTab === 'MY_TICKETS') {
-      // Include Assigned, Scheduled (has finalDate) — anything not yet installed/cancelled
-      if (statusLabel !== 'Pending' && statusLabel !== 'Assigned' && statusLabel !== 'Scheduled') return false
-      // For non-admin: show all branch tickets (not just own) so team can see who has what
-      // Admins always see all
+      // Negotiator branch queue — assigned only, no finalDate (scheduled leaves Relays entirely)
+      if (statusLabel !== 'Assigned') return false
+      if (!t.assignedTo && !t.negotiatorId && !t.negotiator_id) return false
+      if (!isAdmin && user?.id && t.assignedTo !== user.id && t.negotiatorId !== user.id && t.negotiator_id !== user.id) {
+        return false
+      }
     } else {
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned') return false
 
@@ -3802,8 +3811,17 @@ export default function ClientMasterlist() {
                       }}>
                         {t.assignedTo ? 'Assigned' : (bn !== '—' && bn !== 'UNASSIGNED' ? bn : sl)}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
-                        TICKET NO: {getTicketNumber(t)}
+                      {bn !== '—' && bn !== 'UNASSIGNED' && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                          backgroundColor: inputBg,
+                          color: textMuted,
+                          border: `1px solid ${border}`,
+                        }}>
+                          {bn}
+                        </span>
+                      )}
+                      <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
+                        Ticket No: {getTicketNumber(t)}
                       </span>
                     </div>
                   </div>
@@ -3880,9 +3898,6 @@ export default function ClientMasterlist() {
                       <DField label="Commit Type" value={t.commitType} />
                       <DField label="Brand / HP" value={formatBrandCapacityLabel(det.brand, det.capacity) || '—'} />
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
-                      <DField label="Negotiator" value={neg} />
-                      <DField label="Negotiator Number" value={negotiatorPhone ? <FormatPhone raw={negotiatorPhone} /> : '—'} green />
-                      <DField label="Branch" value={bn} />
                     </div>
                   </div>
 

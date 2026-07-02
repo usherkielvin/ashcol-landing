@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
-  ArrowUp, ArrowDown, ArrowUpDown,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -499,8 +499,20 @@ function getRelayQueueLabel(ticket: Ticket): string {
 }
 
 function shouldShowOnMyTickets(ticket: Ticket): boolean {
+  const stat = (ticket.status || '').toUpperCase()
+  if (stat === 'COMPLETED' || stat === 'CANCELLED') return false
+  if (hasFinalScheduleDate(ticket)) return false
+
   const label = getRelayQueueLabel(ticket)
-  return label === 'Pending' || label === 'Assigned'
+  if (label === 'Installed' || label === 'Scheduled' || label === 'Cancelled') return false
+  if (label !== 'Assigned') return false
+
+  return Boolean(
+    ticket.assignedTo
+    || ticket.negotiatorId
+    || ticket.negotiator_id
+    || stat === 'ASSIGNED',
+  )
 }
 
 function resolveTicketDistrict(ticket: Ticket): string {
@@ -528,11 +540,18 @@ function isReschedulePending(ticket: Ticket): boolean {
 
 function getScheduleStatusDisplay(ticket: Ticket): string {
   const val = getScheduleStatusValue(ticket)
-  if (val === 'RESCHED' && isReschedulePending(ticket)) return 'Resched (Pending)'
   if (val === 'RESCHED') {
     return 'Resched'
   }
   return getScheduleStatusLabel(val)
+}
+
+function getScheduleUpdateDisplay(ticket: Ticket): string {
+  const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  if (getScheduleStatusValue(ticket) === 'RESCHED' && isReschedulePending(ticket)) {
+    return base || 'PENDING'
+  }
+  return base
 }
 
 function buildReschedulePatchBody(
@@ -546,6 +565,13 @@ function buildReschedulePatchBody(
   if (options.pending) {
     acUpdates.reschedulePending = true
     acUpdates.rescheduledTo = ''
+    const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
+    if (!base) {
+      body.remarks = 'PENDING'
+      body.remarksUpdate = 'PENDING'
+      acUpdates.remarksUpdate = 'PENDING'
+      acUpdates.update = 'PENDING'
+    }
   } else {
     const newDateKey = (options.newDateKey || '').split('T')[0].trim()
     if (!newDateKey) return {}
@@ -812,12 +838,12 @@ function getMyTicketsInstallerDisplay(ticket: Ticket): string {
 function formatRelayTicketTypeShort(ticket: Ticket): string {
   const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
   if (/collect/.test(raw)) return 'COLLECTION'
-  if (/install|s\/i|\bsi\b|survey\s*&\s*install/.test(raw)) return 'S/I'
+  if (/install|s\/i|\bsi\b|survey\s*&\s*install/.test(raw)) return 'SURVEY & INSTALL'
   if (/survey/.test(raw)) return 'SURVEY'
   if (/service|clean/.test(raw)) return 'SERVICE'
   const st = String(ticket.serviceType || ticket.service_type || '').trim()
-  if (st) return /install|s\/i/i.test(st) ? 'S/I' : st.toUpperCase()
-  return 'S/I'
+  if (st) return /install|s\/i/i.test(st) ? 'SURVEY & INSTALL' : st.toUpperCase()
+  return 'SURVEY & INSTALL'
 }
 
 function getTicketNumberDisplay(ticket: Ticket): string {
@@ -923,7 +949,7 @@ function ticketColumnText(ticket: Ticket, colLabel: string, options?: { myTicket
     case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
-    case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
+    case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
 }
@@ -1333,7 +1359,7 @@ function getCellRawValue(ticket: Ticket, colLabel: string, myTickets = false): s
     case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
-    case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
+    case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
 }
@@ -2273,6 +2299,11 @@ export default function Tickets() {
         if (editForm.reschedulePending) {
           acMetaExtras.reschedulePending = true
           acMetaExtras.rescheduledTo = ''
+          if (!remarksVal) {
+            remarksVal = 'PENDING'
+            body.remarks = remarksVal
+            body.remarksUpdate = remarksVal
+          }
         } else {
           acMetaExtras.reschedulePending = false
           acMetaExtras.rescheduledTo = newDateKey
@@ -2324,8 +2355,8 @@ export default function Tickets() {
         unitType: editForm.unitType?.trim() || undefined,
         dealer: editForm.sourceVendor?.trim() || undefined,
         dlr: editForm.sourceVendor?.trim() || undefined,
-        update: editForm.remarks?.trim() || undefined,
-        remarksUpdate: editForm.remarks?.trim() || undefined,
+        update: remarksVal || undefined,
+        remarksUpdate: remarksVal || undefined,
         installerName: editForm.installerName?.trim() || undefined,
         negotiatorId: editForm.negotiatorId,
         negotiatorName: resolveNegotiatorName(
@@ -2937,11 +2968,14 @@ export default function Tickets() {
     else setRefreshing(true)
     setFetchError(null)
     try {
-      const ep   = isMyTickets
-        ? (isAdmin ? '/tickets' : '/tickets/assigned')
+      const ep = isMyTickets
+        ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
         : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-      const size = isMyTickets ? (isAdmin ? 500 : 200) : isAdmin ? 300 : 200
-      const list = await fetchTicketsPage(ep, token(), { size })
+      const size = isMyTickets ? 200 : isAdmin ? 300 : 200
+      const list = await fetchTicketsPage(ep, token(), {
+        size,
+        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
+      })
       if (seq !== fetchSeqRef.current) return
       setTickets(list as Ticket[])
       writeTabCache(cacheKey, { tickets: list, lastSyncAt: Date.now() })
@@ -3020,7 +3054,7 @@ export default function Tickets() {
             if (wantServices ? !isService : isService) return false
           }
         }
-        if (!isAdmin && !shouldShowOnMyTickets(t)) return false
+        if (!shouldShowOnMyTickets(t)) return false
         return true
       }
 
@@ -3178,7 +3212,7 @@ export default function Tickets() {
       case 'INSTALLER':       return isMyTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
       case 'NOTE':            return ticket.note || ''
       case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
-      case 'UPDATE':          return ticket.remarksUpdate || ticket.remarks || ''
+      case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
       default: return ''
     }
   }
@@ -3617,6 +3651,24 @@ export default function Tickets() {
     )
   }
 
+  const copyTextToClipboard = async (text: string) => {
+    if (!text.trim()) return
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('Address copied ✓')
+    } catch {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.position = 'fixed'
+      el.style.left = '-9999px'
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      showToast('Address copied ✓')
+    }
+  }
+
   function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null, cellExpanded = false) {
     const { label } = col
 
@@ -3638,9 +3690,32 @@ export default function Tickets() {
       const district = resolveTicketDistrict(ticket)
       if (cellExpanded) {
         return (
-          <div className="text-xs leading-relaxed font-semibold" style={{ color: textPrimary }}>
-            <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">Full Address</div>
-            <div>{fullAddress}</div>
+          <div
+            className="relative z-20 -mx-2 -my-1 w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl px-3 py-2 text-xs leading-relaxed font-semibold shadow-xl"
+            style={{
+              color: textPrimary,
+              backgroundColor: cardBg,
+              border: `1px solid ${inputBorder}`,
+              boxShadow: isLight ? '0 14px 30px rgba(15,23,42,0.16)' : '0 14px 30px rgba(0,0,0,0.35)',
+            }}
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Full Address</div>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  void copyTextToClipboard(fullAddress)
+                }}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted, borderColor: inputBorder }}
+                title="Copy address"
+                aria-label="Copy address"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="whitespace-normal break-words text-left normal-case">{fullAddress || '—'}</div>
           </div>
         )
       }
@@ -3727,7 +3802,7 @@ export default function Tickets() {
     if (label === 'SERVICE' && isMyTickets) {
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 700, letterSpacing: '0.04em' }} title={val}>
-          {val || 'S/I'}
+          {val || 'SURVEY & INSTALL'}
         </span>,
         ticket, label, rowGhost,
       )
@@ -4267,7 +4342,7 @@ export default function Tickets() {
                           borderBottom: `1px solid ${tableBorder}`,
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
                           position: rowIsActive ? 'relative' : undefined,
-                          zIndex: rowIsActive ? 6 : undefined,
+                          zIndex: rowIsActive ? 80 : undefined,
                           height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
                         }}
                         onMouseEnter={() => setHoveredRow(ticket.id)}
@@ -4330,8 +4405,8 @@ export default function Tickets() {
                                 userSelect: canEdit && !isGhost ? 'none' : undefined,
                                 WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
                                 ...(col.sticky
-                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 12 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
-                                  : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 10 : 4) : undefined }),
+                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
+                                  : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
                               }}>
                             {isEditingCell ? (
                               renderCell(ticket, col, idx, isGhost, ghostKind, false)
@@ -4342,7 +4417,7 @@ export default function Tickets() {
                                 </div>
                                 {isExpandedCell && (
                                   <div
-                                    className="absolute left-0 top-full mt-0.5 z-[60] min-w-[min(100%,240px)] max-w-[380px] rounded-xl shadow-2xl border p-3"
+                                    className="absolute left-0 top-full mt-0.5 z-[140] min-w-[min(100%,240px)] max-w-[380px] rounded-xl shadow-2xl border p-3"
                                     style={{ backgroundColor: cardBg, borderColor: border }}
                                     onClick={e => e.stopPropagation()}
                                   >

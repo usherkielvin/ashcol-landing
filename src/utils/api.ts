@@ -794,11 +794,12 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
 export async function fetchTicketsPage(
   endpoint: string,
   token: string,
-  options: { size?: number; categoryGroup?: 'FIELD' | 'OFFICE' } = {},
+  options: { size?: number; categoryGroup?: 'FIELD' | 'OFFICE'; status?: string } = {},
 ): Promise<unknown[]> {
   const size = options.size ?? 200
   const headers = { Authorization: `Bearer ${token}` }
-  const base = { page: '0', size: String(size) }
+  const base: Record<string, string> = { page: '0', size: String(size) }
+  if (options.status) base.status = options.status
 
   const attempts: Record<string, string>[] = options.categoryGroup
     ? [{ ...base, categoryGroup: options.categoryGroup }, base]
