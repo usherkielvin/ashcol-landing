@@ -3781,13 +3781,21 @@ export default function ClientMasterlist() {
         };
 
         return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-[3px]"
             style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
             onClick={() => { setIsViewModalOpen(false); setShowHistoryPanel(false); }}>
 
             {/* Modal Box */}
-            <div className={`w-full ${showHistoryPanel ? 'max-w-5xl' : 'max-w-2xl'} rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95`}
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+            <div className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95"
+              style={{
+                backgroundColor: cardBg,
+                border: `1px solid ${border}`,
+                height: 'calc(100vh - 6px)',
+                maxHeight: 'calc(100vh - 6px)',
+                maxWidth: showHistoryPanel
+                  ? 'min(1480px, calc(100vw - 6px))'
+                  : 'min(1180px, calc(100vw - 6px))',
+              }}
               onClick={e => e.stopPropagation()}>
 
               {/* Header */}
