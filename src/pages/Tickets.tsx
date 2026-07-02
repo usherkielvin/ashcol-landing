@@ -3559,9 +3559,11 @@ export default function Tickets() {
     }
 
     if (label === 'TICKET NO') {
+      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
+      const displayVal = val ? `${prefix}${val}` : `${prefix}—`
       return withEditPencil(
-        <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={val}>
-          {val || '—'}
+        <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
+          {displayVal}
         </span>,
         ticket, label, rowGhost,
       )
@@ -3682,9 +3684,8 @@ export default function Tickets() {
     }
 
     if (label === "CUSTOMER'S NAME") {
-      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={`${prefix}${val}`}>{prefix}{val}</span>,
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>{val}</span>,
         ticket, label, rowGhost,
       )
     }

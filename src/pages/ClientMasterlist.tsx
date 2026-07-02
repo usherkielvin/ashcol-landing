@@ -667,6 +667,8 @@ export default function ClientMasterlist() {
   const [isStoreFilterOpen, setIsStoreFilterOpen] = useState(false)
   const [toolbarStoreDraft, setToolbarStoreDraft] = useState('')
   const storeFilterRef = useRef<HTMLDivElement>(null)
+  const [isBranchFilterOpen, setIsBranchFilterOpen] = useState(false)
+  const branchFilterRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -675,6 +677,9 @@ export default function ClientMasterlist() {
       }
       if (storeFilterRef.current && !storeFilterRef.current.contains(event.target as Node)) {
         setIsStoreFilterOpen(false)
+      }
+      if (branchFilterRef.current && !branchFilterRef.current.contains(event.target as Node)) {
+        setIsBranchFilterOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -769,8 +774,6 @@ export default function ClientMasterlist() {
     finalDate: ''
   })
   const [formSubmitting, setFormSubmitting] = useState(false)
-  const [inlineSavingId, setInlineSavingId] = useState<string | null>(null)
-  const [inlineFinalDates, setInlineFinalDates] = useState<Record<string, string>>({})
   const [employees, setEmployees] = useState<any[]>([])
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
@@ -852,58 +855,6 @@ export default function ClientMasterlist() {
     setIsAddModalOpen(true)
   }, [resolveRelayDefaultBranchId])
 
-  const handleSaveFinalDateInline = async (ticket: Ticket, newFinalDate: string) => {
-    if (!newFinalDate) return
-
-    setInlineSavingId(ticket.id)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const parsedDetails = parseAcDetails(ticket)
-      const newDetailsObj = {
-        ...parsedDetails,
-        finalDate: newFinalDate
-      }
-
-      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          acDetails: JSON.stringify(newDetailsObj)
-        })
-      })
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null)
-        throw new Error(errData?.message || `Status ${res.status}`)
-      }
-
-      setTickets(prev => prev.map(t => {
-        if (t.id === ticket.id) {
-          return {
-            ...t,
-            acDetails: JSON.stringify(newDetailsObj)
-          }
-        }
-        return t
-      }))
-
-      setInlineFinalDates(prev => {
-        const copy = { ...prev }
-        delete copy[ticket.id]
-        return copy
-      })
-
-      alert('Final schedule updated successfully.')
-    } catch (e: any) {
-      alert(`Failed to update final schedule: ${e.message}`)
-    } finally {
-      setInlineSavingId(null)
-    }
-  }
-
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [isActionDrawerOpen, setIsActionDrawerOpen] = useState(false)
@@ -944,7 +895,6 @@ export default function ClientMasterlist() {
 
   const [editImages, setEditImages] = useState('')
   const [editRelayedDate, setEditRelayedDate] = useState('')
-  const [editFinalDate, setEditFinalDate] = useState('')
   const [editStoreReferralFee, setEditStoreReferralFee] = useState('')
   const [editPromodiserName, setEditPromodiserName] = useState('')
   const [editReferralRecipient, setEditReferralRecipient] = useState('')
@@ -985,16 +935,14 @@ export default function ClientMasterlist() {
     const rawCols = activeTab === 'MY_TICKETS' ? [
       { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',       weight: 10, expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
       { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'INSTALLER',        weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'DRIVER',           weight: 7,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'FINAL DATE',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
@@ -1005,6 +953,7 @@ export default function ClientMasterlist() {
       { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
@@ -1485,7 +1434,7 @@ export default function ClientMasterlist() {
         serialNumber: addForm.serialNumber || '',
         alternatePhone: cleanedPhones.slice(1).join(', '),
         relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
-        finalDate: addForm.finalDate || ''
+        finalDate: ''
       }
       const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
       const writeBranchId = resolvePortalWriteBranchId(
@@ -1648,6 +1597,7 @@ export default function ClientMasterlist() {
       payload.modeOfPayment = editModeOfPayment || null
       payload.controlNumber = editControlNumber || null
       
+      const existingDetails = parseAcDetails(selectedTicket)
       const acDetailsObj = {
         landmarks: editLandmarks || '',
         brand: editBrand || '',
@@ -1656,7 +1606,7 @@ export default function ClientMasterlist() {
         serialNumber: editSerialNumber || '',
         alternatePhone: editPhoneNumbers.slice(1).filter(Boolean).join(', '),
         relayedDate: editRelayedDate || '',
-        finalDate: editFinalDate || '',
+        finalDate: existingDetails.finalDate || '',
         promodiserName: editReferralRecipient || editPromodiserName || '',
         referralFeeRecipient: editReferralRecipient || editPromodiserName || '',
         referralFeeAmount: editReferralAmount || editStoreReferralFee || '',
@@ -1830,7 +1780,6 @@ export default function ClientMasterlist() {
     setEditBrandHP(`${parsedDetails.brand || ''} ${parsedDetails.capacity || ''}`.trim())
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
-    setEditFinalDate(parsedDetails.finalDate || '')
     setEditStoreReferralFee(String(ticket.storeReferralFee ?? ticket.store_referral_fee ?? ''))
     setEditPromodiserName(String(parsedDetails.promodiserName || ''))
     setEditReferralRecipient(String(parsedDetails.referralFeeRecipient || parsedDetails.promodiserName || ''))
@@ -2192,19 +2141,60 @@ export default function ClientMasterlist() {
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2">
-          {/* Branch Filter */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed bg-slate-100 dark:bg-slate-900/50'}`}
-              style={{ backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'), borderColor: inputBorder }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: isAdmin ? '#10B981' : textMuted }} />
-              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
-                disabled={!isAdmin}
-                className={`bg-transparent outline-none text-xs font-semibold ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                style={{ color: isAdmin ? textPrimary : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}>
-                <option value="ALL">All Branches</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
+          {/* Enhanced Branch Filter */}
+          <div className="relative shrink-0" ref={branchFilterRef}>
+            <button
+              type="button"
+              disabled={!isAdmin}
+              onClick={() => setIsBranchFilterOpen(prev => !prev)}
+              className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all ${
+                isAdmin ? 'hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer' : 'cursor-not-allowed opacity-80'
+              }`}
+              style={{
+                backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'),
+                borderColor: inputBorder,
+                color: isAdmin ? textPrimary : textMuted
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
+                <span>
+                  {branchFilter === 'ALL'
+                    ? 'All Branches'
+                    : branches.find(b => b.id === branchFilter)?.name || branchFilter}
+                </span>
+              </div>
+              {isAdmin && <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />}
+            </button>
+            
+            {isAdmin && isBranchFilterOpen && (
+              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
+                style={{ backgroundColor: cardBg, borderColor: border }}>
+                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Select Branch</span>
+                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
+                  <button
+                    type="button"
+                    onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === 'ALL' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                  >
+                    <span>All Branches</span>
+                    {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                  </button>
+                  {branches.map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                    >
+                      <span>{b.name}</span>
+                      {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Enhanced Store Filter */}
           <div className="relative shrink-0" ref={storeFilterRef}>
@@ -2519,6 +2509,9 @@ export default function ClientMasterlist() {
                   const ticketNo = getTicketNumber(ticket)
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
+                  const finalDateLabel = details.finalDate
+                    ? formatRelayDate(String(details.finalDate).slice(0, 10))
+                    : ''
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
                     // TICKET NO
                     { value: (
@@ -2533,40 +2526,6 @@ export default function ClientMasterlist() {
                       }}>
                         {relayStatus}
                       </span>
-                    ) },
-                    // NEGOTIATOR
-                    { value: (
-                      <span className="truncate block w-full text-center font-semibold" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
-                        {displayUpper(negotiator)}
-                      </span>
-                    ) },
-                    // FINAL DATE (auto-saving)
-                    { value: (
-                      <div className="flex items-center justify-center w-full py-0.5">
-                        <input
-                          type="date"
-                          value={inlineFinalDates[ticket.id] !== undefined
-                            ? inlineFinalDates[ticket.id]
-                            : (details.finalDate ? String(details.finalDate).slice(0, 10) : '')}
-                          disabled={inlineSavingId === ticket.id}
-                          onClick={e => e.stopPropagation()}
-                          onChange={async e => {
-                            const val = e.target.value
-                            setInlineFinalDates(prev => ({ ...prev, [ticket.id]: val }))
-                            await handleSaveFinalDateInline(ticket, val)
-                          }}
-                          className="text-[10px] font-semibold rounded border px-1 py-0.5 outline-none focus:ring-1 focus:ring-emerald-500 w-full max-w-[120px]"
-                          style={{
-                            backgroundColor: cardBg,
-                            borderColor: inputBorder,
-                            color: textPrimary,
-                            colorScheme: isLight ? 'light' : 'dark',
-                          }}
-                        />
-                        {inlineSavingId === ticket.id && (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 ml-1.5 shrink-0" />
-                        )}
-                      </div>
                     ) },
                     // CUSTOMER NAME
                     { value: (
@@ -2598,20 +2557,24 @@ export default function ClientMasterlist() {
                         {displayUpper(ticket.commitType || '') || '—'}
                       </span>
                     ) },
-                    // INSTALLER
-                    { value: (
-                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(ticket.installerName || '')} style={{ color: textPrimary }}>
-                        {displayUpper(ticket.installerName || '') || '—'}
-                      </span>
-                    ) },
-                    // DRIVER
-                    { value: (
-                      <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.serviceVehicle || '')} style={{ color: textMuted }}>
-                        {displayUpper(ticket.serviceVehicle || '') || '—'}
-                      </span>
-                    ) },
                     // PREFERRED DATE
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    // NEGOTIATOR
+                    { value: (
+                      <span className="truncate block w-full text-center font-semibold" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                        {displayUpper(negotiator)}
+                      </span>
+                    ) },
+                    // FINAL DATE (read-only — set by negotiator when scheduling)
+                    { value: (
+                      <span
+                        className="whitespace-nowrap block w-full text-center font-semibold"
+                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
+                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      >
+                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
+                      </span>
+                    ) },
                     // REMARKS
                     { value: (
                       <span className="truncate block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
@@ -2649,9 +2612,18 @@ export default function ClientMasterlist() {
                     { value: <span className="truncate block w-full text-center" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
+                    { value: <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(negotiator)}>{displayUpper(negotiator)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full text-center font-semibold" style={{ color: details.finalDate ? '#10B981' : textMuted }}>{displayUpper(formatRelayDate(details.finalDate || ''))}</span> },
-                    { value: <span className={`${!columns[10].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
+                    { value: (
+                      <span
+                        className="whitespace-nowrap block w-full text-center font-semibold"
+                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
+                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      >
+                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
+                      </span>
+                    ) },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -2675,8 +2647,7 @@ export default function ClientMasterlist() {
                         const isExpandedCell = activeTab === 'MY_TICKETS'
                           && expandedCell?.ticketId === ticket.id
                           && expandedCell?.colLabel === col.label
-                        const isInteractiveCol = col.label === 'FINAL DATE'
-                        const canExpandCell = activeTab === 'MY_TICKETS' && !isInteractiveCol
+                        const canExpandCell = activeTab === 'MY_TICKETS'
                         return (
                           <td key={col.label}
                             id={`cell-${ticket.id}-${colIdx}`}
@@ -3095,10 +3066,6 @@ export default function ClientMasterlist() {
                     <EField label="Preferred Date">
                       <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
                         className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Final Schedule Date">
-                      <input type="date" value={editFinalDate} onChange={e => setEditFinalDate(e.target.value)}
-                        className={compactInput} style={{ ...inputStyle, backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }} />
                     </EField>
                   </div>
                 </div>
@@ -3540,11 +3507,6 @@ export default function ClientMasterlist() {
                     <RelayFormField label="Requested" compact className="md:col-span-3">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
                     </RelayFormField>
-                    {addForm.status !== 'CANCELLED' && (
-                      <RelayFormField label="Final Schedule" compact className="md:col-span-3">
-                        <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={addInput} style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)', color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
-                      </RelayFormField>
-                    )}
                     {addCategory === 'Collection' && (
                       <>
                         <RelayFormField label="Amount" compact className="md:col-span-3">
