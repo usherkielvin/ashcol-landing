@@ -496,8 +496,7 @@ function getScheduleStatusDisplay(ticket: Ticket): string {
   const val = getScheduleStatusValue(ticket)
   if (val === 'RESCHED' && isReschedulePending(ticket)) return 'Resched (Pending)'
   if (val === 'RESCHED') {
-    const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
-    return movedTo ? `Resched → ${movedTo}` : 'Resched'
+    return 'Resched'
   }
   return getScheduleStatusLabel(val)
 }
@@ -528,8 +527,8 @@ function buildReschedulePatchBody(
       if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
       acUpdates.previousScheduleDates = prevDates
       
-      const formattedOldDate = formatDateKeyLabel(oldDateKey)
-      const reschedMsg = `Scheduled moved from ${formattedOldDate}`
+      const formattedNewDate = formatDateKeyLabel(newDateKey)
+      const reschedMsg = `Moved to ${formattedNewDate}`
       body.remarks = reschedMsg
       body.remarksUpdate = reschedMsg
       acUpdates.remarksUpdate = reschedMsg
@@ -2083,8 +2082,9 @@ export default function Tickets() {
       
       let remarksVal = editForm.remarks?.trim() || undefined
       if (isDateMove) {
-        const formattedOldDate = formatDateKeyLabel(oldDateKey)
-        const reschedMsg = `Scheduled moved from ${formattedOldDate}`
+        const reschedMsg = isReschedStatus && newDateKey
+          ? `Moved to ${formatDateKeyLabel(newDateKey)}`
+          : `Scheduled moved from ${formatDateKeyLabel(oldDateKey)}`
         remarksVal = remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg
         editForm.remarks = remarksVal
       }
@@ -2695,7 +2695,7 @@ export default function Tickets() {
   const columns = useMemo(() => {
     const raw = [
       { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: isMyTickets ? 'DISTRICT' : 'ADDRESS',          weight: isMyTickets ? 12 : 22, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
+      { label: 'DESTINATION',     display: 'DISTRICT',                                    weight: 12, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: "COMMIT",                                    weight: 12, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
@@ -2958,7 +2958,7 @@ export default function Tickets() {
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
       case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
-      case 'DESTINATION':     return isMyTickets ? resolveTicketDistrict(ticket) : formatAddress(ticket.location)
+      case 'DESTINATION':     return resolveTicketDistrict(ticket)
       case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
       case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
       case 'BRAND':           return parseBrand(ticket)
@@ -2997,17 +2997,15 @@ export default function Tickets() {
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
     if (colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED') {
       cancelEdit()
-      if (!hasInstallPayment(ticket)) {
-        requestAnimationFrame(() => {
-          setCompletionPrompt({
-            ticket,
-            value: 'Installed',
-            modeOfPayment: getPaymentMode(ticket) || 'CASH',
-            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-          })
+      requestAnimationFrame(() => {
+        setCompletionPrompt({
+          ticket,
+          value: 'Installed',
+          modeOfPayment: getPaymentMode(ticket) || 'CASH',
+          amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
         })
-        return
-      }
+      })
+      return
     }
 
     const body = buildCellPatchBody(ticket, colLabel, value)
@@ -3314,7 +3312,18 @@ export default function Tickets() {
           onChange={e => {
             const next = e.target.value
             if (next === 'RESCHED') {
+              cancelEdit()
               openReschedDialog(ticket)
+              return
+            }
+            if (next === 'DONE_INSTALLED') {
+              cancelEdit()
+              setCompletionPrompt({
+                ticket,
+                value: 'Installed',
+                modeOfPayment: getPaymentMode(ticket) || 'CASH',
+                amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+              })
               return
             }
             if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
@@ -3412,6 +3421,25 @@ export default function Tickets() {
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }
+
+    if (label === 'DESTINATION') {
+      const fullAddress = formatAddress(ticket.location)
+      const district = resolveTicketDistrict(ticket)
+      if (cellExpanded) {
+        return (
+          <div className="text-xs leading-relaxed font-semibold" style={{ color: textPrimary }}>
+            <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">Full Address</div>
+            <div>{fullAddress}</div>
+          </div>
+        )
+      }
+      return withEditPencil(
+        <span style={truncStyle} title={fullAddress}>
+          {district || '—'}
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
 
     if (label === 'STATUS') {
       const outcome = getScheduleOutcome(ticket)
