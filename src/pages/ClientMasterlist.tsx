@@ -1369,7 +1369,7 @@ export default function ClientMasterlist() {
         sku: addForm.sku || '',
         serialNumber: addForm.serialNumber || '',
         alternatePhone: addForm.alternatePhone || '',
-        relayedDate: addForm.relayedDate || '',
+        relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
         finalDate: addForm.finalDate || ''
       }
       const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
@@ -1411,7 +1411,6 @@ export default function ClientMasterlist() {
           installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
           modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
           controlNumber: addForm.controlNumber || undefined,
-          ticketNumber: addForm.ticketNumber?.trim() || undefined,
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
@@ -3007,7 +3006,7 @@ export default function ClientMasterlist() {
         );
       })(), document.body)}
       {/* Centered Create Ticket Modal */}
-      {isAddModalOpen && (() => {
+      {isAddModalOpen && ReactDOM.createPortal((() => {
         const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Collection'
           : /install|s\/i|\bsi\b/i.test(`${addForm.serviceType} ${addForm.title}`)
@@ -3059,9 +3058,16 @@ export default function ClientMasterlist() {
         )
 
         return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/65 backdrop-blur-sm">
-          <div className="flex flex-col w-full max-w-6xl max-h-[94vh] rounded-2xl overflow-hidden shadow-2xl border"
-            style={{ backgroundColor: cardBg, borderColor: border }}>
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setIsAddModalOpen(false)}
+        >
+          <div
+            className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
+            onClick={e => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="shrink-0 px-6 sm:px-8 py-5 flex items-center justify-between border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
               <div className="flex items-center gap-3">
@@ -3102,8 +3108,8 @@ export default function ClientMasterlist() {
                 {/* Ticket type & status */}
                 <section>
                   <SectionHead title="Ticket Type" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <AddField label="Category" required>
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <AddField label="Category" required className="md:col-span-8">
                       <select
                         value={addCategory}
                         onChange={e => applyCategory(e.target.value)}
@@ -3115,7 +3121,7 @@ export default function ClientMasterlist() {
                         ))}
                       </select>
                     </AddField>
-                    <AddField label="Status">
+                    <AddField label="Status" className="md:col-span-4">
                       <select
                         value={addForm.status}
                         onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
@@ -3133,23 +3139,23 @@ export default function ClientMasterlist() {
                 {/* Customer */}
                 <section>
                   <SectionHead title="Customer Details" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <AddField label="Customer Name" required className="sm:col-span-2 lg:col-span-2">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <AddField label="Customer Name" required className="md:col-span-8">
                       <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full customer name" className={addInput} style={fieldStyle(addForm.customerName)} />
                     </AddField>
-                    <AddField label="Contact Number">
+                    <AddField label="Contact Number" className="md:col-span-4">
                       <input type="text" value={addForm.contactPhone} onChange={e => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))} placeholder="09xx xxx xxxx" className={addInput} style={fieldStyle(addForm.contactPhone)} />
                     </AddField>
-                    <AddField label="Alternate Contact">
+                    <AddField label="Alternate Contact" className="md:col-span-4">
                       <input type="text" value={addForm.alternatePhone} onChange={e => setAddForm(prev => ({ ...prev, alternatePhone: e.target.value }))} placeholder="Optional second contact" className={addInput} style={fieldStyle(addForm.alternatePhone)} />
                     </AddField>
-                    <AddField label="District">
+                    <AddField label="District" className="md:col-span-4">
                       <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area / district" className={addInput} style={fieldStyle(addForm.district)} />
                     </AddField>
-                    <AddField label="Landmark">
+                    <AddField label="Landmark" className="md:col-span-4">
                       <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
                     </AddField>
-                    <AddField label="Address" required className="sm:col-span-2 lg:col-span-3">
+                    <AddField label="Address" required className="md:col-span-12">
                       <textarea
                         required
                         value={addForm.locationRaw}
@@ -3172,8 +3178,8 @@ export default function ClientMasterlist() {
                 {/* Store & assignment */}
                 <section>
                   <SectionHead title="Store & Assignment" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <AddField label="Store">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <AddField label="Store" className="md:col-span-4">
                       <select
                         value={addForm.sourceVendor}
                         onChange={e => setAddForm(prev => ({
@@ -3192,11 +3198,11 @@ export default function ClientMasterlist() {
                       </select>
                     </AddField>
                     {addForm.sourceVendor === 'Other' && (
-                      <AddField label="Store Name">
+                      <AddField label="Store Name" className="md:col-span-4">
                         <input type="text" value={addForm.otherStoreName} onChange={e => setAddForm(prev => ({ ...prev, otherStoreName: e.target.value }))} placeholder="Store name" className={addInput} style={fieldStyle(addForm.otherStoreName)} />
                       </AddField>
                     )}
-                    <AddField label="Store Branch">
+                    <AddField label="Store Branch" className="md:col-span-4">
                       <input
                         type="text"
                         disabled={addForm.sourceVendor === 'Direct'}
@@ -3207,7 +3213,7 @@ export default function ClientMasterlist() {
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       />
                     </AddField>
-                    <AddField label="Branch Zone">
+                    <AddField label="Branch Zone" className="md:col-span-4">
                       <select
                         value={addForm.branchId}
                         onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
@@ -3218,7 +3224,7 @@ export default function ClientMasterlist() {
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </AddField>
-                    <AddField label="Negotiator" required>
+                    <AddField label="Negotiator" required className="md:col-span-6">
                       <select
                         required
                         value={addForm.assignedTo || ''}
@@ -3242,7 +3248,7 @@ export default function ClientMasterlist() {
                         ))}
                       </select>
                     </AddField>
-                    <AddField label="Control No. / SI">
+                    <AddField label="Control No. / SI" className="md:col-span-6">
                       <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Transaction / SI number" className={addInput} style={fieldStyle(addForm.controlNumber)} />
                     </AddField>
                   </div>
@@ -3251,12 +3257,12 @@ export default function ClientMasterlist() {
                 {/* Schedule */}
                 <section>
                   <SectionHead title="Scheduling" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <AddField label="Requested Schedule">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <AddField label="Requested Schedule" className="md:col-span-6">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
                     </AddField>
                     {addForm.status !== 'CANCELLED' && (
-                      <AddField label="Final Schedule">
+                      <AddField label="Final Schedule" className="md:col-span-6">
                         <input type="date" value={addForm.finalDate} onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))} className={addInput} style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)', color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
                       </AddField>
                     )}
@@ -3266,33 +3272,33 @@ export default function ClientMasterlist() {
                 {/* Product */}
                 <section>
                   <SectionHead title="Unit & Job Details" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <AddField label="Brand">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <AddField label="Brand" className="md:col-span-3">
                       <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
                     </AddField>
-                    <AddField label="Capacity">
+                    <AddField label="Capacity" className="md:col-span-3">
                       <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="e.g. 1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
                     </AddField>
-                    <AddField label="SKU">
+                    <AddField label="SKU" className="md:col-span-3">
                       <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
                     </AddField>
-                    <AddField label="Serial No.">
+                    <AddField label="Serial No." className="md:col-span-3">
                       <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial number" className={addInput} style={fieldStyle(addForm.serialNumber)} />
                     </AddField>
-                    <AddField label="Commit / Promo" className="sm:col-span-2 lg:col-span-2">
+                    <AddField label="Commit / Promo" className="md:col-span-6">
                       <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="FREE FIRST 10 FEET / promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
                     </AddField>
                     {addCategory === 'Collection' && (
                       <>
-                        <AddField label="Collection Amount">
+                        <AddField label="Collection Amount" className="md:col-span-3">
                           <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                         </AddField>
-                        <AddField label="Payment Mode">
+                        <AddField label="Payment Mode" className="md:col-span-3">
                           <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash / Bank" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
                         </AddField>
                       </>
                     )}
-                    <AddField label="Remarks / Update" className="sm:col-span-2 lg:col-span-4">
+                    <AddField label="Remarks / Update" className="md:col-span-12">
                       <input type="text" value={addForm.description} onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))} placeholder="Latest notes or dispatch update" className={addInput} style={fieldStyle(addForm.description)} />
                     </AddField>
                   </div>
@@ -3317,7 +3323,7 @@ export default function ClientMasterlist() {
           </div>
         </div>
         )
-      })()}
+      })(), document.body)}
 
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}

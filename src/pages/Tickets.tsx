@@ -151,7 +151,7 @@ function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
 
 function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: string; backgroundColor: string; borderColor: string } {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
-  if (normalized === 'INSTALLATION' || normalized === 'SCHEDULED') {
+  if (normalized === 'INSTALLATION' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
   }
   if (normalized === 'SURVEY' || normalized === 'DONE_SURVEY') {
@@ -202,6 +202,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (outcome) return outcome
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
+  if (stat === 'S/I' || stat === 'S_I' || stat === 'SI' || stat === 'INSTALLATION') return 'INSTALLATION'
   if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
   if (stat === 'RESCHED') return 'RESCHED'
   if (stat === 'SURVEY') return 'SURVEY'
@@ -217,6 +218,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
 
 function getScheduleStatusLabel(value: string): string {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
+  if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'Installation'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
   return found?.label ?? value.replace(/_/g, ' ')
 }
@@ -245,7 +247,7 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
-  } else if (val === 'INSTALLATION') {
+  } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'INSTALLATION'
     body.serviceType = categoryDefaultServiceType('INSTALLATION')
