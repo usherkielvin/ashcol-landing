@@ -3809,7 +3809,7 @@ export default function ClientMasterlist() {
                           ? '#10B981'
                           : '#F59E0B'
                       }}>
-                        {t.assignedTo ? 'Assigned' : (bn !== '—' && bn !== 'UNASSIGNED' ? bn : sl)}
+                        {t.assignedTo ? 'Assigned' : sl}
                       </span>
                       {bn !== '—' && bn !== 'UNASSIGNED' && (
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
@@ -3870,6 +3870,7 @@ export default function ClientMasterlist() {
                   <div>
                     <SHead title="Client & Location Details" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <DField label="Customer Name" value={t.customerName || 'Direct Client'} />
                       <DField label="Contact Number" value={
                         <div className="flex flex-col gap-0.5">
                           <FormatPhone raw={t.contactPhone} />
@@ -3879,7 +3880,7 @@ export default function ClientMasterlist() {
                         </div>
                       } green />
                       {activeTab !== 'MY_TICKETS' && (
-                        <DField label="Address" value={t.location} className="sm:col-span-2" />
+                        <DField label="Full Address" value={t.location} className="sm:col-span-2 lg:col-span-3" />
                       )}
                       <DField label="District" value={t.district || guessDistrict(t.location || '')} className={activeTab === 'MY_TICKETS' ? 'sm:col-span-2' : ''} />
                       <DField label="Additional Notes" value={det.landmarks} className="sm:col-span-2" />
@@ -3900,6 +3901,17 @@ export default function ClientMasterlist() {
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
                     </div>
                   </div>
+
+                  {/* Remarks */}
+                  {(t.remarksUpdate || t.description) && (
+                    <div>
+                      <SHead title="Remarks & Updates" />
+                      <p className="text-xs leading-relaxed rounded-xl p-4"
+                        style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
+                        {t.remarksUpdate || t.description}
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <SHead title="Referral Fee" />
@@ -3931,17 +3943,6 @@ export default function ClientMasterlist() {
                       <DField label="Registered By" value={det.warrantyRegisteredBy || t.warrantyRegistrationCompletedBy} />
                     </div>
                   </div>
-
-                  {/* Remarks */}
-                  {(t.remarksUpdate || t.description) && (
-                    <div>
-                      <SHead title="Remarks & Updates" />
-                      <p className="text-xs leading-relaxed rounded-xl p-4"
-                        style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
-                        {t.remarksUpdate || t.description}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Right Column: Update History */}
