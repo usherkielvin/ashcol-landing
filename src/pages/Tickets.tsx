@@ -1339,6 +1339,9 @@ export default function Tickets() {
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const theadBg     = isLight ? '#e8edf3' : '#060C18'
+  const myTicketsTheadBg = isLight ? 'rgba(22,163,74,0.14)' : 'rgba(16,185,129,0.16)'
+  const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
+  const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
   const rowOdd      = isLight ? '#f4f6f8' : '#0d1626'
   const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
@@ -2705,10 +2708,11 @@ export default function Tickets() {
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT',         display: "PAYMENT",                                   weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
-    const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
+    const base = isMyTickets ? raw.filter(c => c.label !== 'PAYMENT') : raw
+    const weights = base.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
     const totalWeight = weights.reduce((s, w) => s + w, 0)
     let left = 0
-    return raw.map((c, idx) => {
+    return base.map((c, idx) => {
       const isExpanded = !!expandedCols[c.label]
       const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
       const l = c.sticky ? left : 0
@@ -3890,7 +3894,12 @@ export default function Tickets() {
                 ))}
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: theadBg, borderBottom: `2px solid ${tableBorderStrong}` }}>
+                <tr
+                  style={{
+                    backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
+                    borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
+                  }}
+                >
                   {columns.map(rawCol => {
                     const col = rawCol as any
                     const canSort = 'sortable' in col && col.sortable
@@ -3913,14 +3922,18 @@ export default function Tickets() {
                         title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                         style={{
                           padding: '11px 12px',
-                          color: (col.isExpanded || isSorted) ? (isLight ? '#16A34A' : '#4ADE80') : (isLight ? '#475569' : '#94a3b8'),
+                          color: (col.isExpanded || isSorted)
+                            ? (isLight ? '#16A34A' : '#4ADE80')
+                            : (isMyTickets ? myTicketsTheadText : (isLight ? '#475569' : '#94a3b8')),
                           fontWeight: 700, whiteSpace: 'nowrap',
                           borderRight: `1px solid ${tableBorder}`,
-                          borderBottom: `2px solid ${tableBorderStrong}`,
+                          borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.w, minWidth: 0, maxWidth: col.w,
                           overflow: 'hidden', textOverflow: 'ellipsis',
-                          backgroundColor: theadBg, cursor: 'pointer', userSelect: 'none',
+                          backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
+                          cursor: 'pointer',
+                          userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
                           ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${tableBorder}` } : {}),
@@ -4021,6 +4034,20 @@ export default function Tickets() {
                                 e.stopPropagation()
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
+                                  const currentStatus = getScheduleStatusValue(ticket)
+                                  if (currentStatus === 'RESCHED') {
+                                    openReschedDialog(ticket)
+                                    return
+                                  }
+                                  if (currentStatus === 'DONE_INSTALLED') {
+                                    setCompletionPrompt({
+                                      ticket,
+                                      value: 'Installed',
+                                      modeOfPayment: getPaymentMode(ticket) || 'CASH',
+                                      amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
+                                    })
+                                    return
+                                  }
                                   startCellEdit(ticket, 'STATUS')
                                   return
                                 }
