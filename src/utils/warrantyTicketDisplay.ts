@@ -13,11 +13,49 @@ function isGenericUnitType(value?: string | null) {
   return GENERIC_UNITS.has(value.trim().toLowerCase())
 }
 
+function compactBrandToken(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function dedupeConsecutiveTokens(label: string) {
+  const tokens = label.trim().split(/\s+/).filter(Boolean)
+  const out: string[] = []
+  for (const token of tokens) {
+    const prev = out[out.length - 1]
+    if (prev && prev.toLowerCase() === token.toLowerCase()) continue
+    out.push(token)
+  }
+  return out.join(' ')
+}
+
+function capacityAlreadyInBrand(brand: string, capacity: string) {
+  const b = brand.trim()
+  const c = capacity.trim()
+  if (!b || !c) return false
+  const bLower = b.toLowerCase()
+  const cLower = c.toLowerCase()
+  if (bLower.endsWith(cLower)) return true
+  const bCompact = compactBrandToken(b)
+  const cCompact = compactBrandToken(c)
+  if (bCompact.endsWith(cCompact)) return true
+  const cNoHp = cCompact.replace(/hp$/, '')
+  if (cNoHp && (bCompact.endsWith(cNoHp) || bCompact.endsWith(`${cNoHp}hp`))) return true
+  return false
+}
+
 function joinBrandCapacity(brand?: string, capacity?: string) {
   const b = brand?.trim() || ''
   const c = capacity?.trim() || ''
-  if (b && c) return `${b} ${c}`
-  return b || c
+  if (!b && !c) return ''
+  if (!c) return dedupeConsecutiveTokens(b)
+  if (!b) return dedupeConsecutiveTokens(c)
+  if (capacityAlreadyInBrand(b, c)) return dedupeConsecutiveTokens(b)
+  return dedupeConsecutiveTokens(`${b} ${c}`)
+}
+
+/** Relay / warranty display label — avoids repeating HP when brand already includes capacity. */
+export function formatBrandCapacityLabel(brand?: string | null, capacity?: string | null) {
+  return joinBrandCapacity(brand || '', capacity || '')
 }
 
 export function parseBrandFromAcDetails(raw?: string | null): string {

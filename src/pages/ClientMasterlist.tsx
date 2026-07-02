@@ -12,6 +12,7 @@ import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filte
 import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED } from '../utils/warrantyRegistration'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
+import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -612,6 +613,55 @@ const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
 
 const filterRelaysTickets = (list: Ticket[]) => list.filter(t => !shouldExcludeFromRelaysTab(t))
 
+const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): string | null => {
+  const raw = ticket.ticketNumber?.trim()
+  if (!raw) return null
+  const legacy = raw.match(/^TKT-0*(\d+)$/i)
+  if (legacy) {
+    const seq = parseInt(legacy[1], 10)
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+  }
+  const ashcol = raw.match(/^AS-0*(\d+)$/i)
+  if (ashcol) {
+    const seq = parseInt(ashcol[1], 10)
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+  }
+  return raw.toUpperCase()
+}
+
+const relayTicketDisplayScore = (ticket: Ticket) => {
+  const details = parseAcDetails(ticket)
+  let score = 0
+  if (details.finalDate?.trim()) score += 100
+  const label = getRelayStatusLabel(ticket)
+  if (label === 'Scheduled') score += 50
+  if (label === 'Assigned') score += 25
+  if (ticket.assignedTo) score += 20
+  if (ticket.negotiatorId || ticket.negotiatorName) score += 10
+  if (ticket.installerName) score += 5
+  return score
+}
+
+/** One row per ticket number on Relays — prefer the scheduled copy. */
+const dedupeRelaysDisplayByTicketNumber = (list: Ticket[]) => {
+  const byNumber = new Map<string, Ticket>()
+  const withoutNumber: Ticket[] = []
+  for (const ticket of list) {
+    const key = normalizeRelayTicketNumber(ticket)
+    if (!key) {
+      withoutNumber.push(ticket)
+      continue
+    }
+    const existing = byNumber.get(key)
+    if (!existing || relayTicketDisplayScore(ticket) > relayTicketDisplayScore(existing)) {
+      byNumber.set(key, ticket)
+    }
+  }
+  return [...byNumber.values(), ...withoutNumber].sort((a, b) =>
+    String(b.createdAt || '').localeCompare(String(a.createdAt || '')),
+  )
+}
+
 function mergeRelayTicketLists(server: Ticket[], local: Ticket[]): Ticket[] {
   const byId = new Map<string, Ticket>()
   for (const t of server) {
@@ -642,6 +692,19 @@ const isCollectionPaid = (ticket: Ticket) => {
   const remarks = (ticket.remarksUpdate || '').toLowerCase()
   return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
 }
+
+const EField = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
+  <div className={`flex flex-col gap-1.5 ${className}`}>
+    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>
+    {children}
+  </div>
+)
+
+const ESHead = ({ title, border }: { title: string; border: string }) => (
+  <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
+    <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
+  </div>
+)
 
 export default function ClientMasterlist() {
   const { theme } = useTheme()
@@ -948,6 +1011,27 @@ export default function ClientMasterlist() {
   const [assignTechId, setAssignTechId] = useState('')
   const [updateStatus, setUpdateStatus] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
+  const [mergeTargetId, setMergeTargetId] = useState('')
+  const [merging, setMerging] = useState(false)
+
+  const mergeCandidates = useMemo(() => {
+    if (!selectedTicket) return []
+    const currentNo = normalizeRelayTicketNumber(selectedTicket)
+    const currentName = (selectedTicket.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    return tickets
+      .filter(t => {
+        if (t.id === selectedTicket.id) return false
+        if (currentNo) {
+          const candidateNo = normalizeRelayTicketNumber(t)
+          if (candidateNo && candidateNo === currentNo) return true
+        }
+        if (currentName.length < 3) return false
+        const candidateName = (t.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        return candidateName.includes(currentName) || currentName.includes(candidateName)
+          || (currentName.slice(0, 8) === candidateName.slice(0, 8))
+      })
+      .sort((a, b) => relayTicketDisplayScore(b) - relayTicketDisplayScore(a))
+  }, [selectedTicket, tickets])
 
   // Edit Modal / Drawer spreadsheet fields
   const [editLocation, setEditLocation] = useState('')
@@ -1300,7 +1384,7 @@ export default function ClientMasterlist() {
           sourceVendor: scannedStoreVendor,
           otherStoreName: '',
           storeBranch: parsedStore.branch,
-          unitType: parsed.unitType || (brandVal && capacityVal ? `${brandVal} ${capacityVal}` : 'Split AC'),
+          unitType: parsed.unitType || (brandVal && capacityVal ? formatBrandCapacityLabel(brandVal, capacityVal) : 'Split AC'),
           preferredDate: preferredDateFormatted,
           slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
           priorityTag: parsed.priorityTag || '',
@@ -1790,6 +1874,43 @@ export default function ClientMasterlist() {
     }
   }
 
+  const handleMergeTickets = async () => {
+    if (!selectedTicket || !mergeTargetId) return
+    const target = tickets.find(t => t.id === mergeTargetId)
+    if (!target) return
+    if (!window.confirm(
+      `Merge ticket ${getTicketNumber(selectedTicket)} into ${getTicketNumber(target)}?\n\n`
+      + `Remarks will be combined and the duplicate record will be removed. The scheduled date is kept on the target ticket.`,
+    )) return
+
+    setMerging(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/tickets/${selectedTicket.id}/merge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetId: mergeTargetId })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.message || `Failed to merge tickets (HTTP ${res.status})`)
+      }
+
+      setIsActionDrawerOpen(false)
+      setSelectedTicket(null)
+      fetchData({ soft: true })
+      alert('Tickets merged successfully!')
+    } catch (err: any) {
+      alert(err.message || 'Error occurred while merging tickets.')
+    } finally {
+      setMerging(false)
+    }
+  }
+
   const handleDeleteAllTickets = async () => {
     const count = filtered.length
     if (count === 0) { alert('No client tickets to delete with the current filters.'); return }
@@ -1827,6 +1948,7 @@ export default function ClientMasterlist() {
   // Open action drawer for a ticket
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
+    setMergeTargetId('')
     setAssignBranchId(resolveBranch(ticket.branchId)?.id || '')
     setEditCustomerName(ticket.customerName || '')
     setEditLocation(ticket.location || '')
@@ -1884,7 +2006,7 @@ export default function ClientMasterlist() {
     setEditSerialNumber(parsedDetails.serialNumber || '')
     const phonesList = [ticket.contactPhone || ''].concat(parsedDetails.alternatePhone ? parsedDetails.alternatePhone.split(',').map((s: any) => s.trim()) : []).filter(Boolean)
     setEditPhoneNumbers(phonesList.length ? phonesList : [''])
-    setEditBrandHP(`${parsedDetails.brand || ''} ${parsedDetails.capacity || ''}`.trim())
+    setEditBrandHP(formatBrandCapacityLabel(parsedDetails.brand, parsedDetails.capacity))
     setEditImages(ticket.images || '')
     setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
     setEditStoreReferralFee(String(ticket.storeReferralFee ?? ticket.store_referral_fee ?? ''))
@@ -1921,31 +2043,33 @@ export default function ClientMasterlist() {
     let assigned = 0
     let mine = 0
     const activeBranch = branchFilter
-    for (const t of tickets) {
-      if (shouldExcludeFromRelaysTab(t)) continue
+    const eligible = dedupeRelaysDisplayByTicketNumber(tickets.filter(t => {
+      if (shouldExcludeFromRelaysTab(t)) return false
       const status = (t.status || '').toUpperCase()
-      if (status === 'COMPLETED' || status === 'CANCELLED') continue
+      if (status === 'COMPLETED' || status === 'CANCELLED') return false
 
       if (monthFilter !== 'all') {
         const ticketMonth = (t.createdAt || '').slice(0, 7)
-        if (ticketMonth !== monthFilter) continue
+        if (ticketMonth !== monthFilter) return false
       }
 
       if (storeFilter !== 'ALL') {
         const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
-        if (!vendorLower.includes(storeFilter.toLowerCase())) continue
+        if (!vendorLower.includes(storeFilter.toLowerCase())) return false
       }
       if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
         const resolved = resolveBranch(t.branchId)
-        if (!resolved || resolved.id !== activeBranch) continue
+        if (!resolved || resolved.id !== activeBranch) return false
       }
       if (!isAdmin && user?.branchId) {
-        // Fuzzy match: strip -sales/-services suffix so Taguig Services sees Taguig Sales tickets
         const resolved = resolveBranch(t.branchId)
         const userRootBranch = user.branchId.replace(/-(sales|services|service)$/i, '')
         const ticketRootBranch = (resolved?.id || '').replace(/-(sales|services|service)$/i, '')
-        if (!ticketRootBranch || ticketRootBranch.toLowerCase() !== userRootBranch.toLowerCase()) continue
+        if (!ticketRootBranch || ticketRootBranch.toLowerCase() !== userRootBranch.toLowerCase()) return false
       }
+      return true
+    }))
+    for (const t of eligible) {
       const statusLabel = getRelayStatusLabel(t)
       if (statusLabel !== 'Pending' && statusLabel !== 'Assigned' && statusLabel !== 'Scheduled') continue
       allPending++
@@ -1960,11 +2084,11 @@ export default function ClientMasterlist() {
       PENDING: assigned,
       MY_TICKETS: mine,
     }
-  }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin, monthFilter])
+  }, [tickets, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin, monthFilter, branches])
 
   // relayPillItems removed
 
-  const filtered = tickets.filter(t => {
+  const filtered = useMemo(() => dedupeRelaysDisplayByTicketNumber(tickets.filter(t => {
     if (shouldExcludeFromRelaysTab(t)) return false
     const status = (t.status || '').toUpperCase()
     if (status === 'COMPLETED' || status === 'CANCELLED') return false
@@ -2046,8 +2170,10 @@ export default function ClientMasterlist() {
         } catch (e) {}
       }
 
+      const ticketNo = (normalizeRelayTicketNumber(t) || '').toLowerCase()
       return (
         custName.includes(q) ||
+        ticketNo.includes(q) ||
         branchName.includes(q) ||
         techName.includes(q) ||
         id.includes(q) ||
@@ -2068,7 +2194,7 @@ export default function ClientMasterlist() {
     }
 
     return true
-  })
+  })), [tickets, monthFilter, activeTab, storeFilter, branchFilter, globalBranchId, user?.id, isAdmin, searchQuery, branches])
 
   // Keyboard navigation for selected row & cell
   useEffect(() => {
@@ -2214,18 +2340,7 @@ export default function ClientMasterlist() {
     return full
   }
 
-  const getTicketNumber = (ticket: Ticket) => {
-    const raw = ticket.ticketNumber?.trim()
-    if (raw) {
-      const legacy = raw.match(/^TKT-0*(\d+)$/i)
-      if (legacy) {
-        const seq = parseInt(legacy[1], 10)
-        return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw
-      }
-      return raw
-    }
-    return '—'
-  }
+  const getTicketNumber = (ticket: Ticket) => normalizeRelayTicketNumber(ticket) || '—'
 
   const displayUpper = (value?: string | null) => {
     const str = (value ?? '').trim()
@@ -2625,6 +2740,9 @@ export default function ClientMasterlist() {
                   const category = getTicketCategory(ticket)
                   const categoryLabel = getCategoryLabel(ticket)
                   const negotiator = resolveRelayNegotiatorName(ticket, employees)
+                  const brandLabel = formatBrandCapacityLabel(details.brand, details.capacity)
+                    || parseBrandFromAcDetails(ticket.acDetails)
+                    || formatBrandCapacityLabel(ticket.unitType, '')
                   const district = (() => {
                     if (ticket.district?.trim()) return ticket.district.trim()
                     const loc = ticket.location || ''
@@ -2686,8 +2804,8 @@ export default function ClientMasterlist() {
                     ) },
                     // BRAND
                     { value: (
-                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(details.brand || '')} style={{ color: textPrimary }}>
-                        {displayUpper(details.brand || details.capacity ? `${details.brand || ''} ${details.capacity || ''}`.trim() : '') || '—'}
+                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
+                        {displayUpper(brandLabel) || '—'}
                       </span>
                     ) },
                     // STORE / SOURCE
@@ -2896,19 +3014,6 @@ export default function ClientMasterlist() {
       {isActionDrawerOpen && selectedTicket && ReactDOM.createPortal((() => {
         const ticket = selectedTicket;
 
-        const EField = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
-          <div className={`flex flex-col gap-1.5 ${className}`}>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>
-            {children}
-          </div>
-        );
-
-        const ESHead = ({ title }: { title: string }) => (
-          <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
-          </div>
-        );
-
         const inputStyle = {
           backgroundColor: inputBg,
           borderColor: inputBorder,
@@ -2973,7 +3078,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 1: Client Details */}
                 <div>
-                  <ESHead title="Client & Location Details" />
+                  <ESHead title="Client & Location Details" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                     <EField label="Customer Name">
                       <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
@@ -3096,7 +3201,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 2: Equipment & Job details */}
                 <div>
-                  <ESHead title="Equipment & Job Details" />
+                  <ESHead title="Equipment & Job Details" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                     <EField label="Brand / HP" className="md:col-span-2">
                       <input type="text" value={editBrandHP} onChange={e => {
@@ -3158,7 +3263,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 3: Scheduling & Assignment */}
                 <div>
-                  <ESHead title="Scheduling & Branch Assignment" />
+                  <ESHead title="Scheduling & Branch Assignment" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                     <EField label="Status">
                       <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
@@ -3221,7 +3326,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 3b: Referral Fee */}
                 <div>
-                  <ESHead title="Referral Fee" />
+                  <ESHead title="Referral Fee" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                     <EField label="Referral Fee">
                       <input type="text" value={editStoreReferralFee} onChange={e => setEditStoreReferralFee(e.target.value)} className={compactInput} style={inputStyle} />
@@ -3246,7 +3351,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 3c: Rebates Claim */}
                 <div>
-                  <ESHead title="Rebates Claim" />
+                  <ESHead title="Rebates Claim" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     <EField label="For Rebates Claim">
                       <select value={editRebatesClaim} onChange={e => setEditRebatesClaim(e.target.value)} className={compactInput} style={inputStyle}>
@@ -3271,7 +3376,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 3d: Warranty Registration */}
                 <div>
-                  <ESHead title="Warranty Registration" />
+                  <ESHead title="Warranty Registration" border={border} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <EField label="Warranty Registration Status">
                       <input type="text" value={editWarrantyStatus} onChange={e => setEditWarrantyStatus(e.target.value)} placeholder="REGISTERED" className={compactInput} style={inputStyle} />
@@ -3284,7 +3389,7 @@ export default function ClientMasterlist() {
 
                 {/* Section 4: Remarks */}
                 <div>
-                  <ESHead title="Remarks & Updates" />
+                  <ESHead title="Remarks & Updates" border={border} />
                   <EField label="Remarks / Update Notes">
                     <textarea
                       ref={editRemarksRef}
@@ -3296,6 +3401,45 @@ export default function ClientMasterlist() {
                       style={inputStyle} />
                   </EField>
                 </div>
+
+                {/* Duplicate Detection & Merge */}
+                {mergeCandidates.length > 0 && (
+                  <div className="border rounded-xl p-3.5 flex flex-col gap-2.5 mt-4"
+                    style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                        <AlertTriangle className="w-4 h-4 shrink-0" /> Duplicate Ticket(s) Detected
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-semibold leading-relaxed" style={{ color: textMuted }}>
+                      We found {mergeCandidates.length} other ticket(s) with the same ticket number or similar customer name. Merge into the scheduled copy to keep the final date.
+                    </p>
+                    <div className="flex gap-2">
+                      <select
+                        value={mergeTargetId}
+                        onChange={e => setMergeTargetId(e.target.value)}
+                        className="border rounded-lg px-2.5 py-1.5 text-xs outline-none flex-1 font-bold shadow-sm"
+                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="">-- Select ticket to merge into --</option>
+                        {mergeCandidates.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {getTicketNumber(c)} ({(c.status || '').toUpperCase()}) - {c.customerName} - {parseAcDetails(c).finalDate ? `Scheduled ${parseAcDetails(c).finalDate}` : 'No date'} - [{(c.sourceVendor || 'Direct')}]
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleMergeTickets}
+                        disabled={!mergeTargetId || merging}
+                        className="px-5 py-1.5 rounded-lg text-xs font-bold text-white transition-all disabled:opacity-50 shadow-sm"
+                        style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                      >
+                        {merging ? 'Merging...' : 'Merge'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Footer */}
@@ -4174,7 +4318,7 @@ export default function ClientMasterlist() {
                       <DField label="Store" value={storeInfo.store === 'Direct' ? 'Direct Store' : storeInfo.store} />
                       <DField label="Store Branch" value={storeInfo.branch || '—'} />
                       <DField label="Commit Type" value={t.commitType} />
-                      <DField label="Brand / HP" value={`${det.brand || ''} ${det.capacity || ''}`.trim()} />
+                      <DField label="Brand / HP" value={formatBrandCapacityLabel(det.brand, det.capacity) || '—'} />
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
                       <DField label="Negotiator" value={neg} />
                       <DField label="Negotiator Number" value={negotiatorPhone ? <FormatPhone raw={negotiatorPhone} /> : '—'} green />
