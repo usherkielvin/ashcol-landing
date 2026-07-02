@@ -65,7 +65,6 @@ export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
   const outcome = getTicketScheduleOutcome(ticket)
   if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY') return false
   if (outcome === 'DONE_INSTALLED') return true
-  const remarks = ticketRemarks(ticket)
   if (isInstalledRemarks(remarks)) return true
   if (/clean/i.test(remarks) || /survey/i.test(remarks)) return false
   const status = String(ticket.status || '').toUpperCase()

@@ -128,7 +128,7 @@ type ImportUnmatchedRow = {
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
 const TABLE_ROW_HEIGHT = 38
 
-type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY'
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
   { value: 'INSTALLATION', label: 'Installation' },
@@ -139,6 +139,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
   { value: 'DONE_CLEANING', label: 'Cleaning' },
   { value: 'DONE_INSTALLED', label: 'Installed' },
   { value: 'DONE_SURVEY', label: 'Done Survey' },
+  { value: 'DONE_CHECKUP', label: 'Done Checkup' },
   { value: 'COMPLETED', label: 'Completed' },
   { value: 'CANCELLED', label: 'Cancelled' },
 ]
@@ -166,6 +167,9 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'DONE_INSTALLED') {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
+  if (normalized === 'DONE_CHECKUP') {
+    return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.15)', borderColor: isLight ? '#bae6fd' : 'rgba(14,165,233,0.3)' }
+  }
   if (normalized === 'COMPLETED') {
     return { color: isLight ? '#047857' : '#34d399', backgroundColor: isLight ? '#d1fae5' : 'rgba(52,211,153,0.15)', borderColor: isLight ? '#a7f3d0' : 'rgba(52,211,153,0.3)' }
   }
@@ -184,13 +188,14 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
 function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   const meta = parseAcMeta(ticket as Ticket)
   const explicit = String(meta.scheduleOutcome || '').toUpperCase()
-  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY') {
+  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY' || explicit === 'DONE_CHECKUP') {
     return explicit
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
   const stat = String(ticket.status || '').toUpperCase()
   if (stat === 'COMPLETED') {
     if (/clean/i.test(remarks)) return 'DONE_CLEANING'
+    if (/checkup|check-up/i.test(remarks)) return 'DONE_CHECKUP'
     if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
   }
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
@@ -237,6 +242,16 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
       body.remarksUpdate = 'DONE CLEANING'
       acUpdates.update = 'DONE CLEANING'
       acUpdates.remarksUpdate = 'DONE CLEANING'
+    }
+  } else if (val === 'DONE_CHECKUP') {
+    body.status = 'COMPLETED'
+    acUpdates.scheduleOutcome = 'DONE_CHECKUP'
+    const remarks = ticketRemarksText(ticket)
+    if (!/checkup|check-up/i.test(remarks)) {
+      body.remarks = 'DONE CHECKUP'
+      body.remarksUpdate = 'DONE CHECKUP'
+      acUpdates.update = 'DONE CHECKUP'
+      acUpdates.remarksUpdate = 'DONE CHECKUP'
     }
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'COMPLETED'
@@ -291,6 +306,12 @@ function getScheduleRowColors(
         accent: '#3B82F6',
       }
     }
+    if (outcome === 'DONE_CHECKUP') {
+      return {
+        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
+        accent: '#0EA5E9',
+      }
+    }
     return {
       baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
@@ -312,6 +333,13 @@ function getScheduleRowColors(
     return {
       baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
       accent: '#3B82F6',
+    }
+  }
+
+  if (outcome === 'DONE_CHECKUP') {
+    return {
+      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.14)',
+      accent: '#0EA5E9',
     }
   }
 
@@ -354,7 +382,7 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
     ...body,
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   } as Ticket)
-  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY') return false
+  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP') return false
   if (outcome === 'DONE_INSTALLED') return true
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
@@ -455,7 +483,7 @@ function getRelayQueueLabel(ticket: Ticket): string {
   if (status === 'COMPLETED') return 'Installed'
   if (ticket.installationCharges != null && Number(ticket.installationCharges) > 0) return 'Installed'
   const outcome = getScheduleOutcome(ticket)
-  if (outcome === 'DONE_INSTALLED' || outcome === 'DONE_CLEANING') return 'Installed'
+  if (outcome === 'DONE_INSTALLED' || outcome === 'DONE_CLEANING' || outcome === 'DONE_CHECKUP') return 'Installed'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
   if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
@@ -889,6 +917,7 @@ function ticketColumnText(ticket: Ticket, colLabel: string, options?: { myTicket
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
+    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
     default: return ''
@@ -907,6 +936,12 @@ function compareTicketsByColumn(
     return compareNameSiteStrings(av, bv)
   }
   return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
+}
+
+function getTicketNegotiatorName(ticket: Ticket): string {
+  if (ticket.assignedEmployeeName) return ticket.assignedEmployeeName
+  const meta = parseAcMeta(ticket)
+  return String(meta.negotiatorName || meta.negotiator || '').trim()
 }
 
 const DEFAULT_TICKET_SORT = { column: 'INSTALLER', direction: 'asc' as const }
@@ -1283,6 +1318,7 @@ function getCellRawValue(ticket: Ticket, colLabel: string, myTickets = false): s
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
+    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return ticket.remarksUpdate || ticket.remarks || ''
     default: return ''
@@ -2821,8 +2857,8 @@ export default function Tickets() {
       { label: 'DLR',             display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: 'COMMIT',                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'FINAL DATE',      display: 'FINAL DATE',                                weight: 10, expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'SERVICE',         display: 'TYPE',                                      weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'SERVICE',         display: 'TYPE',                                      weight: 8,  editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: 'STATUS',                                    weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: 'REMARKS',                                   weight: 13, expMul: 1.5,  sticky: false, freeze: false, align: 'right' as const },
     ]
@@ -2934,10 +2970,18 @@ export default function Tickets() {
       if (stat === 'CANCELLED') return false
 
       if (isMyTickets) {
-        const uid = user?.id || ''
-        const negotiatorId = String(t.negotiatorId || t.negotiator_id || '').trim()
-        const assignedId = String(t.assignedTo || '').trim()
-        if (uid && negotiatorId !== uid && assignedId !== uid) return false
+        const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
+        if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
+          const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
+            || t.branchId || t.branch_id || ''
+          if (!b) return false
+          if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
+          if (isTaguigBranchRef(effectiveBranch)) {
+            const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
+            const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
+            if (wantServices ? !isService : isService) return false
+          }
+        }
         if (!shouldShowOnMyTickets(t)) return false
         return true
       }

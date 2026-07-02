@@ -518,6 +518,20 @@ const buildRelayHistoryTimeline = (
 const resolveNegotiatorUserId = (ticket: Pick<Ticket, 'negotiatorId' | 'negotiator_id' | 'assignedTo'>) =>
   String(ticket.negotiatorId || ticket.negotiator_id || ticket.assignedTo || '').trim()
 
+const resolveRelayNegotiatorName = (
+  ticket: Ticket,
+  employees: Array<{ id?: string; name?: string }>,
+) => {
+  const byField = (ticket.negotiatorName || '').trim()
+  if (byField) return byField
+  const uid = resolveNegotiatorUserId(ticket)
+  if (uid) {
+    const match = employees.find((e) => String(e.id || '') === uid)
+    if (match?.name) return String(match.name).trim()
+  }
+  return (ticket.assignedEmployeeName || '').trim() || '—'
+}
+
 const resolveEmployeePhone = (employees: Array<Record<string, unknown>>, userId?: string) => {
   if (!userId) return ''
   const emp = employees.find(e => String(e.id || '') === userId)
@@ -559,13 +573,20 @@ const hasPendingWarrantySignal = (ticket: Ticket) => {
     ticket.remarksUpdate,
     ticket.description,
     ticket.title,
+    ticket.commitType,
+    ticket.serviceType,
     ticket.warrantyDocsStatus,
+    ticket.acDetails,
     details.warrantyRegistrationStatus,
   ].filter(Boolean).join(' ').toLowerCase()
 
   if (blob.includes('pending warranty')) return true
-  if (blob.includes('warranty regi')) return true
+  if (blob.includes('warranty reg')) return true
   if (blob.includes('warranty') && blob.includes('pending')) return true
+  if ((ticket.commitType || '').toLowerCase().includes('warranty')
+    && (blob.includes('pending') || blob.includes('regi') || blob.includes('register'))) {
+    return true
+  }
 
   const wStatus = (details.warrantyRegistrationStatus || ticket.warrantyDocsStatus || '').trim().toUpperCase()
   if (wStatus === 'PENDING') return true
@@ -573,10 +594,19 @@ const hasPendingWarrantySignal = (ticket: Ticket) => {
   return false
 }
 
+const isRelayPostInstallWarranty = (ticket: Ticket) => {
+  const details = parseAcDetails(ticket)
+  if (!details.finalDate?.trim()) return false
+  return hasPendingWarrantySignal(ticket)
+    || (ticket.warrantyDocsStatus || '').toUpperCase() === 'PENDING'
+    || (ticket.commitType || '').toLowerCase().includes('warranty')
+}
+
 /** Warranty queue rows belong on Archives + Registration, not the Relays masterlist. */
 const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
   if (isWarrantyRegistrationTicket(ticket)) return true
   if (hasPendingWarrantySignal(ticket)) return true
+  if (isRelayPostInstallWarranty(ticket)) return true
   return false
 }
 
@@ -997,7 +1027,7 @@ export default function ClientMasterlist() {
       { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
     ] : [
@@ -1010,7 +1040,7 @@ export default function ClientMasterlist() {
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
     ]
@@ -1031,9 +1061,10 @@ export default function ClientMasterlist() {
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
-    minWidth: col.w,
-    maxWidth: col.w,
+    minWidth: col.label === 'NEGOTIATOR' ? '6.75rem' : col.w,
+    maxWidth: col.label === 'NEGOTIATOR' ? '9rem' : col.w,
     boxSizing: 'border-box' as const,
+    overflow: 'hidden' as const,
   })
 
   const columnTextAlign = (col: (typeof columns)[number], cell?: { right?: boolean; center?: boolean }) => {
@@ -1098,7 +1129,7 @@ export default function ClientMasterlist() {
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
       const branchForSync = globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? globalBranchId : undefined
 
-      if (isAdmin && token && (forceRefresh || !hasCache)) {
+      if (isAdmin && token) {
         try {
           await syncWarrantyRegistrations(token, branchForSync)
           clearWarrantyCache()
@@ -1564,13 +1595,14 @@ export default function ClientMasterlist() {
       const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
       setTickets(prev => {
         const merged = mergeRelayTicketLists([createdTicket], prev)
+        const filtered = filterRelaysTickets(merged)
         const cached = readTabCache<RelaysTabCache>(cacheKey)
         writeTabCache(cacheKey, {
-          tickets: merged,
+          tickets: filtered,
           branches: cached?.branches,
           employees: cached?.employees,
         })
-        return merged
+        return filtered
       })
 
       const statusLabel = getRelayStatusLabel(createdTicket)
@@ -2539,7 +2571,6 @@ export default function ClientMasterlist() {
                       color: col.isExpanded ? (isLight ? '#10B981' : '#34D399') : textMuted,
                       fontWeight: 700,
                       whiteSpace: 'nowrap',
-                      overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       borderRight: tableColBorder,
                       borderBottom: `2px solid ${tableRowBorder}`,
@@ -2593,7 +2624,7 @@ export default function ClientMasterlist() {
                   const branchName = formatBranchTableLabel(ticket.branchId)
                   const category = getTicketCategory(ticket)
                   const categoryLabel = getCategoryLabel(ticket)
-                  const negotiator = ticket.assignedEmployeeName || ticket.installerName || '—'
+                  const negotiator = resolveRelayNegotiatorName(ticket, employees)
                   const district = (() => {
                     if (ticket.district?.trim()) return ticket.district.trim()
                     const loc = ticket.location || ''
@@ -2675,7 +2706,7 @@ export default function ClientMasterlist() {
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
                     // NEGOTIATOR
                     { value: (
-                      <span className="truncate block w-full text-center font-semibold" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full text-center font-semibold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
@@ -2727,7 +2758,11 @@ export default function ClientMasterlist() {
                     { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
                     { value: <span className="truncate block w-full text-center" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
                     { value: <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
-                    { value: <span className="truncate block w-full text-center" title={displayUpper(negotiator)}>{displayUpper(negotiator)}</span> },
+                    { value: (
+                      <span className="truncate block w-full text-center max-w-full" title={displayUpper(negotiator)}>
+                        {displayUpper(negotiator)}
+                      </span>
+                    ) },
                     { value: (
                       <span
                         className="whitespace-nowrap block w-full text-center font-semibold"
@@ -2784,7 +2819,6 @@ export default function ClientMasterlist() {
                               fontSize: tableFontSize,
                               lineHeight: 1.4,
                               textAlign: columnTextAlign(col, cell),
-                              overflow: 'visible',
                               verticalAlign: 'middle',
                               transition: 'background-color 0.15s ease-in-out',
                               backgroundColor: rowBaseBg,
@@ -3995,7 +4029,7 @@ export default function ClientMasterlist() {
         const t   = selectedPreviewTicket
         const det = previewDetails
         const sl  = getRelayStatusLabel(t)
-        const neg = t.negotiatorName || t.assignedEmployeeName || t.installerName || '—'
+        const neg = resolveRelayNegotiatorName(t, employees)
         const negotiatorId = resolveNegotiatorUserId(t)
         const negotiatorPhone = resolveEmployeePhone(employees, negotiatorId)
         const referralFee = t.storeReferralFee ?? t.store_referral_fee
