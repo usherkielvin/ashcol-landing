@@ -3820,6 +3820,14 @@ export default function Tickets() {
       )
     }
 
+    if (label === 'NEGOTIATOR') {
+      const negName = getTicketNegotiatorName(ticket, branchEmployees) || val || '—'
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>{negName}</span>,
+        ticket, label, rowGhost,
+      )
+    }
+
     return withEditPencil(
       <span style={truncStyle} title={val}>{val}</span>,
       ticket, label, rowGhost,

@@ -31,6 +31,7 @@ import {
   MdOutlineStorefront,
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
+import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 

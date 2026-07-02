@@ -13,11 +13,11 @@ import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache, clear
 import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED } from '../utils/warrantyRegistration'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
+import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
+import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
-import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import type { ReactNode } from 'react'
 
 function RelayFormField({
@@ -1786,7 +1786,6 @@ export default function ClientMasterlist() {
         payload.assignedTo = draft.assignTechId || ""
         payload.status = finalStatus
       }
-
       payload.customerName = draft.customerName || null
       payload.location = draft.location || null
       payload.preferredDate = draft.preferredDate ? new Date(draft.preferredDate).toISOString() : null
@@ -1802,7 +1801,6 @@ export default function ClientMasterlist() {
       payload.installationCharges = Number(draft.installationCharges)
       payload.modeOfPayment = draft.modeOfPayment || null
       payload.controlNumber = draft.controlNumber || null
-
       const existingDetails = parseAcDetails(selectedTicket)
       const acDetailsObj = {
         landmarks: draft.landmarks || '',
