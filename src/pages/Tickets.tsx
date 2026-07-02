@@ -938,8 +938,13 @@ function compareTicketsByColumn(
   return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
 }
 
-function getTicketNegotiatorName(ticket: Ticket): string {
+function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
   if (ticket.assignedEmployeeName) return ticket.assignedEmployeeName
+  const negId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+  if (negId && employees?.length) {
+    const match = employees.find(e => e.id === negId)
+    if (match?.name) return match.name.trim()
+  }
   const meta = parseAcMeta(ticket)
   return String(meta.negotiatorName || meta.negotiator || '').trim()
 }
@@ -2897,8 +2902,10 @@ export default function Tickets() {
     else setRefreshing(true)
     setFetchError(null)
     try {
-      const ep   = isMyTickets ? '/tickets/assigned' : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-      const size = isMyTickets ? 200 : isAdmin ? 300 : 200
+      const ep   = isMyTickets
+        ? (isAdmin ? '/tickets' : '/tickets/assigned')
+        : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
+      const size = isMyTickets ? (isAdmin ? 500 : 200) : isAdmin ? 300 : 200
       const list = await fetchTicketsPage(ep, token(), { size })
       if (seq !== fetchSeqRef.current) return
       setTickets(list as Ticket[])
@@ -2982,7 +2989,7 @@ export default function Tickets() {
             if (wantServices ? !isService : isService) return false
           }
         }
-        if (!shouldShowOnMyTickets(t)) return false
+        if (!isAdmin && !shouldShowOnMyTickets(t)) return false
         return true
       }
 

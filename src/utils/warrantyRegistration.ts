@@ -101,6 +101,7 @@ export async function syncWarrantyRegistrations(
   wtyLinked?: number
   wtyDeduped?: number
   parentStatusUpdated?: number
+  customerDuplicatesMerged?: number
   duplicatesMerged?: number
 }> {
   const params = new URLSearchParams()

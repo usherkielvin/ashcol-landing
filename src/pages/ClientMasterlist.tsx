@@ -642,6 +642,36 @@ const relayTicketDisplayScore = (ticket: Ticket) => {
   return score
 }
 
+const normalizeRelayCustomerKey = (ticket: Ticket): string | null => {
+  const name = (ticket.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (name.length < 4) return null
+  const branch = (ticket.branchId || '').trim().toLowerCase()
+  const phone = (ticket.contactPhone || '').replace(/\D/g, '').slice(-10)
+  const preferred = (ticket.preferredDate || '').trim().slice(0, 10)
+  const district = (ticket.district || '').trim().toLowerCase()
+  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const commit = (ticket.commitType || '').trim().toLowerCase()
+  return `${name}|${branch}|${phone}|${preferred}|${district}|${vendor}|${commit}`
+}
+
+/** One row per customer / ticket number on Relays — prefer the scheduled copy. */
+const dedupeRelaysDisplay = (list: Ticket[]) => {
+  const byCustomer = new Map<string, Ticket>()
+  const withoutCustomerKey: Ticket[] = []
+  for (const ticket of list) {
+    const key = normalizeRelayCustomerKey(ticket)
+    if (!key) {
+      withoutCustomerKey.push(ticket)
+      continue
+    }
+    const existing = byCustomer.get(key)
+    if (!existing || relayTicketDisplayScore(ticket) > relayTicketDisplayScore(existing)) {
+      byCustomer.set(key, ticket)
+    }
+  }
+  return dedupeRelaysDisplayByTicketNumber([...byCustomer.values(), ...withoutCustomerKey])
+}
+
 /** One row per ticket number on Relays — prefer the scheduled copy. */
 const dedupeRelaysDisplayByTicketNumber = (list: Ticket[]) => {
   const byNumber = new Map<string, Ticket>()
@@ -970,6 +1000,26 @@ export default function ClientMasterlist() {
     [negotiatorsForBranch],
   )
 
+  const addFormDuplicate = useMemo(() => {
+    const writeBranchId = resolvePortalWriteBranchId(
+      addForm.branchId || resolveRelayDefaultBranchId(),
+      user?.email,
+      user?.jobTitle,
+    )
+    const probe = {
+      customerName: addForm.customerName,
+      branchId: writeBranchId || resolveRelayDefaultBranchId() || user?.branchId,
+      contactPhone: addPhoneNumbers[0] || addForm.contactPhone,
+      preferredDate: addForm.preferredDate,
+      district: addForm.district,
+      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      commitType: addForm.commitType,
+    } as Ticket
+    const key = normalizeRelayCustomerKey(probe)
+    if (!key) return null
+    return tickets.find((t) => normalizeRelayCustomerKey(t) === key) || null
+  }, [addForm, addPhoneNumbers, tickets, user, resolveRelayDefaultBranchId])
+
   const addModalNegotiators = useMemo(
     () => negotiatorsForBranch(addForm.branchId || resolveRelayDefaultBranchId()),
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
@@ -1017,6 +1067,7 @@ export default function ClientMasterlist() {
   const mergeCandidates = useMemo(() => {
     if (!selectedTicket) return []
     const currentNo = normalizeRelayTicketNumber(selectedTicket)
+    const currentCustomerKey = normalizeRelayCustomerKey(selectedTicket)
     const currentName = (selectedTicket.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     return tickets
       .filter(t => {
@@ -1025,6 +1076,10 @@ export default function ClientMasterlist() {
           const candidateNo = normalizeRelayTicketNumber(t)
           if (candidateNo && candidateNo === currentNo) return true
         }
+        if (currentCustomerKey) {
+          const candidateKey = normalizeRelayCustomerKey(t)
+          if (candidateKey && candidateKey === currentCustomerKey) return true
+        }
         if (currentName.length < 3) return false
         const candidateName = (t.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
         return candidateName.includes(currentName) || currentName.includes(candidateName)
@@ -1032,6 +1087,11 @@ export default function ClientMasterlist() {
       })
       .sort((a, b) => relayTicketDisplayScore(b) - relayTicketDisplayScore(a))
   }, [selectedTicket, tickets])
+
+  useEffect(() => {
+    if (!isActionDrawerOpen || !selectedTicket || mergeCandidates.length === 0) return
+    setMergeTargetId((prev) => prev || mergeCandidates[0]?.id || '')
+  }, [isActionDrawerOpen, selectedTicket, mergeCandidates])
 
   // Edit Modal / Drawer spreadsheet fields
   const [editLocation, setEditLocation] = useState('')
@@ -1609,6 +1669,14 @@ export default function ClientMasterlist() {
       alert('Negotiator is required')
       return
     }
+    if (addFormDuplicate) {
+      const existingNo = getTicketNumber(addFormDuplicate)
+      alert(
+        `A relay ticket already exists for this customer (${existingNo}). `
+        + 'Open the existing ticket or merge duplicates instead of creating a new one.',
+      )
+      return
+    }
     setFormSubmitting(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -2043,7 +2111,7 @@ export default function ClientMasterlist() {
     let assigned = 0
     let mine = 0
     const activeBranch = branchFilter
-    const eligible = dedupeRelaysDisplayByTicketNumber(tickets.filter(t => {
+    const eligible = dedupeRelaysDisplay(tickets.filter(t => {
       if (shouldExcludeFromRelaysTab(t)) return false
       const status = (t.status || '').toUpperCase()
       if (status === 'COMPLETED' || status === 'CANCELLED') return false
@@ -2088,7 +2156,7 @@ export default function ClientMasterlist() {
 
   // relayPillItems removed
 
-  const filtered = useMemo(() => dedupeRelaysDisplayByTicketNumber(tickets.filter(t => {
+  const filtered = useMemo(() => dedupeRelaysDisplay(tickets.filter(t => {
     if (shouldExcludeFromRelaysTab(t)) return false
     const status = (t.status || '').toUpperCase()
     if (status === 'COMPLETED' || status === 'CANCELLED') return false
@@ -3607,6 +3675,30 @@ export default function ClientMasterlist() {
                     <RelayFormField label="Customer Name" required compact className="md:col-span-5">
                       <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
                     </RelayFormField>
+                    {addFormDuplicate && (
+                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                        style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
+                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          Duplicate customer on Relays
+                        </span>
+                        <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                          Ticket {getTicketNumber(addFormDuplicate)} already exists for this customer
+                          {parseAcDetails(addFormDuplicate).finalDate ? ` (scheduled ${parseAcDetails(addFormDuplicate).finalDate})` : ''}.
+                          Creating a new ticket is blocked — open or merge the existing row.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddModalOpen(false)
+                            openDrawer(addFormDuplicate)
+                          }}
+                          className="self-start text-[11px] font-bold text-emerald-600 hover:text-emerald-500 underline"
+                        >
+                          Open existing ticket {getTicketNumber(addFormDuplicate)}
+                        </button>
+                      </div>
+                    )}
                     <RelayFormField label="Contact Number" compact className="md:col-span-7">
                       <div className="flex flex-col gap-2">
                         {addPhoneNumbers.map((phone, pIdx) => (
@@ -3830,8 +3922,8 @@ export default function ClientMasterlist() {
                   <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-slate-500/10" style={{ borderColor: inputBorder, color: textMuted }}>
                     Cancel
                   </button>
-                  <button type="submit" disabled={formSubmitting} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                    {formSubmitting ? 'Creating...' : 'Create Ticket'}
+                  <button type="submit" disabled={formSubmitting || !!addFormDuplicate} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                    {formSubmitting ? 'Creating...' : addFormDuplicate ? 'Duplicate Blocked' : 'Create Ticket'}
                   </button>
                 </div>
               </div>
