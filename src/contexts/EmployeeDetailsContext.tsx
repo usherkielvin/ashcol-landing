@@ -4,7 +4,9 @@ import {
   Wrench, Tag, Globe, Map, Home, Mailbox, MapPin, User, Calendar, RefreshCw
 } from 'lucide-react'
 import { useTheme } from './ThemeContext'
-import { API_BASE_URL, formatPersonName } from '../utils/api'
+import { formatPersonName } from '../utils/api'
+import { isTabCacheFresh, readTabCacheEntry } from '../utils/ticketTabCache'
+import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import UserAvatar from '../components/UserAvatar'
 
 export interface Employee {
@@ -88,72 +90,76 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
   const [activeTab, setActiveTab] = useState<'overview' | 'address' | 'system'>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
 
-  const fetchEmployees = async (): Promise<Employee[]> => {
+  const mapEmployees = (list: Array<Record<string, unknown>>, branchMap: Record<string, string>): Employee[] =>
+    list.map((s) => ({
+      id: String(s.id || ''),
+      name: String(s.name || 'Unknown'),
+      email: String(s.email || ''),
+      phone: String(s.phone || ''),
+      role: String(s.role || 'EMPLOYEE').toUpperCase(),
+      jobTitle: String(s.jobTitle || ''),
+      branchId: String(s.branchId || ''),
+      branchName: s.branchId ? (branchMap[String(s.branchId)] || String(s.branchId)) : '',
+      isActive: s.isActive !== false,
+      profileImage: s.profileImage as string | undefined,
+      personalEmail: String(s.personalEmail || ''),
+      region: String(s.region || ''),
+      city: String(s.city || ''),
+      barangay: String(s.barangay || ''),
+      street: String(s.street || ''),
+      landmark: String(s.landmark || ''),
+      skills: String(s.skills || ''),
+      createdAt: s.createdAt as string | undefined,
+      updatedAt: s.updatedAt as string | undefined,
+    }))
+
+  const buildBranchMap = (branches: Array<Record<string, unknown>>) => {
+    const branchMap: Record<string, string> = {}
+    branches.forEach((b) => {
+      if (!b.id) return
+      const clean = String(b.name || b.id).replace(/^ashcol\s+/i, '').trim().toUpperCase()
+      branchMap[String(b.id)] = clean
+      if (clean === 'TAGUIG') {
+        branchMap[`${b.id}-sales`] = 'TAGUIG - SALES'
+        branchMap[`${b.id}-services`] = 'TAGUIG - SERVICES'
+      }
+    })
+    return branchMap
+  }
+
+  const fetchEmployees = async (force = false): Promise<Employee[]> => {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      if (!token) return []
-      const h = { Authorization: `Bearer ${token}` }
-      
-      const res = await fetch(`${API_BASE_URL}/user/all`, { headers: h })
-      if (!res.ok) return []
-      const data = await res.json()
-      const list = data?.data || []
-      
-      // Load branch map
-      const branchMap: Record<string, string> = {}
-      try {
-        const rb = await fetch(`${API_BASE_URL}/branches`, { headers: h })
-        if (rb.ok) {
-          const bl = (await rb.json())?.data || []
-          bl.forEach((b: any) => {
-            if (!b.id) return
-            const clean = (b.name || b.id).replace(/^ashcol\s+/i, '').trim().toUpperCase()
-            branchMap[b.id] = clean
-            if (clean === 'TAGUIG') {
-              branchMap[`${b.id}-sales`]    = 'TAGUIG - SALES'
-              branchMap[`${b.id}-services`] = 'TAGUIG - SERVICES'
-            }
-          })
-        }
-      } catch { /* silent */ }
+      if (!token) return employees
 
-      const mappedList = list.map((s: any) => ({
-        id:          s.id,
-        name:        s.name        || 'Unknown',
-        email:       s.email       || '',
-        phone:       s.phone       || '',
-        role:        (s.role       || 'EMPLOYEE').toUpperCase(),
-        jobTitle:    s.jobTitle    || '',
-        branchId:    s.branchId    || '',
-        branchName:  s.branchId ? (branchMap[s.branchId] || s.branchId) : '',
-        isActive:    s.isActive !== false,
-        profileImage: s.profileImage,
-        personalEmail: s.personalEmail || '',
-        region:      s.region      || '',
-        city:        s.city        || '',
-        barangay:    s.barangay    || '',
-        street:      s.street      || '',
-        landmark:    s.landmark    || '',
-        skills:      s.skills      || '',
-        createdAt:   s.createdAt,
-        updatedAt:   s.updatedAt,
-      }))
-      
+      const employeesEntry = readTabCacheEntry<Array<Record<string, unknown>>>('portal-dir:v1:employees:all')
+      if (!force && employees.length > 0 && employeesEntry && isTabCacheFresh(employeesEntry.savedAt)) {
+        return employees
+      }
+
+      const [list, branches] = await Promise.all([
+        fetchCachedEmployees(token),
+        fetchCachedBranches(token),
+      ])
+      const branchMap = buildBranchMap(branches)
+      const mappedList = mapEmployees(list, branchMap)
       setEmployees(mappedList)
       return mappedList
     } catch (e) {
       console.error('Error loading employees in context:', e)
-      return []
+      return employees
     }
   }
 
   // Pre-load on mount
   useEffect(() => {
-    fetchEmployees()
+    void fetchEmployees()
   }, [])
 
   const openEmployeeDetails = async (idOrName: string) => {
-    const latestList = await fetchEmployees()
+    const latestList = employees.length > 0
+      ? employees
+      : await fetchEmployees()
     const cleanIdOrName = idOrName.trim().toUpperCase()
 
     // Helper to strip common role prefixes/suffixes in matching

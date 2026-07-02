@@ -3,6 +3,7 @@ import { Plus, Search, X, Edit3, CalendarDays, Loader2, ClipboardList } from 'lu
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, resolveScopedBranchId, isPortalAdmin } from '../utils/api'
+import { fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import {
   OFFICE_TICKET_CATEGORIES,
@@ -139,20 +140,17 @@ export default function OfficeTasks() {
 
   useEffect(() => {
     if (!canEdit) return
-    fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then(res => res.json())
-      .then(data => {
-        const list = Array.isArray(data) ? data : (data?.data || [])
-        if (!Array.isArray(list)) return
+    fetchCachedEmployees(token())
+      .then((list) => {
         setStaff(list
-          .filter((u: any) => (u.role || '').toUpperCase() !== 'CUSTOMER')
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name || u.email,
-            role: u.role,
-            branchId: u.branchId || u.branch_id,
+          .filter((u) => String(u.role || '').toUpperCase() !== 'CUSTOMER')
+          .map((u) => ({
+            id: String(u.id || ''),
+            name: String(u.name || u.email || ''),
+            role: String(u.role || ''),
+            branchId: (u.branchId || u.branch_id) as string | undefined,
           }))
-          .sort((a: StaffUser, b: StaffUser) => a.name.localeCompare(b.name)))
+          .sort((a, b) => a.name.localeCompare(b.name)))
       })
       .catch(() => {})
   }, [canEdit, token])

@@ -44,7 +44,7 @@ export function patchTabCache<T extends object>(key: string, patch: Partial<T>):
   return next
 }
 
-export type SchedulesTabCache = { tickets: unknown[] }
+export type SchedulesTabCache = { tickets: unknown[]; lastSyncAt?: number }
 
 export function schedulesCacheKey(
   user: PortalUserLike,
@@ -61,6 +61,7 @@ export type RelaysTabCache = {
   tickets: unknown[]
   branches?: unknown[]
   employees?: unknown[]
+  lastSyncAt?: number
 }
 
 export function relaysCacheKey(
@@ -69,6 +70,17 @@ export function relaysCacheKey(
   globalBranchId?: string | null,
 ): string {
   return `relays:v${VERSION}:${ticketScope}:${branchCachePart(user, globalBranchId)}`
+}
+
+export function relaysCacheIsFresh(
+  ticketScope: 'ALL' | 'MY',
+  user?: PortalUserLike,
+  globalBranchId?: string | null,
+): boolean {
+  const entry = readTabCacheEntry<RelaysTabCache>(relaysCacheKey(ticketScope, user, globalBranchId))
+  if (!entry) return false
+  const at = entry.data.lastSyncAt ?? entry.savedAt
+  return isTabCacheFresh(at)
 }
 
 export type ArchivesTabCache = { rows: unknown[]; lastSyncAt?: number }

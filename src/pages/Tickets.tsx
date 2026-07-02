@@ -9,7 +9,8 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, appendCurrentNegotiator, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, schedulesCacheKey, writeTabCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
@@ -168,7 +169,7 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
   if (normalized === 'DONE_CHECKUP') {
-    return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.15)', borderColor: isLight ? '#bae6fd' : 'rgba(14,165,233,0.3)' }
+    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
   }
   if (normalized === 'COMPLETED') {
     return { color: isLight ? '#047857' : '#34d399', backgroundColor: isLight ? '#d1fae5' : 'rgba(52,211,153,0.15)', borderColor: isLight ? '#a7f3d0' : 'rgba(52,211,153,0.3)' }
@@ -308,8 +309,8 @@ function getScheduleRowColors(
     }
     if (outcome === 'DONE_CHECKUP') {
       return {
-        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
-        accent: '#0EA5E9',
+        baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+        accent: '#3B82F6',
       }
     }
     return {
@@ -338,8 +339,8 @@ function getScheduleRowColors(
 
   if (outcome === 'DONE_CHECKUP') {
     return {
-      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.14)',
-      accent: '#0EA5E9',
+      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
+      accent: '#3B82F6',
     }
   }
 
@@ -480,10 +481,13 @@ function hasFinalScheduleDate(ticket: Ticket): boolean {
 function getRelayQueueLabel(ticket: Ticket): string {
   const status = (ticket.status || '').toUpperCase()
   if (status === 'CANCELLED') return 'Cancelled'
+  const outcome = getScheduleOutcome(ticket)
+  if (outcome === 'DONE_CHECKUP') return 'Done Checkup'
+  if (outcome === 'DONE_CLEANING') return 'Cleaning'
+  if (outcome === 'DONE_SURVEY') return 'Done Survey'
+  if (outcome === 'DONE_INSTALLED') return 'Installed'
   if (status === 'COMPLETED') return 'Installed'
   if (ticket.installationCharges != null && Number(ticket.installationCharges) > 0) return 'Installed'
-  const outcome = getScheduleOutcome(ticket)
-  if (outcome === 'DONE_INSTALLED' || outcome === 'DONE_CLEANING' || outcome === 'DONE_CHECKUP') return 'Installed'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
   if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
@@ -2070,7 +2074,7 @@ export default function Tickets() {
         throw new Error(errorText || `Failed (HTTP ${res.status})`)
       }
 
-      await fetchTickets({ soft: true })
+      await fetchTickets({ soft: true, force: true })
       setAddModalOpen(false)
     } catch (err: any) {
       console.error(err)
@@ -2213,6 +2217,8 @@ export default function Tickets() {
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
     const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
+    let originalTicketForRollback: Ticket | undefined
+    let optimisticApplied = false
     setSavingEdit(true)
     try {
       const tokenVal = token()
@@ -2278,6 +2284,7 @@ export default function Tickets() {
       }
 
       const originalTicket = tickets.find(t => t.id === editForm.id)
+      originalTicketForRollback = originalTicket
       const hadFinalDate = originalTicket ? hasFinalScheduleDate(originalTicket) : false
       const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
       const addedFinalDate = Boolean(finalDateKey) && !hadFinalDate
@@ -2351,6 +2358,17 @@ export default function Tickets() {
         finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
       }
 
+      setTickets(prev => prev.map(t => (
+        t.id === editForm.id
+          ? { ...t, ...finalBody, id: t.id } as Ticket
+          : t
+      )))
+      optimisticApplied = true
+      setEditFormSnapshot(JSON.stringify(editForm))
+      setEditModalOpen(false)
+      setSavingEdit(false)
+      showToast('Saving ticket in background...')
+
       const res = await fetch(`${API_BASE_URL}/tickets/${editForm.id}`, {
         method: 'PATCH',
         headers: {
@@ -2418,10 +2436,13 @@ export default function Tickets() {
         : isDateMove
           ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
           : 'Ticket updated successfully ✓')
-      await fetchTickets({ soft: true })
-      setEditModalOpen(false)
+      await fetchTickets({ soft: true, force: true })
     } catch (err: unknown) {
       console.error(err)
+      if (optimisticApplied && originalTicketForRollback) {
+        const rollbackTicket = originalTicketForRollback
+        setTickets(prev => prev.map(t => t.id === rollbackTicket.id ? rollbackTicket : t))
+      }
       alert(`Could not update ticket: ${formatFetchError(err)}`)
     } finally {
       setSavingEdit(false)
@@ -2889,13 +2910,23 @@ export default function Tickets() {
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
-  const fetchTickets = useCallback(async (options?: { soft?: boolean }) => {
+  const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean }) => {
     if (!user) return
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
+    const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
+    const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
+    const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt) : false
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+
+    if (options?.soft && !options?.force && cacheFresh && hasCache) {
+      hasLoadedOnceRef.current = true
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
 
     if (hasCache) {
       setTickets(cached!.tickets as Ticket[])
@@ -2913,7 +2944,7 @@ export default function Tickets() {
       const list = await fetchTicketsPage(ep, token(), { size })
       if (seq !== fetchSeqRef.current) return
       setTickets(list as Ticket[])
-      writeTabCache(cacheKey, { tickets: list })
+      writeTabCache(cacheKey, { tickets: list, lastSyncAt: Date.now() })
       hasLoadedOnceRef.current = true
     } catch {
       if (seq !== fetchSeqRef.current) return
@@ -2941,36 +2972,32 @@ export default function Tickets() {
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets])
 
   useEffect(() => {
-    if (canEdit) {
-      const headers = { Authorization: `Bearer ${token()}` }
-      fetch(`${API_BASE_URL}/user/all`, { headers })
-        .then(res => res.json())
-        .then(data => {
-          const list = Array.isArray(data) ? data : (data?.data || [])
-          if (!Array.isArray(list)) return
-          const mapped: BranchStaffOption[] = list.map((u: Record<string, unknown>) => ({
-            id: String(u.id || ''),
-            name: String(u.name || ''),
-            branchId: (u.branchId || u.branch_id) as string | undefined,
-            email: u.email as string | undefined,
-            role: (u.role as string | undefined),
-            jobTitle: (u.jobTitle || u.job_title) as string | undefined,
-          })).filter((u) => u.id && u.name)
-          setBranchEmployees(mapped)
-        })
-        .catch(err => console.error('Failed to load branch employees:', err))
-    }
+    if (!canEdit) return
+    const authToken = token()
+    if (!authToken) return
+    fetchCachedEmployees(authToken)
+      .then((list) => {
+        const mapped: BranchStaffOption[] = list.map((u) => ({
+          id: String(u.id || ''),
+          name: String(u.name || ''),
+          branchId: (u.branchId || u.branch_id) as string | undefined,
+          email: u.email as string | undefined,
+          role: (u.role as string | undefined),
+          jobTitle: (u.jobTitle || u.job_title) as string | undefined,
+        })).filter((u) => u.id && u.name)
+        setBranchEmployees(mapped)
+      })
+      .catch(err => console.error('Failed to load branch employees:', err))
   }, [canEdit, token])
 
   useEffect(() => {
-    const headers = { Authorization: `Bearer ${token()}` }
-    fetch(`${API_BASE_URL}/v1/lineup/installer-branch-index`, { headers })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list : []))
+    const authToken = token()
+    if (!authToken) return
+    fetchCachedLineupInstallerIndex(authToken)
+      .then((list) => setInstallerLineupIndex(Array.isArray(list) ? list as InstallerBranchIndexEntry[] : []))
       .catch(() => setInstallerLineupIndex([]))
-    fetch(`${API_BASE_URL}/v1/lineup/driver-only-names`, { headers })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list) => setDriverOnlyNames(Array.isArray(list) ? list : []))
+    fetchCachedDriverOnlyNames(authToken)
+      .then((list) => setDriverOnlyNames(list))
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
@@ -3633,6 +3660,13 @@ export default function Tickets() {
             return (
               <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Cleaning">
                 CLEANING
+              </span>
+            )
+          }
+          if (outcome === 'DONE_CHECKUP') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Done Checkup">
+                DONE CHECKUP
               </span>
             )
           }
@@ -4397,7 +4431,9 @@ export default function Tickets() {
       {/* ── Full Details Modal ── */}
       {detailTicket && (() => {
         const t = detailTicket
-        const sc = statusColor(t.status, isLight)
+        const scheduleStatusValue = getScheduleStatusValue(t)
+        const scheduleBadgeStyle = getScheduleStatusBadgeStyle(scheduleStatusValue, isLight)
+        const scheduleStatusDisplay = getScheduleStatusDisplay(t)
         const addr = formatAddress(t.location)
         const district = parseDistrict(t.location, t.district)
         const brand = parseBrand(t)
@@ -4420,6 +4456,9 @@ export default function Tickets() {
         const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
         const installedDate = formatDateKeyLabel(getInstalledDateKey(t))
         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(custName))
+        const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP'
+          ? (isLight ? '#1d4ed8' : '#93c5fd')
+          : green
 
         const Row = ({ icon: Icon, label, val, color }: { icon: any; label: string; val: string; color?: string }) =>
           val ? (
@@ -4462,8 +4501,8 @@ export default function Tickets() {
                     </p>
                   )}
                   <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
-                        style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
-                    <Clock className="w-3 h-3" />{t.status.replace(/_/g, ' ')}
+                        style={{ color: scheduleBadgeStyle.color, backgroundColor: scheduleBadgeStyle.backgroundColor, borderColor: scheduleBadgeStyle.borderColor }}>
+                    <Clock className="w-3 h-3" />{scheduleStatusDisplay}
                   </span>
                 </div>
                 <button onClick={() => setDetailTicket(null)}
@@ -4519,7 +4558,7 @@ export default function Tickets() {
                   {update && (
                     <div className="py-2.5">
                       <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Service Status" : "Update"}</p>
-                      <p className="text-xs leading-relaxed font-semibold" style={{ color: green }}>{update}</p>
+                      <p className="text-xs leading-relaxed font-semibold" style={{ color: updateColor }}>{update}</p>
                     </div>
                   )}
                 </div>

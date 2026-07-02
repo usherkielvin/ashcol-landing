@@ -93,12 +93,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return
     }
 
-    fetchNotifications()
+    const poll = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchNotifications()
+      }
+    }
 
-    // Poll every 30 seconds
-    intervalRef.current = setInterval(fetchNotifications, 30_000)
+    poll()
+    intervalRef.current = setInterval(poll, 60_000)
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void fetchNotifications()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [user, fetchNotifications])
 

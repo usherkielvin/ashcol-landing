@@ -9,8 +9,9 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
-import { readTabCache, relaysCacheKey, writeTabCache, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
-import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED } from '../utils/warrantyRegistration'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED, warrantyCacheIsFresh, readWarrantyCache, writeWarrantyCache } from '../utils/warrantyRegistration'
+import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
@@ -1198,11 +1199,14 @@ export default function ClientMasterlist() {
   }, [activeTab])
 
   // Load Initial Data — cache-first, background refresh
-  const fetchData = useCallback(async (options?: { soft?: boolean }) => {
+  const fetchData = useCallback(async (options?: { soft?: boolean; skipWarrantySync?: boolean }) => {
     const seq = ++fetchSeqRef.current
     const forceRefresh = options?.soft === false
     const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
     const cached = readTabCache<RelaysTabCache>(cacheKey)
+    const cacheEntry = readTabCacheEntry<RelaysTabCache>(cacheKey)
+    const cacheSavedAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
+    const metaCacheFresh = cacheSavedAt ? isTabCacheFresh(cacheSavedAt) : false
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
@@ -1221,11 +1225,20 @@ export default function ClientMasterlist() {
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
       const branchForSync = globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? globalBranchId : undefined
 
-      if (isAdmin && token) {
+      // Heavy server sync — throttle to once per TAB_CACHE_TTL_MS, never on post-save refreshes
+      const shouldSyncWarranty = isAdmin
+        && token
+        && !options?.skipWarrantySync
+        && !warrantyCacheIsFresh(branchForSync)
+      if (shouldSyncWarranty) {
         try {
           await syncWarrantyRegistrations(token, branchForSync)
-          clearWarrantyCache()
-          clearRelaysCache()
+          const existing = readWarrantyCache(branchForSync)
+          writeWarrantyCache(branchForSync, {
+            pending: existing?.pending ?? [],
+            registered: existing?.registered ?? [],
+            lastSyncAt: Date.now(),
+          })
           window.dispatchEvent(new CustomEvent(WARRANTY_CACHE_UPDATED))
           notifyArchiveUpdated()
         } catch {
@@ -1233,13 +1246,15 @@ export default function ClientMasterlist() {
         }
       }
 
-      const [tListRaw, branchRes, empRes] = await Promise.all([
+      const skipMetaFetch = Boolean(options?.soft && metaCacheFresh && cached?.branches?.length && cached?.employees?.length)
+
+      const [tListRaw, branchList, employeeList] = await Promise.all([
         fetchTicketsPage(endpoint, token, {
           size: 200,
           categoryGroup: ticketScope === 'ALL' ? 'FIELD' : undefined,
         }).catch(() => [] as unknown[]),
-        fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${token}` } }),
+        skipMetaFetch ? Promise.resolve(null) : fetchCachedBranches(token).catch(() => null),
+        skipMetaFetch ? Promise.resolve(null) : fetchCachedEmployees(token).catch(() => null),
       ])
 
       if (seq !== fetchSeqRef.current) return
@@ -1258,16 +1273,13 @@ export default function ClientMasterlist() {
         return tList
       })
 
-      if (branchRes.ok) {
-        const payload = await branchRes.json()
-        bList = payload?.data || payload || []
+      if (branchList) {
+        bList = branchList as { id: string; name: string }[]
         setBranches(bList)
       }
 
-      if (empRes.ok) {
-        const payload = await empRes.json()
-        const rawList: Array<Record<string, unknown>> = payload?.data || payload || []
-        eList = rawList.map((e) => ({
+      if (employeeList) {
+        eList = employeeList.map((e) => ({
           ...e,
           branchId: e.branchId || e.branch_id || '',
           jobTitle: e.jobTitle || e.job_title || '',
@@ -1275,7 +1287,7 @@ export default function ClientMasterlist() {
         setEmployees(eList as any[])
       }
 
-      writeTabCache(cacheKey, { tickets: tList, branches: bList, employees: eList })
+      writeTabCache(cacheKey, { tickets: tList, branches: bList, employees: eList, lastSyncAt: Date.now() })
       hasLoadedOnceRef.current = true
     } catch (e) {
       console.error('Error fetching data:', e)
@@ -1606,7 +1618,7 @@ export default function ClientMasterlist() {
     setIsExcelModalOpen(false)
     setImportTargetBranchId('')
     setBulkUploading(false)
-    fetchData({ soft: true })
+    fetchData({ soft: true, skipWarrantySync: true })
   }
 
   // Submit parsed/manual ticket
@@ -1753,7 +1765,7 @@ export default function ClientMasterlist() {
         relayedDate: new Date().toISOString().split('T')[0],
         finalDate: ''
       })
-      void fetchData({ soft: true })
+      void fetchData({ soft: true, skipWarrantySync: true })
     } catch (e: any) {
       alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -1856,7 +1868,7 @@ export default function ClientMasterlist() {
       setIsActionDrawerOpen(false)
       setLastUpdatedTicketId(selectedTicket.id)
       setSelectedTicket(null)
-      fetchData({ soft: true })
+      fetchData({ soft: true, skipWarrantySync: true })
     } catch (e: any) {
       alert(`Failed to update ticket action: ${e.message}`)
     } finally {
@@ -1882,7 +1894,7 @@ export default function ClientMasterlist() {
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
-      fetchData({ soft: true })
+      fetchData({ soft: true, skipWarrantySync: true })
     } catch (err: any) {
       alert(err.message || 'Error occurred while deleting ticket.')
     } finally {
@@ -1918,7 +1930,7 @@ export default function ClientMasterlist() {
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
-      fetchData({ soft: true })
+      fetchData({ soft: true, skipWarrantySync: true })
       alert('Tickets merged successfully!')
     } catch (err: any) {
       alert(err.message || 'Error occurred while merging tickets.')
@@ -1957,7 +1969,7 @@ export default function ClientMasterlist() {
       }
     }
     setActionSaving(false)
-    fetchData({ soft: true })
+    fetchData({ soft: true, skipWarrantySync: true })
     alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
   }
 
