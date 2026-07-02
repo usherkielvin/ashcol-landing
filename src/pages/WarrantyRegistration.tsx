@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom'
 import { ShieldCheck, Search, Loader2, CheckCircle2, Clock, RefreshCw, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { formatPersonName, isPortalAdmin } from '../utils/api'
+import { formatPersonName, isPortalAdmin, ARCHIVE_UPDATED_EVENT } from '../utils/api'
 import { FilterPills } from '../components/TicketSectionNav'
 import {
   getInitialWarrantyFromStorage,
@@ -96,7 +96,7 @@ export default function WarrantyRegistration() {
     toastTimerRef.current = setTimeout(() => setToast(null), 3500)
   }
 
-  const refreshFromServer = useCallback(async (options?: { forceSync?: boolean; soft?: boolean }) => {
+  const refreshFromServer = useCallback(async (options?: { forceRefresh?: boolean; soft?: boolean }) => {
     const branchId = resolveWarrantyBranchId(user)
     const seq = ++fetchSeqRef.current
     const cached = readWarrantyCache(branchId)
@@ -109,7 +109,7 @@ export default function WarrantyRegistration() {
       hasLoadedOnceRef.current = true
     }
 
-    if (cacheIsFresh && !options?.forceSync) {
+    if (cacheIsFresh && !options?.forceRefresh) {
       return
     }
 
@@ -120,7 +120,7 @@ export default function WarrantyRegistration() {
 
     try {
       const fresh = await refreshWarrantyRegistrations(token(), branchId, {
-        forceSync: options?.forceSync,
+        forceRefresh: options?.forceRefresh,
       })
       if (seq !== fetchSeqRef.current) return
       applyCache(fresh)
@@ -171,8 +171,16 @@ export default function WarrantyRegistration() {
   }, [applyCache, refreshFromServer, user])
 
   useEffect(() => {
+    const onArchiveUpdated = () => {
+      void refreshFromServer({ forceRefresh: true, soft: true })
+    }
+    window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+    return () => window.removeEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
+  }, [refreshFromServer])
+
+  useEffect(() => {
     const onWarrantyUpdated = () => {
-      void refreshFromServer({ forceSync: true, soft: true })
+      void refreshFromServer({ forceRefresh: true, soft: true })
     }
     window.addEventListener(WARRANTY_CACHE_UPDATED, onWarrantyUpdated)
     return () => window.removeEventListener(WARRANTY_CACHE_UPDATED, onWarrantyUpdated)
@@ -272,7 +280,7 @@ export default function WarrantyRegistration() {
 
             <button
               type="button"
-              onClick={() => void refreshFromServer({ forceSync: true })}
+              onClick={() => void refreshFromServer({ forceRefresh: true })}
               disabled={loading || refreshing}
               className="p-2 rounded-lg border shrink-0 disabled:opacity-50"
               style={{ borderColor: border, color: textMuted }}

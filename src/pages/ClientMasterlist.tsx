@@ -10,9 +10,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
-import { syncWarrantyRegistrations, WARRANTY_CACHE_UPDATED, warrantyCacheIsFresh, readWarrantyCache, writeWarrantyCache } from '../utils/warrantyRegistration'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
-import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
@@ -1204,7 +1202,7 @@ export default function ClientMasterlist() {
   }, [activeTab])
 
   // Load Initial Data — cache-first, background refresh
-  const fetchData = useCallback(async (options?: { soft?: boolean; skipWarrantySync?: boolean }) => {
+  const fetchData = useCallback(async (options?: { soft?: boolean }) => {
     const seq = ++fetchSeqRef.current
     const forceRefresh = options?.soft === false
     const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
@@ -1228,28 +1226,6 @@ export default function ClientMasterlist() {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const endpoint = ticketScope === 'MY' ? '/tickets/assigned' : '/tickets'
-      const branchForSync = globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? globalBranchId : undefined
-
-      // Heavy server sync — throttle to once per TAB_CACHE_TTL_MS, never on post-save refreshes
-      const shouldSyncWarranty = isAdmin
-        && token
-        && !options?.skipWarrantySync
-        && !warrantyCacheIsFresh(branchForSync)
-      if (shouldSyncWarranty) {
-        try {
-          await syncWarrantyRegistrations(token, branchForSync)
-          const existing = readWarrantyCache(branchForSync)
-          writeWarrantyCache(branchForSync, {
-            pending: existing?.pending ?? [],
-            registered: existing?.registered ?? [],
-            lastSyncAt: Date.now(),
-          })
-          window.dispatchEvent(new CustomEvent(WARRANTY_CACHE_UPDATED))
-          notifyArchiveUpdated()
-        } catch {
-          // Best-effort — still load relays below
-        }
-      }
 
       const skipMetaFetch = Boolean(options?.soft && metaCacheFresh && cached?.branches?.length && cached?.employees?.length)
 
@@ -1623,7 +1599,7 @@ export default function ClientMasterlist() {
     setIsExcelModalOpen(false)
     setImportTargetBranchId('')
     setBulkUploading(false)
-    fetchData({ soft: true, skipWarrantySync: true })
+    fetchData({ soft: true })
   }
 
   // Submit parsed/manual ticket
@@ -1770,7 +1746,7 @@ export default function ClientMasterlist() {
         relayedDate: new Date().toISOString().split('T')[0],
         finalDate: ''
       })
-      void fetchData({ soft: true, skipWarrantySync: true })
+      void fetchData({ soft: true })
     } catch (e: any) {
       alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -1873,7 +1849,7 @@ export default function ClientMasterlist() {
       setIsActionDrawerOpen(false)
       setLastUpdatedTicketId(selectedTicket.id)
       setSelectedTicket(null)
-      fetchData({ soft: true, skipWarrantySync: true })
+      fetchData({ soft: true })
     } catch (e: any) {
       alert(`Failed to update ticket action: ${e.message}`)
     } finally {
@@ -1899,7 +1875,7 @@ export default function ClientMasterlist() {
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
-      fetchData({ soft: true, skipWarrantySync: true })
+      fetchData({ soft: true })
     } catch (err: any) {
       alert(err.message || 'Error occurred while deleting ticket.')
     } finally {
@@ -1935,7 +1911,7 @@ export default function ClientMasterlist() {
 
       setIsActionDrawerOpen(false)
       setSelectedTicket(null)
-      fetchData({ soft: true, skipWarrantySync: true })
+      fetchData({ soft: true })
       alert('Tickets merged successfully!')
     } catch (err: any) {
       alert(err.message || 'Error occurred while merging tickets.')
@@ -1974,7 +1950,7 @@ export default function ClientMasterlist() {
       }
     }
     setActionSaving(false)
-    fetchData({ soft: true, skipWarrantySync: true })
+    fetchData({ soft: true })
     alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
   }
 
@@ -2677,7 +2653,7 @@ export default function ClientMasterlist() {
               {refreshing && tickets.length > 0 && (
                 <tr>
                   <td colSpan={columns.length} className="py-1 text-center text-[10px] font-semibold" style={{ color: textMuted }}>
-                    Syncing relays…
+                    Refreshing relays…
                   </td>
                 </tr>
               )}

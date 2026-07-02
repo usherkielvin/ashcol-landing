@@ -90,10 +90,7 @@ export function patchWarrantyCache(
   return next
 }
 
-export async function syncWarrantyRegistrations(
-  token: string,
-  branchId?: string,
-): Promise<{
+type WarrantySyncResult = {
   archivesCreated?: number
   warrantyCreated?: number
   warrantySkipped?: number
@@ -103,17 +100,37 @@ export async function syncWarrantyRegistrations(
   parentStatusUpdated?: number
   customerDuplicatesMerged?: number
   duplicatesMerged?: number
-}> {
-  const params = new URLSearchParams()
-  if (branchId) params.set('branchId', branchId)
-  const qs = params.toString()
-  const res = await fetch(
-    `${API_BASE_URL}/tickets/warranty-registrations/sync${qs ? `?${qs}` : ''}`,
-    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
-  )
-  if (!res.ok) throw new Error(await readApiError(res))
-  const payload = await res.json()
-  return payload?.data || payload || {}
+}
+
+const warrantySyncInFlight = new Map<string, Promise<WarrantySyncResult>>()
+
+export async function syncWarrantyRegistrations(
+  token: string,
+  branchId?: string,
+): Promise<WarrantySyncResult> {
+  const key = branchId || '__all__'
+  const existing = warrantySyncInFlight.get(key)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const params = new URLSearchParams()
+    if (branchId) params.set('branchId', branchId)
+    const qs = params.toString()
+    const res = await fetch(
+      `${API_BASE_URL}/tickets/warranty-registrations/sync${qs ? `?${qs}` : ''}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) throw new Error(await readApiError(res))
+    const payload = await res.json()
+    return payload?.data || payload || {}
+  })()
+
+  warrantySyncInFlight.set(key, promise)
+  try {
+    return await promise
+  } finally {
+    warrantySyncInFlight.delete(key)
+  }
 }
 
 export async function fetchWarrantyRegistrations(
@@ -142,34 +159,22 @@ export async function fetchWarrantyRegistrations(
 }
 
 /**
- * Load warranty lists — uses local cache first, then refreshes from API in background.
+ * Load warranty lists from the API (no bulk sync — pending rows are created when
+ * Schedules marks a ticket installed and the archive is saved).
  */
 export async function refreshWarrantyRegistrations(
   token: string,
   branchId?: string,
-  options?: { forceSync?: boolean; skipSync?: boolean },
+  options?: { forceRefresh?: boolean },
 ): Promise<WarrantyListsCache> {
   const cached = readWarrantyCache(branchId)
   const cacheIsFresh = warrantyCacheIsFresh(branchId)
 
-  // If cache is fresh and not forced, return immediately — no API call
-  if (cached && cacheIsFresh && !options?.forceSync) {
+  if (cached && cacheIsFresh && !options?.forceRefresh) {
     return cached
   }
 
   const now = Date.now()
-  const cacheAge = cached?.lastSyncAt ? now - cached.lastSyncAt : Infinity
-  const syncStale = !cached?.lastSyncAt || cacheAge > SYNC_INTERVAL_MS
-  const shouldSync = !options?.skipSync && (options?.forceSync || syncStale)
-
-  if (shouldSync) {
-    try {
-      await syncWarrantyRegistrations(token, branchId)
-    } catch {
-      // Best-effort — still fetch lists below
-    }
-  }
-
   const [pending, registered] = await Promise.all([
     fetchWarrantyRegistrations(token, 'pending', branchId),
     fetchWarrantyRegistrations(token, 'registered', branchId),
