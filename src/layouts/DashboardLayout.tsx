@@ -31,8 +31,7 @@ import {
   MdOutlineStorefront,
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
-import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 
 // import AIChatBot from '../components/AIChatBot'
@@ -43,19 +42,12 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
   const id = (branchId || '').toUpperCase()
   const name = (branchName || '').trim()
 
-  if (id === 'BR-TAGUIG-SALES') return 'TAGUIG - SALES'
-  if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE') return 'TAGUIG - SERVICES'
-  if (id.endsWith('-SALES')) return 'TAGUIG - SALES'
-  if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return 'TAGUIG - SERVICES'
-  if (name) {
-    const clean = name.replace(/^(ashcol\s+)/i, '').toUpperCase()
-    if (clean === 'TAGUIG' || clean === 'ASHCOL TAGUIG') {
-      if (id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) return 'TAGUIG - SERVICES'
-      return 'TAGUIG - SALES'
-    }
-    return name
+  const isServices = id.includes('SERVICE') || id.includes('SERVICES') || name.toUpperCase().includes('SERVICE')
+  if (id.includes('TAGUIG') || name.toUpperCase().includes('TAGUIG')) {
+    return isServices ? 'TAGUIG SERVICES' : 'TAGUIG-SALES'
   }
-  return branchId || null
+
+  return formatBranchName(name || id)
 }
 
 interface BranchOption { id: string; name: string }
@@ -649,7 +641,7 @@ export default function DashboardLayout() {
                       >
                         {adminBranches.map((b) => (
                           <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
-                            {b.name}
+                            {formatBranchName(b.name)}
                           </option>
                         ))}
                       </select>

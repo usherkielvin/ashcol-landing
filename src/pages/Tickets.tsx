@@ -1001,7 +1001,11 @@ function getBranchDisplayName(id: string | null): string {
     return parseGlobalBranchScope(id).branchName
   }
   const upper = id.toUpperCase()
-  return upper.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/-/g, ' ').trim()
+  let name = upper.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/-/g, ' ').trim()
+  if (name.startsWith('ASHCOL ')) {
+    name = name.slice(7).trim()
+  }
+  return name
 }
 
 function todayDateKey() {

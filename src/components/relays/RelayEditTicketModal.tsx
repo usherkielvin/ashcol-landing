@@ -173,14 +173,14 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div>
             <ESHead title="Client & Location Details" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <EField label="Customer Name">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <EField label="Customer Name" className="md:col-span-2">
                 <input type="text" value={draft.customerName} onChange={(e) => patch({ customerName: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" spellCheck={false} />
               </EField>
-              <EField label="Control No. / SI">
-                <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" />
+              <EField label="Address" className="md:col-span-2">
+                <input type="text" value={draft.location} onChange={(e) => patch({ location: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" />
               </EField>
-              <EField label="Contact Number" className="sm:col-span-2">
+              <EField label="Contact Number" className="md:col-span-2">
                 <div className="flex flex-col gap-2">
                   {draft.phoneNumbers.map((phone, pIdx) => (
                     <div key={`phone-${pIdx}`} className="flex gap-2 items-center">
@@ -209,9 +209,13 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </EField>
               )}
               <EField label="Store Branch"><input type="text" value={draft.storeBranch} onChange={(e) => patch({ storeBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              <EField label="Address" className="md:col-span-2"><input type="text" value={draft.location} onChange={(e) => patch({ location: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               <EField label="District Zone"><input type="text" value={draft.district} onChange={(e) => patch({ district: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              <EField label="Additional Notes / Landmark"><input type="text" value={draft.landmarks} onChange={(e) => patch({ landmarks: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              <EField label="Additional Notes / Landmark" className={draft.storeVendor === 'Robinsons' ? 'md:col-span-2' : 'md:col-span-3'}><input type="text" value={draft.landmarks} onChange={(e) => patch({ landmarks: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              {draft.storeVendor === 'Robinsons' && (
+                <EField label="Transaction ID">
+                  <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />
+                </EField>
+              )}
             </div>
           </div>
 

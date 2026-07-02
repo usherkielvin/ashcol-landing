@@ -2347,7 +2347,7 @@ export default function ClientMasterlist() {
                 <span>
                   {branchFilter === 'ALL'
                     ? 'All Branches'
-                    : branches.find(b => b.id === branchFilter)?.name || branchFilter}
+                    : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
                 </span>
               </div>
               {isAdmin && <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />}
@@ -2373,7 +2373,7 @@ export default function ClientMasterlist() {
                       onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
                       className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
                     >
-                      <span>{b.name}</span>
+                      <span>{formatBranchName(b.name)}</span>
                       {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
                     </button>
                   ))}
@@ -3308,7 +3308,7 @@ export default function ClientMasterlist() {
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       >
                         <option value="">Select branch...</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
                       </select>
                     </RelayFormField>
                     <RelayFormField label="Negotiator" required compact className="md:col-span-5">
@@ -3339,9 +3339,11 @@ export default function ClientMasterlist() {
                         })}
                       </select>
                     </RelayFormField>
-                    <RelayFormField label="Control No. / SI" compact className="md:col-span-4">
-                      <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="SI / transaction #" className={addInput} style={fieldStyle(addForm.controlNumber)} />
-                    </RelayFormField>
+                    {addForm.sourceVendor === 'Robinsons' && (
+                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
+                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
+                      </RelayFormField>
+                    )}
                   </div>
                 </section>
 

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
@@ -1663,7 +1663,7 @@ export default function DailyServiceReport() {
                   <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
                 )}
                 {branches.map(b => (
-                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{b.name}</option>
+                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
                 ))}
               </select>
               <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />

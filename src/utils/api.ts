@@ -97,11 +97,14 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
     return {
       branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
-      branchName: isServices ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
+      branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG-SALES',
     }
   }
 
   let baseName = raw.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/_/g, ' ').toUpperCase().trim()
+  if (baseName.startsWith('ASHCOL ')) {
+    baseName = baseName.slice(7).trim()
+  }
   if (!baseName) baseName = 'BRANCH'
 
   return {
@@ -157,6 +160,21 @@ export function branchEntryMatchesGlobal(
 export function isTaguigServicesScope(branchId?: string | null, email?: string | null): boolean {
   if (!isTaguigBranchRef(branchId)) return false
   return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
+}
+
+export function getCleanBranchName(name?: string | null): string {
+  if (!name) return ''
+  let upper = name.toUpperCase().trim()
+  if (upper.startsWith('ASHCOL ')) {
+    upper = upper.slice(7).trim()
+  }
+  if (upper === 'TAGUIG') {
+    return 'TAGUIG-SALES'
+  }
+  if (upper === 'TAGUIG - SERVICES' || upper === 'TAGUIG-SERVICES' || upper === 'TAGUIG SERVICES' || upper === 'TAGUIG - SERVICE') {
+    return 'TAGUIG SERVICES'
+  }
+  return upper.replace(' - ', ' ').replace('-', ' ').trim()
 }
 
 /**
@@ -638,15 +656,14 @@ export function formatDisplayUserLabel(label?: string | null): string {
     .replace(/\s*-\s*manager$/i, ' - OIC')
 }
 
-/** Simplifies and formats branch names for display */
 export function formatBranchName(name?: string | null): string {
   if (!name) return ''
   const upper = name.trim().toUpperCase()
   if (upper.includes('TAGUIG') && (upper.includes('SERVICE') || upper.includes('SERVICES') || upper.includes('DEPT'))) {
-    return 'TAGUIG - SERVICES'
+    return 'TAGUIG SERVICES'
   }
   if (upper.includes('TAGUIG') || upper.includes('HEAD OFFICE')) {
-    return 'TAGUIG - SALES'
+    return 'TAGUIG-SALES'
   }
   if (upper.includes('SILANG') || upper.includes('STA ROSA') || upper.includes('STA. ROSA') || upper.includes('STO ROSA') || upper.includes('STO. ROSA')) {
     return 'SILANG'
@@ -654,7 +671,6 @@ export function formatBranchName(name?: string | null): string {
   if (upper.includes('DASMA') || upper.includes('DASMARIÑAS') || upper.includes('DASMARINAS')) {
     return 'DASMA'
   }
-  // Strip "ASHCOL" prefix (with optional dash/hyphen and space) from all other branches
   return upper.replace(/^ASHCOL\s*-?\s*/i, '').trim()
 }
 
