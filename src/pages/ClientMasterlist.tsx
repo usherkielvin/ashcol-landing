@@ -16,6 +16,8 @@ import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warr
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
+import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import type { ReactNode } from 'react'
 
 function RelayFormField({
@@ -513,6 +515,20 @@ const buildRelayHistoryTimeline = (
     })
   }
 
+  const legacyRemark = (ticket.remarksUpdate || '').trim()
+  if (legacyRemark) {
+    const alreadyLogged = list.some((h) => String(h.changeNote || '').trim() === legacyRemark)
+    if (!alreadyLogged) {
+      list.push({
+        id: 'legacy-remark',
+        changeNote: legacyRemark,
+        changedByUserName: resolveRelayActorName(ticket.createdBy || ticket.customerEmail, employees),
+        createdAt: ticket.updatedAt || ticket.createdAt,
+        isRemarkEntry: true,
+      })
+    }
+  }
+
   return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
@@ -722,19 +738,6 @@ const isCollectionPaid = (ticket: Ticket) => {
   const remarks = (ticket.remarksUpdate || '').toLowerCase()
   return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
 }
-
-const EField = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
-  <div className={`flex flex-col gap-1.5 ${className}`}>
-    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>
-    {children}
-  </div>
-)
-
-const ESHead = ({ title, border }: { title: string; border: string }) => (
-  <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
-    <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
-  </div>
-)
 
 export default function ClientMasterlist() {
   const { theme } = useTheme()
@@ -995,11 +998,6 @@ export default function ClientMasterlist() {
     return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }, [employees, branchFilter, globalBranchId, user?.branchId, branches])
 
-  const negotiators = useMemo(
-    () => negotiatorsForBranch(),
-    [negotiatorsForBranch],
-  )
-
   const addFormDuplicate = useMemo(() => {
     const writeBranchId = resolvePortalWriteBranchId(
       addForm.branchId || resolveRelayDefaultBranchId(),
@@ -1057,9 +1055,6 @@ export default function ClientMasterlist() {
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [isActionDrawerOpen, setIsActionDrawerOpen] = useState(false)
-  const [assignBranchId, setAssignBranchId] = useState('')
-  const [assignTechId, setAssignTechId] = useState('')
-  const [updateStatus, setUpdateStatus] = useState('')
   const [actionSaving, setActionSaving] = useState(false)
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [merging, setMerging] = useState(false)
@@ -1092,53 +1087,6 @@ export default function ClientMasterlist() {
     if (!isActionDrawerOpen || !selectedTicket || mergeCandidates.length === 0) return
     setMergeTargetId((prev) => prev || mergeCandidates[0]?.id || '')
   }, [isActionDrawerOpen, selectedTicket, mergeCandidates])
-
-  // Edit Modal / Drawer spreadsheet fields
-  const [editLocation, setEditLocation] = useState('')
-  const [editPreferredDate, setEditPreferredDate] = useState('')
-  const [editPriorityTag, setEditPriorityTag] = useState('')
-  const [editDistrict, setEditDistrict] = useState('')
-  const [editCommitType, setEditCommitType] = useState('')
-  const [editInstallerName, setEditInstallerName] = useState('')
-  const [editServiceVehicle, setEditServiceVehicle] = useState('')
-  const [editRemarksUpdate, setEditRemarksUpdate] = useState('')
-  const editRemarksRef = useRef<HTMLTextAreaElement>(null)
-  const editCommitRef = useRef<HTMLInputElement>(null)
-  const [editPhoneNumbers, setEditPhoneNumbers] = useState<string[]>([''])
-  const [editBrandHP, setEditBrandHP] = useState('')
-  const [editInstallationCharges, setEditInstallationCharges] = useState(0)
-  const [editModeOfPayment, setEditModeOfPayment] = useState('')
-  const [editControlNumber, setEditControlNumber] = useState('')
-
-  const [editStoreVendor, setEditStoreVendor] = useState('Robinsons')
-  const [editStoreBranch, setEditStoreBranch] = useState('')
-  const [editShowAddStoreField, setEditShowAddStoreField] = useState(false)
-  const [editStoreDraft, setEditStoreDraft] = useState('')
-  const [editUnitType, setEditUnitType] = useState('')
-  const [editServiceType, setEditServiceType] = useState('')
-  const [editCustomerName, setEditCustomerName] = useState('')
-  const [editLandmarks, setEditLandmarks] = useState('')
-  const [editBrand, setEditBrand] = useState('')
-  const [editCapacity, setEditCapacity] = useState('')
-  const [editSku, setEditSku] = useState('')
-  const [editSerialNumber, setEditSerialNumber] = useState('')
-
-  const [editImages, setEditImages] = useState('')
-  const [editRelayedDate, setEditRelayedDate] = useState('')
-  const [editStoreReferralFee, setEditStoreReferralFee] = useState('')
-  const [editPromodiserName, setEditPromodiserName] = useState('')
-  const [editReferralRecipient, setEditReferralRecipient] = useState('')
-  const [editReferralAmount, setEditReferralAmount] = useState('')
-  const [editReferralStatus, setEditReferralStatus] = useState('')
-  const [editReferralDatePaid, setEditReferralDatePaid] = useState('')
-  const [editReferralReferenceNo, setEditReferralReferenceNo] = useState('')
-  const [editRebatesClaim, setEditRebatesClaim] = useState('YES')
-  const [editRebatesCompany, setEditRebatesCompany] = useState('')
-  const [editRebatesAmountDue, setEditRebatesAmountDue] = useState('')
-  const [editRebatesStatus, setEditRebatesStatus] = useState('')
-  const [editRebatesReferenceNo, setEditRebatesReferenceNo] = useState('')
-  const [editWarrantyStatus, setEditWarrantyStatus] = useState('')
-  const [editWarrantyRegisteredBy, setEditWarrantyRegisteredBy] = useState('')
 
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
@@ -1814,13 +1762,13 @@ export default function ClientMasterlist() {
   }
 
   // Save changes in action drawer
-  const handleDrawerActionSave = async () => {
+  const handleDrawerActionSave = async (draft: RelayEditDraft) => {
     if (!selectedTicket) return
     const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
-    const finalStatus = (assignTechId && updateStatus === 'PENDING') ? 'ASSIGNED' : updateStatus
+    const finalStatus = (draft.assignTechId && draft.updateStatus === 'PENDING') ? 'ASSIGNED' : draft.updateStatus
 
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
-    if (isAssignedOrScheduled && !assignTechId) {
+    if (isAssignedOrScheduled && !draft.assignTechId) {
       alert('Negotiator is required')
       return
     }
@@ -1834,58 +1782,60 @@ export default function ClientMasterlist() {
         payload.assignedTo = ""
         payload.status = finalStatus
       } else {
-        payload.branchId = assignBranchId || ""
-        payload.assignedTo = assignTechId || ""
+        payload.branchId = draft.assignBranchId || ""
+        payload.assignedTo = draft.assignTechId || ""
         payload.status = finalStatus
       }
-      
-      // Update spreadsheet fields
-      payload.customerName = editCustomerName || null
-      payload.location = editLocation || null
-      payload.preferredDate = editPreferredDate ? new Date(editPreferredDate).toISOString() : null
-      payload.priorityTag = editPriorityTag || null
-      payload.district = editDistrict || null
-      payload.commitType = (editCommitRef.current ? editCommitRef.current.value : editCommitType) || null
-      payload.installerName = editInstallerName || null
-      payload.serviceVehicle = editServiceVehicle || null
-      payload.remarksUpdate = (editRemarksRef.current ? editRemarksRef.current.value : editRemarksUpdate) || null
-      payload.installationCharges = Number(editInstallationCharges)
-      payload.modeOfPayment = editModeOfPayment || null
-      payload.controlNumber = editControlNumber || null
-      
+
+      payload.customerName = draft.customerName || null
+      payload.location = draft.location || null
+      payload.preferredDate = draft.preferredDate ? new Date(draft.preferredDate).toISOString() : null
+      payload.priorityTag = draft.priorityTag || null
+      payload.district = draft.district || null
+      payload.commitType = draft.commitType || null
+      payload.installerName = draft.installerName || null
+      payload.serviceVehicle = draft.serviceVehicle || null
+      const newRemark = (draft.remarksUpdate || '').trim()
+      if (newRemark) {
+        payload.remarksUpdate = newRemark
+      }
+      payload.installationCharges = Number(draft.installationCharges)
+      payload.modeOfPayment = draft.modeOfPayment || null
+      payload.controlNumber = draft.controlNumber || null
+
       const existingDetails = parseAcDetails(selectedTicket)
       const acDetailsObj = {
-        landmarks: editLandmarks || '',
-        brand: editBrand || '',
-        capacity: editCapacity || '',
-        sku: editSku || '',
-        serialNumber: editSerialNumber || '',
-        alternatePhone: editPhoneNumbers.slice(1).filter(Boolean).join(', '),
-        relayedDate: editRelayedDate || '',
+        landmarks: draft.landmarks || '',
+        brand: draft.brand || '',
+        capacity: draft.capacity || '',
+        sku: draft.sku || '',
+        serialNumber: draft.serialNumber || '',
+        alternatePhone: draft.phoneNumbers.slice(1).filter(Boolean).join(', '),
+        relayedDate: draft.relayedDate || '',
         finalDate: existingDetails.finalDate || '',
-        promodiserName: editReferralRecipient || editPromodiserName || '',
-        referralFeeRecipient: editReferralRecipient || editPromodiserName || '',
-        referralFeeAmount: editReferralAmount || editStoreReferralFee || '',
-        referralFeeStatus: editReferralStatus || '',
-        referralFeeDatePaid: editReferralDatePaid || '',
-        referralFeeReferenceNo: editReferralReferenceNo || '',
-        forRebatesClaim: editRebatesClaim || 'YES',
-        rebatesCompany: editRebatesCompany || '',
-        rebatesAmountDue: editRebatesAmountDue || '',
-        rebatesStatus: editRebatesStatus || '',
-        rebatesReferenceNo: editRebatesReferenceNo || '',
-        warrantyRegistrationStatus: editWarrantyStatus || '',
-        warrantyRegisteredBy: editWarrantyRegisteredBy || '',
+        promodiserName: draft.referralRecipient || '',
+        referralFeeRecipient: draft.referralRecipient || '',
+        referralFeeAmount: draft.referralAmount || draft.storeReferralFee || '',
+        referralFeeStatus: draft.referralStatus || '',
+        referralFeeDatePaid: draft.referralDatePaid || '',
+        referralFeeReferenceNo: draft.referralReferenceNo || '',
+        forRebatesClaim: draft.rebatesClaim || 'YES',
+        rebatesCompany: draft.rebatesCompany || '',
+        rebatesAmountDue: draft.rebatesAmountDue || '',
+        rebatesStatus: draft.rebatesStatus || '',
+        rebatesReferenceNo: draft.rebatesReferenceNo || '',
+        warrantyRegistrationStatus: draft.warrantyStatus || '',
+        warrantyRegisteredBy: draft.warrantyRegisteredBy || '',
       }
       payload.acDetails = JSON.stringify(acDetailsObj)
-      payload.negotiatorId = assignTechId || ''
-      payload.storeReferralFee = (editReferralAmount || editStoreReferralFee).trim() ? (editReferralAmount || editStoreReferralFee).trim() : '0'
-      payload.warrantyDocsStatus = editWarrantyStatus || null
-      payload.images = editImages || null
-      payload.contactPhone = editPhoneNumbers[0] || null
-      payload.sourceVendor = resolveRelayStoreForSubmit(editStoreVendor, editStoreBranch) || null
-      payload.unitType = editUnitType || null
-      payload.serviceType = editServiceType || null
+      payload.negotiatorId = draft.assignTechId || ''
+      payload.storeReferralFee = (draft.referralAmount || draft.storeReferralFee).trim() ? (draft.referralAmount || draft.storeReferralFee).trim() : '0'
+      payload.warrantyDocsStatus = draft.warrantyStatus || null
+      payload.images = draft.images || null
+      payload.contactPhone = draft.phoneNumbers[0] || null
+      payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
+      payload.unitType = draft.unitType || null
+      payload.serviceType = draft.serviceType || null
 
       const res = await fetch(`${API_BASE_URL}/tickets/${selectedTicket.id}`, {
         method: 'PATCH',
@@ -2017,31 +1967,7 @@ export default function ClientMasterlist() {
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
     setMergeTargetId('')
-    setAssignBranchId(resolveBranch(ticket.branchId)?.id || '')
-    setEditCustomerName(ticket.customerName || '')
-    setEditLocation(ticket.location || '')
-    setEditPreferredDate(ticket.preferredDate ? ticket.preferredDate.split('T')[0] : '')
-    setAssignTechId(ticket.assignedTo || ticket.negotiatorId || ticket.negotiator_id || '')
-    setUpdateStatus(ticket.status)
-    setEditPriorityTag(ticket.priorityTag || '')
-    setEditDistrict(ticket.district || '')
-    setEditCommitType(ticket.commitType || '')
-    if (editCommitRef.current) editCommitRef.current.value = ticket.commitType || ''
-    setEditInstallerName(ticket.installerName || '')
-    setEditServiceVehicle(ticket.serviceVehicle || '')
-    setEditRemarksUpdate(ticket.remarksUpdate || '')
-    // Sync refs with new ticket values
-    setTimeout(() => {
-      if (editRemarksRef.current) editRemarksRef.current.value = ticket.remarksUpdate || ''
-      if (editCommitRef.current) editCommitRef.current.value = ticket.commitType || ''
-    }, 0)
-    setEditInstallationCharges(ticket.installationCharges || 0)
-    setEditModeOfPayment(ticket.modeOfPayment || '')
-    setEditControlNumber(ticket.controlNumber || '')
     const parsedStore = parseStoreVendor(ticket.sourceVendor)
-    const openedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
-      ? parsedStore.customStore
-      : parsedStore.store
     if (parsedStore.store === 'Other' && parsedStore.customStore) {
       setRelayCustomStores(prev => {
         const name = parsedStore.customStore!.trim()
@@ -2051,55 +1977,6 @@ export default function ClientMasterlist() {
         return next
       })
     }
-    setEditStoreVendor(openedStoreVendor)
-    setEditStoreBranch(parsedStore.branch)
-    setEditShowAddStoreField(false)
-    setEditStoreDraft('')
-    setEditUnitType(ticket.unitType || '')
-    setEditServiceType(ticket.serviceType || '')
-
-    // Parse acDetails JSON
-    let parsedDetails: any = { landmarks: '', brand: '', capacity: '', sku: '', serialNumber: '', alternatePhone: '', relayedDate: '', finalDate: '', promodiserName: '' }
-    if (ticket.acDetails) {
-      try {
-        parsedDetails = { ...parsedDetails, ...JSON.parse(ticket.acDetails) }
-      } catch (e) {
-        // Safe fallback
-      }
-    }
-    setEditLandmarks(parsedDetails.landmarks || '')
-    setEditBrand(parsedDetails.brand || '')
-    setEditCapacity(parsedDetails.capacity || '')
-    setEditSku(parsedDetails.sku || '')
-    setEditSerialNumber(parsedDetails.serialNumber || '')
-    const phonesList = [ticket.contactPhone || ''].concat(parsedDetails.alternatePhone ? parsedDetails.alternatePhone.split(',').map((s: any) => s.trim()) : []).filter(Boolean)
-    setEditPhoneNumbers(phonesList.length ? phonesList : [''])
-    setEditBrandHP(formatBrandCapacityLabel(parsedDetails.brand, parsedDetails.capacity))
-    setEditImages(ticket.images || '')
-    setEditRelayedDate(parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
-    setEditStoreReferralFee(String(ticket.storeReferralFee ?? ticket.store_referral_fee ?? ''))
-    setEditPromodiserName(String(parsedDetails.promodiserName || ''))
-    setEditReferralRecipient(String(parsedDetails.referralFeeRecipient || parsedDetails.promodiserName || ''))
-    setEditReferralAmount(String(parsedDetails.referralFeeAmount || ticket.storeReferralFee || ticket.store_referral_fee || ''))
-    setEditReferralStatus(String(parsedDetails.referralFeeStatus || ''))
-    setEditReferralDatePaid(String(parsedDetails.referralFeeDatePaid || ''))
-    setEditReferralReferenceNo(String(parsedDetails.referralFeeReferenceNo || ''))
-    setEditRebatesClaim(String(parsedDetails.forRebatesClaim || 'YES'))
-    setEditRebatesCompany(String(parsedDetails.rebatesCompany || ''))
-    setEditRebatesAmountDue(String(parsedDetails.rebatesAmountDue || ''))
-    setEditRebatesStatus(String(parsedDetails.rebatesStatus || ''))
-    setEditRebatesReferenceNo(String(parsedDetails.rebatesReferenceNo || ''))
-    setEditWarrantyStatus(String(
-      parsedDetails.warrantyRegistrationStatus
-      || ticket.warrantyDocsStatus
-      || (ticket.warrantyRegistrationCompleted ? 'REGISTERED' : ''),
-    ))
-    setEditWarrantyRegisteredBy(String(
-      parsedDetails.warrantyRegisteredBy
-      || ticket.warrantyRegistrationCompletedBy
-      || '',
-    ))
-
     setIsActionDrawerOpen(true)
   }
 
@@ -3079,464 +2956,43 @@ export default function ClientMasterlist() {
       </div>
 
       {/* Centered Manage/Edit Ticket Modal */}
-      {isActionDrawerOpen && selectedTicket && ReactDOM.createPortal((() => {
-        const ticket = selectedTicket;
-
-        const inputStyle = {
-          backgroundColor: inputBg,
-          borderColor: inputBorder,
-          color: textPrimary,
-          fontFamily: 'inherit'
-        };
-        const editNegotiatorId = assignTechId || resolveNegotiatorUserId(ticket)
-        const editNegotiatorPhone = resolveEmployeePhone(employees, editNegotiatorId)
-        const editStoreOptions = [
-          ...BUILT_IN_RELAY_STORES,
-          ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s as typeof BUILT_IN_RELAY_STORES[number])),
-        ]
-        if (editStoreVendor && !editStoreOptions.includes(editStoreVendor as typeof BUILT_IN_RELAY_STORES[number])) {
-          editStoreOptions.push(editStoreVendor)
-        }
-        const addEditCustomStore = () => {
-          const name = editStoreDraft.trim()
-          if (!name) return
-          if ((BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())) {
-            alert('That store is already in the list.')
-            return
-          }
-          const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
-          setRelayCustomStores(next)
-          persistRelayCustomStores(next)
-          setEditStoreVendor(name)
-          setEditStoreDraft('')
-          setEditShowAddStoreField(false)
-        }
-
-        return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-            onClick={() => setIsActionDrawerOpen(false)}>
-
-            {/* Modal Box */}
-            <div className="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
-              onClick={e => e.stopPropagation()}>
-
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 shrink-0"
-                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                <div className="min-w-0 flex-1 mr-4">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
-                      Manage Client Ticket
-                    </h2>
-                    <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
-                      TICKET NO: {getTicketNumber(ticket)}
-                    </span>
-                  </div>
-                </div>
-                <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                  className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                  <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-
-                {/* Section 1: Client Details */}
-                <div>
-                  <ESHead title="Client & Location Details" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    <EField label="Customer Name">
-                      <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)}
-                        placeholder="Customer Name" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Control No. / SI">
-                      <input type="text" value={editControlNumber} onChange={e => setEditControlNumber(e.target.value)}
-                        placeholder="Transaction no." className={compactInput} style={inputStyle} />
-                    </EField>
-                    
-                    {/* Growable Contact Numbers */}
-                    <EField label="Contact Number" className="sm:col-span-2">
-                      <div className="flex flex-col gap-2">
-                        {editPhoneNumbers.map((phone, pIdx) => (
-                          <div key={pIdx} className="flex gap-2 items-center">
-                            <input
-                              type="text"
-                              value={phone}
-                              onChange={e => {
-                                const newPhones = [...editPhoneNumbers];
-                                newPhones[pIdx] = e.target.value;
-                                setEditPhoneNumbers(newPhones);
-                              }}
-                              placeholder={`Contact Number ${pIdx + 1}`}
-                              className={compactInput}
-                              style={inputStyle}
-                            />
-                            {pIdx === 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => setEditPhoneNumbers([...editPhoneNumbers, ''])}
-                                className="p-1 px-2.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold transition-all text-xs shrink-0"
-                              >
-                                +
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newPhones = editPhoneNumbers.filter((_, idx) => idx !== pIdx);
-                                  setEditPhoneNumbers(newPhones);
-                                }}
-                                className="p-1 px-2.5 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold transition-all text-xs shrink-0"
-                              >
-                                -
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </EField>
-
-                    <EField label="Store">
-                      <select
-                        value={editShowAddStoreField ? '__add_store__' : editStoreVendor}
-                        onChange={e => {
-                          const val = e.target.value
-                          if (val === '__add_store__') {
-                            setEditShowAddStoreField(true)
-                            return
-                          }
-                          setEditShowAddStoreField(false)
-                          setEditStoreDraft('')
-                          setEditStoreVendor(val)
-                        }}
-                        className={compactInput}
-                        style={inputStyle}>
-                        {editStoreOptions.map(store => (
-                          <option key={store} value={store}>{store}</option>
-                        ))}
-                        <option value="__add_store__">+ Add store...</option>
-                      </select>
-                    </EField>
-                    {editShowAddStoreField && (
-                      <EField label="New Store Name">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={editStoreDraft}
-                            onChange={e => setEditStoreDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEditCustomStore() } }}
-                            placeholder="e.g. S&R, Anson's"
-                            className={compactInput}
-                            style={inputStyle}
-                          />
-                          <button
-                            type="button"
-                            onClick={addEditCustomStore}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </EField>
-                    )}
-                    <EField label="Store Branch">
-                      <input
-                        type="text"
-                        value={editStoreBranch}
-                        onChange={e => setEditStoreBranch(e.target.value)}
-                        placeholder="e.g. Ermita"
-                        className={compactInput}
-                        style={inputStyle}
-                      />
-                    </EField>
-                    <EField label="Address" className="md:col-span-2">
-                      <input type="text" value={editLocation} onChange={e => setEditLocation(e.target.value)}
-                        placeholder="Installation Address" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="District Zone">
-                      <input type="text" value={editDistrict} onChange={e => setEditDistrict(e.target.value)}
-                        placeholder="District" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Additional Notes / Landmark">
-                      <input type="text" value={editLandmarks} onChange={e => setEditLandmarks(e.target.value)}
-                        placeholder="Landmarks / Notes" className={compactInput} style={inputStyle} />
-                    </EField>
-                  </div>
-                </div>
-
-                {/* Section 2: Equipment & Job details */}
-                <div>
-                  <ESHead title="Equipment & Job Details" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    <EField label="Brand / HP" className="md:col-span-2">
-                      <input type="text" value={editBrandHP} onChange={e => {
-                        const val = e.target.value;
-                        setEditBrandHP(val);
-                        const parts = val.trim().split(/\s+/);
-                        const brand = parts[0] || '';
-                        const capacity = parts.slice(1).join(' ') || '';
-                        setEditBrand(brand);
-                        setEditCapacity(capacity);
-                      }}
-                        placeholder="e.g. Panasonic 1.5 HP" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Service Category / Type">
-                      <input type="text" value={editServiceType} onChange={e => {
-                        const val = e.target.value;
-                        const isSI = /install|s\/i|\bsi\b/i.test(val);
-                        const isSurvey = /survey/i.test(val);
-                        let mappedSvc = val;
-                        if (isSI) {
-                          mappedSvc = 'Survey & Install';
-                          setEditCommitType('FREE FIRST 10 FEET');
-                        } else if (isSurvey) {
-                          mappedSvc = 'SURVEY';
-                        }
-                        setEditServiceType(mappedSvc);
-                      }}
-                        placeholder="e.g. Survey & Install" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Commit Type / Promo" className="md:col-span-2">
-                      <input
-                        ref={editCommitRef}
-                        type="text"
-                        defaultValue={editCommitType}
-                        onBlur={e => setEditCommitType(e.target.value)}
-                        placeholder="e.g. Free 10ft copper"
-                        className={compactInput} style={inputStyle} />
-                    </EField>
-                    {editImages && (
-                      <div className="flex flex-col justify-end">
-                        <div className="rounded-lg p-2 flex items-center justify-between border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-emerald-500 shrink-0" />
-                            <div className="text-[10px]">
-                              <p className="font-bold" style={{ color: textPrimary }}>Attached Voucher</p>
-                              <p className="truncate max-w-[100px]" style={{ color: textMuted }}>{editImages.split('/').pop()}</p>
-                            </div>
-                          </div>
-                          <a href={editImages.startsWith('http') ? editImages : `${API_BASE_URL.replace('/api', '')}${editImages}`}
-                             target="_blank" rel="noreferrer"
-                             className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 rounded text-[9px] font-bold transition-all">
-                            View
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Section 3: Scheduling & Assignment */}
-                <div>
-                  <ESHead title="Scheduling & Branch Assignment" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    <EField label="Status">
-                      <select value={updateStatus} onChange={e => setUpdateStatus(e.target.value)}
-                        className="w-full border rounded-lg px-2.5 py-1 text-xs outline-none font-bold"
-                        style={inputStyle}>
-                        <option value="PENDING">Pending</option>
-                        <option value="ASSIGNED">Assigned</option>
-                        <option value="SCHEDULED">Scheduled</option>
-                      </select>
-                    </EField>
-                    <EField label="Branch Zone">
-                      <select value={assignBranchId}
-                        onChange={e => setAssignBranchId(e.target.value)}
-                        className={compactInput} style={inputStyle}>
-                        <option value="">Select Branch...</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </EField>
-                    <EField label="Negotiator">
-                      <select value={assignTechId}
-                        onChange={e => {
-                          const val = e.target.value
-                          const foundEmp = negotiators.find(emp => emp.id === val)
-                          setAssignTechId(val)
-                          if (foundEmp && foundEmp.branchId) {
-                            setAssignBranchId(foundEmp.branchId)
-                          }
-                          if (val && updateStatus === 'PENDING') {
-                            setUpdateStatus('ASSIGNED')
-                          }
-                        }}
-                        className={compactInput} style={inputStyle}>
-                        <option value="">Select Negotiator...</option>
-                        {negotiatorsForBranch(assignBranchId || undefined).map(emp => {
-                          const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                          const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
-                          return (
-                            <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
-                          )
-                        })}
-                      </select>
-                    </EField>
-                    <EField label="Negotiator Number">
-                      <div className={`${compactInput} flex items-center min-h-[30px]`} style={{ ...inputStyle, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                        {editNegotiatorPhone
-                          ? <FormatPhone raw={editNegotiatorPhone} />
-                          : <span className="text-[11px] font-medium" style={{ color: textMuted }}>No number on negotiator account</span>}
-                      </div>
-                    </EField>
-                    <EField label="Relayed Date">
-                      <input type="date" value={editRelayedDate} onChange={e => setEditRelayedDate(e.target.value)}
-                        className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Preferred Date">
-                      <input type="date" value={editPreferredDate} onChange={e => setEditPreferredDate(e.target.value)}
-                        className={compactInput} style={inputStyle} />
-                    </EField>
-                  </div>
-                </div>
-
-                {/* Section 3b: Referral Fee */}
-                <div>
-                  <ESHead title="Referral Fee" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <EField label="Referral Fee">
-                      <input type="text" value={editStoreReferralFee} onChange={e => setEditStoreReferralFee(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Recipient">
-                      <input type="text" value={editReferralRecipient} onChange={e => setEditReferralRecipient(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Amount">
-                      <input type="number" min="0" step="0.01" value={editReferralAmount} onChange={e => setEditReferralAmount(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Status">
-                      <input type="text" value={editReferralStatus} onChange={e => setEditReferralStatus(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Date Paid">
-                      <input type="date" value={editReferralDatePaid} onChange={e => setEditReferralDatePaid(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Reference No">
-                      <input type="text" value={editReferralReferenceNo} onChange={e => setEditReferralReferenceNo(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                  </div>
-                </div>
-
-                {/* Section 3c: Rebates Claim */}
-                <div>
-                  <ESHead title="Rebates Claim" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                    <EField label="For Rebates Claim">
-                      <select value={editRebatesClaim} onChange={e => setEditRebatesClaim(e.target.value)} className={compactInput} style={inputStyle}>
-                        <option value="YES">YES</option>
-                        <option value="NO">NO</option>
-                      </select>
-                    </EField>
-                    <EField label="Company">
-                      <input type="text" value={editRebatesCompany} onChange={e => setEditRebatesCompany(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Amount Due">
-                      <input type="number" min="0" step="0.01" value={editRebatesAmountDue} onChange={e => setEditRebatesAmountDue(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Status">
-                      <input type="text" value={editRebatesStatus} onChange={e => setEditRebatesStatus(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Reference No">
-                      <input type="text" value={editRebatesReferenceNo} onChange={e => setEditRebatesReferenceNo(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                  </div>
-                </div>
-
-                {/* Section 3d: Warranty Registration */}
-                <div>
-                  <ESHead title="Warranty Registration" border={border} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <EField label="Warranty Registration Status">
-                      <input type="text" value={editWarrantyStatus} onChange={e => setEditWarrantyStatus(e.target.value)} placeholder="REGISTERED" className={compactInput} style={inputStyle} />
-                    </EField>
-                    <EField label="Registered By">
-                      <input type="text" value={editWarrantyRegisteredBy} onChange={e => setEditWarrantyRegisteredBy(e.target.value)} className={compactInput} style={inputStyle} />
-                    </EField>
-                  </div>
-                </div>
-
-                {/* Section 4: Remarks */}
-                <div>
-                  <ESHead title="Remarks & Updates" border={border} />
-                  <EField label="Remarks / Update Notes">
-                    <textarea
-                      ref={editRemarksRef}
-                      defaultValue={editRemarksUpdate}
-                      onBlur={e => setEditRemarksUpdate(e.target.value)}
-                      rows={3}
-                      placeholder="Remarks..."
-                      className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                      style={inputStyle} />
-                  </EField>
-                </div>
-
-                {/* Duplicate Detection & Merge */}
-                {mergeCandidates.length > 0 && (
-                  <div className="border rounded-xl p-3.5 flex flex-col gap-2.5 mt-4"
-                    style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
-                        <AlertTriangle className="w-4 h-4 shrink-0" /> Duplicate Ticket(s) Detected
-                      </span>
-                    </div>
-                    <p className="text-[11px] font-semibold leading-relaxed" style={{ color: textMuted }}>
-                      We found {mergeCandidates.length} other ticket(s) with the same ticket number or similar customer name. Merge into the scheduled copy to keep the final date.
-                    </p>
-                    <div className="flex gap-2">
-                      <select
-                        value={mergeTargetId}
-                        onChange={e => setMergeTargetId(e.target.value)}
-                        className="border rounded-lg px-2.5 py-1.5 text-xs outline-none flex-1 font-bold shadow-sm"
-                        style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="">-- Select ticket to merge into --</option>
-                        {mergeCandidates.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {getTicketNumber(c)} ({(c.status || '').toUpperCase()}) - {c.customerName} - {parseAcDetails(c).finalDate ? `Scheduled ${parseAcDetails(c).finalDate}` : 'No date'} - [{(c.sourceVendor || 'Direct')}]
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={handleMergeTickets}
-                        disabled={!mergeTargetId || merging}
-                        className="px-5 py-1.5 rounded-lg text-xs font-bold text-white transition-all disabled:opacity-50 shadow-sm"
-                        style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
-                      >
-                        {merging ? 'Merging...' : 'Merge'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="px-6 py-4 flex items-center justify-between border-t shrink-0"
-                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                {isAdmin ? (
-                  <button type="button" onClick={() => { handleDeleteTicket(ticket.id, ticket.customerName); setIsActionDrawerOpen(false); }}
-                    disabled={actionSaving}
-                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50">
-                    Delete Ticket
-                  </button>
-                ) : <div />}
-                <div className="flex gap-2.5">
-                  <button type="button" onClick={() => setIsActionDrawerOpen(false)}
-                    className="px-5 py-2 border rounded-lg text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
-                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
-                    Cancel
-                  </button>
-                  <button type="button" onClick={handleDrawerActionSave} disabled={actionSaving}
-                    className="px-6 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-md"
-                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                    {actionSaving ? 'Saving...' : 'Save Changes'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })(), document.body)}
+      {isActionDrawerOpen && selectedTicket && (
+        <RelayEditTicketModal
+          ticket={selectedTicket}
+          ticketNumberLabel={getTicketNumber(selectedTicket)}
+          isAdmin={isAdmin}
+          isLight={isLight}
+          cardBg={cardBg}
+          border={border}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          compactInput={compactInput}
+          branches={branches}
+          employees={employees}
+          relayCustomStores={relayCustomStores}
+          onPersistCustomStores={persistRelayCustomStores}
+          parseStoreVendor={parseStoreVendor}
+          resolveBranch={resolveBranch}
+          negotiatorsForBranch={negotiatorsForBranch}
+          renderNegotiatorPhone={(phone) => <FormatPhone raw={phone} />}
+          mergeCandidates={mergeCandidates}
+          mergeTargetId={mergeTargetId}
+          merging={merging}
+          actionSaving={actionSaving}
+          onMergeTargetChange={setMergeTargetId}
+          onMerge={handleMergeTickets}
+          onClose={() => setIsActionDrawerOpen(false)}
+          onDelete={() => {
+            handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)
+            setIsActionDrawerOpen(false)
+          }}
+          onSave={handleDrawerActionSave}
+          getTicketNumber={(t) => getTicketNumber(t as Ticket)}
+          parseAcDetails={(t) => parseAcDetails(t as Ticket)}
+        />
+      )}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
         const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
@@ -3553,9 +3009,10 @@ export default function ClientMasterlist() {
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
           color: textPrimary,
           fontFamily: 'inherit',
+          textTransform: 'none' as const,
         })
-        const addInput = 'w-full border rounded-lg px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
-        const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15'
+        const addInput = 'w-full border rounded-lg px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
+        const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case'
         const categoryOptions = [
           { label: 'S / I', value: 'Survey & Install', title: 'Installation service' },
           { label: 'Service', value: 'Service', title: 'Service ticket' },
@@ -3594,7 +3051,6 @@ export default function ClientMasterlist() {
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
           style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setIsAddModalOpen(false)}
         >
           <div
             className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
@@ -4493,8 +3949,18 @@ export default function ClientMasterlist() {
                             hour: 'numeric', minute: '2-digit', hour12: true
                           })
                           const note = String(h.changeNote || '').toLowerCase()
-                          const isSubmission = note.includes('submitted') || note.includes('created')
+                          const isSubmission = note.includes('submitted') || note.includes('created') || note.includes('excel import')
                           const isAssignment = note.includes('assigned to')
+                          const isRemarkEntry = Boolean(h.isRemarkEntry) || (
+                            !isSubmission
+                            && !isAssignment
+                            && !note.includes('status changed')
+                            && !note.includes('assignee changed')
+                            && !note.includes('details updated')
+                            && !note.includes('rescheduled')
+                            && !(h.newStatus && h.previousStatus && h.newStatus !== h.previousStatus)
+                            && !(h.newPreferredDate && h.previousPreferredDate && h.newPreferredDate !== h.previousPreferredDate)
+                          )
                           
                           return (
                             <div key={h.id || idx} className="relative">
@@ -4516,7 +3982,7 @@ export default function ClientMasterlist() {
                                 
                                 <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
                                   <p className="text-[10px] font-semibold">
-                                    {isSubmission ? 'Submitted by: ' : isAssignment ? 'Assigned by: ' : 'By: '}
+                                    {isSubmission ? 'Submitted by: ' : isAssignment ? 'Assigned by: ' : isRemarkEntry ? 'Remark by: ' : 'By: '}
                                     <span className="font-bold" style={{ color: textPrimary }}>
                                       <EmployeeNameLink nameOrId={h.changedByUserName} />
                                     </span>
