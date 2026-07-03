@@ -1508,7 +1508,8 @@ export default function Tickets() {
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
     const list = []
-    const start = new Date()
+    const baseDate = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+    const start = new Date(baseDate)
     const day = start.getDay()
     const diff = day === 0 ? -6 : 1 - day
     start.setDate(start.getDate() + diff)
@@ -1522,7 +1523,7 @@ export default function Tickets() {
       list.push({ key, dayName, dateLabel })
     }
     return list
-  }, [])
+  }, [dateFilter])
 
   const isCustomSelected = useMemo(() => {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
