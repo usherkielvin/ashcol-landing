@@ -467,6 +467,25 @@ function getPreferredDateKey(ticket: Ticket): string {
   return dateStr.split('T')[0].split(' ')[0].trim()
 }
 
+function getEffectiveScheduleDateKey(ticket: Ticket): string {
+  return getFinalDateKey(ticket) || getPreferredDateKey(ticket)
+}
+
+/** Schedule date to anchor completion ghost rows and archive sync (active tab date wins when it matches). */
+function resolveScheduleCompletionDateKey(ticket: Ticket, activeDateKey?: string): string {
+  const active = (activeDateKey || '').split('T')[0].split(' ')[0].trim()
+  if (active && (ticketMatchesDateKey(ticket, active) || getPreviousScheduleDates(ticket).includes(active))) {
+    return active
+  }
+  return getEffectiveScheduleDateKey(ticket) || todayDateKey()
+}
+
+function stripArchivedRemarkSuffix(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return trimmed
+  return trimmed.replace(/\s*·\s*Archived(?:\s*·\s*.+)?$/i, '').trim()
+}
+
 function getFinalDateKey(ticket: Ticket): string {
   const raw = parseAcMeta(ticket).finalDate
   if (!raw) return ''
@@ -546,7 +565,7 @@ function getScheduleStatusDisplay(ticket: Ticket): string {
 }
 
 function getScheduleUpdateDisplay(ticket: Ticket): string {
-  const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  const base = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
   if (getScheduleStatusValue(ticket) === 'RESCHED' && isReschedulePending(ticket)) {
     return base || 'PENDING'
   }
@@ -725,11 +744,9 @@ function formatGhostRemarks(
   ghostKind: 'completed' | 'resched' | null,
   dateKey?: string,
 ): string {
-  const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  const base = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
   if (ghostKind === 'completed' || (dateKey && isCompletedGhostOnDate(ticket, dateKey))) {
-    const installed = formatDateKeyLabel(getInstalledDateKey(ticket))
-    const suffix = installed ? `Archived · ${installed}` : 'Archived'
-    return base ? `${base} · ${suffix}` : suffix
+    return base
   }
   if (ghostKind === 'resched') {
     const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
@@ -750,7 +767,7 @@ function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string, outcome: Sc
   return {
     previousScheduleDates: prevDates,
     archivedScheduleDate: sched,
-    installedDate: todayDateKey(),
+    installedDate: sched,
     scheduleOutcome: outcome || 'DONE_INSTALLED',
   }
 }
@@ -1203,14 +1220,26 @@ function enrichCompletePatchBody(
   ticket: Ticket,
   scheduleDateKey: string,
 ): Record<string, unknown> {
-  const merged = { ...ticket, ...body, acDetails: body.acDetails ?? ticket.acDetails } as Ticket
+  const schedKey = resolveScheduleCompletionDateKey(ticket, scheduleDateKey)
+  const baseAc = typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails
+  const merged = { ...ticket, ...body, acDetails: baseAc } as Ticket
   const outcome = getScheduleOutcome(merged) || 'DONE_INSTALLED'
+  const remarksUpdate = typeof body.remarksUpdate === 'string'
+    ? stripArchivedRemarkSuffix(body.remarksUpdate)
+    : undefined
   return {
     ...body,
+    ...(remarksUpdate !== undefined ? { remarksUpdate, remarks: remarksUpdate } : {}),
     status: 'COMPLETED',
     scheduleOutcome: outcome,
     actualCompletion: toApiDateTime(),
-    acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey, outcome)),
+    acDetails: mergeAcMeta(
+      { ...ticket, acDetails: baseAc } as Ticket,
+      {
+        ...buildArchiveAcMeta(ticket, schedKey, outcome),
+        ...(remarksUpdate ? { update: remarksUpdate, remarksUpdate } : {}),
+      },
+    ),
   }
 }
 
@@ -1270,9 +1299,12 @@ function buildArchiveServiceReportPayload(
   const scheduleKey =
     scheduleDateKey ||
     getArchivedScheduleDate(merged) ||
-    getPreferredDateKey(merged) ||
+    getEffectiveScheduleDateKey(merged) ||
     todayDateKey()
-  const installedKey = todayDateKey()
+  const installedKey =
+    String(meta.installedDate || '').split('T')[0].split(' ')[0].trim() ||
+    scheduleKey ||
+    todayDateKey()
   const mode = String(
     fields.modeOfPayment ?? ticket.modeOfPayment ?? ticket.mode_of_payment ?? 'CASH',
   ).toUpperCase()
@@ -1429,19 +1461,21 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
       body.serviceVehicle = serviceVehicle || undefined
       break
     }
-    case 'UPDATE':
-      body.remarks = v || undefined
-      body.remarksUpdate = v || undefined
-      if (isInstalledRemarks(v)) {
+    case 'UPDATE': {
+      const remark = stripArchivedRemarkSuffix(v)
+      body.remarks = remark || undefined
+      body.remarksUpdate = remark || undefined
+      if (isInstalledRemarks(remark)) {
         body.acDetails = mergeAcMeta(acBase, {
-          update: v,
-          remarksUpdate: v,
+          update: remark,
+          remarksUpdate: remark,
           scheduleOutcome: 'DONE_INSTALLED',
         })
       } else {
-        body.acDetails = mergeAcMeta(acBase, { update: v, remarksUpdate: v })
+        body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
       }
       break
+    }
     default:
       break
   }
@@ -2462,7 +2496,7 @@ export default function Tickets() {
 
       let finalBody: Record<string, any> = body
       if (shouldComplete && originalTicket) {
-        const schedKey = oldDateKey || getPreferredDateKey(originalTicket)
+        const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter)
         const ticketWithEdits = { ...originalTicket, ...body, acDetails: body.acDetails }
         finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
       }
@@ -2495,7 +2529,7 @@ export default function Tickets() {
       clearWarrantyCache()
 
       if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
-        const schedKey = oldDateKey || newDateKey || getPreferredDateKey(originalTicket) || todayDateKey()
+        const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
         const branchId = resolveTicketArchiveBranch(
           { ...originalTicket, ...body },
           { installerName: body.installerName as string | undefined },
@@ -2670,7 +2704,7 @@ export default function Tickets() {
       if (Object.keys(body).length === 0 && !shouldComplete) continue
 
       if (shouldComplete && isScheduleImport) {
-        body = enrichCompletePatchBody({ ...body }, ticket, scheduleDate || getPreferredDateKey(ticket))
+        body = enrichCompletePatchBody({ ...body }, ticket, scheduleDate || resolveScheduleCompletionDateKey(ticket, scheduleDate))
       }
 
       try {
@@ -3316,9 +3350,10 @@ export default function Tickets() {
     if (colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED') {
       cancelEdit()
       requestAnimationFrame(() => {
+        const existingRemarks = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
         setCompletionPrompt({
           ticket,
-          value: 'Installed',
+          value: existingRemarks || 'Installed',
           modeOfPayment: getPaymentMode(ticket) || 'CASH',
           amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
         })
@@ -3332,8 +3367,8 @@ export default function Tickets() {
       return
     }
 
-    if (colLabel === 'UPDATE' && isInstalledRemarks(value.trim())) {
-      const merged = { ...ticket, remarksUpdate: value, remarks: value }
+    if (colLabel === 'UPDATE' && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))) {
+      const merged = { ...ticket, remarksUpdate: stripArchivedRemarkSuffix(value), remarks: stripArchivedRemarkSuffix(value) }
       if (!hasInstallPayment(merged, { remarksUpdate: value, remarks: value })) {
         cancelEdit()
         requestAnimationFrame(() => {
@@ -3349,11 +3384,11 @@ export default function Tickets() {
     }
 
     let finalBody: Record<string, unknown> = body
-    if (colLabel === 'UPDATE' && isInstalledRemarks(value.trim())) {
-      const schedKey = getPreferredDateKey(ticket) || todayDateKey()
+    const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
+    if (colLabel === 'UPDATE' && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))) {
       finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
-      finalBody = enrichCompletePatchBody(body, ticket, getPreferredDateKey(ticket))
+      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     }
     setSavingCellKey(key)
     try {
@@ -3371,11 +3406,10 @@ export default function Tickets() {
       const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
         || (
           colLabel === 'UPDATE'
-          && isInstalledRemarks(value.trim())
+          && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
           && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
         )
       if (shouldArchive) {
-        const schedKey = getPreferredDateKey(ticket) || todayDateKey()
         const branchId = resolveTicketArchiveBranch(ticket, {
           installerName: body.installerName as string | undefined,
           installationCharges: finalBody.installationCharges as number | undefined,
@@ -3405,14 +3439,22 @@ export default function Tickets() {
           }
         }
       }
-      setTickets(prev => prev.map(t => {
-        if (t.id !== ticket.id) return t
-        return {
-          ...t,
-          ...(finalBody as Partial<Ticket>),
-          acDetails: typeof finalBody.acDetails === 'string' ? finalBody.acDetails : t.acDetails,
-        }
-      }))
+      setTickets(prev => {
+        const next = prev.map(t => {
+          if (t.id !== ticket.id) return t
+          return {
+            ...t,
+            ...(finalBody as Partial<Ticket>),
+            acDetails: typeof finalBody.acDetails === 'string' ? finalBody.acDetails : t.acDetails,
+          }
+        })
+        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+        writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+        return next
+      })
+      if (shouldArchive) {
+        void fetchTickets({ soft: true, force: true })
+      }
       showToast('Cell updated ✓')
       cancelEdit()
     } catch (err: unknown) {
@@ -3632,9 +3674,10 @@ export default function Tickets() {
         }
         if (next === 'DONE_INSTALLED') {
           cancelEdit()
+          const existingRemarks = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
           setCompletionPrompt({
             ticket,
-            value: 'Installed',
+            value: existingRemarks || 'Installed',
             modeOfPayment: getPaymentMode(ticket) || 'CASH',
             amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
           })
@@ -4838,16 +4881,17 @@ export default function Tickets() {
           setSaving(true)
 
           try {
-            const schedKey = getPreferredDateKey(t) || todayDateKey()
+            const schedKey = resolveScheduleCompletionDateKey(t, dateFilter)
+            const remark = stripArchivedRemarkSuffix((cp.value || '').trim()) || 'Installed'
             const patchBody = enrichCompletePatchBody({
               installationCharges: parseFloat(cp.amount) || 0,
               modeOfPayment: cp.modeOfPayment,
-              remarks: cp.value || 'Installed',
-              remarksUpdate: cp.value || 'Installed',
+              remarks: remark,
+              remarksUpdate: remark,
               acDetails: mergeAcMeta(t, {
                 scheduleOutcome: 'DONE_INSTALLED',
-                update: cp.value,
-                remarksUpdate: cp.value,
+                update: remark,
+                remarksUpdate: remark,
               }),
             }, t, schedKey)
 
@@ -4864,8 +4908,8 @@ export default function Tickets() {
             const branchId = resolveTicketArchiveBranch(t, {
               installationCharges: parseFloat(cp.amount) || 0,
               modeOfPayment: cp.modeOfPayment,
-              remarks: cp.value || 'Installed',
-              remarksUpdate: cp.value || 'Installed',
+              remarks: remark,
+              remarksUpdate: remark,
             })
             const archivePayload = buildArchiveServiceReportPayload(
               t,
@@ -4873,8 +4917,8 @@ export default function Tickets() {
               {
                 installationCharges: parseFloat(cp.amount) || 0,
                 modeOfPayment: cp.modeOfPayment,
-                remarks: cp.value || 'Installed',
-                remarksUpdate: cp.value || 'Installed',
+                remarks: remark,
+                remarksUpdate: remark,
                 negotiatorName: resolveNegotiatorName(t, branchEmployees),
               },
               schedKey,
@@ -4882,14 +4926,20 @@ export default function Tickets() {
             if (!archivePayload) throw new Error('Select a branch before completing to Archives')
 
             await postArchiveServiceReport(archivePayload, token())
-            setTickets(prev => prev.map(x => {
-              if (x.id !== t.id) return x
-              return {
-                ...x,
-                ...(patchBody as Partial<Ticket>),
-                acDetails: typeof patchBody.acDetails === 'string' ? patchBody.acDetails : x.acDetails,
-              }
-            }))
+            setTickets(prev => {
+              const next = prev.map(x => {
+                if (x.id !== t.id) return x
+                return {
+                  ...x,
+                  ...(patchBody as Partial<Ticket>),
+                  acDetails: typeof patchBody.acDetails === 'string' ? patchBody.acDetails : x.acDetails,
+                }
+              })
+              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+              return next
+            })
+            void fetchTickets({ soft: true, force: true })
             showToast('Ticket completed & added to Archives ✓')
           } catch (error: any) {
             console.error('Error completing ticket:', error)
