@@ -487,7 +487,6 @@ function getRelayQueueLabel(ticket: Ticket): string {
   if (outcome === 'DONE_SURVEY') return 'Done Survey'
   if (outcome === 'DONE_INSTALLED') return 'Installed'
   if (status === 'COMPLETED') return 'Installed'
-  if (ticket.installationCharges != null && Number(ticket.installationCharges) > 0) return 'Installed'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
   if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
@@ -551,7 +550,20 @@ function getScheduleUpdateDisplay(ticket: Ticket): string {
   if (getScheduleStatusValue(ticket) === 'RESCHED' && isReschedulePending(ticket)) {
     return base || 'PENDING'
   }
-  return base
+  return dedupeMovedToRemark(base)
+}
+
+/** Collapse "Moved to X · Moved to X" from legacy ghost-row display or double saves. */
+function dedupeMovedToRemark(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return trimmed
+  const dup = trimmed.match(/^(Moved to .+?)\s*·\s*\1$/i)
+  if (dup) return dup[1].trim()
+  return trimmed
+}
+
+function isMovedToRescheduleRemark(text: string): boolean {
+  return /^Moved to /i.test(text.trim())
 }
 
 function buildReschedulePatchBody(
@@ -722,7 +734,10 @@ function formatGhostRemarks(
   if (ghostKind === 'resched') {
     const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
     const suffix = movedTo ? `Moved to ${movedTo}` : 'Rescheduled'
-    return base ? `${base} · ${suffix}` : suffix
+    if (!base) return suffix
+    const normalizedBase = dedupeMovedToRemark(base)
+    if (normalizedBase === suffix || isMovedToRescheduleRemark(normalizedBase)) return normalizedBase
+    return `${normalizedBase} · ${suffix}`
   }
   return base
 }
@@ -1062,7 +1077,7 @@ function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
 function buildImportCreateRow(
   item: ImportUnmatchedRow,
   importTargetDate?: string,
-  options?: { taguigServices?: boolean; branchId?: string },
+  options?: { taguigServices?: boolean; branchId?: string; negotiatorId?: string },
 ): Record<string, unknown> {
   const location = (item.location
     ? (typeof item.location === 'object' ? JSON.stringify(item.location) : item.location)
@@ -1085,6 +1100,10 @@ function buildImportCreateRow(
 
   if (importTargetDate) row.preferredDate = importTargetDate
   if (options?.branchId) row.branchId = options.branchId
+  if (options?.negotiatorId) {
+    row.negotiatorId = options.negotiatorId
+    row.assignedTo = options.negotiatorId
+  }
 
   if (item.phone?.trim()) row.contactPhone = item.phone.trim()
   if (item.district?.trim()) row.district = item.district.trim()
@@ -1535,7 +1554,35 @@ export default function Tickets() {
 
   // ── Context menu ──────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
+
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const closeIfOutside = (event: MouseEvent | PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && contextMenuRef.current?.contains(target)) return
+      setContextMenu(null)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContextMenu(null)
+    }
+    const closeMenu = () => setContextMenu(null)
+
+    document.addEventListener('pointerdown', closeIfOutside, true)
+    document.addEventListener('contextmenu', closeIfOutside, true)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('blur', closeMenu)
+
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside, true)
+      document.removeEventListener('contextmenu', closeIfOutside, true)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('blur', closeMenu)
+    }
+  }, [contextMenu])
 
   // ── History state ─────────────────────────────────────────────────────────
   const [history, setHistory] = useState<any[]>([])
@@ -2061,29 +2108,47 @@ export default function Tickets() {
         installerLineupIndex,
         driverOnlyNames,
       )
+      const selectedNegotiator = branchEmployees.find(emp => emp.id === addForm.negotiatorId)
+      const negotiatorBranch = resolvePortalWriteBranchId(
+        selectedNegotiator?.branchId,
+        selectedNegotiator?.email,
+        selectedNegotiator?.jobTitle,
+      )
+      const activeWriteBranch = resolveSchedulesNegotiatorBranch(activeBranchId)
+      const targetBranch = activeWriteBranch
+        || negotiatorBranch
+        || lockedBranch
+        || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
+      if (!targetBranch) {
+        throw new Error('Select a branch before adding a scheduled ticket.')
+      }
+      const scheduledDate = (addForm.preferredDate || '').split('T')[0].trim()
       const payload = {
         customerName: (addForm.customerName || '').trim(),
         title: titleVal,
         description: descVal,
         serviceType,
         ticketCategory: category,
+        status: 'SCHEDULED',
         location: (addForm.location || '').trim(),
         contactPhone: (addForm.contactPhone || '').trim(),
         unitType: addForm.unitType?.trim() || undefined,
-        preferredDate: addForm.preferredDate,
+        preferredDate: scheduledDate,
         sourceVendor: addForm.sourceVendor?.trim() || 'Direct',
         district: addForm.district?.trim() || undefined,
         commitType: addForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
         installerName: addForm.installerName?.trim() || undefined,
         negotiatorId: addForm.negotiatorId || undefined,
+        assignedTo: addForm.negotiatorId || undefined,
         ticketNumber: addForm.ticketNumber?.trim() || undefined,
         controlNumber: addForm.controlNumber?.trim() || undefined,
         modeOfPayment: addForm.modeOfPayment?.trim() || undefined,
         installationCharges: addForm.installationCharges != null && !Number.isNaN(Number(addForm.installationCharges))
           ? Number(addForm.installationCharges)
           : undefined,
-        ...(lockedBranch ? { branchId: lockedBranch } : {}),
+        acDetails: JSON.stringify({ scheduleOutcome: '', finalDate: '', scheduledDate }),
+        branchId: targetBranch,
       }
 
       const res = await fetch(`${API_BASE_URL}/tickets`, {
@@ -2100,7 +2165,13 @@ export default function Tickets() {
         throw new Error(errorText || `Failed (HTTP ${res.status})`)
       }
 
+      const payloadResult = await res.json().catch(() => null)
+      const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
+      setDateFilter(scheduledDate)
       await fetchTickets({ soft: true, force: true })
+      if (createdTicket?.id) {
+        setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)])
+      }
       setAddModalOpen(false)
     } catch (err: any) {
       console.error(err)
@@ -2168,7 +2239,7 @@ export default function Tickets() {
 
   const openAddModal = () => {
     const form = {
-      preferredDate: todayDateKey(),
+      preferredDate: dateFilter || todayDateKey(),
       customerName: '',
       contactPhone: '',
       location: '',
@@ -2264,7 +2335,9 @@ export default function Tickets() {
         const reschedMsg = isReschedStatus && newDateKey
           ? `Moved to ${formatDateKeyLabel(newDateKey)}`
           : `Scheduled moved from ${formatDateKeyLabel(oldDateKey)}`
-        remarksVal = remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg
+        remarksVal = isReschedStatus && newDateKey
+          ? reschedMsg
+          : (remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg)
         editForm.remarks = remarksVal
       }
       
@@ -2521,8 +2594,8 @@ export default function Tickets() {
     })()
 
     const targetBranch = resolveImportBranchId()
-    const importOpts = { taguigServices: isTaguigServices, branchId: targetBranch || undefined }
     const importerUserId = user?.id
+    const importOpts = { taguigServices: isTaguigServices, branchId: targetBranch || undefined, negotiatorId: importerUserId || undefined }
     const scheduleDate = importTargetDate?.trim() || ''
     const isScheduleImport = scheduleDate.length > 0
 
@@ -4446,7 +4519,7 @@ export default function Tickets() {
         const leftPos = contextMenu.x + menuW > window.innerWidth ? Math.max(10, window.innerWidth - menuW - 10) : contextMenu.x
         const topPos = contextMenu.y + menuH > window.innerHeight ? Math.max(10, window.innerHeight - menuH - 10) : contextMenu.y
         return (
-          <div className="fixed z-[200]" style={{ top: topPos, left: leftPos }}
+          <div ref={contextMenuRef} className="fixed z-[200]" style={{ top: topPos, left: leftPos }}
                onClick={e => e.stopPropagation()}>
             <div className="rounded-2xl shadow-2xl overflow-hidden"
                  style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
