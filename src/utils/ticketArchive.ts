@@ -316,20 +316,27 @@ export async function syncMissingTicketArchives(
   lineupIndex: InstallerBranchIndexEntry[] = [],
   driverOnlyNames: string[] = [],
   alreadySyncedTicketIds: Set<string> = new Set(),
+  options?: { maxCreate?: number },
 ): Promise<Record<string, unknown>[]> {
   const existingIds = new Set(
     existingRows.map((r) => r.ticketId).filter((id): id is string => Boolean(id)),
   )
+  const maxCreate = options?.maxCreate ?? 30
 
   let tickets: unknown[]
   try {
-    tickets = await fetchTicketsPage('/tickets', token, { size: 500, categoryGroup: 'FIELD' })
+    tickets = await fetchTicketsPage('/tickets', token, {
+      size: 300,
+      categoryGroup: 'FIELD',
+      status: 'COMPLETED',
+    })
   } catch {
     return []
   }
 
   const created: Record<string, unknown>[] = []
   for (const raw of tickets) {
+    if (created.length >= maxCreate) break
     const ticket = raw as TicketLike
     const ticketId = ticket.id ? String(ticket.id) : ''
     if (!ticketId) continue

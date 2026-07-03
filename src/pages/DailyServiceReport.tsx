@@ -519,7 +519,7 @@ export default function DailyServiceReport() {
       if (!res.ok) throw new Error(`Bulk save failed (HTTP ${res.status})`)
 
       setScanSuccess(true)
-      fetchRows({ sync: false, soft: true })
+      fetchRows({ soft: true, force: true })
     } catch (e: any) {
       alert(`Could not save scanned rows: ${e?.message || 'Unknown error'}`)
     } finally {
@@ -693,6 +693,7 @@ export default function DailyServiceReport() {
       setLoading(false)
     } else {
       setRows([])
+      setLoading(true)
     }
     resetTicketTableScroll()
   }, [])
@@ -718,7 +719,39 @@ export default function DailyServiceReport() {
     applyArchivesScope(effectiveBranch, monthFilter)
   }, [monthFilter, branchFilter, branches, archivesUser, applyArchivesScope])
 
-  const fetchRows = useCallback(async (options?: { sync?: boolean; soft?: boolean; forceSync?: boolean }) => {
+  const runArchiveBackfill = useCallback(async (
+    loaded: ServiceRow[],
+    effectiveBranch: string,
+    syncMonth: string | null,
+    seq: number,
+  ) => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!canEdit || !token) return
+
+    try {
+      const created = await syncMissingTicketArchives(
+        token,
+        effectiveBranch,
+        syncMonth,
+        loaded,
+        lineupIndexRef.current,
+        driverOnlyRef.current,
+        syncedTicketIdsRef.current,
+      )
+      if (seq !== fetchSeqRef.current) return
+      if (created.length === 0) return
+
+      setRows((prev) => {
+        const merged = mergeArchiveRows(prev, created as unknown as ServiceRow[])
+        writeArchivesCache(effectiveBranch, monthFilter, merged)
+        return merged
+      })
+    } catch (e) {
+      console.warn('[archives] backfill failed', e)
+    }
+  }, [canEdit, monthFilter, mergeArchiveRows])
+
+  const fetchRows = useCallback(async (options?: { soft?: boolean; force?: boolean; backfill?: boolean }) => {
     if (branches.length === 0) {
       if (!hasLoadedOnceRef.current) setLoading(true)
       return
@@ -739,28 +772,45 @@ export default function DailyServiceReport() {
 
     const seq = ++fetchSeqRef.current
 
-    // Fresh cache + soft visit: show instantly, skip network unless forced
-    if (cacheIsFresh && options?.soft && !options?.forceSync) {
-      setRows(cached!.rows as ServiceRow[])
-      setLoading(false)
-      setRefreshing(false)
-      hasLoadedOnceRef.current = true
-      return
-    }
-
-    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
-
     if (hasCache) {
       setRows(cached!.rows as ServiceRow[])
       hasLoadedOnceRef.current = true
-      if (!showSkeleton) setLoading(false)
     }
+
+    if (cacheIsFresh && options?.soft && !options?.force) {
+      setLoading(false)
+      setRefreshing(false)
+      void (async () => {
+        try {
+          const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const params = new URLSearchParams()
+          if (monthFilter?.trim()) params.set('month', monthFilter.trim())
+          params.set('branchId', effectiveBranch)
+          const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (seq !== fetchSeqRef.current) return
+          if (!res.ok) return
+          const data = await res.json()
+          const loaded = Array.isArray(data) ? data as ServiceRow[] : []
+          setRows(loaded)
+          writeArchivesCache(effectiveBranch, monthFilter, loaded)
+          if (options?.backfill) {
+            void runArchiveBackfill(loaded, effectiveBranch, monthFilter?.trim() || null, seq)
+          }
+        } catch {
+          // keep cached rows on background refresh failure
+        }
+      })()
+      return
+    }
+
+    const showSkeleton = !hasCache && !hasLoadedOnceRef.current
     if (showSkeleton) setLoading(true)
     else setRefreshing(true)
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const syncMonth = monthFilter?.trim() || null
       const params = new URLSearchParams()
       if (monthFilter?.trim()) params.set('month', monthFilter.trim())
       params.set('branchId', effectiveBranch)
@@ -775,43 +825,28 @@ export default function DailyServiceReport() {
       if (res.ok) {
         const data = await res.json()
         loaded = Array.isArray(data) ? data as ServiceRow[] : []
+      } else {
+        console.error('[archives] service-reports fetch failed', res.status)
+        if (!hasCache) setRows([])
       }
 
-      let backfilled: ServiceRow[] = []
-      if (options?.sync !== false && canEdit && token) {
-        const created = await syncMissingTicketArchives(
-          token,
-          effectiveBranch,
-          syncMonth,
-          loaded,
-          lineupIndexRef.current,
-          driverOnlyRef.current,
-          syncedTicketIdsRef.current,
-        )
-        if (seq !== fetchSeqRef.current) return
-        backfilled = created as unknown as ServiceRow[]
-      }
-
-      const merged = backfilled.length > 0 ? mergeArchiveRows(loaded, backfilled) : loaded
-      setRows((prev) => {
-        if (options?.soft && options?.sync === false && prev.length > 0) {
-          const apiTicketIds = new Set(merged.map((r) => r.ticketId).filter(Boolean))
-          const localOnly = prev.filter((r) => r.ticketId && !apiTicketIds.has(r.ticketId))
-          return localOnly.length > 0 ? mergeArchiveRows(merged, localOnly) : merged
-        }
-        return merged
-      })
-      writeArchivesCache(effectiveBranch, monthFilter, merged)
+      setRows(loaded)
+      writeArchivesCache(effectiveBranch, monthFilter, loaded)
       hasLoadedOnceRef.current = true
+
+      if (options?.backfill) {
+        void runArchiveBackfill(loaded, effectiveBranch, monthFilter?.trim() || null, seq)
+      }
     } catch (e) {
-      console.error(e)
+      console.error('[archives] fetch error', e)
+      if (!hasCache) setRows([])
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
         setRefreshing(false)
       }
     }
-  }, [monthFilter, branchFilter, branches, archivesUser, canEdit, mergeArchiveRows])
+  }, [monthFilter, branchFilter, branches, archivesUser, runArchiveBackfill])
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
 
@@ -862,15 +897,17 @@ export default function DailyServiceReport() {
         hasLoadedOnceRef.current = false
       }
     }
-    void fetchRows({ sync: true, soft: hasCache || hasLoadedOnceRef.current })
+    void fetchRows({ soft: hasCache, backfill: !hasCache })
   }, [fetchRows, monthFilter, branchFilter, branches, archivesUser])
 
   useEffect(() => {
     if (lineupResyncedRef.current || !hasLoadedOnceRef.current) return
     if (installerLineupIndex.length === 0 && driverOnlyNames.length === 0) return
     lineupResyncedRef.current = true
-    void fetchRows({ sync: true, soft: true })
-  }, [installerLineupIndex, driverOnlyNames, fetchRows])
+    const effectiveBranch = resolveArchivesBranchFilter(branchFilter, branches, archivesUser)
+    if (!effectiveBranch) return
+    void runArchiveBackfill(rows, effectiveBranch, monthFilter?.trim() || null, fetchSeqRef.current)
+  }, [installerLineupIndex, driverOnlyNames, rows, branchFilter, branches, archivesUser, monthFilter, runArchiveBackfill])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -878,7 +915,7 @@ export default function DailyServiceReport() {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         syncedTicketIdsRef.current = new Set()
-        void fetchRows({ sync: true, soft: true, forceSync: true })
+        void fetchRows({ soft: true, force: true, backfill: true })
       }, 400)
     }
     window.addEventListener(ARCHIVE_UPDATED_EVENT, onArchiveUpdated)
@@ -1114,7 +1151,7 @@ export default function DailyServiceReport() {
       return finalRowId
     } catch (e: any) {
       // Revert optimistic update on failure
-      fetchRows({ sync: false, soft: true })
+      fetchRows({ soft: true, force: true })
       if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
       return null
     }
@@ -1493,7 +1530,7 @@ export default function DailyServiceReport() {
         const result = await res.json()
         const sheetMsg = result?.sheet ? ` (sheet "${result.sheet}")` : ''
         alert(`${result.message || 'Import successful!'}${sheetMsg}`)
-        fetchRows({ sync: false, soft: true })
+        fetchRows({ soft: true, force: true })
       } else {
         const err = await res.json().catch(() => ({}))
         alert(err.error || `Import failed (HTTP ${res.status})`)
@@ -1519,7 +1556,7 @@ export default function DailyServiceReport() {
         alert(err.error || `Delete failed (HTTP ${res.status})`)
         return
       }
-      fetchRows({ sync: false, soft: true })
+      fetchRows({ soft: true, force: true })
     } catch (e) {
       console.error(e); alert('Network error while deleting')
     }
@@ -1577,7 +1614,7 @@ export default function DailyServiceReport() {
       }
       const result = await res.json()
       alert(`Deleted ${result.deleted} service record${result.deleted !== 1 ? 's' : ''} for ${branchLabel}.`)
-      fetchRows({ sync: false, soft: true })
+      fetchRows({ soft: true, force: true })
     } catch (e) {
       console.error(e); alert('Network error while clearing records')
     }
