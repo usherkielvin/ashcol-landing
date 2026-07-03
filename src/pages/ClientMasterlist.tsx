@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError } from '../utils/api'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
@@ -435,6 +435,7 @@ const parseAcDetails = (ticket: Ticket) => {
     alternatePhone: '',
     relayedDate: '',
     finalDate: '',
+    scheduledDate: '',
     promodiserName: '',
     referralFeeRecipient: '',
     referralFeeAmount: '',
@@ -674,6 +675,29 @@ const normalizeRelayCustomerKey = (ticket: Ticket): string | null => {
   return `${name}|${branch}|${phone}|${preferred}|${district}|${vendor}|${commit}`
 }
 
+const relayCustomerPhonesMatch = (a: Ticket, b: Ticket): boolean => {
+  const phoneA = (a.contactPhone || '').replace(/\D/g, '').slice(-10)
+  const phoneB = (b.contactPhone || '').replace(/\D/g, '').slice(-10)
+  if (!phoneA || !phoneB) return true
+  return phoneA === phoneB
+}
+
+const isRelayCustomerDuplicate = (candidate: Ticket, existing: Ticket): boolean => {
+  const candidateKey = normalizeRelayCustomerKey(candidate)
+  const existingKey = normalizeRelayCustomerKey(existing)
+  if (!candidateKey || !existingKey || candidateKey !== existingKey) return false
+  return relayCustomerPhonesMatch(candidate, existing)
+}
+
+/** Ticket created on Schedules via manual input (has schedule date, not yet relay-complete). */
+const isScheduledManualTicket = (ticket: Ticket): boolean => {
+  const details = parseAcDetails(ticket)
+  if (details.scheduledDate?.trim()) return true
+  const status = (ticket.status || '').toUpperCase()
+  if (status === 'SCHEDULED') return true
+  return Boolean(details.finalDate?.trim())
+}
+
 /** One row per customer / ticket number on Relays — prefer the scheduled copy. */
 const dedupeRelaysDisplay = (list: Ticket[]) => {
   const byCustomer = new Map<string, Ticket>()
@@ -763,6 +787,7 @@ export default function ClientMasterlist() {
 
   // State
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [openFieldTickets, setOpenFieldTickets] = useState<Ticket[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   
   const resolveBranch = (branchIdOrName?: string) => {
@@ -1017,10 +1042,39 @@ export default function ClientMasterlist() {
       sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
       commitType: addForm.commitType,
     } as Ticket
-    const key = normalizeRelayCustomerKey(probe)
-    if (!key) return null
-    return tickets.find((t) => normalizeRelayCustomerKey(t) === key) || null
-  }, [addForm, addPhoneNumbers, tickets, user, resolveRelayDefaultBranchId])
+    return openFieldTickets.find((t) => isRelayCustomerDuplicate(probe, t)) || null
+  }, [addForm, addPhoneNumbers, openFieldTickets, user, resolveRelayDefaultBranchId])
+
+  const addFormSyncTarget = useMemo(() => {
+    const writeBranchId = resolvePortalWriteBranchId(
+      addForm.branchId || resolveRelayDefaultBranchId(),
+      user?.email,
+      user?.jobTitle,
+    )
+    const probe = {
+      customerName: addForm.customerName,
+      branchId: writeBranchId || resolveRelayDefaultBranchId() || user?.branchId,
+      contactPhone: addPhoneNumbers[0] || addForm.contactPhone,
+    } as Ticket
+    const name = (probe.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (name.length < 4) return null
+
+    const byNumber = addForm.ticketNumber?.trim()
+      ? openFieldTickets.find((t) => {
+          const candidateNo = normalizeRelayTicketNumber({ ticketNumber: byNumber })
+          const existingNo = normalizeRelayTicketNumber(t)
+          return candidateNo && existingNo && candidateNo === existingNo
+        })
+      : null
+    if (byNumber) return byNumber
+
+    return openFieldTickets.find((t) => {
+      if (!isScheduledManualTicket(t)) return false
+      const tName = (t.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (tName !== name) return false
+      return relayCustomerPhonesMatch(probe, t) && !!normalizeRelayTicketNumber(t)
+    }) || null
+  }, [addForm, addPhoneNumbers, openFieldTickets, user, resolveRelayDefaultBranchId])
 
   const addModalNegotiators = useMemo(
     () => negotiatorsForBranch(addForm.branchId || resolveRelayDefaultBranchId()),
@@ -1215,6 +1269,7 @@ export default function ClientMasterlist() {
 
     if (hasCache && !forceRefresh) {
       setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
+      setOpenFieldTickets(cached!.tickets as Ticket[])
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) setEmployees(cached!.employees as any[])
       hasLoadedOnceRef.current = true
@@ -1250,6 +1305,7 @@ export default function ClientMasterlist() {
 
       setTickets(prev => {
         const merged = forceRefresh ? mergeRelayTicketLists(tList, prev) : tList
+        setOpenFieldTickets(merged)
         tList = filterRelaysTickets(merged)
         return tList
       })
@@ -1286,6 +1342,7 @@ export default function ClientMasterlist() {
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
       setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
+      setOpenFieldTickets(cached!.tickets as Ticket[])
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) {
         setEmployees(cached!.employees as any[])
@@ -1610,7 +1667,7 @@ export default function ClientMasterlist() {
       alert('Negotiator is required')
       return
     }
-    if (addFormDuplicate) {
+    if (addFormDuplicate && !addFormSyncTarget) {
       const existingNo = getTicketNumber(addFormDuplicate)
       alert(
         `A relay ticket already exists for this customer (${existingNo}). `
@@ -1639,6 +1696,9 @@ export default function ClientMasterlist() {
         user?.jobTitle,
       )
       const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
+      const syncTicketNumber = addFormSyncTarget
+        ? (normalizeRelayTicketNumber(addFormSyncTarget) || addForm.ticketNumber?.trim() || undefined)
+        : (addForm.ticketNumber?.trim() || undefined)
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -1667,6 +1727,7 @@ export default function ClientMasterlist() {
           installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
           modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
           controlNumber: addForm.controlNumber || undefined,
+          ticketNumber: syncTicketNumber,
           acDetails: JSON.stringify(acDetailsObj),
           images: addForm.images || undefined,
           status: addForm.status,
@@ -1679,15 +1740,23 @@ export default function ClientMasterlist() {
       }
 
       const payload = await res.json().catch(() => null)
-      const createdTicket = (payload?.data || payload) as Ticket
+      const parsed = parseCreatedTicketResponse(payload)
+      const createdTicket = (parsed || payload?.data || payload) as Ticket
       if (!createdTicket?.id) {
-        throw new Error('Ticket was created but the server returned an invalid response.')
+        await fetchData({ soft: true })
+        setIsAddModalOpen(false)
+        setFormSubmitting(false)
+        alert(addFormSyncTarget
+          ? `Relay data synced to ticket ${getTicketNumber(addFormSyncTarget)}.`
+          : 'Ticket saved. Refreshing list…')
+        return
       }
 
       setLastUpdatedTicketId(createdTicket.id)
       const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
       setTickets(prev => {
         const merged = mergeRelayTicketLists([createdTicket], prev)
+        setOpenFieldTickets(merged)
         const filtered = filterRelaysTickets(merged)
         const cached = readTabCache<RelaysTabCache>(cacheKey)
         writeTabCache(cacheKey, {
@@ -1748,7 +1817,7 @@ export default function ClientMasterlist() {
       })
       void fetchData({ soft: true })
     } catch (e: any) {
-      alert(`Could not submit ticket: ${e?.message || 'Unknown error'}`)
+      alert(`Could not submit ticket: ${formatFetchError(e)}`)
     } finally {
       setFormSubmitting(false)
     }
@@ -3126,7 +3195,25 @@ export default function ClientMasterlist() {
                     <RelayFormField label="Customer Name" required compact className="md:col-span-5">
                       <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
                     </RelayFormField>
-                    {addFormDuplicate && (
+                    {addFormSyncTarget && (
+                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                        style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          Will sync to existing ticket {getTicketNumber(addFormSyncTarget)}
+                        </span>
+                        <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                          A scheduled ticket already exists for this customer
+                          {parseAcDetails(addFormSyncTarget).scheduledDate
+                            ? ` (${parseAcDetails(addFormSyncTarget).scheduledDate})`
+                            : addFormSyncTarget.preferredDate
+                              ? ` (${String(addFormSyncTarget.preferredDate).slice(0, 10)})`
+                              : ''}.
+                          Relay details will be merged into that ticket number.
+                        </p>
+                      </div>
+                    )}
+                    {addFormDuplicate && !addFormSyncTarget && (
                       <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
                         <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
@@ -3375,8 +3462,8 @@ export default function ClientMasterlist() {
                   <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-slate-500/10" style={{ borderColor: inputBorder, color: textMuted }}>
                     Cancel
                   </button>
-                  <button type="submit" disabled={formSubmitting || !!addFormDuplicate} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                    {formSubmitting ? 'Creating...' : addFormDuplicate ? 'Duplicate Blocked' : 'Create Ticket'}
+                  <button type="submit" disabled={formSubmitting || (!!addFormDuplicate && !addFormSyncTarget)} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                    {formSubmitting ? 'Creating...' : addFormSyncTarget ? `Sync to ${getTicketNumber(addFormSyncTarget)}` : addFormDuplicate ? 'Duplicate Blocked' : 'Create Ticket'}
                   </button>
                 </div>
               </div>
