@@ -1208,6 +1208,7 @@ function enrichCompletePatchBody(
   return {
     ...body,
     status: 'COMPLETED',
+    scheduleOutcome: outcome,
     actualCompletion: toApiDateTime(),
     acDetails: mergeAcMeta(ticket, buildArchiveAcMeta(ticket, scheduleDateKey, outcome)),
   }
@@ -2084,18 +2085,11 @@ export default function Tickets() {
       alert('Destination/Address is required')
       return
     }
-    const name = addForm.customerName.trim()
-    setConfirmModal({
-      title: 'Create ticket?',
-      message: `Add ${name} to the schedule for ${addForm.preferredDate}.`,
-      variant: 'save',
-      confirmText: 'Create Ticket',
-      cancelText: 'Not Yet',
-      onConfirm: () => void commitSaveManualTicket(),
-    })
+    void commitSaveManualTicket()
   }
 
   const commitSaveManualTicket = async () => {
+    let optimisticTempId = ''
     setSavingManual(true)
     try {
       const tokenVal = token()
@@ -2151,6 +2145,19 @@ export default function Tickets() {
         acDetails: JSON.stringify({ scheduleOutcome: '', finalDate: '', scheduledDate }),
         branchId: targetBranch,
       }
+      const tempId = `temp-${Date.now()}`
+      optimisticTempId = tempId
+      const optimisticTicket = {
+        id: tempId,
+        ...payload,
+      } as Ticket
+
+      setDateFilter(scheduledDate)
+      setTickets(prev => [optimisticTicket, ...prev.filter(t => t.id !== tempId)])
+      setAddFormSnapshot(JSON.stringify(addForm))
+      setAddModalOpen(false)
+      setSavingManual(false)
+      showToast('Saving ticket in background...')
 
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
@@ -2168,14 +2175,19 @@ export default function Tickets() {
 
       const payloadResult = await res.json().catch(() => null)
       const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
-      setDateFilter(scheduledDate)
+      if (createdTicket?.id) {
+        setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)])
+      }
       await fetchTickets({ soft: true, force: true })
       if (createdTicket?.id) {
         setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)])
       }
-      setAddModalOpen(false)
+      showToast('Ticket added successfully ✓')
     } catch (err: any) {
       console.error(err)
+      if (optimisticTempId) {
+        setTickets(prev => prev.filter(t => t.id !== optimisticTempId))
+      }
       alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
     } finally {
       setSavingManual(false)
@@ -2300,15 +2312,7 @@ export default function Tickets() {
       alert(error)
       return
     }
-    const name = editForm.customerName?.trim() || 'this customer'
-    setConfirmModal({
-      title: 'Save ticket changes?',
-      message: `Your updates will be applied to the schedule for ${name}.`,
-      variant: 'save',
-      confirmText: 'Save Changes',
-      cancelText: 'Not Yet',
-      onConfirm: () => void commitSaveEditTicket(),
-    })
+    void commitSaveEditTicket()
   }
   const commitSaveEditTicket = async () => {
     if (!editForm.id) return

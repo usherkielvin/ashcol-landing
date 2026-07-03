@@ -1059,9 +1059,10 @@ export default function ClientMasterlist() {
     const name = (probe.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     if (name.length < 4) return null
 
-    const byNumber = addForm.ticketNumber?.trim()
+    const ticketNumberInput = addForm.ticketNumber?.trim()
+    const byNumber = ticketNumberInput
       ? openFieldTickets.find((t) => {
-          const candidateNo = normalizeRelayTicketNumber({ ticketNumber: byNumber })
+          const candidateNo = normalizeRelayTicketNumber({ ticketNumber: ticketNumberInput })
           const existingNo = normalizeRelayTicketNumber(t)
           return candidateNo && existingNo && candidateNo === existingNo
         })
@@ -1696,9 +1697,9 @@ export default function ClientMasterlist() {
         user?.jobTitle,
       )
       const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
-      const syncTicketNumber = addFormSyncTarget
-        ? (normalizeRelayTicketNumber(addFormSyncTarget) || addForm.ticketNumber?.trim() || undefined)
-        : (addForm.ticketNumber?.trim() || undefined)
+      const syncTicketNumber = (addFormSyncTarget
+        ? (normalizeRelayTicketNumber(addFormSyncTarget as Ticket) || addForm.ticketNumber?.trim())
+        : addForm.ticketNumber?.trim()) || undefined
       const res = await fetch(`${API_BASE_URL}/tickets`, {
         method: 'POST',
         headers: {
@@ -1747,7 +1748,7 @@ export default function ClientMasterlist() {
         setIsAddModalOpen(false)
         setFormSubmitting(false)
         alert(addFormSyncTarget
-          ? `Relay data synced to ticket ${getTicketNumber(addFormSyncTarget)}.`
+          ? `Relay data synced to ticket ${getTicketNumber(addFormSyncTarget as Ticket)}.`
           : 'Ticket saved. Refreshing list…')
         return
       }
@@ -3200,14 +3201,14 @@ export default function ClientMasterlist() {
                         style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                          Will sync to existing ticket {getTicketNumber(addFormSyncTarget)}
+                          Will sync to existing ticket {getTicketNumber(addFormSyncTarget as Ticket)}
                         </span>
                         <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
                           A scheduled ticket already exists for this customer
-                          {parseAcDetails(addFormSyncTarget).scheduledDate
-                            ? ` (${parseAcDetails(addFormSyncTarget).scheduledDate})`
-                            : addFormSyncTarget.preferredDate
-                              ? ` (${String(addFormSyncTarget.preferredDate).slice(0, 10)})`
+                          {parseAcDetails(addFormSyncTarget as Ticket).scheduledDate
+                            ? ` (${parseAcDetails(addFormSyncTarget as Ticket).scheduledDate})`
+                            : (addFormSyncTarget as Ticket).preferredDate
+                              ? ` (${String((addFormSyncTarget as Ticket).preferredDate).slice(0, 10)})`
                               : ''}.
                           Relay details will be merged into that ticket number.
                         </p>

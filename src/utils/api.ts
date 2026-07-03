@@ -826,25 +826,27 @@ export async function fetchTicketsPage(
   throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
 }
 
-export function parseCreatedTicketResponse(payload: unknown): { id?: string } | null {
+export function parseCreatedTicketResponse(payload: unknown): any {
   if (!payload || typeof payload !== 'object') return null
   const root = payload as Record<string, unknown>
   const data = root.data
   if (data && typeof data === 'object') {
     const dataObj = data as Record<string, unknown>
-    if (typeof dataObj.id === 'string' && dataObj.id) return dataObj as { id: string }
     if (dataObj.ticket && typeof dataObj.ticket === 'object') {
-      const ticket = dataObj.ticket as Record<string, unknown>
-      if (typeof ticket.id === 'string' && ticket.id) return ticket as { id: string }
+      return dataObj.ticket
+    }
+    if (typeof dataObj.id === 'string' && dataObj.id) {
+      return dataObj
     }
     if (typeof dataObj.ticketId === 'string' && dataObj.ticketId) {
       return { id: dataObj.ticketId }
     }
   }
-  if (typeof root.id === 'string' && root.id) return root as { id: string }
   if (root.ticket && typeof root.ticket === 'object') {
-    const ticket = root.ticket as Record<string, unknown>
-    if (typeof ticket.id === 'string' && ticket.id) return ticket as { id: string }
+    return root.ticket
+  }
+  if (typeof root.id === 'string' && root.id) {
+    return root
   }
   return null
 }
