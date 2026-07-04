@@ -565,11 +565,22 @@ const formatMoney = (val?: string | number | null) => {
 const getRelayStatusLabel = (ticket: Ticket) => {
   const status = (ticket.status || '').toUpperCase()
   const details = parseAcDetails(ticket)
+  const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
-  if (details.finalDate && (ticket.branchId || ticket.assignedTo)) return 'Scheduled'
-  if (status === 'ASSIGNED' || ticket.assignedTo) return 'Assigned'
+  // finalDate = negotiator set install date → leaves Relays for Schedules
+  if (details.finalDate?.trim() && (ticket.branchId || ticket.assignedTo || negotiatorId)) return 'Scheduled'
+  // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
+  if (
+    status === 'ASSIGNED'
+    || status === 'SCHEDULED'
+    || status === 'RESCHED'
+    || ticket.assignedTo
+    || negotiatorId
+  ) {
+    return 'Assigned'
+  }
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
   return 'Pending'
@@ -625,11 +636,23 @@ const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(parseAcDetails(tic
 /** Ticket created/imported on Schedules (not a Relays negotiation row). */
 const isScheduledManualTicket = (ticket: Ticket): boolean => {
   const details = parseAcDetails(ticket)
-  if (details.scheduledDate?.trim()) return true
-  if (details.finalDate?.trim()) return true
-  const status = (ticket.status || '').toUpperCase()
-  if (status === 'SCHEDULED' || status === 'RESCHED') return true
+  const source = String((ticket as Ticket & { source?: string }).source || '').trim().toUpperCase()
+  if (source === 'SCHEDULE_MANUAL') return true
+
+  // Store/source vendors are relay intake. Older builds wrongly stamped scheduleIntake on
+  // those rows when preferredDate was set — keep them on Relays until finalDate is set.
+  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const isRelayVendor = Boolean(
+    vendor
+    && vendor !== 'direct'
+    && vendor !== 'other'
+    && !vendor.startsWith('direct '),
+  )
+  if (isRelayVendor) return false
+
+  // Schedule-tab markers only (manual add / excel import on Schedules).
   if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
+  if (details.scheduledDate?.trim()) return true
   return false
 }
 
@@ -1410,7 +1433,9 @@ export default function ClientMasterlist() {
         : []
 
       setTickets(prev => {
-        const merged = forceRefresh ? mergeRelayTicketLists(tList, prev) : tList
+        // Always merge so in-flight creates (temp-relay-*) and just-saved rows are not wiped
+        // when the server page is briefly stale or paginated.
+        const merged = mergeRelayTicketLists(tList, prev)
         setOpenFieldTickets(merged)
         tList = filterRelaysTickets(merged)
         return tList
@@ -1875,8 +1900,11 @@ export default function ClientMasterlist() {
     if (isAdmin) {
       if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
       else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
-    } else {
+      else setActiveTab('ALL_PENDING')
+    } else if (statusLabel === 'Assigned') {
       setActiveTab('MY_TICKETS')
+    } else {
+      setActiveTab('UNASSIGNED')
     }
 
     setIsAddModalOpen(false)
@@ -1953,33 +1981,50 @@ export default function ClientMasterlist() {
           } as Ticket
         }
 
+        const onRelays = !shouldExcludeFromRelaysTab(finalTicket)
         setTickets(prev => {
           const withoutTemp = prev.filter(t => t.id !== tempId)
-          const merged = mergeRelayTicketLists([finalTicket], withoutTemp)
+          const merged = onRelays
+            ? mergeRelayTicketLists([finalTicket], withoutTemp)
+            : withoutTemp
           const filtered = filterRelaysTickets(merged)
           persistRelayTicketsCache(filtered)
           return filtered
         })
         setOpenFieldTickets(prev => {
           const withoutTemp = prev.filter(t => t.id !== tempId)
-          return mergeRelayTicketLists([finalTicket], withoutTemp)
+          return onRelays
+            ? mergeRelayTicketLists([finalTicket], withoutTemp)
+            : withoutTemp
         })
-        setLastUpdatedTicketId(finalTicket.id)
+        setLastUpdatedTicketId(onRelays ? finalTicket.id : '')
 
         if (selectedPreviewTicket?.id === tempId) {
-          setSelectedPreviewTicket(finalTicket)
+          setSelectedPreviewTicket(onRelays ? finalTicket : null)
         }
         if (selectedTicket?.id === tempId) {
-          setSelectedTicket(finalTicket)
+          setSelectedTicket(onRelays ? finalTicket : null)
         }
         if (contextMenu?.ticket.id === tempId) {
-          setContextMenu(prev => prev ? { ...prev, ticket: finalTicket } : null)
+          setContextMenu(prev => (prev && onRelays ? { ...prev, ticket: finalTicket } : null))
         }
 
-        clearRelaysCache()
+        // Keep relays cache (just written) so refresh retains the new row.
         clearWarrantyCache()
 
-        if (pendingSave) {
+        if (onRelays) {
+          const statusLabel = getRelayStatusLabel(finalTicket)
+          if (isAdmin) {
+            if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
+            else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
+          } else if (statusLabel === 'Assigned') {
+            setActiveTab('MY_TICKETS')
+          } else {
+            setActiveTab('UNASSIGNED')
+          }
+        }
+
+        if (pendingSave && onRelays) {
           void flushRelaySave(finalTicket.id)
         }
       } catch (err: unknown) {

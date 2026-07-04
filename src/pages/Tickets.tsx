@@ -6659,7 +6659,7 @@ export default function Tickets() {
         document.body,
       )}
 
-      {editModalOpen && (() => {
+      {editModalOpen && ReactDOM.createPortal((() => {
         const isReschedStatus = (editForm.status || '').toUpperCase() === 'RESCHED'
         const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
         const showPaymentSection = ticketHasPaymentInfo(editForm) || Boolean(editForm.modeOfPayment || editForm.installationCharges != null)
@@ -7003,7 +7003,7 @@ export default function Tickets() {
           </div>
         </div>
         )
-      })()}
+      })(), document.body)}
 
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
 
