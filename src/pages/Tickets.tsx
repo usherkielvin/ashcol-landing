@@ -1720,6 +1720,25 @@ export default function Tickets() {
   const [tickets, setTickets]         = useState<Ticket[]>([])
   const [loading, setLoading]         = useState(true)
   const [refreshing, setRefreshing]   = useState(false)
+  const [progress, setProgress]       = useState(0)
+
+  useEffect(() => {
+    if (loading) {
+      setProgress(0)
+      const timer = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 95) {
+            return prev
+          }
+          const diff = Math.max(1, Math.floor((100 - prev) * 0.15))
+          return prev + diff
+        })
+      }, 100)
+      return () => clearInterval(timer)
+    } else {
+      setProgress(100)
+    }
+  }, [loading])
   const [fetchError, setFetchError]   = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
@@ -4697,8 +4716,59 @@ export default function Tickets() {
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
         {loading && tickets.length === 0 ? (
-          <div className="flex flex-col gap-2 p-5 flex-1">
-            {[1,2,3,4,5].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ backgroundColor: inputBg }} />)}
+          <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
+               style={{ backgroundColor: cardBg }}>
+            <div className="relative flex items-center justify-center w-36 h-36">
+              {(() => {
+                const radius = 52
+                const circumference = 2 * Math.PI * radius
+                const strokeDashoffset = circumference - (progress / 100) * circumference
+                return (
+                  <>
+                    <svg className="w-36 h-36 transform -rotate-90">
+                      {/* Trailing Background */}
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r={radius}
+                        stroke={isLight ? '#e2e8f0' : '#1e293b'}
+                        strokeWidth="8"
+                        fill="transparent"
+                      />
+                      {/* Animated Active Ring */}
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r={radius}
+                        stroke={green}
+                        strokeWidth="8"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                        className="transition-all duration-150 ease-out"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-lg font-black font-mono tracking-tight" style={{ color: textPrimary }}>
+                        {progress}%
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-0.5">
+                        {progress === 100 ? 'Ready' : 'Loading'}
+                      </span>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <h4 className="font-extrabold text-sm" style={{ color: textPrimary }}>
+                {progress === 100 ? 'Loaded Schedules!' : 'Fetching Schedules'}
+              </h4>
+              <p className="text-xs" style={{ color: textMuted }}>
+                Please wait while we synchronize branch lineup and dates.
+              </p>
+            </div>
           </div>
         ) : (
           <div
