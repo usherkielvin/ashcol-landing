@@ -1091,6 +1091,12 @@ function getTicketNumberDisplay(ticket: Ticket): string {
   return String(ticket.ticketNumber || ticket.ticket_number || '').trim()
 }
 
+/** Optimistic rows not yet persisted (manual add or Excel import). */
+function isTempTicketId(id: string | undefined | null): boolean {
+  if (!id) return false
+  return id.startsWith('temp-import-') || id.startsWith('temp-')
+}
+
 function applyImportFieldsFromRow(
   row: Pick<
     ImportUnmatchedRow,
@@ -3303,7 +3309,10 @@ export default function Tickets() {
           if (res.ok) {
             const data = await res.json()
             const result = data?.data
-            createdCount += result?.created ?? createTemps.length
+            const createdTickets: Array<Ticket | null> = Array.isArray(result?.tickets) ? result.tickets : []
+            createdCount += typeof result?.created === 'number'
+              ? result.created
+              : createdTickets.filter(t => t?.id).length
             if (result?.failed) {
               failCount += result.failed
               if (Array.isArray(result.errors) && result.errors.length > 0) {
@@ -3313,24 +3322,93 @@ export default function Tickets() {
             console.log('[Schedules] Import created tickets in database', {
               created: createdCount,
               failed: result?.failed ?? 0,
+              ticketNumbers: createdTickets
+                .filter((t): t is Ticket => Boolean(t?.id))
+                .map(t => t.ticketNumber || t.ticket_number),
             })
-            // Refresh first (overlay keeps temp rows), then drop temps once server list is in
-            await fetchTickets({ soft: true, force: true })
+
+            // Swap temp-import-* rows for real server tickets (id + unique ticket number).
+            // Rows the user deleted while import was in flight are removed on the server too.
+            const deferredDeletes: string[] = []
             const tempIds = new Set(createTemps.map(c => c.tempId))
-            for (const id of tempIds) optimisticTicketsRef.current.delete(id)
+            const replacements = new Map<string, Ticket>()
+
+            for (let i = 0; i < createTemps.length; i++) {
+              const { tempId } = createTemps[i]
+              const created = createdTickets[i]
+              optimisticTicketsRef.current.delete(tempId)
+
+              if (!created?.id) continue
+
+              if (deletedTicketsRef.current.has(tempId)) {
+                deletedTicketsRef.current.delete(tempId)
+                deferredDeletes.push(created.id)
+                continue
+              }
+
+              replacements.set(tempId, created)
+              optimisticTicketsRef.current.set(created.id, created)
+            }
+
+            // Any temps without a matching created ticket (partial failure) are dropped
+            for (const { tempId } of createTemps) {
+              if (!replacements.has(tempId)) optimisticTicketsRef.current.delete(tempId)
+            }
+
             setTickets(prev => {
-              const next = prev.filter(t => !tempIds.has(t.id))
+              const usedRealIds = new Set<string>()
+              const next: Ticket[] = []
+              for (const t of prev) {
+                if (tempIds.has(t.id)) {
+                  const real = replacements.get(t.id)
+                  if (real && !usedRealIds.has(real.id)) {
+                    usedRealIds.add(real.id)
+                    next.push(real)
+                  }
+                  continue
+                }
+                if (usedRealIds.has(t.id)) continue
+                next.push(t)
+              }
+              for (const real of replacements.values()) {
+                if (!usedRealIds.has(real.id)) {
+                  usedRealIds.add(real.id)
+                  next.unshift(real)
+                }
+              }
               const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
               writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
               return next
             })
+
+            for (const realId of deferredDeletes) {
+              try {
+                const deleteRes = await fetch(`${API_BASE_URL}/tickets/${realId}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${tokenVal}` },
+                })
+                if (!deleteRes.ok) throw new Error(await readApiError(deleteRes))
+              } catch (err: unknown) {
+                console.error('[Schedules] Deferred delete of imported ticket FAILED', realId, err)
+              }
+            }
+
+            // Confirm list from server (temps already swapped / removed)
+            await fetchTickets({ soft: true, force: true })
           } else {
             failCount += createTemps.length
             importErrors.push(await readApiError(res))
             for (const created of createTemps) {
               optimisticTicketsRef.current.delete(created.tempId)
-              setTickets(prev => prev.filter(t => t.id !== created.tempId))
+              deletedTicketsRef.current.delete(created.tempId)
             }
+            setTickets(prev => {
+              const tempIds = new Set(createTemps.map(c => c.tempId))
+              const next = prev.filter(t => !tempIds.has(t.id))
+              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+              return next
+            })
             console.error('[Schedules] Import create FAILED', importErrors)
           }
         } catch (err: unknown) {
@@ -3339,8 +3417,15 @@ export default function Tickets() {
           importErrors.push(formatFetchError(err))
           for (const created of createTemps) {
             optimisticTicketsRef.current.delete(created.tempId)
-            setTickets(prev => prev.filter(t => t.id !== created.tempId))
+            deletedTicketsRef.current.delete(created.tempId)
           }
+          setTickets(prev => {
+            const tempIds = new Set(createTemps.map(c => c.tempId))
+            const next = prev.filter(t => !tempIds.has(t.id))
+            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+            return next
+          })
         }
       }
 
@@ -3546,15 +3631,16 @@ export default function Tickets() {
 
     // Keep local creates/edits visible until the server list includes them;
     // never re-show tickets the user already deleted in this session.
+    // Drop orphaned temp-import / temp-* ids left in tab cache from a prior session.
     const applyOptimisticOverlay = (list: Ticket[]) => {
       const deleted = deletedTicketsRef.current
       const pending = optimisticTicketsRef.current
-      const withoutDeleted = deleted.size === 0
-        ? list
-        : list.filter(t => !deleted.has(t.id))
+      const withoutDeleted = list.filter(t =>
+        !deleted.has(t.id) && (!isTempTicketId(t.id) || pending.has(t.id)),
+      )
       // Server no longer has a deleted id — drop the tombstone
       for (const id of [...deleted]) {
-        if (!list.some(t => t.id === id)) deleted.delete(id)
+        if (!list.some(t => t.id === id) && !isTempTicketId(id)) deleted.delete(id)
       }
       if (pending.size === 0) return withoutDeleted
       const serverIds = new Set(withoutDeleted.map(t => t.id))
@@ -3616,7 +3702,9 @@ export default function Tickets() {
     if (hasCache) {
       const pending = optimisticTicketsRef.current
       const deleted = deletedTicketsRef.current
-      const list = (cached!.tickets as Ticket[]).filter(t => !deleted.has(t.id))
+      const list = (cached!.tickets as Ticket[]).filter(t =>
+        !deleted.has(t.id) && (!isTempTicketId(t.id) || pending.has(t.id)),
+      )
       if (pending.size === 0) {
         setTickets(list)
       } else {
@@ -4177,6 +4265,13 @@ export default function Tickets() {
     })
     setEditModalOpen(false)
     setConfirmModal(null)
+
+    // Temp rows are not on the server yet — local remove is enough.
+    // If an in-flight Excel import later creates the real ticket, it will DELETE that id.
+    if (isTempTicketId(ticketId)) {
+      console.log('[Schedules] Removed unsaved ticket locally', { ticketId })
+      return
+    }
 
     void (async () => {
       try {
