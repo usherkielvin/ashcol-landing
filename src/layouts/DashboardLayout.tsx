@@ -8,7 +8,8 @@ import {
   ChevronRight, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
-  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck,
+  LayoutDashboard
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -64,6 +65,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Tickets',
       Icon: MdOutlineConfirmationNumber,
       subItems: [
+        { name: 'Overview', icon: <MdOutlineDashboard size={16} />, path: findPath('Overview') },
         { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
@@ -280,7 +282,7 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
-    { name: 'Tickets',         path: '/tickets',          icon: TicketIcon },
+    { name: 'Overview',        path: '/tickets',          icon: LayoutDashboard },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
@@ -298,8 +300,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
-  const serviceWorkspaceLinks = ['My Tickets', 'Tickets', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const salesWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const serviceWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 

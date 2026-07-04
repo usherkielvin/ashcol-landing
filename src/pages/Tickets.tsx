@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -1097,6 +1097,51 @@ function isTempTicketId(id: string | undefined | null): boolean {
   return id.startsWith('temp-import-') || id.startsWith('temp-')
 }
 
+type PendingTicketSave = {
+  body: Record<string, unknown>
+  rollback: Ticket
+  afterSave?: () => Promise<void>
+}
+
+/**
+ * Move optimistic/pending state from a temp id to the real server ticket.
+ * Pending cell edits are kept queued so they PATCH the real id, not temp-*.
+ */
+function promoteTempTicketState(
+  tempId: string,
+  realTicket: Ticket,
+  pendingSaves: Map<string, PendingTicketSave>,
+  activeSaves: Set<string>,
+  optimistic: Map<string, Ticket>,
+  deleted: Set<string>,
+): { ticket: Ticket; shouldFlush: boolean; wasDeleted: boolean } {
+  const wasDeleted = deleted.has(tempId)
+  deleted.delete(tempId)
+  activeSaves.delete(tempId)
+
+  const pending = pendingSaves.get(tempId)
+  pendingSaves.delete(tempId)
+  optimistic.delete(tempId)
+
+  if (wasDeleted) {
+    return { ticket: realTicket, shouldFlush: false, wasDeleted: true }
+  }
+
+  if (pending) {
+    const merged = mergeTicketPatch(realTicket, pending.body)
+    pendingSaves.set(realTicket.id, {
+      body: pending.body,
+      rollback: realTicket,
+      afterSave: pending.afterSave,
+    })
+    optimistic.set(realTicket.id, merged)
+    return { ticket: merged, shouldFlush: true, wasDeleted: false }
+  }
+
+  optimistic.set(realTicket.id, realTicket)
+  return { ticket: realTicket, shouldFlush: false, wasDeleted: false }
+}
+
 function applyImportFieldsFromRow(
   row: Pick<
     ImportUnmatchedRow,
@@ -1725,8 +1770,78 @@ export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const isMyTickets = location.pathname === '/my-tickets'
   const isLight    = theme === 'light'
+
+  const [activeTab, setActiveTab] = useState<'schedules' | 'overview'>(
+    () => location.pathname === '/tickets' ? 'overview' : 'schedules'
+  )
+
+  useEffect(() => {
+    if (location.pathname === '/tickets') {
+      setActiveTab('overview')
+    } else if (location.pathname === '/schedules') {
+      setActiveTab('schedules')
+    }
+  }, [location.pathname])
+
+  const [overviewSearchInput, setOverviewSearchInput] = useState('')
+  const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
+  const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
+  const [overviewLoading, setOverviewLoading] = useState(false)
+
+  const fetchOverviewTickets = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setOverviewResults([])
+      return
+    }
+    setOverviewLoading(true)
+    try {
+      const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const headers = { Authorization: `Bearer ${tokenStr}` }
+      const url = `${API_BASE_URL}/tickets?q=${encodeURIComponent(query)}&size=100`
+      const res = await fetch(url, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        const list = data?.data?.tickets || data?.tickets || []
+        setOverviewResults(list)
+      } else {
+        console.error('Failed to search tickets:', res.statusText)
+      }
+    } catch (err) {
+      console.error('Error searching tickets:', err)
+    } finally {
+      setOverviewLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'overview') return
+    const trimmed = overviewSearchInput.trim()
+    if (!trimmed) {
+      setOverviewResults([])
+      return
+    }
+
+    const timer = setTimeout(() => {
+      void fetchOverviewTickets(trimmed)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [overviewSearchInput, activeTab, fetchOverviewTickets])
+
+  const highlightMatch = (text: string, query: string) => {
+    if (!query.trim()) return text
+    const parts = text.split(new RegExp(`(${query})`, 'gi'))
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase() ? (
+        <mark key={i} style={{ backgroundColor: '#fef08a', color: '#000', fontWeight: 600 }}>{part}</mark>
+      ) : (
+        part
+      )
+    )
+  }
 
   const role      = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
@@ -1815,6 +1930,8 @@ export default function Tickets() {
   const optimisticTicketsRef = useRef(new Map<string, Ticket>())
   /** Ticket ids removed in UI while DELETE runs (or until server list confirms absence). */
   const deletedTicketsRef = useRef(new Set<string>())
+  /** Latest flushTicketSave — used by create/import paths defined earlier in the component. */
+  const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => {})
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -2590,15 +2707,44 @@ export default function Tickets() {
             return
           }
 
-          // Swap temp → real id but keep in optimistic map until list fetch confirms
-          optimisticTicketsRef.current.delete(tempId)
-          optimisticTicketsRef.current.set(createdTicket.id, createdTicket)
+          const promoted = promoteTempTicketState(
+            tempId,
+            createdTicket,
+            pendingSavesRef.current,
+            activeSavesRef.current,
+            optimisticTicketsRef.current,
+            deletedTicketsRef.current,
+          )
+
+          if (promoted.wasDeleted) {
+            try {
+              const deleteRes = await fetch(`${API_BASE_URL}/tickets/${createdTicket.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${tokenVal}` },
+              })
+              if (!deleteRes.ok) throw new Error(await readApiError(deleteRes))
+            } catch (err: unknown) {
+              console.error('[Schedules] Deferred delete of manual ticket FAILED', createdTicket.id, err)
+            }
+            setTickets(prev => {
+              const next = prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)
+              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+              return next
+            })
+            return
+          }
+
+          // Swap temp → real id (carry any cell edits made while create was in flight)
           setTickets(prev => {
-            const next = [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
+            const next = [promoted.ticket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
             const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
             writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
             return next
           })
+          if (promoted.shouldFlush) {
+            flushTicketSaveRef.current(createdTicket.id)
+          }
           console.log('[Schedules] Created ticket in database', {
             ticketId: createdTicket.id,
             ticketNumber: createdTicket.ticketNumber || createdTicket.ticket_number,
@@ -2608,7 +2754,10 @@ export default function Tickets() {
         } catch (err: unknown) {
           const reason = formatFetchError(err)
           console.error('[Schedules] Create ticket FAILED', { tempId, reason, err })
+          pendingSavesRef.current.delete(tempId)
+          activeSavesRef.current.delete(tempId)
           optimisticTicketsRef.current.delete(tempId)
+          deletedTicketsRef.current.delete(tempId)
           setTickets(prev => {
             const next = prev.filter(t => t.id !== tempId)
             const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
@@ -2623,7 +2772,10 @@ export default function Tickets() {
       const reason = formatFetchError(err)
       console.error('[Schedules] Create ticket FAILED', { tempId, reason, err })
       if (tempId) {
+        pendingSavesRef.current.delete(tempId)
+        activeSavesRef.current.delete(tempId)
         optimisticTicketsRef.current.delete(tempId)
+        deletedTicketsRef.current.delete(tempId)
         setTickets(prev => prev.filter(t => t.id !== tempId))
       }
       alert(`Could not add ticket: ${reason}`)
@@ -3328,31 +3480,40 @@ export default function Tickets() {
             })
 
             // Swap temp-import-* rows for real server tickets (id + unique ticket number).
-            // Rows the user deleted while import was in flight are removed on the server too.
+            // Carry any cell edits made while create was in flight; delete if user removed the row.
             const deferredDeletes: string[] = []
+            const flushIds: string[] = []
             const tempIds = new Set(createTemps.map(c => c.tempId))
             const replacements = new Map<string, Ticket>()
 
             for (let i = 0; i < createTemps.length; i++) {
               const { tempId } = createTemps[i]
               const created = createdTickets[i]
-              optimisticTicketsRef.current.delete(tempId)
 
-              if (!created?.id) continue
-
-              if (deletedTicketsRef.current.has(tempId)) {
+              if (!created?.id) {
+                pendingSavesRef.current.delete(tempId)
+                activeSavesRef.current.delete(tempId)
+                optimisticTicketsRef.current.delete(tempId)
                 deletedTicketsRef.current.delete(tempId)
+                continue
+              }
+
+              const promoted = promoteTempTicketState(
+                tempId,
+                created,
+                pendingSavesRef.current,
+                activeSavesRef.current,
+                optimisticTicketsRef.current,
+                deletedTicketsRef.current,
+              )
+
+              if (promoted.wasDeleted) {
                 deferredDeletes.push(created.id)
                 continue
               }
 
-              replacements.set(tempId, created)
-              optimisticTicketsRef.current.set(created.id, created)
-            }
-
-            // Any temps without a matching created ticket (partial failure) are dropped
-            for (const { tempId } of createTemps) {
-              if (!replacements.has(tempId)) optimisticTicketsRef.current.delete(tempId)
+              replacements.set(tempId, promoted.ticket)
+              if (promoted.shouldFlush) flushIds.push(created.id)
             }
 
             setTickets(prev => {
@@ -3381,6 +3542,10 @@ export default function Tickets() {
               return next
             })
 
+            for (const realId of flushIds) {
+              flushTicketSaveRef.current(realId)
+            }
+
             for (const realId of deferredDeletes) {
               try {
                 const deleteRes = await fetch(`${API_BASE_URL}/tickets/${realId}`, {
@@ -3399,6 +3564,8 @@ export default function Tickets() {
             failCount += createTemps.length
             importErrors.push(await readApiError(res))
             for (const created of createTemps) {
+              pendingSavesRef.current.delete(created.tempId)
+              activeSavesRef.current.delete(created.tempId)
               optimisticTicketsRef.current.delete(created.tempId)
               deletedTicketsRef.current.delete(created.tempId)
             }
@@ -3416,6 +3583,8 @@ export default function Tickets() {
           failCount += createTemps.length
           importErrors.push(formatFetchError(err))
           for (const created of createTemps) {
+            pendingSavesRef.current.delete(created.tempId)
+            activeSavesRef.current.delete(created.tempId)
             optimisticTicketsRef.current.delete(created.tempId)
             deletedTicketsRef.current.delete(created.tempId)
           }
@@ -4009,6 +4178,8 @@ export default function Tickets() {
   }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
+    // Never PATCH optimistic temp ids — edits stay queued until promoteTempTicketState.
+    if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
     try {
@@ -4058,6 +4229,7 @@ export default function Tickets() {
       }
     }
   }, [restoreTicketLocally, token])
+  flushTicketSaveRef.current = (ticketId: string) => { void flushTicketSave(ticketId) }
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
   const queueTicketPatch = useCallback((
@@ -4078,7 +4250,10 @@ export default function Tickets() {
       afterSave: afterSave ?? existing?.afterSave,
     })
     applyTicketLocally(ticketId, nextTicket)
-    void flushTicketSave(ticketId)
+    // Temp rows are not on the server yet — flush after create promotes to a real id.
+    if (!isTempTicketId(ticketId)) {
+      void flushTicketSave(ticketId)
+    }
   }, [applyTicketLocally, flushTicketSave])
 
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
@@ -4826,175 +5001,211 @@ export default function Tickets() {
       {!isMyTickets && ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2 w-full">
-          {/* Weekly Date Tabs Picker */}
-          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
-            {weeklyTabs.map(tab => {
-              const isActive = dateFilter === tab.key
-              return (
+            {/* Tab Selector pills (Schedules vs Overview) */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg border bg-slate-500/5" style={{ borderColor: inputBorder }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('schedules')
+                  navigate('/schedules')
+                }}
+                className="px-2.5 py-1 rounded-md text-[10px] font-bold transition-all"
+                style={{
+                  backgroundColor: activeTab === 'schedules' ? green : 'transparent',
+                  color: activeTab === 'schedules' ? '#ffffff' : textMuted,
+                }}
+              >
+                Schedules
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('overview')
+                  navigate('/tickets')
+                }}
+                className="px-2.5 py-1 rounded-md text-[10px] font-bold transition-all"
+                style={{
+                  backgroundColor: activeTab === 'overview' ? green : 'transparent',
+                  color: activeTab === 'overview' ? '#ffffff' : textMuted,
+                }}
+              >
+                Overview
+              </button>
+            </div>
+
+            {/* Weekly Date Tabs Picker */}
+            {activeTab === 'schedules' && (
+              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
+                {weeklyTabs.map(tab => {
+                  const isActive = dateFilter === tab.key
+                  return (
+                    <button
+                      type="button"
+                      key={tab.key}
+                      onClick={() => handleDateFilterChange(tab.key)}
+                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      style={{
+                        backgroundColor: isActive ? green : 'transparent',
+                        borderColor: isActive ? green : inputBorder,
+                        color: isActive ? '#ffffff' : textMuted,
+                      }}
+                    >
+                      {tab.dayName} {tab.dateLabel}
+                    </button>
+                  )
+                })}
+
+                {isCustomSelected && (
+                  <button
+                    type="button"
+                    onClick={() => dateFilterInputRef.current?.showPicker?.()}
+                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                  >
+                    {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  key={tab.key}
-                  onClick={() => handleDateFilterChange(tab.key)}
+                  onClick={() => dateFilterInputRef.current?.showPicker?.()}
+                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                  title="Pick date"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+                </button>
+
+                <input
+                  ref={dateFilterInputRef}
+                  type="date"
+                  value={dateFilter}
+                  onChange={e => handleDateFilterChange(e.target.value)}
+                  tabIndex={-1}
+                  className="absolute opacity-0 pointer-events-none w-0 h-0"
+                  aria-label="Ticket date filter"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => handleDateFilterChange('')}
                   className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
                   style={{
-                    backgroundColor: isActive ? green : 'transparent',
-                    borderColor: isActive ? green : inputBorder,
-                    color: isActive ? '#ffffff' : textMuted,
+                    backgroundColor: dateFilter === '' ? green : 'transparent',
+                    borderColor: dateFilter === '' ? green : inputBorder,
+                    color: dateFilter === '' ? '#ffffff' : textMuted,
                   }}
                 >
-                  {tab.dayName} {tab.dateLabel}
+                  All
                 </button>
-              )
-            })}
-
-            {isCustomSelected && (
-              <button
-                type="button"
-                onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
-              >
-                {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-              </button>
+              </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => dateFilterInputRef.current?.showPicker?.()}
-              className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
-              style={{ borderColor: inputBorder, color: textMuted }}
-              title="Pick date"
-            >
-              <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
-            </button>
-
-            <input
-              ref={dateFilterInputRef}
-              type="date"
-              value={dateFilter}
-              onChange={e => handleDateFilterChange(e.target.value)}
-              tabIndex={-1}
-              className="absolute opacity-0 pointer-events-none w-0 h-0"
-              aria-label="Ticket date filter"
-            />
-
-            <button
-              type="button"
-              onClick={() => handleDateFilterChange('')}
-              className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-              style={{
-                backgroundColor: dateFilter === '' ? green : 'transparent',
-                borderColor: dateFilter === '' ? green : inputBorder,
-                color: dateFilter === '' ? '#ffffff' : textMuted,
-              }}
-            >
-              All
-            </button>
-          </div>
-
-          {/* Search bar */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
-               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1 min-w-0"
-              style={{ color: textPrimary }}
-              onClick={e => e.stopPropagation()}
-            />
-            {searchQuery && (
-              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
+            {/* Search bar */}
+            {activeTab === 'schedules' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
+                   style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="bg-transparent outline-none text-xs flex-1 min-w-0"
+                  style={{ color: textPrimary }}
+                  onClick={e => e.stopPropagation()}
+                />
+                {searchQuery && (
+                  <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             )}
-          </div>
 
-          {/* Action Button: Add Schedule */}
-          {canEdit && !isMyTickets && (
-            <div className="relative shrink-0 ml-auto">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setAddMenuOpen(!addMenuOpen)
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
-                style={{ backgroundColor: green, color: '#ffffff' }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Schedule
-                <ChevronDown className="w-3 h-3 opacity-80" />
-              </button>
-
-              {addMenuOpen && (
-                <div
-                  className="absolute right-0 mt-1.5 rounded-xl shadow-xl overflow-hidden z-[100] w-48 border"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                  onClick={() => setAddMenuOpen(false)}
+            {/* Action Button: Add Schedule */}
+            {activeTab === 'schedules' && canEdit && !isMyTickets && (
+              <div className="relative shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setAddMenuOpen(!addMenuOpen)
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: green, color: '#ffffff' }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddMenuOpen(false)
-                      openAddModal()
-                    }}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Schedule
+                  <ChevronDown className="w-3 h-3 opacity-80" />
+                </button>
+
+                {addMenuOpen && (
+                  <div
+                    className="absolute right-0 mt-1.5 rounded-xl shadow-xl overflow-hidden z-[100] w-48 border"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                    onClick={() => setAddMenuOpen(false)}
                   >
-                    <Plus className="w-3.5 h-3.5" style={{ color: green }} />
-                    Manual Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scanFileInputRef.current?.click()}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
-                  >
-                    <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                    Scan Schedule Sheet
-                  </button>
-                  <button
-                    type="button"
-                    disabled={importing}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
-                    style={{ color: textPrimary }}
-                  >
-                    <Upload className="w-3.5 h-3.5 text-amber-500" />
-                    Import Excel
-                  </button>
-                  {canEdit && (
-                    <>
-                      <div className="h-px mx-2" style={{ backgroundColor: border }} />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddMenuOpen(false)
-                          promptClearAllVisible()
-                        }}
-                        disabled={visible.length === 0 || saving}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10 disabled:opacity-40"
-                        style={{ color: '#EF4444' }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Clear All Visible
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false)
+                        openAddModal()
+                      }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                      style={{ color: textPrimary }}
+                    >
+                      <Plus className="w-3.5 h-3.5" style={{ color: green }} />
+                      Manual Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scanFileInputRef.current?.click()}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                      style={{ color: textPrimary }}
+                    >
+                      <Camera className="w-3.5 h-3.5 text-emerald-500" />
+                      Scan Schedule Sheet
+                    </button>
+                    <button
+                      type="button"
+                      disabled={importing}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                      style={{ color: textPrimary }}
+                    >
+                      <Upload className="w-3.5 h-3.5 text-amber-500" />
+                      Import Excel
+                    </button>
+                    {canEdit && (
+                      <>
+                        <div className="h-px mx-2" style={{ backgroundColor: border }} />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddMenuOpen(false)
+                            promptClearAllVisible()
+                          }}
+                          disabled={visible.length === 0 || saving}
+                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                          style={{ color: '#EF4444' }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Clear All Visible
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
       {/* Stats bar */}
-      {!isMyTickets && !loading && tickets.length > 0 && (
+      {!isMyTickets && activeTab === 'schedules' && !loading && tickets.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
@@ -5028,7 +5239,7 @@ export default function Tickets() {
       )}
 
       {/* Error */}
-      {fetchError && (
+      {fetchError && activeTab === 'schedules' && (
         <div className="flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold shrink-0"
              style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
@@ -5039,7 +5250,8 @@ export default function Tickets() {
       {/* ── Table card ── */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
-        {loading && tickets.length === 0 ? (
+        {activeTab === 'schedules' ? (
+          loading && tickets.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
                style={{ backgroundColor: cardBg }}>
             <div className="relative flex items-center justify-center w-36 h-36">
@@ -5323,8 +5535,165 @@ export default function Tickets() {
               </tbody>
             </table>
           </div>
-        )}
+        )) : (
+          /* Render Overview Search Panel */
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 md:px-8">
+            <div className="max-w-4xl w-full mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
+              
+              {/* Header Section */}
+              <div className="text-center">
+                <h2 className="text-xl font-black tracking-tight" style={{ color: textPrimary }}>
+                  Portal Overview Search
+                </h2>
+                <p className="text-xs mt-1" style={{ color: textMuted }}>
+                  Search across all tickets in the portal by customer name, ticket number, control number, contact phone, or location.
+                </p>
+              </div>
 
+              {/* Search Input Box */}
+              <div 
+                className="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-sm border-2 transition-all duration-200"
+                style={{
+                  backgroundColor: cardBg,
+                  borderColor: overviewSearchFocused ? green : border,
+                  boxShadow: overviewSearchFocused ? `0 0 0 3px ${green}15` : 'none'
+                }}
+              >
+                <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
+                <input
+                  type="text"
+                  placeholder="Search customer, ticket #, contact, location..."
+                  value={overviewSearchInput}
+                  onChange={e => setOverviewSearchInput(e.target.value)}
+                  onFocus={() => setOverviewSearchFocused(true)}
+                  onBlur={() => setOverviewSearchFocused(false)}
+                  className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium"
+                  style={{ color: textPrimary }}
+                />
+                {overviewSearchInput && (
+                  <button 
+                    type="button" 
+                    onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }} 
+                    style={{ color: textMuted }}
+                    className="hover:scale-110 transition-transform"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Results Section */}
+              {overviewLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
+                  <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
+                </div>
+              ) : overviewResults.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                      Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
+                    </span>
+                  </div>
+                  
+                  {/* Results Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {overviewResults.map(ticket => {
+                      const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
+                      const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
+                      const category = inferCategoryFromTicket(ticket);
+                      const statusVal = getScheduleStatusValue(ticket);
+                      const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
+                      
+                      return (
+                        <div 
+                          key={ticket.id}
+                          className="rounded-2xl p-4 border shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between"
+                          style={{ backgroundColor: cardBg, borderColor: border }}
+                        >
+                          <div>
+                            {/* Card Header */}
+                            <div className="flex justify-between items-start gap-2 mb-2">
+                              <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
+                                {ticketNum}
+                              </span>
+                              <div className="flex gap-1.5 items-center">
+                                {/* Category Badge */}
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: 'rgba(22,163,74,0.1)', color: green }}>
+                                  {category}
+                                </span>
+                                {/* Status Badge */}
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
+                                  {statusVal}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Customer & Location */}
+                            <h3 className="font-bold text-sm leading-tight mb-2" style={{ color: textPrimary }}>
+                              {highlightMatch(customer, overviewSearchInput)}
+                            </h3>
+                            
+                            <div className="flex flex-col gap-1 text-[11px] mb-3" style={{ color: textMuted }}>
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="w-3 h-3 shrink-0" style={{ color: green }} />
+                                <span className="truncate">{formatAddress(ticket.location)}</span>
+                              </div>
+                              {ticket.contactPhone && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold">Contact:</span>
+                                  <span>{ticket.contactPhone}</span>
+                                </div>
+                              )}
+                              {ticket.assignedEmployeeName && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold">Technician:</span>
+                                  <span>{ticket.assignedEmployeeName}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Card Footer */}
+                          <div className="flex justify-between items-center pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
+                            <span className="text-[10px]" style={{ color: textMuted }}>
+                              Date: {ticket.preferredDate || 'No Date'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(ticket)}
+                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90"
+                              style={{ backgroundColor: green }}
+                            >
+                              View Details
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : overviewSearchInput.trim() ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: textMuted }} />
+                  <h3 className="font-bold text-xs" style={{ color: textPrimary }}>No results found</h3>
+                  <p className="text-[11px] max-w-xs mt-1" style={{ color: textMuted }}>
+                    We couldn't find any tickets matching "{overviewSearchInput}". Try another search term.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center opacity-80">
+                  <Search className="w-10 h-10 mb-2" style={{ color: textMuted }} />
+                  <h3 className="font-bold text-xs" style={{ color: textPrimary }}>Ready to Search</h3>
+                  <p className="text-[11px] max-w-md mt-1" style={{ color: textMuted }}>
+                    Start typing to search tickets by customer name, ticket/control number, technician, contact phone, or address.
+                  </p>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Right-click context menu ── */}
