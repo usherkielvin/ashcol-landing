@@ -550,10 +550,7 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   } as Ticket)
   if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP') return false
-  // Only archive install-complete when payment is already on the ticket (no popup).
-  if (outcome === 'DONE_INSTALLED') {
-    return hasInstallPayment(ticket, body as Partial<Ticket>)
-  }
+  if (outcome === 'DONE_INSTALLED') return true
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
 
@@ -893,19 +890,12 @@ function ticketRemarksText(ticket: Partial<Ticket>, fields?: Partial<Ticket>): s
   ].filter(Boolean).join(' ')
 }
 
-function hasInstallPayment(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
-  const mode = String(fields?.modeOfPayment ?? ticket.modeOfPayment ?? ticket.mode_of_payment ?? '').toUpperCase().trim()
-  if (!mode) return false
-  if (mode === 'FREE' || mode === 'FREE INSTALL') return true
-  const charges = fields?.installationCharges ?? ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
-  return charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0
-}
 
 function qualifiesForInstallComplete(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
   const remarks = ticketRemarksText(ticket, fields)
   const status = String(fields?.status ?? ticket.status ?? '').toUpperCase()
   const installed = isInstalledRemarks(remarks) || status === 'COMPLETED'
-  return installed && hasInstallPayment(ticket, fields)
+  return installed
 }
 
 function getArchivedScheduleDate(ticket: Ticket): string {
@@ -4264,21 +4254,15 @@ export default function Tickets() {
     }
 
     // Remarks always save in-cell — never open a payment popup.
-    // Complete/archive only when payment is already present on the ticket.
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
     const remarkText = colLabel === 'UPDATE'
       ? stripArchivedRemarkSuffix(value.trim())
       : ''
     if (colLabel === 'UPDATE' && isInstalledRemarks(remarkText)) {
-      const merged = { ...ticket, remarksUpdate: remarkText, remarks: remarkText }
-      if (hasInstallPayment(merged, { remarksUpdate: remarkText, remarks: remarkText })) {
-        finalBody = enrichCompletePatchBody(body, ticket, schedKey)
-      }
+      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
-      if (hasInstallPayment(ticket, body as Partial<Ticket>)) {
-        finalBody = enrichCompletePatchBody(body, ticket, schedKey)
-      }
+      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     }
 
     cancelEdit()
@@ -4292,7 +4276,6 @@ export default function Tickets() {
         colLabel === 'UPDATE'
         && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
         && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
-        && hasInstallPayment(ticket, finalBody as Partial<Ticket>)
       )
 
     const archiveBody = finalBody
