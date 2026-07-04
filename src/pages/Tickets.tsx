@@ -984,12 +984,6 @@ function getInstallerDisplay(
   return installer
 }
 
-function getMyTicketsInstallerDisplay(
-  ticket: Ticket,
-  employees?: { id: string; name: string }[],
-): string {
-  return getInstallerDisplay(ticket, employees)
-}
 
 function formatRelayTicketTypeShort(ticket: Ticket): string {
   const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
