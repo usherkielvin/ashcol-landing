@@ -8,9 +8,9 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, appendCurrentNegotiator, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
-import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex } from '../utils/portalDirectoryCache'
+import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
@@ -248,6 +248,46 @@ function getScheduleStatusLabel(value: string): string {
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
 }
 
+/** True when ticket still carries reschedule ghost metadata (old date row / Moved to…). */
+function ticketHasRescheduleMeta(ticket: Ticket): boolean {
+  if ((ticket.status || '').toUpperCase() === 'RESCHED') return true
+  if (getScheduleStatusValue(ticket) === 'RESCHED') return true
+  if (isReschedulePending(ticket)) return true
+  if (getPreviousScheduleDates(ticket).length > 0) return true
+  const meta = parseAcMeta(ticket)
+  if (String(meta.rescheduledTo || '').trim()) return true
+  const remarks = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  return isMovedToRescheduleRemark(remarks)
+}
+
+/** Clear ghost-date / Moved-to state when leaving RESCHED for an active status. */
+function clearRescheduleMetaInto(
+  ticket: Ticket,
+  body: Record<string, unknown>,
+  acUpdates: Record<string, unknown>,
+) {
+  if (!ticketHasRescheduleMeta(ticket)) return
+
+  acUpdates.previousScheduleDates = []
+  acUpdates.rescheduledTo = ''
+  acUpdates.reschedulePending = false
+
+  const remarks = (ticket.remarksUpdate || ticket.remarks || '').trim()
+  if (isMovedToRescheduleRemark(remarks) || /^PENDING$/i.test(remarks)) {
+    body.remarks = ''
+    body.remarksUpdate = ''
+    acUpdates.update = ''
+    acUpdates.remarksUpdate = ''
+  }
+
+  // Keep the ticket on its current preferred date (the reschedule target), as an active row
+  const meta = parseAcMeta(ticket)
+  const target = String(meta.rescheduledTo || '').split('T')[0].trim()
+  const preferred = getPreferredDateKey(ticket)
+  if (target) body.preferredDate = target
+  else if (preferred) body.preferredDate = preferred
+}
+
 function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   const val = scheduleValue.toUpperCase().replace(/\s+/g, '_')
@@ -317,6 +357,11 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     body.status = val
     acUpdates.scheduleOutcome = ''
+  }
+
+  // Leaving RESCHED → active status: drop ghost on old date and "Moved to…" remarks
+  if (val !== 'RESCHED') {
+    clearRescheduleMetaInto(ticket, body, acUpdates)
   }
 
   if (Object.keys(acUpdates).length > 0) {
@@ -1755,6 +1800,8 @@ export default function Tickets() {
   const activeSavesRef = useRef(new Set<string>())
   /** Local optimistic tickets that must survive in-flight list refreshes until PATCH/POST settles. */
   const optimisticTicketsRef = useRef(new Map<string, Ticket>())
+  /** Ticket ids removed in UI while DELETE runs (or until server list confirms absence). */
+  const deletedTicketsRef = useRef(new Set<string>())
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -1872,6 +1919,40 @@ export default function Tickets() {
   const [branchEmployees, setBranchEmployees] = useState<BranchStaffOption[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+
+  const resolveNormalizedBranchName = useCallback((branchIdOrName?: string | null): string => {
+    if (!branchIdOrName) return ''
+    const found = branches.find(b => b.id === branchIdOrName)
+      || branches.find(b => b.name.toLowerCase() === branchIdOrName.toLowerCase())
+    if (found) {
+      let name = found.name.toUpperCase()
+      name = name.replace(/^ASHCOL\b/i, '').replace(/[\s\-\_]+/g, ' ').trim()
+      return name.toLowerCase()
+    }
+    const upper = branchIdOrName.toUpperCase()
+    let name = upper.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/[\s\-\_]+/g, ' ').trim()
+    if (name.startsWith('ASHCOL ')) {
+      name = name.slice(7).trim()
+    }
+    return name.toLowerCase()
+  }, [branches])
+
+  const isBranchMatch = useCallback((idA?: string | null, idB?: string | null): boolean => {
+    if (!idA || !idB) return false
+    if (idA === idB) return true
+    const nameA = resolveNormalizedBranchName(idA)
+    const nameB = resolveNormalizedBranchName(idB)
+    return nameA === nameB || nameA.includes(nameB) || nameB.includes(nameA)
+  }, [resolveNormalizedBranchName])
+
+  useEffect(() => {
+    const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    if (!authToken) return
+    fetchCachedBranches(authToken)
+      .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
+      .catch(() => setBranches([]))
+  }, [])
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
@@ -1903,15 +1984,33 @@ export default function Tickets() {
     }
   }, [user?.id, user?.name, user?.branchId, user?.email, user?.role, user?.jobTitle])
 
+  /** Negotiators assigned to a branch only (no cross-branch / global fallback). */
   const negotiatorsForBranch = useCallback((branchId?: string | null) => {
     const filterBranch =
       resolveSchedulesNegotiatorBranch(branchId)
       || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
       || user?.branchId
       || null
-    const filtered = filterBranchNegotiators(branchEmployees, filterBranch, { strict: !!filterBranch })
-    return appendCurrentNegotiator(filtered, currentNegotiatorOption)
-  }, [branchEmployees, resolveSchedulesNegotiatorBranch, currentNegotiatorOption, user?.branchId, user?.email, user?.jobTitle])
+    const isAll = !branchId || branchId === 'ALL' || branchId === 'ALL_BRANCHES'
+    const matched = branchEmployees
+      .filter(isNegotiatorCandidate)
+      .filter(u => {
+        if (isAll) return true
+        const bid = (u.branchId || '').trim()
+        if (!bid || bid.toUpperCase() === 'ALL' || bid.toUpperCase() === 'ALL_BRANCHES') return false
+        return isBranchMatch(bid, filterBranch)
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    // Include signed-in user only when they belong to this branch
+    if (
+      currentNegotiatorOption
+      && currentNegotiatorOption.branchId
+      && (isAll || isBranchMatch(currentNegotiatorOption.branchId, filterBranch))
+    ) {
+      return appendCurrentNegotiator(matched, currentNegotiatorOption)
+    }
+    return matched
+  }, [branchEmployees, resolveSchedulesNegotiatorBranch, currentNegotiatorOption, user?.branchId, user?.email, user?.jobTitle, isBranchMatch])
 
   const addModalNegotiators = useMemo(
     () => negotiatorsForBranch(activeBranchId),
@@ -1923,10 +2022,24 @@ export default function Tickets() {
     [negotiatorsForBranch, editForm.branchId, activeBranchId],
   )
 
+  const activeBranchLabel = useMemo(
+    () => getBranchDisplayName(resolveSchedulesNegotiatorBranch(activeBranchId) || activeBranchId),
+    [activeBranchId, resolveSchedulesNegotiatorBranch],
+  )
+
+  // Drop negotiator if branch filter no longer includes them
+  useEffect(() => {
+    if (!addModalOpen || !addForm.negotiatorId) return
+    if (!addModalNegotiators.some(n => n.id === addForm.negotiatorId)) {
+      setAddForm(prev => ({ ...prev, negotiatorId: '' }))
+    }
+  }, [addModalOpen, addModalNegotiators, addForm.negotiatorId])
+
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
   const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
   const [reschedToDate, setReschedToDate] = useState('')
   const [reschedPending, setReschedPending] = useState(false)
+  const [reschedCalMonth, setReschedCalMonth] = useState<{ year: number; month: number } | null>(null)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2351,22 +2464,34 @@ export default function Tickets() {
         installerLineupIndex,
         driverOnlyNames,
       )
-      const selectedNegotiator = branchEmployees.find(emp => emp.id === addForm.negotiatorId)
-      const negotiatorBranch = resolvePortalWriteBranchId(
-        selectedNegotiator?.branchId,
-        selectedNegotiator?.email,
-        selectedNegotiator?.jobTitle,
-      )
       const activeWriteBranch = resolveSchedulesNegotiatorBranch(activeBranchId)
-      const targetBranch = activeWriteBranch
-        || negotiatorBranch
-        || lockedBranch
-        || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
-      if (!targetBranch) {
+      if (!activeWriteBranch) {
         throw new Error('Select a branch before adding a scheduled ticket.')
       }
       if (!addForm.negotiatorId) {
         throw new Error('Negotiator is required.')
+      }
+      const selectedNegotiator = addModalNegotiators.find(emp => emp.id === addForm.negotiatorId)
+        || branchEmployees.find(emp => emp.id === addForm.negotiatorId)
+      if (!selectedNegotiator) {
+        throw new Error('Selected negotiator not found in employee records.')
+      }
+      const negoBranchRaw = (selectedNegotiator.branchId || '').trim()
+      const isAllBranches = !activeBranchId || activeBranchId === 'ALL' || activeBranchId === 'ALL_BRANCHES'
+      if (!isAllBranches && negoBranchRaw && !isBranchMatch(negoBranchRaw, activeWriteBranch)) {
+        throw new Error(
+          `${selectedNegotiator.name} is not assigned to ${getBranchDisplayName(activeWriteBranch)}. `
+          + 'Pick a negotiator from this branch.',
+        )
+      }
+      // Use the negotiator's own branch id so backend branch checks match exactly
+      const targetBranch = negoBranchRaw
+        || resolvePortalWriteBranchId(negoBranchRaw, selectedNegotiator.email, selectedNegotiator.jobTitle)
+        || activeWriteBranch
+        || lockedBranch
+        || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
+      if (!targetBranch) {
+        throw new Error('Select a branch before adding a scheduled ticket.')
       }
       const scheduledDate = (addForm.preferredDate || '').split('T')[0].trim()
       if (!scheduledDate) {
@@ -2665,6 +2790,18 @@ export default function Tickets() {
         remarksUpdate: remarksVal,
       }
 
+      const selectedNegotiator = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
+      if (selectedNegotiator) {
+        const negoBranchRaw = (selectedNegotiator.branchId || '').trim()
+        if (negoBranchRaw) {
+          body.branchId = negoBranchRaw
+          editForm.branchId = negoBranchRaw
+        }
+      }
+
+      const originalTicket = tickets.find(t => t.id === editForm.id)
+      const leavingResched = !isReschedStatus && originalTicket && ticketHasRescheduleMeta(originalTicket)
+
       if (isReschedStatus) {
         body.status = 'RESCHED'
         if (editForm.reschedulePending) {
@@ -2679,10 +2816,18 @@ export default function Tickets() {
           acMetaExtras.reschedulePending = false
           acMetaExtras.rescheduledTo = newDateKey
         }
-      } else if (isDateMove) {
+      } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
       } else {
-        Object.assign(body, applyScheduleStatusPatch((editForm as Ticket), scheduleVal))
+        Object.assign(body, applyScheduleStatusPatch((originalTicket || editForm) as Ticket, scheduleVal))
+        // Status patch may clear Moved-to remarks / set preferredDate
+        if (typeof body.remarksUpdate === 'string') remarksVal = body.remarksUpdate
+        else if (typeof body.remarks === 'string') remarksVal = body.remarks
+        if (body.remarksUpdate === '') {
+          remarksVal = ''
+          body.remarks = ''
+          body.remarksUpdate = ''
+        }
       }
 
       const statusOutcome = typeof body.scheduleOutcome === 'string' ? body.scheduleOutcome : ''
@@ -2690,7 +2835,6 @@ export default function Tickets() {
         ? parseAcMeta({ acDetails: body.acDetails } as Ticket)
         : {}
 
-      const originalTicket = tickets.find(t => t.id === editForm.id)
       const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
 
       const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
@@ -2708,7 +2852,7 @@ export default function Tickets() {
         }
       }
 
-      if (isDateMove) {
+      if (isDateMove && !leavingResched) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
           ? [...existing.previousScheduleDates]
@@ -2719,7 +2863,23 @@ export default function Tickets() {
         acMetaExtras.reschedulePending = false
       }
 
-      body.acDetails = mergeAcMeta(editForm as Ticket, {
+      // Leaving RESCHED for Installation/etc. — never re-apply ghost-date metadata
+      if (leavingResched) {
+        acMetaExtras.previousScheduleDates = []
+        acMetaExtras.rescheduledTo = ''
+        acMetaExtras.reschedulePending = false
+        if (isMovedToRescheduleRemark(remarksVal || '') || /^PENDING$/i.test((remarksVal || '').trim())) {
+          remarksVal = ''
+          body.remarks = ''
+          body.remarksUpdate = ''
+        }
+      }
+
+      const acBaseTicket = (typeof body.acDetails === 'string'
+        ? { ...(originalTicket || editForm), acDetails: body.acDetails }
+        : (originalTicket || editForm)) as Ticket
+
+      body.acDetails = mergeAcMeta(acBaseTicket, {
         ...acMetaExtras,
         destination: editForm.location.trim(),
         address: editForm.location.trim(),
@@ -2728,8 +2888,8 @@ export default function Tickets() {
         unitType: editForm.unitType?.trim() || undefined,
         dealer: editForm.sourceVendor?.trim() || undefined,
         dlr: editForm.sourceVendor?.trim() || undefined,
-        update: remarksVal || undefined,
-        remarksUpdate: remarksVal || undefined,
+        update: remarksVal || '',
+        remarksUpdate: remarksVal || '',
         installerName: editForm.installerName?.trim() || undefined,
         negotiatorId: editForm.negotiatorId,
         negotiatorName: resolveNegotiatorName(
@@ -2740,6 +2900,9 @@ export default function Tickets() {
         finalDate: isReschedStatus ? '' : finalDateKey,
         scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
         schedulePhase: statusAcMeta.schedulePhase ?? '',
+        ...(leavingResched
+          ? { previousScheduleDates: [], rescheduledTo: '', reschedulePending: false }
+          : {}),
       })
 
       if (String(body.status || '').toUpperCase() === 'COMPLETED') {
@@ -3374,12 +3537,21 @@ export default function Tickets() {
       return
     }
 
-    // Keep local creates/edits visible until the server list includes them.
+    // Keep local creates/edits visible until the server list includes them;
+    // never re-show tickets the user already deleted in this session.
     const applyOptimisticOverlay = (list: Ticket[]) => {
+      const deleted = deletedTicketsRef.current
       const pending = optimisticTicketsRef.current
-      if (pending.size === 0) return list
-      const serverIds = new Set(list.map(t => t.id))
-      const merged = list.map(t => {
+      const withoutDeleted = deleted.size === 0
+        ? list
+        : list.filter(t => !deleted.has(t.id))
+      // Server no longer has a deleted id — drop the tombstone
+      for (const id of [...deleted]) {
+        if (!list.some(t => t.id === id)) deleted.delete(id)
+      }
+      if (pending.size === 0) return withoutDeleted
+      const serverIds = new Set(withoutDeleted.map(t => t.id))
+      const merged = withoutDeleted.map(t => {
         const local = pending.get(t.id)
         if (!local) return t
         // Still saving — keep local version
@@ -3392,7 +3564,7 @@ export default function Tickets() {
       })
       // Temp / just-created tickets not in server payload yet — keep showing them
       for (const [id, local] of pending) {
-        if (!serverIds.has(id)) merged.unshift(local)
+        if (!serverIds.has(id) && !deleted.has(id)) merged.unshift(local)
       }
       return merged
     }
@@ -3436,14 +3608,15 @@ export default function Tickets() {
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
       const pending = optimisticTicketsRef.current
-      const list = cached!.tickets as Ticket[]
+      const deleted = deletedTicketsRef.current
+      const list = (cached!.tickets as Ticket[]).filter(t => !deleted.has(t.id))
       if (pending.size === 0) {
         setTickets(list)
       } else {
         const serverIds = new Set(list.map(t => t.id))
         const merged = list.map(t => pending.get(t.id) || t)
         for (const [id, local] of pending) {
-          if (!serverIds.has(id)) merged.unshift(local)
+          if (!serverIds.has(id) && !deleted.has(id)) merged.unshift(local)
         }
         setTickets(merged)
       }
@@ -3497,7 +3670,7 @@ export default function Tickets() {
           const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
             || t.branchId || t.branch_id || ''
           if (!b) return false
-          if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
+          if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
             const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
             const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
@@ -3539,7 +3712,7 @@ export default function Tickets() {
           const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
             || t.branchId || t.branch_id || ''
           if (!b) return false
-          if (!branchScopesMatch(b, effectiveBranch, user?.email)) return false
+          if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
             const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
             const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
@@ -3920,15 +4093,20 @@ export default function Tickets() {
     const preferred = getPreferredDateKey(ticket)
     const meta = parseAcMeta(ticket)
     const existingTarget = typeof meta.rescheduledTo === 'string' ? meta.rescheduledTo.split('T')[0].trim() : ''
+    const initDate = isReschedulePending(ticket) ? '' : (existingTarget || preferred || dateFilter || todayDateKey())
     setReschedDialog({ ticket })
-    setReschedToDate(isReschedulePending(ticket) ? '' : (existingTarget || preferred || dateFilter || todayDateKey()))
+    setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
+    const startKey = initDate || todayDateKey()
+    const d = new Date(`${startKey}T00:00:00`)
+    setReschedCalMonth({ year: d.getFullYear(), month: d.getMonth() })
   }
 
   const closeReschedDialog = () => {
     setReschedDialog(null)
     setReschedToDate('')
     setReschedPending(false)
+    setReschedCalMonth(null)
   }
 
   const commitInlineReschedule = async () => {
@@ -3952,30 +4130,71 @@ export default function Tickets() {
     queueTicketPatch(ticket, body)
   }
 
-  // ── Delete ────────────────────────────────────────────────────────────────
+  // ── Delete — remove row instantly, DELETE in background ───────────────────
   const handleDelete = (ticketId: string) => {
     const ticket = tickets.find(t => t.id === ticketId)
+      || optimisticTicketsRef.current.get(ticketId)
     const name = ticket?.customerName || ticket?.customer_name || ticket?.title || 'this ticket'
     setContextMenu(null)
+    setDetailTicket(prev => (prev?.id === ticketId ? null : prev))
     setConfirmModal({
       title: 'Delete ticket?',
       message: 'This action cannot be undone.',
       detail: name,
       variant: 'danger',
       confirmText: 'Delete',
-      onConfirm: () => void commitDeleteTicket(ticketId),
+      onConfirm: () => commitDeleteTicket(ticketId),
     })
   }
 
-  const commitDeleteTicket = async (ticketId: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token()}` }
-      })
-      if (!res.ok) throw new Error('Failed')
-      setTickets(p => p.filter(t => t.id !== ticketId))
-      showToast('Deleted')
-    } catch { alert('Could not delete.') }
+  const commitDeleteTicket = (ticketId: string) => {
+    const rollback = tickets.find(t => t.id === ticketId)
+      || optimisticTicketsRef.current.get(ticketId)
+    if (!rollback) {
+      alert('Ticket not found.')
+      return
+    }
+
+    // Instant UI remove
+    deletedTicketsRef.current.add(ticketId)
+    pendingSavesRef.current.delete(ticketId)
+    optimisticTicketsRef.current.delete(ticketId)
+    setTickets(prev => {
+      const next = prev.filter(t => t.id !== ticketId)
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+      return next
+    })
+    setEditModalOpen(false)
+    setConfirmModal(null)
+
+    void (async () => {
+      try {
+        const auth = token()
+        if (!auth) throw new Error('Not signed in — refresh and try again.')
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${auth}` },
+        })
+        if (!res.ok) throw new Error(await readApiError(res))
+        console.log('[Schedules] Deleted ticket in database', { ticketId })
+        clearRelaysCache()
+        clearWarrantyCache()
+      } catch (err: unknown) {
+        const reason = formatFetchError(err)
+        console.error('[Schedules] Delete ticket FAILED', { ticketId, reason, err })
+        deletedTicketsRef.current.delete(ticketId)
+        optimisticTicketsRef.current.set(ticketId, rollback)
+        setTickets(prev => {
+          if (prev.some(t => t.id === ticketId)) return prev
+          const next = [rollback, ...prev]
+          const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+          writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+          return next
+        })
+        alert(`Could not delete ticket: ${reason}`)
+      }
+    })()
   }
 
   const promptClearAllVisible = () => {
@@ -4780,8 +4999,12 @@ export default function Tickets() {
             }}
           >
             {refreshing && (
-              <div className="px-3 py-1 text-[10px] font-semibold shrink-0" style={{ color: textMuted }}>
-                Updating schedules…
+              <div className="flex items-center gap-2.5 px-4 py-2 border-b select-none" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(22,163,74,0.05)' : 'rgba(22,163,74,0.08)' }}>
+                <svg className="w-4 h-4 shrink-0 animate-spin" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="7" stroke={isLight ? '#e2e8f0' : '#1e293b'} strokeWidth="2.5" />
+                  <path d="M10 3 A7 7 0 0 1 17 10" stroke={green} strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <span className="text-[11px] font-semibold" style={{ color: green }}>Updating schedules…</span>
               </div>
             )}
             <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
@@ -5253,9 +5476,14 @@ export default function Tickets() {
                    </h4>
                    
                    {loadingHistory ? (
-                     <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2">
-                       <Clock className="w-5 h-5 animate-spin" style={{ color: textMuted }} />
-                       <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs...</span>
+                     <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
+                       <div className="relative w-10 h-10">
+                         <svg viewBox="0 0 40 40" fill="none" style={{ width: 40, height: 40, transform: "rotate(-90deg)" }}>
+                           <circle cx="20" cy="20" r="16" stroke={isLight ? "#e2e8f0" : "#1e293b"} strokeWidth="3" />
+                           <circle cx="20" cy="20" r="16" stroke={green} strokeWidth="3" strokeDasharray="100.53" strokeDashoffset="25.13" strokeLinecap="round" className="animate-spin" style={{ transformOrigin: "20px 20px" }} />
+                         </svg>
+                       </div>
+                       <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs&#x2026;</span>
                      </div>
                    ) : (
                      <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
@@ -5897,81 +6125,98 @@ export default function Tickets() {
         </div>
       )}
 
-      {addModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-             onClick={e => e.stopPropagation()}>
-          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-               onClick={e => e.stopPropagation()}
-               onMouseDown={e => e.stopPropagation()}>
-            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
-                Add Ticket Details
-              </h3>
-              <button onClick={requestCloseAddModal} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
-              </button>
+      {addModalOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-start justify-center pt-4 sm:pt-8 px-3 sm:px-6 pb-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div
+            className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Add Schedule Ticket</h2>
+                    <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>
+                      Branch: {activeBranchLabel || 'Select branch'} · Negotiators for this branch only
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={requestCloseAddModal}
+                  className="p-1.5 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-              {/* Customer Info Section */}
+
+            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 flex flex-col gap-5">
               <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Customer Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Customer Information</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Preferred Date" required>
-                    <input type="date" value={addForm.preferredDate || ''} 
+                    <input type="date" value={addForm.preferredDate || ''}
                       onChange={e => setAddForm({ ...addForm, preferredDate: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Customer Name" required>
-                    <input type="text" value={addForm.customerName || ''} 
+                    <input type="text" value={addForm.customerName || ''}
                       onChange={e => setAddForm({ ...addForm, customerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Contact No." required>
-                    <input type="text" value={addForm.contactPhone || ''} 
+                    <input type="text" value={addForm.contactPhone || ''}
                       onChange={e => setAddForm({ ...addForm, contactPhone: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Destination/Address" required full>
-                    <textarea value={addForm.location || ''} 
-                      onChange={e => setAddForm({ ...addForm, location: e.target.value })}
-                      rows={2}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="District">
-                    <input type="text" value={addForm.district || ''} 
+                    <input type="text" value={addForm.district || ''}
                       onChange={e => setAddForm({ ...addForm, district: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Commit Terms">
-                    <textarea value={addForm.commitTerms || ''} 
+                  <Field label="Destination/Address" required full>
+                    <textarea value={addForm.location || ''}
+                      onChange={e => setAddForm({ ...addForm, location: e.target.value })}
+                      rows={2}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none w-full normal-case"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                  </Field>
+                  <Field label="Commit Terms" full>
+                    <input type="text" value={addForm.commitTerms || ''}
                       onChange={e => setAddForm({ ...addForm, commitTerms: e.target.value })}
-                      rows={1}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                 </div>
               </div>
 
-              {/* Service & Unit Info Section */}
               <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Service & Unit Details
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Service & Assignment</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Ticket Type" required>
                     <select
                       value={addForm.ticketCategory || 'INSTALLATION'}
                       onChange={e => setAddForm({ ...addForm, ticketCategory: e.target.value as TicketCategoryValue })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                     >
                       {FIELD_TICKET_CATEGORIES.map(opt => (
@@ -5980,68 +6225,73 @@ export default function Tickets() {
                     </select>
                   </Field>
                   <Field label="Brand / Unit Type">
-                    <input type="text" value={addForm.unitType || ''} 
+                    <input type="text" value={addForm.unitType || ''}
                       onChange={e => setAddForm({ ...addForm, unitType: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Dealer (DLR)">
-                    <input type="text" value={addForm.sourceVendor || ''} 
+                    <input type="text" value={addForm.sourceVendor || ''}
                       onChange={e => setAddForm({ ...addForm, sourceVendor: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label={isTaguigServices ? 'Service / Driver' : 'Service / Driver'}>
+                  <Field label="Service / Driver">
                     <input type="text" value={addForm.serviceDriver || ''}
                       placeholder="e.g. T3 (DOMINIC) - 1"
                       onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                     <input type="text" value={addForm.installerName || ''}
                       placeholder="e.g. RYAN - 1"
                       onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Negotiator" required>
-                    <select value={addForm.negotiatorId || ''}
+                    <select
+                      value={addForm.negotiatorId || ''}
                       onChange={e => setAddForm({ ...addForm, negotiatorId: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
-                      <option value="">-- Select negotiator --</option>
-                      {addModalNegotiators.map(emp => {
-                        const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
-                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
-                        return (
-                          <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
-                        )
-                      })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">
+                        {addModalNegotiators.length ? `-- Select ${activeBranchLabel} negotiator --` : '-- No negotiators for this branch --'}
+                      </option>
+                      {addModalNegotiators.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                      ))}
                     </select>
+                    {addModalNegotiators.length === 0 && (
+                      <span className="text-[10px] font-semibold text-amber-600 mt-1">
+                        No negotiators assigned to {activeBranchLabel || 'this branch'}.
+                      </span>
+                    )}
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={addForm.ticketNumber || ''}
                       placeholder="Auto-generated if left blank (e.g. AS-01)"
                       onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Control No. / SI (Aircon)">
                     <input type="text" value={addForm.controlNumber || ''}
                       placeholder="From import only — aircon papers / SI"
                       onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Payment (optional)
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Payment (optional)</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Mode of Payment">
                     <select value={addForm.modeOfPayment || ''}
                       onChange={e => {
@@ -6054,7 +6304,7 @@ export default function Tickets() {
                             : prev.installationCharges,
                         }))
                       }}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
                       <option value="">-- Select --</option>
                       <option value="CASH">CASH</option>
@@ -6070,27 +6320,38 @@ export default function Tickets() {
                       value={addForm.installationCharges ?? ''}
                       disabled={addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL'}
                       onChange={e => setAddForm({ ...addForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full disabled:opacity-60"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                 </div>
               </div>
             </div>
 
-            <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
-              <button onClick={requestCloseAddModal}
-                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+            <div
+              className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-end gap-2.5 border-t"
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
+            >
+              <button
+                type="button"
+                onClick={requestCloseAddModal}
+                className="px-5 py-2 rounded-lg text-xs font-bold border transition-colors"
+                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+              >
                 Cancel
               </button>
-              <button onClick={promptSaveManualTicket}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
-                style={{ backgroundColor: green }}>
-                Save Changes
+              <button
+                type="button"
+                onClick={promptSaveManualTicket}
+                disabled={!addForm.negotiatorId || addModalNegotiators.length === 0}
+                className="px-6 py-2 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                Save Ticket
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {editModalOpen && (() => {
@@ -6230,13 +6491,9 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
                       <option value="">-- Select negotiator --</option>
-                      {editModalNegotiators.map(emp => {
-                        const branchName = emp.branchId ? getBranchDisplayName(emp.branchId) : ''
-                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
-                        return (
-                          <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
-                        )
-                      })}
+                      {editModalNegotiators.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                      ))}
                     </select>
                   </Field>
                   <Field label="Ticket No.">
@@ -6445,81 +6702,174 @@ export default function Tickets() {
 
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
 
-      {reschedDialog && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-          onClick={closeReschedDialog}
-        >
+      {reschedDialog && (() => {
+        const todayKey = todayDateKey()
+        const todayParts = todayKey.split('-').map(Number)
+        const fallback = new Date(`${todayKey}T00:00:00`)
+        const calYear = reschedCalMonth?.year ?? fallback.getFullYear()
+        const calMonth = reschedCalMonth?.month ?? fallback.getMonth()
+        const calKey = `resched-cal-${reschedDialog.ticket.id}`
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+        const firstDow = new Date(calYear, calMonth, 1).getDay()
+        const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+        const selLabel = reschedToDate
+          ? new Date(`${reschedToDate}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+          : ''
+        const isPast = (y: number, m: number, d: number) => {
+          if (y < todayParts[0]) return true
+          if (y === todayParts[0] && m < todayParts[1]) return true
+          if (y === todayParts[0] && m === todayParts[1] && d < todayParts[2]) return true
+          return false
+        }
+        const goMonth = (delta: number) => {
+          const cur = new Date(calYear, calMonth, 1)
+          cur.setMonth(cur.getMonth() + delta)
+          setReschedCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+        }
+        return (
           <div
-            className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-            onClick={e => e.stopPropagation()}
+            key={calKey}
+            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(6px)' }}
+            onClick={closeReschedDialog}
           >
-            <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
-              <h3 className="text-sm font-black" style={{ color: textPrimary }}>Reschedule appointment</h3>
-              <p className="text-xs mt-1" style={{ color: textMuted }}>
-                {getCustomerDisplayName(reschedDialog.ticket)}
-                {getPreferredDateKey(reschedDialog.ticket)
-                  ? ` · currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
-                  : ''}
-              </p>
-            </div>
-            <div className="px-5 py-4 space-y-4">
-              <Field label="Reschedule to" required={!reschedPending}>
-                <input
-                  type="date"
-                  autoFocus={!reschedPending}
-                  disabled={reschedPending}
-                  value={reschedToDate}
-                  onChange={e => {
-                    setReschedToDate(e.target.value)
-                    setReschedPending(false)
-                  }}
-                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full disabled:opacity-50"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
-              </Field>
-              <label className="flex items-start gap-2.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
-                <input
-                  type="checkbox"
-                  checked={reschedPending}
-                  onChange={e => {
-                    setReschedPending(e.target.checked)
-                    if (e.target.checked) setReschedToDate('')
-                  }}
-                  className="mt-0.5 rounded border-slate-300"
-                />
-                <span>
-                  Pending — no date slot available yet
-                  <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
-                    Ticket stays on the current schedule date until a new slot is confirmed.
+            <div
+              className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
+                <h3 className="text-sm font-black" style={{ color: textPrimary }}>Reschedule appointment</h3>
+                <p className="text-xs mt-1" style={{ color: textMuted }}>
+                  {getCustomerDisplayName(reschedDialog.ticket)}
+                  {getPreferredDateKey(reschedDialog.ticket)
+                    ? ` · currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
+                    : ''}
+                </p>
+              </div>
+
+              {/* Calendar */}
+              <div className="px-4 pt-4 pb-1" style={{ opacity: reschedPending ? 0.4 : 1, pointerEvents: reschedPending ? 'none' : 'auto' }}>
+                {/* Selected date display */}
+                <div className="mb-3 text-center">
+                  <span
+                    className="text-base font-extrabold tracking-tight"
+                    style={{ color: reschedToDate ? green : textMuted }}
+                  >
+                    {reschedToDate ? selLabel : 'No date selected'}
                   </span>
-                </span>
-              </label>
-            </div>
-            <div className="px-5 py-4 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
-              <button
-                type="button"
-                onClick={closeReschedDialog}
-                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void commitInlineReschedule()}
-                disabled={!reschedPending && !reschedToDate.trim()}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: green }}
-              >
-                {reschedPending ? 'Mark Pending' : 'Reschedule'}
-              </button>
+                </div>
+
+                {/* Month nav */}
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <button
+                    type="button"
+                    onClick={() => goMonth(-1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
+                    style={{ color: textMuted, backgroundColor: 'transparent' }}
+                  >
+                    ‹
+                  </button>
+                  <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => goMonth(1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
+                    style={{ color: textMuted, backgroundColor: 'transparent' }}
+                  >
+                    ›
+                  </button>
+                </div>
+
+                {/* Day-of-week header */}
+                <div className="grid grid-cols-7 mb-1">
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                    <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
+                  ))}
+                </div>
+
+                {/* Days grid */}
+                <div className="grid grid-cols-7 gap-y-0.5 mb-1">
+                  {Array.from({ length: firstDow }).map((_, i) => <div key={`empty-${i}`} />)}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1
+                    const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                    const past = isPast(calYear, calMonth + 1, day)
+                    const isToday = dKey === todayKey
+                    const isSel = dKey === reschedToDate
+                    return (
+                      <button
+                        key={dKey}
+                        type="button"
+                        disabled={past}
+                        onClick={() => { setReschedToDate(dKey); setReschedPending(false) }}
+                        className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all"
+                        style={{
+                          color: isSel ? '#fff' : past ? (isLight ? '#cbd5e1' : '#2d3f5a') : isToday ? green : textPrimary,
+                          backgroundColor: isSel ? green : 'transparent',
+                          cursor: past ? 'not-allowed' : 'pointer',
+                          fontWeight: isToday && !isSel ? 800 : 600,
+                        }}
+                      >
+                        {day}
+                        {isToday && !isSel && (
+                          <span
+                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                            style={{ backgroundColor: green }}
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Pending checkbox */}
+              <div className="px-5 pb-4">
+                <label className="flex items-start gap-2.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+                  <input
+                    type="checkbox"
+                    checked={reschedPending}
+                    onChange={e => {
+                      setReschedPending(e.target.checked)
+                      if (e.target.checked) setReschedToDate('')
+                    }}
+                    className="mt-0.5 rounded border-slate-300"
+                  />
+                  <span>
+                    Pending — no date slot available yet
+                    <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
+                      Ticket stays on the current schedule date until a new slot is confirmed.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
+                <button
+                  type="button"
+                  onClick={closeReschedDialog}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void commitInlineReschedule()}
+                  disabled={!reschedPending && !reschedToDate.trim()}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
+                  style={{ backgroundColor: green }}
+                >
+                  {reschedPending ? 'Mark Pending' : 'Reschedule'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
