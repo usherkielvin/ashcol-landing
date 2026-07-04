@@ -622,6 +622,17 @@ const isRelayPostInstallWarranty = (ticket: Ticket) => {
 /** Negotiator set install date — ticket belongs on Schedules, not Relays. */
 const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(parseAcDetails(ticket).finalDate?.trim())
 
+/** Ticket created/imported on Schedules (not a Relays negotiation row). */
+const isScheduledManualTicket = (ticket: Ticket): boolean => {
+  const details = parseAcDetails(ticket)
+  if (details.scheduledDate?.trim()) return true
+  if (details.finalDate?.trim()) return true
+  const status = (ticket.status || '').toUpperCase()
+  if (status === 'SCHEDULED' || status === 'RESCHED') return true
+  if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
+  return false
+}
+
 /** Warranty queue rows belong on Archives + Registration, not the Relays masterlist. */
 const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
   if (isWarrantyRegistrationTicket(ticket)) return true
@@ -689,18 +700,6 @@ const isRelayCustomerDuplicate = (candidate: Ticket, existing: Ticket): boolean 
   const existingKey = normalizeRelayCustomerKey(existing)
   if (!candidateKey || !existingKey || candidateKey !== existingKey) return false
   return relayCustomerPhonesMatch(candidate, existing)
-}
-
-/** Ticket created/imported on Schedules (not a Relays negotiation row). */
-const isScheduledManualTicket = (ticket: Ticket): boolean => {
-  const details = parseAcDetails(ticket)
-  if (details.scheduledDate?.trim()) return true
-  if (details.finalDate?.trim()) return true
-  const status = (ticket.status || '').toUpperCase()
-  if (status === 'SCHEDULED' || status === 'RESCHED') return true
-  // Schedule intake always has a preferred/schedule date; Relays pending rows do not.
-  if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
-  return false
 }
 
 /** One row per customer / ticket number on Relays — prefer the scheduled copy. */
@@ -1805,12 +1804,13 @@ export default function ClientMasterlist() {
       ? (normalizeRelayTicketNumber(addFormSyncTarget as Ticket) || addForm.ticketNumber?.trim())
       : addForm.ticketNumber?.trim()) || undefined
 
+    const createBrandHp = formatBrandCapacityLabel(addForm.brand, addForm.capacity)
     const createPayload = {
       title: addForm.title,
       description: addForm.description || addForm.remarksUpdate || 'Manual client ticket',
       customerName: addForm.customerName,
       serviceType: addForm.serviceType,
-      unitType: addForm.unitType,
+      unitType: createBrandHp || addForm.unitType,
       contactPhone: cleanedPhones[0] || undefined,
       location: addForm.locationRaw?.trim() || 'No Address Provided',
       sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
@@ -1850,7 +1850,7 @@ export default function ClientMasterlist() {
       priorityTag: createPayload.priorityTag,
       district: createPayload.district,
       commitType: createPayload.commitType,
-      installerName: createPayload.installerName,
+      installerName: undefined,
       assignedTo: createPayload.assignedTo,
       negotiatorId: createPayload.negotiatorId,
       serviceVehicle: createPayload.serviceVehicle,
@@ -1993,7 +1993,14 @@ export default function ClientMasterlist() {
     payload.priorityTag = draft.priorityTag || null
     payload.district = draft.district || null
     payload.commitType = draft.commitType || null
-    payload.installerName = draft.installerName || null
+    // Never store negotiator name in installerName (schedules INSTALLER column is field crew only)
+    const negotiatorName = String(employees.find((e: { id: string; name?: string }) => e.id === draft.assignTechId)?.name || '').trim()
+    let installerName = (draft.installerName || '').trim()
+    if (installerName && negotiatorName
+      && installerName.localeCompare(negotiatorName, undefined, { sensitivity: 'base' }) === 0) {
+      installerName = ''
+    }
+    payload.installerName = installerName
     payload.serviceVehicle = draft.serviceVehicle || null
     const newRemark = (draft.remarksUpdate || '').trim()
     if (newRemark) {
@@ -2033,7 +2040,8 @@ export default function ClientMasterlist() {
     payload.images = draft.images || null
     payload.contactPhone = draft.phoneNumbers[0] || null
     payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
-    payload.unitType = draft.unitType || null
+    const brandHpLabel = formatBrandCapacityLabel(draft.brand, draft.capacity)
+    payload.unitType = brandHpLabel || draft.unitType || null
     payload.serviceType = draft.serviceType || null
 
     const optimisticTicket: Ticket = {
@@ -2051,7 +2059,7 @@ export default function ClientMasterlist() {
       priorityTag: draft.priorityTag || selectedTicket.priorityTag,
       district: draft.district || selectedTicket.district,
       commitType: draft.commitType || selectedTicket.commitType,
-      installerName: draft.installerName || selectedTicket.installerName,
+      installerName: installerName || undefined,
       serviceVehicle: draft.serviceVehicle || selectedTicket.serviceVehicle,
       remarksUpdate: newRemark || selectedTicket.remarksUpdate,
       installationCharges: Number(draft.installationCharges),
@@ -2063,7 +2071,7 @@ export default function ClientMasterlist() {
       images: draft.images || selectedTicket.images,
       contactPhone: draft.phoneNumbers[0] || selectedTicket.contactPhone,
       sourceVendor: payload.sourceVendor || selectedTicket.sourceVendor,
-      unitType: draft.unitType || selectedTicket.unitType,
+      unitType: brandHpLabel || draft.unitType || selectedTicket.unitType,
       serviceType: draft.serviceType || selectedTicket.serviceType,
       updatedAt: new Date().toISOString(),
     }

@@ -23,6 +23,7 @@ import {
   isFieldCategory,
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
+import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Ticket {
@@ -494,23 +495,31 @@ function parseDistrict(loc: any, explicit?: string): string {
   return (loc?.district || loc?.city || '').trim()
 }
 
+function isGenericUnitTypeLabel(value?: string | null): boolean {
+  const normalized = (value || '').trim().toLowerCase()
+  return !normalized
+    || normalized === 'split ac'
+    || normalized === 'split'
+    || normalized === 'ac'
+    || normalized === 'window ac'
+    || normalized === 'window'
+}
+
+/** Brand / HP for schedules — prefer acDetails brand+capacity over generic unitType like "Split AC". */
 function parseBrand(ticket: Ticket): string {
-  if (ticket.unitType || ticket.unit_type) return ticket.unitType || ticket.unit_type || ''
-  const raw = ticket.acDetails || ticket.ac_details
-  if (raw) {
-    try {
-      const arr = JSON.parse(raw)
-      const a = Array.isArray(arr) ? arr : [arr]
-      const brands: string[] = []
-      for (const u of a) {
-        ;(Array.isArray(u?.details) ? u.details : []).forEach((d: any) => { if (d?.brand) brands.push(d.brand) })
-        if (u?.brand) brands.push(u.brand)
-      }
-      if (brands.length) return brands.join(', ')
-      for (const u of a) { if (u?.unitType) return u.unitType }
-    } catch { /* fall through */ }
-  }
-  return ticket.unitType || ticket.unit_type || ''
+  const fromAc = parseBrandFromAcDetails(ticket.acDetails || ticket.ac_details)
+  if (fromAc) return fromAc
+
+  const meta = parseAcMeta(ticket)
+  const joined = formatBrandCapacityLabel(
+    typeof meta.brand === 'string' ? meta.brand : '',
+    typeof meta.capacity === 'string' ? meta.capacity : '',
+  )
+  if (joined && !isGenericUnitTypeLabel(joined)) return joined
+
+  const unit = (ticket.unitType || ticket.unit_type || '').trim()
+  if (unit && !isGenericUnitTypeLabel(unit)) return unit
+  return joined || unit || ''
 }
 
 function parseAcMeta(ticket: Ticket): any {
@@ -924,37 +933,62 @@ function normalizeImportPaymentMode(raw?: string | null): string {
   return v
 }
 
-function getInstallerDisplay(ticket: Ticket): string {
-  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
-  if (direct) return direct
+function resolveNegotiatorDisplayName(
+  ticket: Ticket,
+  employees?: { id: string; name: string }[],
+): string {
+  const negId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+  if (negId && employees?.length) {
+    const match = employees.find(e => e.id === negId)
+    if (match?.name?.trim()) return match.name.trim()
+  }
   const meta = parseAcMeta(ticket)
-  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
-  return fromMeta
+  const fromMeta = String(meta.negotiatorName || meta.negotiator || '').trim()
+  if (fromMeta) return fromMeta
+
+  const assignedTo = (ticket.assignedTo || '').trim()
+  if (negId && assignedTo && negId === assignedTo) {
+    const assignedName = (
+      ticket.assignedEmployeeName
+      || ticket.assigned_employee_name
+      || (ticket as Ticket & { negotiatorName?: string }).negotiatorName
+      || ''
+    ).trim()
+    if (assignedName) return assignedName
+  }
+  return ''
 }
 
-function resolveNegotiatorDisplayName(ticket: Ticket): string {
-  const direct = (
-    ticket.assignedEmployeeName
-    || ticket.assigned_employee_name
-    || (ticket as Ticket & { negotiatorName?: string }).negotiatorName
-    || ''
-  ).trim()
-  if (direct) return direct
-  const meta = parseAcMeta(ticket)
-  return String(meta.negotiatorName || meta.negotiator || '').trim()
-}
-
-function isNegotiatorInstallerName(ticket: Ticket, installer: string): boolean {
+function isNegotiatorInstallerName(
+  ticket: Ticket,
+  installer: string,
+  employees?: { id: string; name: string }[],
+): boolean {
   const val = installer.trim()
   if (!val) return false
-  const negotiator = resolveNegotiatorDisplayName(ticket)
+  const negotiator = resolveNegotiatorDisplayName(ticket, employees)
   return Boolean(negotiator && val.localeCompare(negotiator, undefined, { sensitivity: 'base' }) === 0)
 }
 
-function getMyTicketsInstallerDisplay(ticket: Ticket): string {
-  const installer = getInstallerDisplay(ticket).trim()
-  if (!installer || isNegotiatorInstallerName(ticket, installer)) return ''
+/** Field installer/technician only — never the relay negotiator. */
+function getInstallerDisplay(
+  ticket: Ticket,
+  employees?: { id: string; name: string }[],
+): string {
+  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
+  const meta = parseAcMeta(ticket)
+  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
+  const installer = direct || fromMeta
+  if (!installer) return ''
+  if (isNegotiatorInstallerName(ticket, installer, employees)) return ''
   return installer
+}
+
+function getMyTicketsInstallerDisplay(
+  ticket: Ticket,
+  employees?: { id: string; name: string }[],
+): string {
+  return getInstallerDisplay(ticket, employees)
 }
 
 function formatRelayTicketTypeShort(ticket: Ticket): string {
@@ -1057,8 +1091,13 @@ function compareNameSiteStrings(a: string, b: string): number {
   return pa.site - pb.site
 }
 
-function ticketColumnText(ticket: Ticket, colLabel: string, options?: { myTickets?: boolean }): string {
+function ticketColumnText(
+  ticket: Ticket,
+  colLabel: string,
+  options?: { myTickets?: boolean; employees?: { id: string; name: string }[] },
+): string {
   const myTickets = options?.myTickets ?? false
+  const employees = options?.employees
   switch (colLabel) {
     case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
@@ -1068,8 +1107,8 @@ function ticketColumnText(ticket: Ticket, colLabel: string, options?: { myTicket
     case 'STATUS': return ticket.status || ''
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
-    case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
-    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
+    case 'INSTALLER': return getInstallerDisplay(ticket, employees)
+    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
@@ -1080,7 +1119,7 @@ function compareTicketsByColumn(
   a: Ticket,
   b: Ticket,
   colLabel: string,
-  options?: { myTickets?: boolean },
+  options?: { myTickets?: boolean; employees?: { id: string; name: string }[] },
 ): number {
   const av = ticketColumnText(a, colLabel, options)
   const bv = ticketColumnText(b, colLabel, options)
@@ -1091,17 +1130,10 @@ function compareTicketsByColumn(
 }
 
 function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
-  if (ticket.assignedEmployeeName) return ticket.assignedEmployeeName
-  const negId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
-  if (negId && employees?.length) {
-    const match = employees.find(e => e.id === negId)
-    if (match?.name) return match.name.trim()
-  }
-  const meta = parseAcMeta(ticket)
-  return String(meta.negotiatorName || meta.negotiator || '').trim()
+  return resolveNegotiatorDisplayName(ticket, employees)
 }
 
-const DEFAULT_TICKET_SORT = { column: 'INSTALLER', direction: 'asc' as const }
+const DEFAULT_TICKET_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
 
 function parseServiceDriverValue(
   raw?: string,
@@ -1205,7 +1237,16 @@ function buildImportCreateRow(
     status: importTargetDate ? 'SCHEDULED' : 'PENDING',
   }
 
-  if (importTargetDate) row.preferredDate = importTargetDate
+  if (importTargetDate) {
+    row.preferredDate = importTargetDate
+    row.source = 'SCHEDULE_MANUAL'
+    row.acDetails = JSON.stringify({
+      scheduleOutcome: '',
+      finalDate: '',
+      scheduledDate: importTargetDate,
+      scheduleIntake: true,
+    })
+  }
   if (options?.branchId) row.branchId = options.branchId
   if (options?.negotiatorId) {
     row.negotiatorId = options.negotiatorId
@@ -1258,6 +1299,7 @@ function buildPatchImportBody(
   if (updatedFields.status) body.status = updatedFields.status
   if (importTargetDate) {
     body.preferredDate = importTargetDate
+    body.source = 'SCHEDULE_MANUAL'
     if (!body.status) body.status = 'SCHEDULED'
   }
   if (assignToUserId) body.assignedTo = assignToUserId
@@ -1294,6 +1336,13 @@ function buildPatchImportBody(
       installerName: updatedFields.installerName,
       installer: updatedFields.installerName,
       technicianName: updatedFields.installerName,
+    })
+    acBase = { ...ticket, acDetails: body.acDetails as string }
+  }
+  if (importTargetDate) {
+    body.acDetails = mergeAcMeta(acBase, {
+      scheduledDate: importTargetDate,
+      scheduleIntake: true,
     })
   }
 
@@ -1488,7 +1537,12 @@ async function postArchiveServiceReport(
   notifyArchiveUpdated()
 }
 
-function getCellRawValue(ticket: Ticket, colLabel: string, myTickets = false): string {
+function getCellRawValue(
+  ticket: Ticket,
+  colLabel: string,
+  myTickets = false,
+  employees?: { id: string; name: string }[],
+): string {
   switch (colLabel) {
     case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
@@ -1498,8 +1552,8 @@ function getCellRawValue(ticket: Ticket, colLabel: string, myTickets = false): s
     case 'STATUS': return getScheduleStatusValue(ticket)
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
-    case 'INSTALLER': return myTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
-    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket)
+    case 'INSTALLER': return getInstallerDisplay(ticket, employees)
+    case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
@@ -2244,6 +2298,7 @@ export default function Tickets() {
         serviceType,
         ticketCategory: category,
         status: 'SCHEDULED',
+        source: 'SCHEDULE_MANUAL',
         location: (addForm.location || '').trim(),
         contactPhone: (addForm.contactPhone || '').trim(),
         unitType: addForm.unitType?.trim() || undefined,
@@ -2261,7 +2316,12 @@ export default function Tickets() {
         installationCharges: addForm.installationCharges != null && !Number.isNaN(Number(addForm.installationCharges))
           ? Number(addForm.installationCharges)
           : undefined,
-        acDetails: JSON.stringify({ scheduleOutcome: '', finalDate: '', scheduledDate }),
+        acDetails: JSON.stringify({
+          scheduleOutcome: '',
+          finalDate: '',
+          scheduledDate,
+          scheduleIntake: true,
+        }),
         branchId: targetBranch,
       }
       const tempId = `temp-${Date.now()}`
@@ -2330,12 +2390,10 @@ export default function Tickets() {
       location: formatAddress(ticket.location),
       district: ticket.district || parseDistrict(ticket.location) || '',
       commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
-      unitType: ticket.unitType || ticket.unit_type || parseBrand(ticket) || '',
+      unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
-      installerName: isMyTickets
-        ? getMyTicketsInstallerDisplay(ticket)
-        : (getInstallerDisplay(ticket) || ticket.installerName || ''),
+      installerName: getInstallerDisplay(ticket, branchEmployees),
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
       branchId: ticket.branchId || ticket.branch_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
@@ -3100,8 +3158,9 @@ export default function Tickets() {
       { label: 'DESTINATION',     display: 'DISTRICT',                                    weight: 12, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'COMMIT',          display: "COMMIT",                                    weight: 12, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 11, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'COMMIT',          display: "COMMIT",                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
@@ -3321,7 +3380,7 @@ export default function Tickets() {
     let list = filtered
     if (sortConfig) {
       list = [...list].sort((a, b) => {
-        const cmpOpts = { myTickets: isMyTickets }
+        const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees }
         const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
         if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
         if (sortConfig.column !== "CUSTOMER'S NAME") {
@@ -3332,7 +3391,7 @@ export default function Tickets() {
       })
     }
     return list
-  }, [filtered, sortConfig])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees])
 
   const sortDiffersFromDefault =
     sortConfig.column !== DEFAULT_TICKET_SORT.column || sortConfig.direction !== DEFAULT_TICKET_SORT.direction
@@ -3409,7 +3468,8 @@ export default function Tickets() {
       case 'PAYMENT':         return formatCombinedPayment(ticket)
       case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-      case 'INSTALLER':       return isMyTickets ? getMyTicketsInstallerDisplay(ticket) : getInstallerDisplay(ticket)
+      case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees)
+      case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
       case 'NOTE':            return ticket.note || ''
       case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
       case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
@@ -3460,7 +3520,7 @@ export default function Tickets() {
       openStatusPicker(ticket)
       return
     }
-    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets) })
+    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees) })
   }
 
   const applyTicketPatchLocally = useCallback((ticketId: string, body: Record<string, unknown>, rollback?: Ticket) => {
@@ -3987,14 +4047,15 @@ export default function Tickets() {
       const statusVal = getScheduleStatusValue(ticket)
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
       const display = getScheduleStatusDisplay(ticket) || '—'
+      const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
       return (
         <span
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wide border cursor-pointer"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
           style={{ color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor, borderColor: badgeStyle.borderColor, maxWidth: '100%' }}
           title={canEdit ? `${display} — CLICK TO CHANGE` : display}
         >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
-          {canEdit && <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-80" />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
+          {canEdit && <ChevronDown className="w-2.5 h-2.5 shrink-0 opacity-70" />}
         </span>
       )
     }
@@ -4132,14 +4193,13 @@ export default function Tickets() {
     }
 
     if (label === 'INSTALLER') {
-      const curInstaller = isMyTickets ? getMyTicketsInstallerDisplay(ticket) : val
+      const curInstaller = getInstallerDisplay(ticket, branchEmployees)
       const prevInstaller = idx != null && idx > 0
-        ? (isMyTickets ? getMyTicketsInstallerDisplay(visible[idx - 1]) : getInstallerDisplay(visible[idx - 1]))
+        ? getInstallerDisplay(visible[idx - 1], branchEmployees)
         : ''
       const curToken = parseNameSiteToken(curInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
-      const displayInstaller = isMyTickets ? curInstaller : val
       return withEditPencil(
         <span
           style={{
@@ -4149,18 +4209,20 @@ export default function Tickets() {
             paddingTop: isNewInstallerGroup ? 8 : 0,
             marginTop: isNewInstallerGroup ? 4 : 0,
           }}
-          title={displayInstaller}
+          title={curInstaller}
         >
-          {displayInstaller || '—'}
+          {curInstaller || '—'}
         </span>,
         ticket, label, rowGhost,
       )
     }
 
     if (label === 'NEGOTIATOR') {
-      const negName = getTicketNegotiatorName(ticket, branchEmployees) || val || '—'
+      const negName = getTicketNegotiatorName(ticket, branchEmployees) || '—'
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>{negName}</span>,
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
+          {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
+        </span>,
         ticket, label, rowGhost,
       )
     }
@@ -4735,14 +4797,16 @@ export default function Tickets() {
         const district = parseDistrict(t.location, t.district)
         const brand = parseBrand(t)
         const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-        const installer = getInstallerDisplay(t)
+        const installer = getInstallerDisplay(t, branchEmployees)
         const serviceDriver = formatServiceDriver(t)
         const update = t.remarks || ''
         const note = t.note || ''
         const commit = getF(t, 'commitType', 'commitTerms', 'description')
         const custName = getCustomerDisplayName(t) || t.title
         const negotiatorId = t.negotiatorId || t.negotiator_id || ''
-        const negotiatorName = branchEmployees.find(e => e.id === negotiatorId)?.name || ''
+        const negotiatorName = getTicketNegotiatorName(t, branchEmployees)
+          || branchEmployees.find(e => e.id === negotiatorId)?.name
+          || ''
         const preferredDate = t.preferredDate || t.preferred_date
         const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
