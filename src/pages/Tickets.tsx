@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
+  Eye, Upload, ChevronDown, Camera, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -87,6 +87,7 @@ interface Ticket {
   installation_charges?: number
   modeOfPayment?: string
   mode_of_payment?: string
+  createdBy?: string
 }
 
 type ImportUpdate = {
@@ -2885,12 +2886,78 @@ export default function Tickets() {
     }
     void commitSaveEditTicket()
   }
+  /** Resolve the ticket being edited even if a list refresh dropped it from `tickets`. */
+  const resolveEditOriginalTicket = (): Ticket | null => {
+    const formId = (editForm.id || '').trim()
+    if (!formId) return null
+
+    const fromList = tickets.find(t => t.id === formId)
+    if (fromList) return fromList
+
+    const fromOptimistic = optimisticTicketsRef.current.get(formId)
+    if (fromOptimistic) return fromOptimistic
+
+    const formTn = (editForm.ticketNumber || '').trim().toUpperCase()
+    if (formTn) {
+      const byNumber = tickets.find(t =>
+        (t.ticketNumber || t.ticket_number || '').trim().toUpperCase() === formTn,
+      )
+      if (byNumber) return byNumber
+      for (const t of optimisticTicketsRef.current.values()) {
+        if ((t.ticketNumber || t.ticket_number || '').trim().toUpperCase() === formTn) return t
+      }
+    }
+
+    // Modal still has the row data — save by id even if the list no longer holds it.
+    if (!isTempTicketId(formId)) {
+      return {
+        id: formId,
+        title: editForm.customerName || '',
+        status: editForm.status || 'SCHEDULED',
+        customerName: editForm.customerName,
+        customer_name: editForm.customerName,
+        contactPhone: editForm.contactPhone,
+        contact_phone: editForm.contactPhone,
+        location: editForm.location,
+        district: editForm.district,
+        commitTerms: editForm.commitTerms,
+        commitType: editForm.commitTerms,
+        unitType: editForm.unitType,
+        sourceVendor: editForm.sourceVendor,
+        installerName: editForm.installerName,
+        negotiatorId: editForm.negotiatorId,
+        branchId: editForm.branchId,
+        ticketNumber: editForm.ticketNumber,
+        ticket_number: editForm.ticketNumber,
+        controlNumber: editForm.controlNumber,
+        ticketCategory: editForm.ticketCategory,
+        installationCharges: editForm.installationCharges,
+        modeOfPayment: editForm.modeOfPayment,
+        remarks: editForm.remarks,
+        remarksUpdate: editForm.remarks,
+        preferredDate: editForm.preferredDate,
+        acDetails: editForm.acDetails,
+      } as Ticket
+    }
+
+    return null
+  }
+
   const commitSaveEditTicket = async () => {
     if (!editForm.id) return
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
     const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
     try {
+      const originalTicket = resolveEditOriginalTicket()
+      if (!originalTicket?.id) {
+        throw new Error('Ticket not found — refresh the page and try again.')
+      }
+      // Keep editForm.id aligned if we resolved via ticket number.
+      if (editForm.id !== originalTicket.id) {
+        editForm.id = originalTicket.id
+      }
+
       const tokenVal = token()
       const category = editForm.ticketCategory || 'INSTALLATION'
       const { serviceType, serviceVehicle } = parseServiceDriverValue(editForm.serviceDriver, category)
@@ -2949,8 +3016,7 @@ export default function Tickets() {
         }
       }
 
-      const originalTicket = tickets.find(t => t.id === editForm.id)
-      const leavingResched = !isReschedStatus && originalTicket && ticketHasRescheduleMeta(originalTicket)
+      const leavingResched = !isReschedStatus && ticketHasRescheduleMeta(originalTicket)
 
       if (isReschedStatus) {
         body.status = 'RESCHED'
@@ -3088,10 +3154,6 @@ export default function Tickets() {
 
       setEditFormSnapshot(JSON.stringify(editForm))
       setEditModalOpen(false)
-
-      if (!originalTicket) {
-        throw new Error('Ticket not found')
-      }
 
       const archiveOriginal = originalTicket
       const archiveFinalBody = finalBody
@@ -5744,7 +5806,7 @@ export default function Tickets() {
       })()}
 
       {/* ── Full Details Modal ── */}
-      {detailTicket && (() => {
+      {detailTicket && ReactDOM.createPortal((() => {
         const t = detailTicket
         const scheduleStatusValue = getScheduleStatusValue(t)
         const scheduleBadgeStyle = getScheduleStatusBadgeStyle(scheduleStatusValue, isLight)
@@ -5776,6 +5838,7 @@ export default function Tickets() {
         const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP'
           ? (isLight ? '#1d4ed8' : '#93c5fd')
           : green
+        const branchName = branches.find(b => b.id === (t.branchId || t.branch_id))?.name || 'UNASSIGNED'
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
@@ -5796,40 +5859,90 @@ export default function Tickets() {
         )
 
         return (
-          <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 sm:p-6"
-               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-[3px]"
+               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
                onClick={() => setDetailTicket(null)}>
-            <div className="flex flex-col w-full max-w-5xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+            <div className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95"
+                 style={{
+                   backgroundColor: cardBg,
+                   border: `1px solid ${border}`,
+                   height: 'calc(100vh - 6px)',
+                   maxHeight: 'calc(100vh - 6px)',
+                   maxWidth: 'min(1180px, calc(100vw - 6px))',
+                 }}
                  onClick={e => e.stopPropagation()}>
 
                {/* Header */}
-               <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
-                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-                 <div className="flex flex-col gap-1.5 min-w-0">
-                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
-                     {isMyTickets ? 'My Ticket Details' : 'Schedule Details'}
-                   </p>
-                   <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
-                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
-                     Ticket No: {t.ticketNumber || t.ticket_number || '—'}
-                   </p>
-                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>ID: {t.id}</p>
-                   {isDuplicateName && (
-                     <p className="text-[10px] font-bold" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
-                       Duplicate customer name on this date — each row has its own ticket ID.
-                     </p>
-                   )}
-                   <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
-                         style={{ color: scheduleBadgeStyle.color, backgroundColor: scheduleBadgeStyle.backgroundColor, borderColor: scheduleBadgeStyle.borderColor }}>
-                     <Clock className="w-3 h-3" />{scheduleStatusDisplay}
-                   </span>
+               <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
+                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                 
+                 {/* Header Row 1 */}
+                 <div className="flex items-center justify-between w-full">
+                   <div className="min-w-0 flex-1 mr-4">
+                     <div className="flex items-center gap-3 flex-wrap">
+                       <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                         {custName || 'Direct Client'}
+                       </h2>
+                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                         backgroundColor: scheduleBadgeStyle.backgroundColor,
+                         color: scheduleBadgeStyle.color,
+                         border: `1px solid ${scheduleBadgeStyle.borderColor || 'transparent'}`,
+                       }}>
+                         {scheduleStatusDisplay}
+                       </span>
+                       {branchName !== 'UNASSIGNED' && (
+                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                           backgroundColor: inputBg,
+                           color: textMuted,
+                           border: `1px solid ${border}`,
+                         }}>
+                           {branchName}
+                         </span>
+                       )}
+                       <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
+                         TICKET NO: {t.ticketNumber || t.ticket_number || '—'}
+                       </span>
+                       {isDuplicateName && (
+                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
+                           Duplicate Name
+                         </span>
+                       )}
+                     </div>
+                   </div>
+                   <button type="button" onClick={() => setDetailTicket(null)}
+                           className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                     <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
+                   </button>
                  </div>
-                 <button onClick={() => setDetailTicket(null)}
-                         className="p-2 rounded-lg shrink-0 hover:bg-slate-500/10 transition-colors"
-                         style={{ color: textMuted }}>
-                   <X className="w-4 h-4" />
-                 </button>
+
+                 {/* Header Row 2 */}
+                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
+                   <div>
+                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
+                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || '—'}</span>
+                   </div>
+                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                   <div>
+                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
+                     <span className="font-semibold text-xs font-mono" style={{ color: textPrimary }}>
+                       {t.createdBy || (t.customerEmail || 'System')}
+                     </span>
+                   </div>
+                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                   <div>
+                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
+                     <span className="font-semibold text-xs" style={{ color: textPrimary }}>
+                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : '—'}
+                     </span>
+                   </div>
+                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                   <div>
+                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
+                     <span className="font-semibold text-xs" style={{ color: textMuted }}>
+                       —
+                     </span>
+                   </div>
+                 </div>
                </div>
 
                {/* Two Column Body */}
@@ -6044,7 +6157,7 @@ export default function Tickets() {
               </div>
             </div>
         )
-      })()}
+      })(), document.body)}
 
       {/* ── Status Picker Modal ── */}
       {statusPicker && (() => {
