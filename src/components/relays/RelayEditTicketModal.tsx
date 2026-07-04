@@ -360,7 +360,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           {isAdmin ? <button type="button" onClick={onDelete} disabled={actionSaving} className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">Delete Ticket</button> : <div />}
           <div className="flex gap-2.5">
             <button type="button" onClick={onClose} className="px-5 py-2 border rounded-lg text-xs font-bold" style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>Cancel</button>
-            <button type="button" onClick={() => onSave(draft)} disabled={actionSaving} className="px-6 py-2 text-white rounded-lg text-xs font-bold disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>{actionSaving ? 'Saving...' : 'Save Changes'}</button>
+            <button type="button" onClick={() => onSave(draft)} className="px-6 py-2 text-white rounded-lg text-xs font-bold shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>Save Changes</button>
           </div>
         </div>
       </div>

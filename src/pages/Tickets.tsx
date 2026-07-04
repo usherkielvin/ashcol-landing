@@ -3046,7 +3046,7 @@ export default function Tickets() {
     x: number
     y: number
   } | null>(null)
-  const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
+  const [savingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const pendingSavesRef = useRef(new Map<string, {

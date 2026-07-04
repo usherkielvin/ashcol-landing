@@ -984,7 +984,6 @@ export default function ClientMasterlist() {
     relayedDate: new Date().toISOString().split('T')[0],
     finalDate: ''
   })
-  const [formSubmitting, setFormSubmitting] = useState(false)
   const [employees, setEmployees] = useState<any[]>([])
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
@@ -1117,6 +1116,107 @@ export default function ClientMasterlist() {
   const [actionSaving, setActionSaving] = useState(false)
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [merging, setMerging] = useState(false)
+
+  const pendingRelaySavesRef = useRef(new Map<string, {
+    body: Record<string, unknown>
+    rollback: Ticket
+  }>())
+  const activeRelaySavesRef = useRef(new Set<string>())
+
+  const persistRelayTicketsCache = useCallback((nextTickets: Ticket[]) => {
+    const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+    const cached = readTabCache<RelaysTabCache>(cacheKey)
+    writeTabCache(cacheKey, {
+      tickets: nextTickets,
+      branches: cached?.branches ?? branches,
+      employees: cached?.employees,
+      lastSyncAt: Date.now(),
+    })
+  }, [ticketScope, user, globalBranchId, branches])
+
+  /** Instant list update; optional rollback restores prior ticket. null nextTicket = remove. */
+  const applyRelayTicketLocally = useCallback((
+    ticketId: string,
+    nextTicket: Ticket | null,
+    rollback?: Ticket,
+  ) => {
+    const patchList = (prev: Ticket[], filterOut: boolean) => {
+      let list = prev.slice()
+      if (rollback) {
+        const idx = list.findIndex(t => t.id === ticketId)
+        if (idx >= 0) list[idx] = rollback
+        else list = [rollback, ...list]
+      } else if (nextTicket === null) {
+        list = list.filter(t => t.id !== ticketId)
+      } else {
+        const idx = list.findIndex(t => t.id === ticketId)
+        if (idx >= 0) list[idx] = nextTicket
+        else list = [nextTicket, ...list]
+      }
+      return filterOut ? filterRelaysTickets(list) : list
+    }
+
+    setTickets(prev => {
+      const next = patchList(prev, true)
+      persistRelayTicketsCache(next)
+      return next
+    })
+    setOpenFieldTickets(prev => patchList(prev, false))
+  }, [persistRelayTicketsCache])
+
+  const flushRelaySave = useCallback(async (ticketId: string) => {
+    if (activeRelaySavesRef.current.has(ticketId)) return
+    activeRelaySavesRef.current.add(ticketId)
+    try {
+      while (pendingRelaySavesRef.current.has(ticketId)) {
+        const job = pendingRelaySavesRef.current.get(ticketId)!
+        pendingRelaySavesRef.current.delete(ticketId)
+        try {
+          const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(job.body),
+          })
+          if (!res.ok) {
+            const errData = await res.json().catch(() => null)
+            throw new Error(errData?.message || errData?.error || `Status ${res.status}`)
+          }
+          clearRelaysCache()
+          clearWarrantyCache()
+        } catch (err: unknown) {
+          applyRelayTicketLocally(ticketId, null, job.rollback)
+          pendingRelaySavesRef.current.delete(ticketId)
+          alert(`Failed to update ticket: ${formatFetchError(err)}`)
+          break
+        }
+      }
+    } finally {
+      activeRelaySavesRef.current.delete(ticketId)
+      if (pendingRelaySavesRef.current.has(ticketId)) {
+        void flushRelaySave(ticketId)
+      }
+    }
+  }, [applyRelayTicketLocally])
+
+  const queueRelayPatch = useCallback((
+    ticket: Ticket,
+    body: Record<string, unknown>,
+    optimisticTicket: Ticket,
+  ) => {
+    const ticketId = ticket.id
+    const existing = pendingRelaySavesRef.current.get(ticketId)
+    pendingRelaySavesRef.current.set(ticketId, {
+      body: existing ? { ...existing.body, ...body } : body,
+      rollback: existing?.rollback ?? ticket,
+    })
+    applyRelayTicketLocally(ticketId, optimisticTicket)
+    setLastUpdatedTicketId(ticketId)
+    void flushRelaySave(ticketId)
+  }, [applyRelayTicketLocally, flushRelaySave])
 
   const mergeCandidates = useMemo(() => {
     if (!selectedTicket) return []
@@ -1660,8 +1760,8 @@ export default function ClientMasterlist() {
     fetchData({ soft: true })
   }
 
-  // Submit parsed/manual ticket
-  const handleFormCreateTicket = async (e: React.FormEvent) => {
+  // Submit parsed/manual ticket — show on list instantly, save in background
+  const handleFormCreateTicket = (e: React.FormEvent) => {
     e.preventDefault()
     const isAssignedOrScheduled = addForm.status !== 'PENDING' && addForm.status !== 'CANCELLED'
     if (isAssignedOrScheduled && !addForm.assignedTo) {
@@ -1676,158 +1776,190 @@ export default function ClientMasterlist() {
       )
       return
     }
-    setFormSubmitting(true)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const cleanedPhones = addPhoneNumbers.map(p => p.trim()).filter(Boolean)
-      const acDetailsObj = {
-        landmarks: addForm.landmarks || '',
-        brand: addForm.brand || '',
-        capacity: addForm.capacity || '',
-        sku: addForm.sku || '',
-        serialNumber: addForm.serialNumber || '',
-        alternatePhone: cleanedPhones.slice(1).join(', '),
-        relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
-        finalDate: ''
-      }
-      const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
-      const writeBranchId = resolvePortalWriteBranchId(
-        addForm.branchId || resolveRelayDefaultBranchId(),
-        user?.email,
-        user?.jobTitle,
-      )
-      const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
-      const syncTicketNumber = (addFormSyncTarget
-        ? (normalizeRelayTicketNumber(addFormSyncTarget as Ticket) || addForm.ticketNumber?.trim())
-        : addForm.ticketNumber?.trim()) || undefined
-      const res = await fetch(`${API_BASE_URL}/tickets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title: addForm.title,
-          description: addForm.description || addForm.remarksUpdate || 'Manual client ticket',
-          customerName: addForm.customerName,
-          serviceType: addForm.serviceType,
-          unitType: addForm.unitType,
-          contactPhone: cleanedPhones[0] || undefined,
-          location: addForm.locationRaw?.trim() || 'No Address Provided',
-          sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
-          preferredDate: addForm.preferredDate || undefined,
-          slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
-          priorityTag: addForm.priorityTag || undefined,
-          district: addForm.district || undefined,
-          commitType: addForm.commitType || undefined,
-          installerName: addForm.installerName || undefined,
-          assignedTo: addForm.assignedTo || undefined,
-          negotiatorId: addForm.assignedTo || undefined,
-          serviceVehicle: addForm.serviceVehicle || undefined,
-          remarksUpdate: addForm.remarksUpdate || undefined,
-          installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
-          modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
-          controlNumber: addForm.controlNumber || undefined,
-          ticketNumber: syncTicketNumber,
-          acDetails: JSON.stringify(acDetailsObj),
-          images: addForm.images || undefined,
-          status: addForm.status,
-          branchId: relayBranchId,
-        })
-      })
 
-      if (!res.ok) {
-        throw new Error(await readApiError(res))
-      }
-
-      const payload = await res.json().catch(() => null)
-      const parsed = parseCreatedTicketResponse(payload)
-      const createdTicket = (parsed || payload?.data || payload) as Ticket
-      if (!createdTicket?.id) {
-        await fetchData({ soft: true })
-        setIsAddModalOpen(false)
-        setFormSubmitting(false)
-        alert(addFormSyncTarget
-          ? `Relay data synced to ticket ${getTicketNumber(addFormSyncTarget as Ticket)}.`
-          : 'Ticket saved. Refreshing list…')
-        return
-      }
-
-      setLastUpdatedTicketId(createdTicket.id)
-      const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
-      setTickets(prev => {
-        const merged = mergeRelayTicketLists([createdTicket], prev)
-        setOpenFieldTickets(merged)
-        const filtered = filterRelaysTickets(merged)
-        const cached = readTabCache<RelaysTabCache>(cacheKey)
-        writeTabCache(cacheKey, {
-          tickets: filtered,
-          branches: cached?.branches,
-          employees: cached?.employees,
-        })
-        return filtered
-      })
-
-      const statusLabel = getRelayStatusLabel(createdTicket)
-      if (isAdmin) {
-        if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
-        else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
-      } else {
-        setActiveTab('MY_TICKETS')
-      }
-
-      setIsAddModalOpen(false)
-      setShowAddStoreField(false)
-      setAddStoreDraft('')
-      setAddPhoneNumbers([''])
-      setAddForm({
-        title: 'Installation service',
-        description: '',
-        serviceType: 'Installation',
-        customerName: '',
-        contactPhone: '',
-        locationRaw: '',
-        sourceVendor: 'Robinsons',
-        otherStoreName: '',
-        storeBranch: '',
-        unitType: 'Split AC',
-        preferredDate: '',
-        slaExpirationDate: '',
-        priorityTag: '',
-        district: '',
-        commitType: '',
-        installerName: '',
-        serviceVehicle: '',
-        remarksUpdate: '',
-        installationCharges: 0,
-        modeOfPayment: '',
-        controlNumber: '',
-        ticketNumber: '',
-        assignedTo: '',
-        landmarks: '',
-        brand: '',
-        capacity: '',
-        sku: '',
-        serialNumber: '',
-        alternatePhone: '',
-        images: '',
-        status: 'PENDING',
-        branchId: '',
-        relayedDate: new Date().toISOString().split('T')[0],
-        finalDate: ''
-      })
-      void fetchData({ soft: true })
-    } catch (e: any) {
-      alert(`Could not submit ticket: ${formatFetchError(e)}`)
-    } finally {
-      setFormSubmitting(false)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const cleanedPhones = addPhoneNumbers.map(p => p.trim()).filter(Boolean)
+    const acDetailsObj = {
+      landmarks: addForm.landmarks || '',
+      brand: addForm.brand || '',
+      capacity: addForm.capacity || '',
+      sku: addForm.sku || '',
+      serialNumber: addForm.serialNumber || '',
+      alternatePhone: cleanedPhones.slice(1).join(', '),
+      relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
+      finalDate: '',
     }
+    const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
+    const writeBranchId = resolvePortalWriteBranchId(
+      addForm.branchId || resolveRelayDefaultBranchId(),
+      user?.email,
+      user?.jobTitle,
+    )
+    const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
+    const syncTicketNumber = (addFormSyncTarget
+      ? (normalizeRelayTicketNumber(addFormSyncTarget as Ticket) || addForm.ticketNumber?.trim())
+      : addForm.ticketNumber?.trim()) || undefined
+
+    const createPayload = {
+      title: addForm.title,
+      description: addForm.description || addForm.remarksUpdate || 'Manual client ticket',
+      customerName: addForm.customerName,
+      serviceType: addForm.serviceType,
+      unitType: addForm.unitType,
+      contactPhone: cleanedPhones[0] || undefined,
+      location: addForm.locationRaw?.trim() || 'No Address Provided',
+      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      preferredDate: addForm.preferredDate || undefined,
+      slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
+      priorityTag: addForm.priorityTag || undefined,
+      district: addForm.district || undefined,
+      commitType: addForm.commitType || undefined,
+      installerName: addForm.installerName || undefined,
+      assignedTo: addForm.assignedTo || undefined,
+      negotiatorId: addForm.assignedTo || undefined,
+      serviceVehicle: addForm.serviceVehicle || undefined,
+      remarksUpdate: addForm.remarksUpdate || undefined,
+      installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
+      modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
+      controlNumber: addForm.controlNumber || undefined,
+      ticketNumber: syncTicketNumber,
+      acDetails: JSON.stringify(acDetailsObj),
+      images: addForm.images || undefined,
+      status: addForm.status,
+      branchId: relayBranchId,
+    }
+
+    const tempId = `temp-relay-${Date.now()}`
+    const optimisticTicket = {
+      id: tempId,
+      customerId: '',
+      title: createPayload.title,
+      description: createPayload.description,
+      customerName: createPayload.customerName,
+      serviceType: createPayload.serviceType,
+      unitType: createPayload.unitType,
+      contactPhone: createPayload.contactPhone,
+      location: createPayload.location,
+      sourceVendor: createPayload.sourceVendor,
+      preferredDate: createPayload.preferredDate,
+      priorityTag: createPayload.priorityTag,
+      district: createPayload.district,
+      commitType: createPayload.commitType,
+      installerName: createPayload.installerName,
+      assignedTo: createPayload.assignedTo,
+      negotiatorId: createPayload.negotiatorId,
+      serviceVehicle: createPayload.serviceVehicle,
+      remarksUpdate: createPayload.remarksUpdate,
+      installationCharges: createPayload.installationCharges,
+      modeOfPayment: createPayload.modeOfPayment,
+      controlNumber: createPayload.controlNumber,
+      ticketNumber: createPayload.ticketNumber,
+      acDetails: createPayload.acDetails,
+      images: createPayload.images,
+      status: createPayload.status,
+      branchId: createPayload.branchId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Ticket
+
+    applyRelayTicketLocally(tempId, optimisticTicket)
+    setLastUpdatedTicketId(tempId)
+
+    const statusLabel = getRelayStatusLabel(optimisticTicket)
+    if (isAdmin) {
+      if (statusLabel === 'Pending') setActiveTab('UNASSIGNED')
+      else if (statusLabel === 'Assigned' || statusLabel === 'Scheduled') setActiveTab('PENDING')
+    } else {
+      setActiveTab('MY_TICKETS')
+    }
+
+    setIsAddModalOpen(false)
+    setShowAddStoreField(false)
+    setAddStoreDraft('')
+    setAddPhoneNumbers([''])
+    setAddForm({
+      title: 'Installation service',
+      description: '',
+      serviceType: 'Installation',
+      customerName: '',
+      contactPhone: '',
+      locationRaw: '',
+      sourceVendor: 'Robinsons',
+      otherStoreName: '',
+      storeBranch: '',
+      unitType: 'Split AC',
+      preferredDate: '',
+      slaExpirationDate: '',
+      priorityTag: '',
+      district: '',
+      commitType: '',
+      installerName: '',
+      serviceVehicle: '',
+      remarksUpdate: '',
+      installationCharges: 0,
+      modeOfPayment: '',
+      controlNumber: '',
+      ticketNumber: '',
+      assignedTo: '',
+      landmarks: '',
+      brand: '',
+      capacity: '',
+      sku: '',
+      serialNumber: '',
+      alternatePhone: '',
+      images: '',
+      status: 'PENDING',
+      branchId: '',
+      relayedDate: new Date().toISOString().split('T')[0],
+      finalDate: '',
+    })
+
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/tickets`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(createPayload),
+        })
+        if (!res.ok) throw new Error(await readApiError(res))
+
+        const payload = await res.json().catch(() => null)
+        const parsed = parseCreatedTicketResponse(payload)
+        const createdTicket = (parsed || payload?.data || payload) as Ticket
+        if (!createdTicket?.id) {
+          applyRelayTicketLocally(tempId, null)
+          void fetchData({ soft: true })
+          return
+        }
+
+        setTickets(prev => {
+          const withoutTemp = prev.filter(t => t.id !== tempId)
+          const merged = mergeRelayTicketLists([createdTicket], withoutTemp)
+          const filtered = filterRelaysTickets(merged)
+          persistRelayTicketsCache(filtered)
+          return filtered
+        })
+        setOpenFieldTickets(prev => {
+          const withoutTemp = prev.filter(t => t.id !== tempId)
+          return mergeRelayTicketLists([createdTicket], withoutTemp)
+        })
+        setLastUpdatedTicketId(createdTicket.id)
+        clearRelaysCache()
+        clearWarrantyCache()
+      } catch (err: unknown) {
+        applyRelayTicketLocally(tempId, null)
+        alert(`Could not submit ticket: ${formatFetchError(err)}`)
+      }
+    })()
   }
 
-  // Save changes in action drawer
-  const handleDrawerActionSave = async (draft: RelayEditDraft) => {
+  // Save changes in action drawer — update list instantly, persist in background
+  const handleDrawerActionSave = (draft: RelayEditDraft) => {
     if (!selectedTicket) return
-    const keepPendingAssignment = selectedTicket && getTicketCategory(selectedTicket) === 'Collection'
+    const keepPendingAssignment = getTicketCategory(selectedTicket) === 'Collection'
     const finalStatus = (draft.assignTechId && draft.updateStatus === 'PENDING') ? 'ASSIGNED' : draft.updateStatus
 
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
@@ -1835,122 +1967,136 @@ export default function ClientMasterlist() {
       alert('Negotiator is required')
       return
     }
-    setActionSaving(true)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const payload: Record<string, any> = {}
 
-      if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
-        payload.branchId = ""
-        payload.assignedTo = ""
-        payload.status = finalStatus
-      } else {
-        payload.branchId = draft.assignBranchId || ""
-        payload.assignedTo = draft.assignTechId || ""
-        payload.status = finalStatus
-      }
-      payload.customerName = draft.customerName || null
-      payload.location = draft.location || null
-      payload.preferredDate = draft.preferredDate ? new Date(draft.preferredDate).toISOString() : null
-      payload.priorityTag = draft.priorityTag || null
-      payload.district = draft.district || null
-      payload.commitType = draft.commitType || null
-      payload.installerName = draft.installerName || null
-      payload.serviceVehicle = draft.serviceVehicle || null
-      const newRemark = (draft.remarksUpdate || '').trim()
-      if (newRemark) {
-        payload.remarksUpdate = newRemark
-      }
-      payload.installationCharges = Number(draft.installationCharges)
-      payload.modeOfPayment = draft.modeOfPayment || null
-      payload.controlNumber = draft.controlNumber || null
-      const existingDetails = parseAcDetails(selectedTicket)
-      const acDetailsObj = {
-        landmarks: draft.landmarks || '',
-        brand: draft.brand || '',
-        capacity: draft.capacity || '',
-        sku: draft.sku || '',
-        serialNumber: draft.serialNumber || '',
-        alternatePhone: draft.phoneNumbers.slice(1).filter(Boolean).join(', '),
-        relayedDate: draft.relayedDate || '',
-        finalDate: existingDetails.finalDate || '',
-        promodiserName: draft.referralRecipient || '',
-        referralFeeRecipient: draft.referralRecipient || '',
-        referralFeeAmount: draft.referralAmount || draft.storeReferralFee || '',
-        referralFeeStatus: draft.referralStatus || '',
-        referralFeeDatePaid: draft.referralDatePaid || '',
-        referralFeeReferenceNo: draft.referralReferenceNo || '',
-        forRebatesClaim: draft.rebatesClaim || 'YES',
-        rebatesCompany: draft.rebatesCompany || '',
-        rebatesAmountDue: draft.rebatesAmountDue || '',
-        rebatesStatus: draft.rebatesStatus || '',
-        rebatesReferenceNo: draft.rebatesReferenceNo || '',
-        warrantyRegistrationStatus: draft.warrantyStatus || '',
-        warrantyRegisteredBy: draft.warrantyRegisteredBy || '',
-      }
-      payload.acDetails = JSON.stringify(acDetailsObj)
-      payload.negotiatorId = draft.assignTechId || ''
-      payload.storeReferralFee = (draft.referralAmount || draft.storeReferralFee).trim() ? (draft.referralAmount || draft.storeReferralFee).trim() : '0'
-      payload.warrantyDocsStatus = draft.warrantyStatus || null
-      payload.images = draft.images || null
-      payload.contactPhone = draft.phoneNumbers[0] || null
-      payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
-      payload.unitType = draft.unitType || null
-      payload.serviceType = draft.serviceType || null
-
-      const res = await fetch(`${API_BASE_URL}/tickets/${selectedTicket.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      })
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null)
-        const errMsg = errData?.message || errData?.error || `Status ${res.status}`
-        throw new Error(errMsg)
-      }
-
-      clearRelaysCache()
-      clearWarrantyCache()
-
-      setIsActionDrawerOpen(false)
-      setLastUpdatedTicketId(selectedTicket.id)
-      setSelectedTicket(null)
-      fetchData({ soft: true })
-    } catch (e: any) {
-      alert(`Failed to update ticket action: ${e.message}`)
-    } finally {
-      setActionSaving(false)
+    const payload: Record<string, any> = {}
+    let branchId = ''
+    let assignedTo = ''
+    if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
+      payload.branchId = ''
+      payload.assignedTo = ''
+      payload.status = finalStatus
+    } else {
+      branchId = draft.assignBranchId || ''
+      assignedTo = draft.assignTechId || ''
+      payload.branchId = branchId
+      payload.assignedTo = assignedTo
+      payload.status = finalStatus
     }
+    payload.customerName = draft.customerName || null
+    payload.location = draft.location || null
+    payload.preferredDate = draft.preferredDate ? new Date(draft.preferredDate).toISOString() : null
+    payload.priorityTag = draft.priorityTag || null
+    payload.district = draft.district || null
+    payload.commitType = draft.commitType || null
+    payload.installerName = draft.installerName || null
+    payload.serviceVehicle = draft.serviceVehicle || null
+    const newRemark = (draft.remarksUpdate || '').trim()
+    if (newRemark) {
+      payload.remarksUpdate = newRemark
+    }
+    payload.installationCharges = Number(draft.installationCharges)
+    payload.modeOfPayment = draft.modeOfPayment || null
+    payload.controlNumber = draft.controlNumber || null
+    const existingDetails = parseAcDetails(selectedTicket)
+    const acDetailsObj = {
+      landmarks: draft.landmarks || '',
+      brand: draft.brand || '',
+      capacity: draft.capacity || '',
+      sku: draft.sku || '',
+      serialNumber: draft.serialNumber || '',
+      alternatePhone: draft.phoneNumbers.slice(1).filter(Boolean).join(', '),
+      relayedDate: draft.relayedDate || '',
+      finalDate: existingDetails.finalDate || '',
+      promodiserName: draft.referralRecipient || '',
+      referralFeeRecipient: draft.referralRecipient || '',
+      referralFeeAmount: draft.referralAmount || draft.storeReferralFee || '',
+      referralFeeStatus: draft.referralStatus || '',
+      referralFeeDatePaid: draft.referralDatePaid || '',
+      referralFeeReferenceNo: draft.referralReferenceNo || '',
+      forRebatesClaim: draft.rebatesClaim || 'YES',
+      rebatesCompany: draft.rebatesCompany || '',
+      rebatesAmountDue: draft.rebatesAmountDue || '',
+      rebatesStatus: draft.rebatesStatus || '',
+      rebatesReferenceNo: draft.rebatesReferenceNo || '',
+      warrantyRegistrationStatus: draft.warrantyStatus || '',
+      warrantyRegisteredBy: draft.warrantyRegisteredBy || '',
+    }
+    payload.acDetails = JSON.stringify(acDetailsObj)
+    payload.negotiatorId = draft.assignTechId || ''
+    payload.storeReferralFee = (draft.referralAmount || draft.storeReferralFee).trim() ? (draft.referralAmount || draft.storeReferralFee).trim() : '0'
+    payload.warrantyDocsStatus = draft.warrantyStatus || null
+    payload.images = draft.images || null
+    payload.contactPhone = draft.phoneNumbers[0] || null
+    payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
+    payload.unitType = draft.unitType || null
+    payload.serviceType = draft.serviceType || null
+
+    const optimisticTicket: Ticket = {
+      ...selectedTicket,
+      status: finalStatus,
+      branchId: branchId || undefined,
+      assignedTo: assignedTo || undefined,
+      negotiatorId: draft.assignTechId || '',
+      negotiator_id: draft.assignTechId || '',
+      customerName: draft.customerName || selectedTicket.customerName,
+      location: draft.location || selectedTicket.location,
+      preferredDate: draft.preferredDate
+        ? new Date(draft.preferredDate).toISOString()
+        : selectedTicket.preferredDate,
+      priorityTag: draft.priorityTag || selectedTicket.priorityTag,
+      district: draft.district || selectedTicket.district,
+      commitType: draft.commitType || selectedTicket.commitType,
+      installerName: draft.installerName || selectedTicket.installerName,
+      serviceVehicle: draft.serviceVehicle || selectedTicket.serviceVehicle,
+      remarksUpdate: newRemark || selectedTicket.remarksUpdate,
+      installationCharges: Number(draft.installationCharges),
+      modeOfPayment: draft.modeOfPayment || selectedTicket.modeOfPayment,
+      controlNumber: draft.controlNumber || selectedTicket.controlNumber,
+      acDetails: payload.acDetails,
+      storeReferralFee: payload.storeReferralFee,
+      warrantyDocsStatus: draft.warrantyStatus || selectedTicket.warrantyDocsStatus,
+      images: draft.images || selectedTicket.images,
+      contactPhone: draft.phoneNumbers[0] || selectedTicket.contactPhone,
+      sourceVendor: payload.sourceVendor || selectedTicket.sourceVendor,
+      unitType: draft.unitType || selectedTicket.unitType,
+      serviceType: draft.serviceType || selectedTicket.serviceType,
+      updatedAt: new Date().toISOString(),
+    }
+
+    const original = selectedTicket
+    setIsActionDrawerOpen(false)
+    setSelectedTicket(null)
+    queueRelayPatch(original, payload, optimisticTicket)
   }
 
-  const handleDeleteTicket = async (ticketId: string, customerName?: string) => {
+  const handleDeleteTicket = (ticketId: string, customerName?: string) => {
     if (!window.confirm(`Are you sure you want to delete the client ticket for "${customerName || 'Direct Client'}"?\n\nThis action cannot be undone.`)) return
-    
-    setActionSaving(true)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      })
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.message || `Failed to delete ticket (HTTP ${res.status})`)
+    const rollback = tickets.find(t => t.id === ticketId)
+      || openFieldTickets.find(t => t.id === ticketId)
+      || selectedTicket
+    setIsActionDrawerOpen(false)
+    setSelectedTicket(null)
+    applyRelayTicketLocally(ticketId, null)
+
+    void (async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.message || `Failed to delete ticket (HTTP ${res.status})`)
+        }
+        clearRelaysCache()
+        clearWarrantyCache()
+      } catch (err: any) {
+        if (rollback) applyRelayTicketLocally(ticketId, rollback)
+        alert(err.message || 'Error occurred while deleting ticket.')
       }
-
-      setIsActionDrawerOpen(false)
-      setSelectedTicket(null)
-      fetchData({ soft: true })
-    } catch (err: any) {
-      alert(err.message || 'Error occurred while deleting ticket.')
-    } finally {
-      setActionSaving(false)
-    }
+    })()
   }
 
   const handleMergeTickets = async () => {
@@ -3463,8 +3609,8 @@ export default function ClientMasterlist() {
                   <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-slate-500/10" style={{ borderColor: inputBorder, color: textMuted }}>
                     Cancel
                   </button>
-                  <button type="submit" disabled={formSubmitting || (!!addFormDuplicate && !addFormSyncTarget)} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                    {formSubmitting ? 'Creating...' : addFormSyncTarget ? `Sync to ${getTicketNumber(addFormSyncTarget)}` : addFormDuplicate ? 'Duplicate Blocked' : 'Create Ticket'}
+                  <button type="submit" disabled={!!addFormDuplicate && !addFormSyncTarget} className="px-7 py-2.5 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                    {addFormSyncTarget ? `Sync to ${getTicketNumber(addFormSyncTarget)}` : addFormDuplicate ? 'Duplicate Blocked' : 'Create Ticket'}
                   </button>
                 </div>
               </div>
