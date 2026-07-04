@@ -280,51 +280,42 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     setClosing('DONE_SURVEY', 'DONE SURVEY', /survey/i)
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   } else if (val === 'CLEANING') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'SERVICES'
     body.serviceType = categoryDefaultServiceType('SERVICES')
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'CLEANING'
   } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'INSTALLATION'
     body.serviceType = categoryDefaultServiceType('INSTALLATION')
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'INSTALLATION'
   } else if (val === 'SERVICES' || val === 'SERVICE') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'SERVICES'
     body.serviceType = categoryDefaultServiceType('SERVICES')
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'SERVICES'
   } else if (val === 'SURVEY') {
     body.status = 'SURVEY'
     body.ticketCategory = 'SURVEY'
     body.serviceType = categoryDefaultServiceType('SURVEY')
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'SURVEY'
   } else if (val === 'RESCHED') {
     body.status = 'RESCHED'
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   } else if (val === 'FOR_APPROVAL') {
     body.status = 'FOR_APPROVAL'
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   } else if (val === 'CANCELLED') {
     body.status = 'CANCELLED'
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     body.status = val
-    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   }
 
@@ -340,6 +331,61 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     ...(body as Partial<Ticket>),
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   }
+}
+
+function mergeAcDetailsStrings(base?: string, overlay?: string): string | undefined {
+  if (!overlay) return base
+  if (!base) return overlay
+  try {
+    const baseParsed = JSON.parse(base)
+    const overlayParsed = JSON.parse(overlay)
+    const baseMeta = (Array.isArray(baseParsed) ? baseParsed[0] : baseParsed) || {}
+    const overlayMeta = (Array.isArray(overlayParsed) ? overlayParsed[0] : overlayParsed) || {}
+    return JSON.stringify({ ...baseMeta, ...overlayMeta })
+  } catch {
+    return overlay
+  }
+}
+
+function mergePatchBodies(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...a, ...b }
+  const ac = mergeAcDetailsStrings(
+    typeof a.acDetails === 'string' ? a.acDetails : undefined,
+    typeof b.acDetails === 'string' ? b.acDetails : undefined,
+  )
+  if (ac !== undefined) merged.acDetails = ac
+  return merged
+}
+
+/** Ensure PATCH body is valid for schedule status saves (esp. COMPLETED + scheduleOutcome). */
+function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...body }
+  const outcomeRaw = typeof next.scheduleOutcome === 'string' ? next.scheduleOutcome.trim() : ''
+  if (outcomeRaw) {
+    next.scheduleOutcome = outcomeRaw
+  } else {
+    delete next.scheduleOutcome
+  }
+
+  const status = String(next.status || '').toUpperCase()
+  if (status === 'COMPLETED' && !next.scheduleOutcome) {
+    let fromAc = ''
+    if (typeof next.acDetails === 'string') {
+      try {
+        const parsed = JSON.parse(next.acDetails)
+        const meta = (Array.isArray(parsed) ? parsed[0] : parsed) || {}
+        fromAc = String(meta.scheduleOutcome || '').trim()
+      } catch { /* ignore */ }
+    }
+    next.scheduleOutcome = fromAc || 'DONE_INSTALLED'
+    if (typeof next.acDetails === 'string') {
+      next.acDetails = mergeAcMeta(
+        { acDetails: next.acDetails } as Ticket,
+        { scheduleOutcome: next.scheduleOutcome, schedulePhase: '' },
+      )
+    }
+  }
+  return next
 }
 
 function getScheduleRowColors(
@@ -2256,15 +2302,14 @@ export default function Tickets() {
     void commitSaveManualTicket()
   }
 
-  const commitSaveManualTicket = async () => {
-    let optimisticTempId = ''
+  const commitSaveManualTicket = () => {
     try {
       const tokenVal = token()
       const category = addForm.ticketCategory || 'INSTALLATION'
       const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver, category)
       const titleVal = `${categoryDefaultServiceType(category)} service`
       const descVal = addForm.commitTerms?.trim() || 'No additional details provided.'
-      
+
       const lockedBranch = resolveTicketArchiveBranchId(
         { installerName: addForm.installerName?.trim() },
         installerLineupIndex,
@@ -2319,14 +2364,15 @@ export default function Tickets() {
         branchId: targetBranch,
       }
       const tempId = `temp-${Date.now()}`
-      optimisticTempId = tempId
       const optimisticTicket = {
         id: tempId,
         ...payload,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       } as Ticket
 
       setDateFilter(scheduledDate)
-      setTickets(prev => [optimisticTicket, ...prev.filter(t => t.id !== tempId)])
+      applyTicketLocally(tempId, optimisticTicket)
       setAddFormSnapshot(JSON.stringify(addForm))
       setAddModalOpen(false)
 
@@ -2348,25 +2394,41 @@ export default function Tickets() {
 
           const payloadResult = await res.json().catch(() => null)
           const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
-          if (createdTicket?.id) {
-            setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)])
+          if (!createdTicket?.id) {
+            optimisticTicketsRef.current.delete(tempId)
+            void fetchTickets({ soft: true, force: true })
+            console.log('[Schedules] Created ticket in database (refreshing list)', { tempId })
+            return
           }
-          await fetchTickets({ soft: true, force: true })
-          if (createdTicket?.id) {
-            setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)])
-          }
-        } catch (err: any) {
-          console.error(err)
-          setTickets(prev => prev.filter(t => t.id !== tempId))
-          alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
+
+          optimisticTicketsRef.current.delete(tempId)
+          setTickets(prev => {
+            const next = [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
+            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+            return next
+          })
+          console.log('[Schedules] Created ticket in database', {
+            ticketId: createdTicket.id,
+            ticketNumber: createdTicket.ticketNumber || createdTicket.ticket_number,
+            status: createdTicket.status,
+            preferredDate: createdTicket.preferredDate || scheduledDate,
+          })
+        } catch (err: unknown) {
+          console.error('[Schedules] Create ticket FAILED', tempId, err)
+          optimisticTicketsRef.current.delete(tempId)
+          setTickets(prev => {
+            const next = prev.filter(t => t.id !== tempId)
+            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+            return next
+          })
+          alert(`Could not add ticket: ${formatFetchError(err)}`)
         }
       })()
-    } catch (err: any) {
-      console.error(err)
-      if (optimisticTempId) {
-        setTickets(prev => prev.filter(t => t.id !== optimisticTempId))
-      }
-      alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
+    } catch (err: unknown) {
+      console.error('[Schedules] Create ticket FAILED', err)
+      alert(`Could not add ticket: ${formatFetchError(err)}`)
     }
   }
 
@@ -2739,17 +2801,12 @@ export default function Tickets() {
     ),
   [installerLineupIndex, driverOnlyNames, globalBranchId, user?.branchId])
 
-  const handleApplyImport = async () => {
+  const handleApplyImport = () => {
     if (!importResults) return
     if (!importTargetDate?.trim()) {
       alert('Select an import date first — tickets will be saved as SCHEDULED for that date.')
       return
     }
-    setSaving(true)
-    let successCount = 0
-    let completeCount = 0
-    let failCount = 0
-    let createdCount = 0
 
     const tokenVal = token()
     const todayStr = (() => {
@@ -2767,12 +2824,9 @@ export default function Tickets() {
     const completedUpdates = importResults.updates.filter(item => item.updatedFields.status === 'COMPLETED')
 
     if (!targetBranch && (importResults.unmatched.length > 0 || (completedUpdates.length > 0 && !isScheduleImport))) {
-      setSaving(false)
       alert('Select a branch before importing — use the branch selector in the sidebar.')
       return
     }
-
-    const importErrors: string[] = []
 
     const scheduleUpdates = isScheduleImport
       ? importResults.updates.map(item => {
@@ -2813,6 +2867,14 @@ export default function Tickets() {
       await postArchiveServiceReport(payload, tokenVal)
     }
 
+    type ImportPatchJob = {
+      ticket: Ticket
+      body: Record<string, unknown>
+      shouldComplete: boolean
+      updatedFields: Partial<Ticket>
+    }
+    const patchJobs: ImportPatchJob[] = []
+
     for (const item of scheduleUpdates) {
       const { ticket, updatedFields } = item
       const merged = { ...ticket, ...updatedFields }
@@ -2831,31 +2893,7 @@ export default function Tickets() {
       if (shouldComplete && isScheduleImport) {
         body = enrichCompletePatchBody({ ...body }, ticket, scheduleDate || resolveScheduleCompletionDateKey(ticket, scheduleDate))
       }
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-          body: JSON.stringify(body),
-        })
-        if (res.ok) {
-          successCount++
-          if (shouldComplete && isScheduleImport) {
-            try {
-              await postCompletedServiceReport(ticket, updatedFields, scheduleDate || todayStr)
-              completeCount++
-            } catch (err: any) {
-              importErrors.push(`Completed ticket but archive report failed: ${err?.message || 'unknown'}`)
-            }
-          }
-        } else {
-          failCount++
-          importErrors.push(await readApiError(res))
-        }
-      } catch (err: any) {
-        failCount++
-        importErrors.push(err?.message || 'Update failed')
-      }
+      patchJobs.push({ ticket, body, shouldComplete: shouldComplete && isScheduleImport, updatedFields })
     }
 
     if (isScheduleImport) {
@@ -2875,109 +2913,10 @@ export default function Tickets() {
           isTaguigServices && targetBranch ? targetBranch : undefined,
         )
         if (Object.keys(body).length === 0) continue
-        try {
-          const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-            body: JSON.stringify(body),
-          })
-          if (res.ok) successCount++
-          else {
-            failCount++
-            importErrors.push(await readApiError(res))
-          }
-        } catch (err: any) {
-          failCount++
-          importErrors.push(err?.message || 'Confirmation update failed')
-        }
+        patchJobs.push({ ticket, body, shouldComplete: false, updatedFields: { remarksUpdate: value, status: 'SCHEDULED' } })
       }
     }
 
-    if (!isScheduleImport) for (const item of completedUpdates) {
-      const { ticket, updatedFields } = item
-      const merged = { ...ticket, ...updatedFields }
-      const branchId = resolveTicketArchiveBranch(ticket, updatedFields)
-      const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
-        location: updatedFields.location,
-        district: updatedFields.district,
-        sourceVendor: updatedFields.sourceVendor,
-        unitType: updatedFields.unitType,
-        installerName: updatedFields.installerName,
-        serviceVehicle: updatedFields.serviceVehicle,
-        installationCharges: updatedFields.installationCharges,
-        modeOfPayment: updatedFields.modeOfPayment,
-        remarksUpdate: updatedFields.remarksUpdate,
-        remarks: updatedFields.remarks,
-        controlNumber: updatedFields.controlNumber,
-        ticketNumber: updatedFields.ticketNumber,
-        note: updatedFields.note,
-        negotiatorName: resolveNegotiatorName(merged, branchEmployees, updatedFields.negotiatorId),
-      }, importTargetDate || todayStr)
-
-      try {
-        if (!archivePayload) throw new Error('No branch selected for archive')
-        await postArchiveServiceReport(archivePayload, tokenVal)
-
-        const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${tokenVal}` }
-        })
-        if (deleteRes.ok) {
-          completeCount++
-        } else {
-          failCount++
-          importErrors.push(await readApiError(deleteRes))
-        }
-      } catch (err: any) {
-        console.error('Error completing ticket:', err)
-        failCount++
-        importErrors.push(err?.message || 'Complete failed')
-      }
-    }
-
-    if (!isScheduleImport) for (const item of importResults.needsConfirmation) {
-      const { ticket, value, amount, modeOfPayment, controlNumber } = item
-      const branchId = resolveTicketArchiveBranch(ticket, {
-        installationCharges: parseFloat(amount) || 0,
-        modeOfPayment,
-      })
-
-      const archivePayload = buildArchiveServiceReportPayload(
-        ticket,
-        branchId,
-        {
-          installationCharges: parseFloat(amount) || 0,
-          modeOfPayment: modeOfPayment,
-          remarks: value || 'Installed',
-          remarksUpdate: value || 'Installed',
-          controlNumber,
-          negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
-        },
-        importTargetDate || todayStr,
-      )
-
-      try {
-        if (!archivePayload) throw new Error('No branch selected for archive')
-        await postArchiveServiceReport(archivePayload, tokenVal)
-
-        const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${tokenVal}` }
-        })
-        if (deleteRes.ok) {
-          completeCount++
-        } else {
-          failCount++
-          importErrors.push(await readApiError(deleteRes))
-        }
-      } catch (err: any) {
-        console.error('Error completing ticket:', err)
-        failCount++
-        importErrors.push(err?.message || 'Complete failed')
-      }
-    }
-
-    // Save unmatched rows as new tickets (schedule import keeps everything on tickets table)
     const unmatchedToCreate = isScheduleImport
       ? importResults.unmatched
       : importResults.unmatched.filter(item => !isUnmatchedImportComplete(item))
@@ -2985,47 +2924,208 @@ export default function Tickets() {
       ? []
       : importResults.unmatched.filter(item => isUnmatchedImportComplete(item))
 
-    if (unmatchedToCreate.length > 0) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/tickets/import`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tokenVal}`,
-          },
-          body: JSON.stringify({
-            branchId: targetBranch,
-            preferredDate: scheduleDate || undefined,
-            rows: unmatchedToCreate.map(item => buildImportCreateRow(item, scheduleDate || undefined, importOpts)),
-          }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          const result = data?.data
-          createdCount += result?.created ?? 0
-          if (result?.failed) {
-            failCount += result.failed
-            if (Array.isArray(result.errors) && result.errors.length > 0) {
-              importErrors.push(...result.errors)
+    const createRows = unmatchedToCreate.map(item => buildImportCreateRow(item, scheduleDate || undefined, importOpts))
+    const createTemps = createRows.map((row, index) => {
+      const tempId = `temp-import-${Date.now()}-${index}`
+      const optimisticTicket = {
+        id: tempId,
+        ...row,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as Ticket
+      return { tempId, row, optimisticTicket }
+    })
+
+    // Instant UI: apply all patches + new rows, then close import modal
+    for (const job of patchJobs) {
+      queueTicketPatch(
+        job.ticket,
+        job.body,
+        job.shouldComplete
+          ? async () => {
+              try {
+                await postCompletedServiceReport(job.ticket, job.updatedFields, scheduleDate || todayStr)
+                console.log('[Schedules] Import archived completed ticket', { ticketId: job.ticket.id })
+              } catch (err: unknown) {
+                console.error('[Schedules] Import archive FAILED', job.ticket.id, err)
+              }
             }
-          }
-        } else {
-          failCount += unmatchedToCreate.length
-          importErrors.push(await readApiError(res))
-        }
-      } catch (err: any) {
-        console.error('Failed to bulk import unmatched tickets:', err)
-        failCount += unmatchedToCreate.length
-        importErrors.push(err?.message || 'Bulk create failed')
+          : undefined,
+      )
+    }
+    for (const created of createTemps) {
+      applyTicketLocally(created.tempId, created.optimisticTicket)
+    }
+
+    // Non-schedule complete paths: remove from list instantly, archive+delete in background
+    const removeJobs: { ticket: Ticket; rollback: Ticket; run: () => Promise<void> }[] = []
+    if (!isScheduleImport) {
+      for (const item of completedUpdates) {
+        const { ticket, updatedFields } = item
+        const merged = { ...ticket, ...updatedFields }
+        const branchId = resolveTicketArchiveBranch(ticket, updatedFields)
+        const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
+          location: updatedFields.location,
+          district: updatedFields.district,
+          sourceVendor: updatedFields.sourceVendor,
+          unitType: updatedFields.unitType,
+          installerName: updatedFields.installerName,
+          serviceVehicle: updatedFields.serviceVehicle,
+          installationCharges: updatedFields.installationCharges,
+          modeOfPayment: updatedFields.modeOfPayment,
+          remarksUpdate: updatedFields.remarksUpdate,
+          remarks: updatedFields.remarks,
+          controlNumber: updatedFields.controlNumber,
+          ticketNumber: updatedFields.ticketNumber,
+          note: updatedFields.note,
+          negotiatorName: resolveNegotiatorName(merged, branchEmployees, updatedFields.negotiatorId),
+        }, importTargetDate || todayStr)
+        removeJobs.push({
+          ticket,
+          rollback: ticket,
+          run: async () => {
+            if (!archivePayload) throw new Error('No branch selected for archive')
+            await postArchiveServiceReport(archivePayload, tokenVal)
+            const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${tokenVal}` },
+            })
+            if (!deleteRes.ok) throw new Error(await readApiError(deleteRes))
+          },
+        })
+      }
+      for (const item of importResults.needsConfirmation) {
+        const { ticket, value, amount, modeOfPayment, controlNumber } = item
+        const branchId = resolveTicketArchiveBranch(ticket, {
+          installationCharges: parseFloat(amount) || 0,
+          modeOfPayment,
+        })
+        const archivePayload = buildArchiveServiceReportPayload(
+          ticket,
+          branchId,
+          {
+            installationCharges: parseFloat(amount) || 0,
+            modeOfPayment: modeOfPayment,
+            remarks: value || 'Installed',
+            remarksUpdate: value || 'Installed',
+            controlNumber,
+            negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
+          },
+          importTargetDate || todayStr,
+        )
+        removeJobs.push({
+          ticket,
+          rollback: ticket,
+          run: async () => {
+            if (!archivePayload) throw new Error('No branch selected for archive')
+            await postArchiveServiceReport(archivePayload, tokenVal)
+            const deleteRes = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${tokenVal}` },
+            })
+            if (!deleteRes.ok) throw new Error(await readApiError(deleteRes))
+          },
+        })
       }
     }
 
-    for (const item of unmatchedToComplete) {
+    for (const job of removeJobs) {
+      optimisticTicketsRef.current.delete(job.ticket.id)
+      setTickets(prev => {
+        const next = prev.filter(t => t.id !== job.ticket.id)
+        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+        writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+        return next
+      })
+    }
+
+    setImportResults(null)
+    if (scheduleDate) handleDateFilterChange(scheduleDate)
+    console.log('[Schedules] Import applied on UI — saving to database in background', {
+      patches: patchJobs.length,
+      creates: createTemps.length,
+      removals: removeJobs.length,
+    })
+
+    void (async () => {
+      let successCount = patchJobs.length
+      let completeCount = 0
+      let failCount = 0
+      let createdCount = 0
+      const importErrors: string[] = []
+
+      // Patches are already queued via queueTicketPatch (each logs on success)
+
+      if (createTemps.length > 0) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/tickets/import`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tokenVal}`,
+            },
+            body: JSON.stringify({
+              branchId: targetBranch,
+              preferredDate: scheduleDate || undefined,
+              rows: createTemps.map(item => item.row),
+            }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const result = data?.data
+            createdCount += result?.created ?? createTemps.length
+            if (result?.failed) {
+              failCount += result.failed
+              if (Array.isArray(result.errors) && result.errors.length > 0) {
+                importErrors.push(...result.errors)
+              }
+            }
+            for (const created of createTemps) {
+              optimisticTicketsRef.current.delete(created.tempId)
+            }
+            console.log('[Schedules] Import created tickets in database', {
+              created: createdCount,
+              failed: result?.failed ?? 0,
+            })
+            void fetchTickets({ soft: true, force: true })
+          } else {
+            failCount += createTemps.length
+            importErrors.push(await readApiError(res))
+            for (const created of createTemps) {
+              optimisticTicketsRef.current.delete(created.tempId)
+              setTickets(prev => prev.filter(t => t.id !== created.tempId))
+            }
+            console.error('[Schedules] Import create FAILED', importErrors)
+          }
+        } catch (err: unknown) {
+          console.error('[Schedules] Import create FAILED', err)
+          failCount += createTemps.length
+          importErrors.push(formatFetchError(err))
+          for (const created of createTemps) {
+            optimisticTicketsRef.current.delete(created.tempId)
+            setTickets(prev => prev.filter(t => t.id !== created.tempId))
+          }
+        }
+      }
+
+      for (const job of removeJobs) {
+        try {
+          await job.run()
+          completeCount++
+          console.log('[Schedules] Import completed & archived ticket in database', { ticketId: job.ticket.id })
+        } catch (err: unknown) {
+          failCount++
+          importErrors.push(formatFetchError(err))
+          restoreTicketLocally(job.ticket.id, job.rollback)
+          console.error('[Schedules] Import complete FAILED', job.ticket.id, err)
+        }
+      }
+
+      for (const item of unmatchedToComplete) {
         const charges = item.charges ?? 0
         const mode = item.paymentMode || 'CASH'
         const remarks = item.update || 'Installed'
         const controlNo = item.controlNo || ''
-
         const archiveBranch = resolveTicketArchiveBranchId(
           { installerName: item.installer },
           installerLineupIndex,
@@ -3051,36 +3151,41 @@ export default function Tickets() {
           remarks: remarks,
           note: item.note || '',
           controlNumber: controlNo,
-          serviceColumn: item.service || ''
+          serviceColumn: item.service || '',
         }
 
         try {
           const reportRes = await fetch(`${API_BASE_URL}/v1/service-reports`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenVal}` },
-            body: JSON.stringify(serviceReportPayload)
+            body: JSON.stringify(serviceReportPayload),
           })
           if (reportRes.ok) {
             completeCount++
+            console.log('[Schedules] Import archived unmatched ticket in database', { customerName: item.name })
           } else {
             failCount++
             importErrors.push(await readApiError(reportRes))
           }
-        } catch (err: any) {
-          console.error('Error completing unmatched ticket:', err)
+        } catch (err: unknown) {
           failCount++
-          importErrors.push(err?.message || 'Unmatched complete failed')
+          importErrors.push(formatFetchError(err))
+          console.error('[Schedules] Import unmatched complete FAILED', err)
         }
-    }
+      }
 
-    setSaving(false)
-    setImportResults(null)
-    const failHint = failCount > 0 && importErrors.length > 0 ? ` First error: ${importErrors[0]}` : ''
-    showToast(`Updated ${successCount} tickets, Completed & Paid ${completeCount} tickets, Created ${createdCount} new tickets!${failCount > 0 ? ` (Failed: ${failCount})${failHint}` : ''}`)
-    if (scheduleDate) handleDateFilterChange(scheduleDate)
-    clearRelaysCache()
-    clearWarrantyCache()
-    fetchTickets({ soft: false })
+      clearRelaysCache()
+      clearWarrantyCache()
+      console.log('[Schedules] Import background sync finished', {
+        updated: successCount,
+        created: createdCount,
+        completed: completeCount,
+        failed: failCount,
+      })
+      if (failCount > 0) {
+        alert(`Import finished with ${failCount} error(s).${importErrors[0] ? ` First: ${importErrors[0]}` : ''}`)
+      }
+    })()
   }
 
   useEffect(() => {
@@ -3123,6 +3228,8 @@ export default function Tickets() {
     afterSave?: () => Promise<void>
   }>())
   const activeSavesRef = useRef(new Set<string>())
+  /** Local optimistic tickets that must survive in-flight list refreshes until PATCH settles. */
+  const optimisticTicketsRef = useRef(new Map<string, Ticket>())
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
@@ -3209,8 +3316,26 @@ export default function Tickets() {
       return
     }
 
+    const applyOptimisticOverlay = (list: Ticket[]) => {
+      const pending = optimisticTicketsRef.current
+      if (pending.size === 0) return list
+      const seen = new Set<string>()
+      const merged = list.map(t => {
+        const local = pending.get(t.id)
+        if (local) {
+          seen.add(t.id)
+          return local
+        }
+        return t
+      })
+      for (const [id, local] of pending) {
+        if (!seen.has(id)) merged.unshift(local)
+      }
+      return merged
+    }
+
     if (hasCache) {
-      setTickets(cached!.tickets as Ticket[])
+      setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
       hasLoadedOnceRef.current = true
       if (!showSkeleton) setLoading(false)
     }
@@ -3227,8 +3352,9 @@ export default function Tickets() {
         ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
       })
       if (seq !== fetchSeqRef.current) return
-      setTickets(list as Ticket[])
-      writeTabCache(cacheKey, { tickets: list, lastSyncAt: Date.now() })
+      const merged = applyOptimisticOverlay(list as Ticket[])
+      setTickets(merged)
+      writeTabCache(cacheKey, { tickets: merged, lastSyncAt: Date.now() })
       hasLoadedOnceRef.current = true
     } catch {
       if (seq !== fetchSeqRef.current) return
@@ -3517,13 +3643,23 @@ export default function Tickets() {
     setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees) })
   }
 
-  const applyTicketPatchLocally = useCallback((ticketId: string, body: Record<string, unknown>, rollback?: Ticket) => {
+  const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
+    optimisticTicketsRef.current.set(ticketId, nextTicket)
     setTickets(prev => {
-      const next = prev.map(t => {
-        if (t.id !== ticketId) return t
-        if (rollback) return rollback
-        return mergeTicketPatch(t, body)
-      })
+      const exists = prev.some(t => t.id === ticketId)
+      const next = exists
+        ? prev.map(t => (t.id === ticketId ? nextTicket : t))
+        : [nextTicket, ...prev]
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+      return next
+    })
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+
+  const restoreTicketLocally = useCallback((ticketId: string, rollback: Ticket) => {
+    optimisticTicketsRef.current.delete(ticketId)
+    setTickets(prev => {
+      const next = prev.map(t => (t.id === ticketId ? rollback : t))
       const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
       writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
       return next
@@ -3537,22 +3673,40 @@ export default function Tickets() {
       while (pendingSavesRef.current.has(ticketId)) {
         const job = pendingSavesRef.current.get(ticketId)!
         pendingSavesRef.current.delete(ticketId)
+        const payload = sanitizeTicketPatchBody(job.body)
         try {
+          const auth = token()
+          if (!auth) throw new Error('Not signed in — refresh and try again')
           const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token()}`,
+              Authorization: `Bearer ${auth}`,
             },
-            body: JSON.stringify(job.body),
+            body: JSON.stringify(payload),
           })
           if (!res.ok) throw new Error(await readApiError(res))
+          console.log('[Schedules] Saved to database', {
+            ticketId,
+            status: payload.status,
+            scheduleOutcome: payload.scheduleOutcome,
+            ticketCategory: payload.ticketCategory,
+            serviceType: payload.serviceType,
+          })
+          // Only clear optimistic lock if no newer edit was queued while we saved
+          if (!pendingSavesRef.current.has(ticketId)) {
+            optimisticTicketsRef.current.delete(ticketId)
+          }
           clearRelaysCache()
           clearWarrantyCache()
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
-          applyTicketPatchLocally(ticketId, {}, job.rollback)
-          pendingSavesRef.current.delete(ticketId)
+          console.error('[Schedules] Background save FAILED', ticketId, payload, err)
+          // A newer edit may already be queued — retry that without wiping UI
+          if (pendingSavesRef.current.has(ticketId)) {
+            continue
+          }
+          restoreTicketLocally(ticketId, job.rollback)
           alert(`Could not save ticket: ${formatFetchError(err)}`)
           break
         }
@@ -3563,7 +3717,7 @@ export default function Tickets() {
         void flushTicketSave(ticketId)
       }
     }
-  }, [applyTicketPatchLocally])
+  }, [restoreTicketLocally, token])
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
   const queueTicketPatch = useCallback((
@@ -3573,14 +3727,19 @@ export default function Tickets() {
   ) => {
     const ticketId = ticket.id
     const existing = pendingSavesRef.current.get(ticketId)
+    const baseTicket = optimisticTicketsRef.current.get(ticketId) || ticket
+    const mergedBody = sanitizeTicketPatchBody(
+      existing ? mergePatchBodies(existing.body, body) : body,
+    )
+    const nextTicket = mergeTicketPatch(baseTicket, mergedBody)
     pendingSavesRef.current.set(ticketId, {
-      body: existing ? { ...existing.body, ...body } : body,
+      body: mergedBody,
       rollback: existing?.rollback ?? ticket,
       afterSave: afterSave ?? existing?.afterSave,
     })
-    applyTicketPatchLocally(ticketId, body)
+    applyTicketLocally(ticketId, nextTicket)
     void flushTicketSave(ticketId)
-  }, [applyTicketPatchLocally, flushTicketSave])
+  }, [applyTicketLocally, flushTicketSave])
 
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
     const key = cellEditKey(ticket.id, colLabel)
@@ -5554,10 +5713,9 @@ export default function Tickets() {
                 Cancel
               </button>
               <button onClick={handleApplyImport}
-                      disabled={saving}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm disabled:opacity-50"
+                      className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
                       style={{ backgroundColor: green }}>
-                {saving ? '⏳ Saving updates...' : `Apply & Save All (${importResults.matchedCount} updates, ${importResults.unmatchedCount} new)`}
+                {`Apply & Save All (${importResults.matchedCount} updates, ${importResults.unmatchedCount} new)`}
               </button>
             </div>
 
