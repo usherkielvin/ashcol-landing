@@ -550,7 +550,10 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   } as Ticket)
   if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP') return false
-  if (outcome === 'DONE_INSTALLED') return true
+  // Only archive install-complete when payment is already on the ticket (no popup).
+  if (outcome === 'DONE_INSTALLED') {
+    return hasInstallPayment(ticket, body as Partial<Ticket>)
+  }
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
 
@@ -2016,14 +2019,6 @@ export default function Tickets() {
   // ── History state ─────────────────────────────────────────────────────────
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
-
-  // ── Completion prompt state ───────────────────────────────────────────────
-  const [completionPrompt, setCompletionPrompt] = useState<{
-    ticket: Ticket
-    value: string
-    modeOfPayment: string
-    amount: string
-  } | null>(null)
 
   // ── Manual Add Modal State ───────────────────────────────────────────────
   const [addModalOpen, setAddModalOpen] = useState(false)
@@ -4261,21 +4256,6 @@ export default function Tickets() {
     if (savingCellKey === key) return
 
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
-    if (colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED') {
-      cancelEdit()
-      setStatusPicker(null)
-      requestAnimationFrame(() => {
-        const existingRemarks = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
-        setCompletionPrompt({
-          ticket,
-          value: existingRemarks || 'Installed',
-          modeOfPayment: getPaymentMode(ticket) || 'CASH',
-          amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-        })
-      })
-      return
-    }
-
     const body = buildCellPatchBody(ticket, colLabel, value)
     if (Object.keys(body).length === 0) {
       cancelEdit()
@@ -4283,41 +4263,40 @@ export default function Tickets() {
       return
     }
 
-    if (colLabel === 'UPDATE' && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))) {
-      const merged = { ...ticket, remarksUpdate: stripArchivedRemarkSuffix(value), remarks: stripArchivedRemarkSuffix(value) }
-      if (!hasInstallPayment(merged, { remarksUpdate: value, remarks: value })) {
-        cancelEdit()
-        requestAnimationFrame(() => {
-          setCompletionPrompt({
-            ticket,
-            value: value.trim(),
-            modeOfPayment: getPaymentMode(ticket) || 'CASH',
-            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-          })
-        })
-        return
-      }
-    }
-
+    // Remarks always save in-cell — never open a payment popup.
+    // Complete/archive only when payment is already present on the ticket.
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
-    if (colLabel === 'UPDATE' && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))) {
-      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+    const remarkText = colLabel === 'UPDATE'
+      ? stripArchivedRemarkSuffix(value.trim())
+      : ''
+    if (colLabel === 'UPDATE' && isInstalledRemarks(remarkText)) {
+      const merged = { ...ticket, remarksUpdate: remarkText, remarks: remarkText }
+      if (hasInstallPayment(merged, { remarksUpdate: remarkText, remarks: remarkText })) {
+        finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+      }
     } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
-      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+      if (hasInstallPayment(ticket, body as Partial<Ticket>)) {
+        finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+      }
     }
 
     cancelEdit()
     setStatusPicker(null)
+
+    // After marking DONE INSTALL, put the caret in REMARKS so the user types there.
+    const focusRemarksAfterStatus = colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED'
 
     const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
       || (
         colLabel === 'UPDATE'
         && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
         && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
+        && hasInstallPayment(ticket, finalBody as Partial<Ticket>)
       )
 
     const archiveBody = finalBody
+    const nextTicket = mergeTicketPatch(ticket, finalBody)
     queueTicketPatch(
       ticket,
       finalBody,
@@ -4355,6 +4334,10 @@ export default function Tickets() {
           }
         : undefined,
     )
+
+    if (focusRemarksAfterStatus) {
+      requestAnimationFrame(() => startCellEdit(nextTicket, 'UPDATE'))
+    }
   }
 
   const openReschedDialog = (ticket: Ticket) => {
@@ -4602,9 +4585,18 @@ export default function Tickets() {
           onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
           onKeyDown={onKeyDown}
+          ref={el => {
+            if (!el || el.dataset.caretReady === '1') return
+            el.dataset.caretReady = '1'
+            el.focus()
+            const len = el.value.length
+            try { el.setSelectionRange(len, len) } catch { /* ignore */ }
+          }}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
+          placeholder={colLabel === 'UPDATE' ? 'Type remarks…' : undefined}
         />,
         colLabel,
       )
@@ -5474,6 +5466,11 @@ export default function Tickets() {
                                   openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
+                                // Remarks: edit in the cell (caret focus), never a popup.
+                                if (col.label === 'UPDATE' && canEdit && !isGhost) {
+                                  startCellEdit(ticket, 'UPDATE')
+                                  return
+                                }
                                 setExpandedCell(prev =>
                                   prev?.ticketId === ticket.id && prev?.colLabel === col.label
                                     ? null
@@ -5483,6 +5480,9 @@ export default function Tickets() {
                               onDoubleClick={e => {
                                 e.preventDefault()
                                 e.stopPropagation()
+                                if (col.label === 'UPDATE' && canEdit && !isGhost) {
+                                  startCellEdit(ticket, 'UPDATE')
+                                }
                               }}
                               style={{
                                 padding: isEditingCell ? '6px' : '0 12px',
@@ -6195,158 +6195,6 @@ export default function Tickets() {
             </div>
           </div>,
           document.body,
-        )
-      })()}
-
-      {/* ── Completion Prompt Modal ── */}
-      {completionPrompt && (() => {
-        const cp = completionPrompt
-        const t = cp.ticket
-        const custName = getF(t, 'customerName', 'customer_name') || t.title
-
-        const handleSubmitCompletion = async (e: React.FormEvent) => {
-          e.preventDefault()
-          setCompletionPrompt(null)
-
-          const schedKey = resolveScheduleCompletionDateKey(t, dateFilter)
-          const remark = stripArchivedRemarkSuffix((cp.value || '').trim()) || 'Installed'
-          const patchBody = enrichCompletePatchBody({
-            installationCharges: parseFloat(cp.amount) || 0,
-            modeOfPayment: cp.modeOfPayment,
-            remarks: remark,
-            remarksUpdate: remark,
-            scheduleOutcome: 'DONE_INSTALLED',
-            acDetails: mergeAcMeta(t, {
-              scheduleOutcome: 'DONE_INSTALLED',
-              schedulePhase: '',
-              update: remark,
-              remarksUpdate: remark,
-            }),
-          }, t, schedKey)
-
-          queueTicketPatch(t, patchBody, async () => {
-            const branchId = resolveTicketArchiveBranch(t, {
-              installationCharges: parseFloat(cp.amount) || 0,
-              modeOfPayment: cp.modeOfPayment,
-              remarks: remark,
-              remarksUpdate: remark,
-            })
-            const archivePayload = buildArchiveServiceReportPayload(
-              t,
-              branchId,
-              {
-                installationCharges: parseFloat(cp.amount) || 0,
-                modeOfPayment: cp.modeOfPayment,
-                remarks: remark,
-                remarksUpdate: remark,
-                negotiatorName: resolveNegotiatorName(t, branchEmployees),
-              },
-              schedKey,
-            )
-            if (!archivePayload) {
-              alert('Select a branch before completing to Archives')
-              return
-            }
-            try {
-              await postArchiveServiceReport(archivePayload, token())
-            } catch (err) {
-              alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
-            }
-            void fetchTickets({ soft: true, force: true })
-          })
-        }
-
-        return (
-          <div
-            className="fixed inset-0 z-[11000] flex items-center justify-center p-4 sm:p-6"
-            style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)' }}
-            onClick={() => setCompletionPrompt(null)}
-            onMouseDown={e => e.preventDefault()}
-          >
-            <form
-              onSubmit={handleSubmitCompletion}
-              className="flex flex-col w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
-              style={{ backgroundColor: cardBg, border: '1px solid rgba(22,163,74,0.28)' }}
-              onClick={e => e.stopPropagation()}
-            >
-              <div style={{ height: 3, background: 'linear-gradient(90deg, #16A34A, #22C55E)' }} />
-
-              <div className="px-5 py-4 flex flex-col gap-1 border-b" style={{ borderColor: border }}>
-                <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
-                  Mark installed — {custName}
-                </h3>
-                <p className="text-[10px] font-semibold" style={{ color: textMuted }}>
-                  Enter payment details to complete and move this ticket to Archives.
-                </p>
-              </div>
-
-              <div className="px-5 py-4 flex flex-col gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                    Mode of Payment
-                  </label>
-                  <select
-                    value={cp.modeOfPayment}
-                    onChange={e => {
-                      const nextMode = e.target.value
-                      setCompletionPrompt(prev => {
-                        if (!prev) return null
-                        const nextAmount = nextMode === 'FREE' || nextMode === 'FREE INSTALL' ? '0' : prev.amount
-                        return { ...prev, modeOfPayment: nextMode, amount: nextAmount }
-                      })
-                    }}
-                    className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                    <option value="CASH">CASH</option>
-                    <option value="BANK TRANSFER">BANK TRANSFER</option>
-                    <option value="GCASH">GCASH</option>
-                    <option value="CHEQUE">CHEQUE</option>
-                    <option value="FREE INSTALL">FREE INSTALL</option>
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                    Amount Charged (₱)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    placeholder="0.00"
-                    value={cp.amount}
-                    disabled={cp.modeOfPayment === 'FREE' || cp.modeOfPayment === 'FREE INSTALL'}
-                    onChange={e => setCompletionPrompt(prev => prev ? { ...prev, amount: e.target.value } : null)}
-                    className="w-full text-xs rounded-xl px-3 py-2 outline-none border transition-all focus:ring-2 focus:ring-green-500 font-semibold disabled:opacity-60"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setCompletionPrompt(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
-                    style={{
-                      backgroundColor: isLight ? '#F1F5F9' : '#0F172A',
-                      color: textMuted,
-                      border: `1px solid ${border}`,
-                    }}>
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-sm disabled:opacity-50"
-                    style={{ background: 'linear-gradient(135deg, #16A34A, #15803D)' }}>
-                    Confirm installed
-                  </button>
-                </div>
-              </div>
-
-            </form>
-          </div>
         )
       })()}
 

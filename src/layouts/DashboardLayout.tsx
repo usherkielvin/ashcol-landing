@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
+  MdOutlineDashboard,
   MdOutlineLocalActivity,
   MdOutlineAssignmentInd,
   MdOutlineCalendarMonth,
