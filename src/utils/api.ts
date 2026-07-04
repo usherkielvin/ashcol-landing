@@ -851,23 +851,51 @@ export function parseCreatedTicketResponse(payload: unknown): any {
   return null
 }
 
+function extractErrorMessage(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text) return ''
+    try {
+      return extractErrorMessage(JSON.parse(text)) || text
+    } catch {
+      return text
+    }
+  }
+  if (typeof value !== 'object') return String(value)
+  const obj = value as Record<string, unknown>
+  if (typeof obj.message === 'string' && obj.message.trim()) return obj.message.trim()
+  if (typeof obj.error === 'string' && obj.error.trim()) return obj.error.trim()
+  if (typeof obj.error === 'object' && obj.error) {
+    const nested = extractErrorMessage(obj.error)
+    if (nested) return nested
+  }
+  if (Array.isArray(obj.errors) && obj.errors.length > 0) {
+    const parts = obj.errors
+      .map(item => extractErrorMessage(item))
+      .filter(Boolean)
+    if (parts.length) return parts.join('; ')
+  }
+  if (typeof obj.detail === 'string' && obj.detail.trim()) return obj.detail.trim()
+  return ''
+}
+
 export async function readApiError(res: Response): Promise<string> {
   const text = await res.text().catch(() => '')
   if (!text) return `Request failed (HTTP ${res.status})`
-  try {
-    const json = JSON.parse(text)
-    if (typeof json.message === 'string' && json.message.trim()) return json.message
-    if (typeof json.error === 'string' && json.error.trim()) return json.error
-    return text
-  } catch {
-    return text
-  }
+  const parsed = extractErrorMessage(text)
+  if (parsed) return parsed
+  return `Request failed (HTTP ${res.status})`
 }
 
 export function formatFetchError(err: unknown): string {
   if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
     return 'Could not reach the server. Check your connection and try again.'
   }
-  if (err instanceof Error && err.message.trim()) return err.message
+  if (err instanceof Error && err.message.trim()) {
+    return extractErrorMessage(err.message) || err.message.trim()
+  }
+  const parsed = extractErrorMessage(err)
+  if (parsed) return parsed
   return 'Unknown error'
 }

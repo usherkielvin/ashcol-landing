@@ -3,12 +3,12 @@ import { useLocation } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Phone, MapPin, User, Wrench, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
+  Eye, Clock, Upload, ChevronDown, Camera, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown, Copy,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, appendCurrentNegotiator, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, filterBranchNegotiators, appendCurrentNegotiator, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -1170,7 +1170,12 @@ function compareTicketsByColumn(
 }
 
 function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
-  return resolveNegotiatorDisplayName(ticket, employees)
+  const fullname = resolveNegotiatorDisplayName(ticket, employees)
+  if (!fullname) return ''
+  let cleanName = fullname.trim()
+  cleanName = cleanName.replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '')
+  const firstName = cleanName.split(/\s+/)[0]
+  return firstName.toUpperCase()
 }
 
 const DEFAULT_TICKET_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
@@ -1723,6 +1728,14 @@ export default function Tickets() {
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
+  const pendingSavesRef = useRef(new Map<string, {
+    body: Record<string, unknown>
+    rollback: Ticket
+    afterSave?: () => Promise<void>
+  }>())
+  const activeSavesRef = useRef(new Set<string>())
+  /** Local optimistic tickets that must survive in-flight list refreshes until PATCH/POST settles. */
+  const optimisticTicketsRef = useRef(new Map<string, Ticket>())
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -2303,8 +2316,12 @@ export default function Tickets() {
   }
 
   const commitSaveManualTicket = () => {
+    let tempId = ''
     try {
       const tokenVal = token()
+      if (!tokenVal) {
+        throw new Error('Not signed in — refresh the page and try again.')
+      }
       const category = addForm.ticketCategory || 'INSTALLATION'
       const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver, category)
       const titleVal = `${categoryDefaultServiceType(category)} service`
@@ -2329,7 +2346,13 @@ export default function Tickets() {
       if (!targetBranch) {
         throw new Error('Select a branch before adding a scheduled ticket.')
       }
+      if (!addForm.negotiatorId) {
+        throw new Error('Negotiator is required.')
+      }
       const scheduledDate = (addForm.preferredDate || '').split('T')[0].trim()
+      if (!scheduledDate) {
+        throw new Error('Preferred Date is required.')
+      }
       const payload = {
         customerName: (addForm.customerName || '').trim(),
         title: titleVal,
@@ -2363,7 +2386,7 @@ export default function Tickets() {
         }),
         branchId: targetBranch,
       }
-      const tempId = `temp-${Date.now()}`
+      tempId = `temp-${Date.now()}`
       const optimisticTicket = {
         id: tempId,
         ...payload,
@@ -2372,13 +2395,19 @@ export default function Tickets() {
       } as Ticket
 
       setDateFilter(scheduledDate)
-      applyTicketLocally(tempId, optimisticTicket)
+      optimisticTicketsRef.current.set(tempId, optimisticTicket)
+      setTickets(prev => {
+        const next = [optimisticTicket, ...prev.filter(t => t.id !== tempId)]
+        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+        writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+        return next
+      })
       setAddFormSnapshot(JSON.stringify(addForm))
       setAddModalOpen(false)
 
       void (async () => {
         try {
-          const res = await fetch(`${API_BASE_URL}/tickets`, {
+          const res = await fetch(`${API_BASE_URL}/tickets/schedule`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -2388,20 +2417,25 @@ export default function Tickets() {
           })
 
           if (!res.ok) {
-            const errorText = await res.text()
-            throw new Error(errorText || `Failed (HTTP ${res.status})`)
+            throw new Error(await readApiError(res))
           }
 
           const payloadResult = await res.json().catch(() => null)
-          const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
+          const createdTicket = (parseCreatedTicketResponse(payloadResult)
+            || payloadResult?.data?.ticket
+            || payloadResult?.data
+            || payloadResult?.ticket
+            || payloadResult) as Ticket | null
           if (!createdTicket?.id) {
-            optimisticTicketsRef.current.delete(tempId)
+            // Keep temp row visible; refresh will merge when server has it
             void fetchTickets({ soft: true, force: true })
             console.log('[Schedules] Created ticket in database (refreshing list)', { tempId })
             return
           }
 
+          // Swap temp → real id but keep in optimistic map until list fetch confirms
           optimisticTicketsRef.current.delete(tempId)
+          optimisticTicketsRef.current.set(createdTicket.id, createdTicket)
           setTickets(prev => {
             const next = [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
             const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
@@ -2415,7 +2449,8 @@ export default function Tickets() {
             preferredDate: createdTicket.preferredDate || scheduledDate,
           })
         } catch (err: unknown) {
-          console.error('[Schedules] Create ticket FAILED', tempId, err)
+          const reason = formatFetchError(err)
+          console.error('[Schedules] Create ticket FAILED', { tempId, reason, err })
           optimisticTicketsRef.current.delete(tempId)
           setTickets(prev => {
             const next = prev.filter(t => t.id !== tempId)
@@ -2423,12 +2458,18 @@ export default function Tickets() {
             writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
             return next
           })
-          alert(`Could not add ticket: ${formatFetchError(err)}`)
+          setAddModalOpen(true)
+          alert(`Could not add ticket: ${reason}`)
         }
       })()
     } catch (err: unknown) {
-      console.error('[Schedules] Create ticket FAILED', err)
-      alert(`Could not add ticket: ${formatFetchError(err)}`)
+      const reason = formatFetchError(err)
+      console.error('[Schedules] Create ticket FAILED', { tempId, reason, err })
+      if (tempId) {
+        optimisticTicketsRef.current.delete(tempId)
+        setTickets(prev => prev.filter(t => t.id !== tempId))
+      }
+      alert(`Could not add ticket: ${reason}`)
     }
   }
 
@@ -3080,14 +3121,20 @@ export default function Tickets() {
                 importErrors.push(...result.errors)
               }
             }
-            for (const created of createTemps) {
-              optimisticTicketsRef.current.delete(created.tempId)
-            }
             console.log('[Schedules] Import created tickets in database', {
               created: createdCount,
               failed: result?.failed ?? 0,
             })
-            void fetchTickets({ soft: true, force: true })
+            // Refresh first (overlay keeps temp rows), then drop temps once server list is in
+            await fetchTickets({ soft: true, force: true })
+            const tempIds = new Set(createTemps.map(c => c.tempId))
+            for (const id of tempIds) optimisticTicketsRef.current.delete(id)
+            setTickets(prev => {
+              const next = prev.filter(t => !tempIds.has(t.id))
+              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+              return next
+            })
           } else {
             failCount += createTemps.length
             importErrors.push(await readApiError(res))
@@ -3222,14 +3269,6 @@ export default function Tickets() {
   const [savingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
-  const pendingSavesRef = useRef(new Map<string, {
-    body: Record<string, unknown>
-    rollback: Ticket
-    afterSave?: () => Promise<void>
-  }>())
-  const activeSavesRef = useRef(new Set<string>())
-  /** Local optimistic tickets that must survive in-flight list refreshes until PATCH settles. */
-  const optimisticTicketsRef = useRef(new Map<string, Ticket>())
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
@@ -3316,20 +3355,25 @@ export default function Tickets() {
       return
     }
 
+    // Keep local creates/edits visible until the server list includes them.
     const applyOptimisticOverlay = (list: Ticket[]) => {
       const pending = optimisticTicketsRef.current
       if (pending.size === 0) return list
-      const seen = new Set<string>()
+      const serverIds = new Set(list.map(t => t.id))
       const merged = list.map(t => {
         const local = pending.get(t.id)
-        if (local) {
-          seen.add(t.id)
+        if (!local) return t
+        // Still saving — keep local version
+        if (pendingSavesRef.current.has(t.id) || activeSavesRef.current.has(t.id)) {
           return local
         }
+        // Server has this ticket and no pending save — trust server, release lock
+        pending.delete(t.id)
         return t
       })
+      // Temp / just-created tickets not in server payload yet — keep showing them
       for (const [id, local] of pending) {
-        if (!seen.has(id)) merged.unshift(local)
+        if (!serverIds.has(id)) merged.unshift(local)
       }
       return merged
     }
@@ -3372,7 +3416,18 @@ export default function Tickets() {
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
-      setTickets(cached!.tickets as Ticket[])
+      const pending = optimisticTicketsRef.current
+      const list = cached!.tickets as Ticket[]
+      if (pending.size === 0) {
+        setTickets(list)
+      } else {
+        const serverIds = new Set(list.map(t => t.id))
+        const merged = list.map(t => pending.get(t.id) || t)
+        for (const [id, local] of pending) {
+          if (!serverIds.has(id)) merged.unshift(local)
+        }
+        setTickets(merged)
+      }
       setLoading(false)
       hasLoadedOnceRef.current = true
     } else {
@@ -3693,10 +3748,8 @@ export default function Tickets() {
             ticketCategory: payload.ticketCategory,
             serviceType: payload.serviceType,
           })
-          // Only clear optimistic lock if no newer edit was queued while we saved
-          if (!pendingSavesRef.current.has(ticketId)) {
-            optimisticTicketsRef.current.delete(ticketId)
-          }
+          // Keep local ticket in optimisticTicketsRef until a list fetch confirms it on the server
+          // so refreshes (e.g. cache TTL) do not wipe the row from the UI.
           clearRelaysCache()
           clearWarrantyCache()
           if (job.afterSave) await job.afterSave()
@@ -4974,216 +5027,260 @@ export default function Tickets() {
           ? (isLight ? '#1d4ed8' : '#93c5fd')
           : green
 
-        const Row = ({ icon: Icon, label, val, color }: { icon: any; label: string; val: string; color?: string }) =>
-          val ? (
-            <div className="flex items-start gap-3 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-              <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: textMuted }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: textMuted }}>{label}</p>
-                <p className="text-xs font-semibold leading-relaxed break-words" style={{ color: color || textPrimary }}>
-                  {['TECHNICIAN', 'INSTALLER', 'ASSIGNED', 'BY', 'CREATED BY'].includes(label.toUpperCase()) ? (
-                    <EmployeeNameLink nameOrId={val} />
-                  ) : val}
-                </p>
-              </div>
-            </div>
-          ) : null
+        const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
+          <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</span>
+            <span className={`text-xs font-semibold break-words leading-snug ${green ? 'text-emerald-500' : ''}`}
+              style={green ? undefined : { color: textPrimary }}>
+              {['TECHNICIAN', 'INSTALLER', 'ASSIGNED', 'BY', 'CREATED BY', 'NEGOTIATOR', 'INSTALLER / TECHNICIAN'].includes(label.toUpperCase()) && typeof value === 'string' ? (
+                <EmployeeNameLink nameOrId={value} />
+              ) : value || '—'}
+            </span>
+          </div>
+        )
+
+        const SHead = ({ title }: { title: string }) => (
+          <div className="pt-2 pb-1 border-b pb-2 mb-3" style={{ borderColor: border }}>
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">{title}</p>
+          </div>
+        )
 
         return (
           <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 sm:p-6"
                style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}
                onClick={() => setDetailTicket(null)}>
-            <div className="flex flex-col w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden"
+            <div className="flex flex-col w-full max-w-5xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
                  onClick={e => e.stopPropagation()}>
 
-              {/* Header */}
-              <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
-                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
-                    {isMyTickets ? 'My Ticket Details' : 'Schedule Details'}
-                  </p>
-                  <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
-                  <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
-                    Ticket No: {t.ticketNumber || t.ticket_number || '—'}
-                  </p>
-                  <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>ID: {t.id}</p>
-                  {isDuplicateName && (
-                    <p className="text-[10px] font-bold" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
-                      Duplicate customer name on this date — each row has its own ticket ID.
-                    </p>
-                  )}
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
-                        style={{ color: scheduleBadgeStyle.color, backgroundColor: scheduleBadgeStyle.backgroundColor, borderColor: scheduleBadgeStyle.borderColor }}>
-                    <Clock className="w-3 h-3" />{scheduleStatusDisplay}
-                  </span>
+               {/* Header */}
+               <div className="px-6 py-4 flex items-start justify-between gap-3 shrink-0"
+                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 <div className="flex flex-col gap-1.5 min-w-0">
+                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                     {isMyTickets ? 'My Ticket Details' : 'Schedule Details'}
+                   </p>
+                   <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>{custName}</h3>
+                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>
+                     Ticket No: {t.ticketNumber || t.ticket_number || '—'}
+                   </p>
+                   <p className="text-[10px] font-semibold font-mono" style={{ color: textMuted }}>ID: {t.id}</p>
+                   {isDuplicateName && (
+                     <p className="text-[10px] font-bold" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
+                       Duplicate customer name on this date — each row has its own ticket ID.
+                     </p>
+                   )}
+                   <span className="px-2.5 py-1 rounded-full text-[10px] font-black border inline-flex items-center gap-1.5 self-start"
+                         style={{ color: scheduleBadgeStyle.color, backgroundColor: scheduleBadgeStyle.backgroundColor, borderColor: scheduleBadgeStyle.borderColor }}>
+                     <Clock className="w-3 h-3" />{scheduleStatusDisplay}
+                   </span>
+                 </div>
+                 <button onClick={() => setDetailTicket(null)}
+                         className="p-2 rounded-lg shrink-0 hover:bg-slate-500/10 transition-colors"
+                         style={{ color: textMuted }}>
+                   <X className="w-4 h-4" />
+                 </button>
+               </div>
+
+               {/* Two Column Body */}
+               <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
+                 
+                 {/* Left Column: Details */}
+                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                   {/* Grid 1: Client & Location Info */}
+                   <div>
+                     <SHead title="Client & Location Details" />
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       <DField label="Customer" value={custName} />
+                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : '—'} />
+                       {!isMyTickets && (
+                         <DField label="Address" value={addr} className="sm:col-span-2" />
+                       )}
+                       <DField label="District" value={district || resolveTicketDistrict(t) || '—'} className={isMyTickets ? "sm:col-span-2" : ""} />
+                     </div>
+                   </div>
+
+                   {/* Grid 2: Service & Equipment Details */}
+                   <div>
+                     <SHead title="Service & Equipment Details" />
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || '—'} />
+                       <DField label="Brand / Unit" value={brand || '—'} />
+                       <DField label="Service / Driver" value={serviceDriver || '—'} />
+                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || '—'} />
+                       <DField label="Negotiator" value={negotiatorName || '—'} />
+                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || '—'} />
+                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || '—'} />
+                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || '—'} />
+                     </div>
+                   </div>
+
+                   {/* Grid 3: Scheduling Details */}
+                   <div>
+                     <SHead title="Scheduling Details" />
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       <DField label="Preferred Date" value={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '—'} />
+                       <DField label="Final Schedule" value={finalScheduleDate ? formatDateKeyLabel(finalScheduleDate) : '—'} green />
+                       {isCompleted && archivedSched && (
+                         <DField label="Scheduled Date" value={archivedSched} />
+                       )}
+                       {isCompleted && installedDate && (
+                         <DField label="Installed Date" value={installedDate} />
+                       )}
+                     </div>
+                   </div>
+
+                   {/* Grid 4: Payment Details */}
+                   {(hasPayment || t.modeOfPayment || t.mode_of_payment || t.amountCharged || t.installationCharges || t.installation_charges) && (
+                     <div>
+                       <SHead title="Payment Details" />
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                         <DField label="Mode of Payment" value={paymentMode || '—'} />
+                         <DField label="Payment Amount" value={paymentAmt || '—'} green />
+                       </div>
+                     </div>
+                   )}
+
+                   {/* Commit terms / note / remarks */}
+                   {(commit || note || update) && (
+                     <div className="space-y-4">
+                       {commit && (
+                         <div>
+                           <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
+                           <p className="text-xs leading-relaxed rounded-xl p-4"
+                             style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
+                             {commit}
+                           </p>
+                         </div>
+                       )}
+                       {note && (
+                         <div>
+                           <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
+                           <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                             style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
+                             {note}
+                           </p>
+                         </div>
+                       )}
+                       {update && (
+                         <div>
+                           <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
+                           <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                             style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
+                             {update}
+                           </p>
+                         </div>
+                       )}
+                     </div>
+                   )}
+                 </div>
+
+                 {/* Right Column: Update History */}
+                 <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
+                      style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
+                   <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
+                     Update History
+                   </h4>
+                   
+                   {loadingHistory ? (
+                     <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2">
+                       <Clock className="w-5 h-5 animate-spin" style={{ color: textMuted }} />
+                       <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs...</span>
+                     </div>
+                   ) : (
+                     <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
+                       {(() => {
+                         const listToRender = [...history]
+                         const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
+                         
+                         if (!hasSubmission && t.createdAt) {
+                           listToRender.push({
+                             id: 'initial-sub',
+                             changeNote: 'Submitted',
+                             changedByUserName: custName,
+                             createdAt: t.createdAt,
+                             newPreferredDate: preferredDate
+                           })
+                         }
+                         
+                         listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                         
+                         if (listToRender.length === 0) {
+                           return (
+                             <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
+                               No update history recorded.
+                             </div>
+                           )
+                         }
+
+                         return listToRender.map((h, idx) => {
+                           const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                             month: 'short', day: 'numeric', year: 'numeric',
+                             hour: 'numeric', minute: '2-digit', hour12: true
+                           })
+                           
+                           return (
+                             <div key={h.id || idx} className="relative">
+                               <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
+                                     style={{
+                                       borderColor: idx === 0 ? green : border,
+                                       backgroundColor: idx === 0 ? green : cardBg
+                                     }} />
+                               
+                               <div className="text-xs">
+                                 <div className="flex items-start justify-between gap-2">
+                                   <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                     {h.changeNote || 'Ticket details updated'}
+                                   </span>
+                                   <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                     {dt}
+                                   </span>
+                                 </div>
+                                 
+                                 <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                                   <p className="text-[10px] font-semibold">
+                                     By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
+                                   </p>
+                                   {h.newStatus && h.newStatus !== h.previousStatus && (
+                                     <p className="text-[10px]">
+                                       Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                     </p>
+                                   )}
+                                   {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                     <p className="text-[10px]">
+                                       Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
+                                     </p>
+                                   )}
+                                   {h.newAssignedToName && (
+                                     <p className="text-[10px]">
+                                       Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
+                                     </p>
+                                   )}
+                                 </div>
+                               </div>
+                             </div>
+                           )
+                         })
+                       })()}
+                     </div>
+                   )}
+                 </div>
+               </div>
+
+               {/* Footer Actions */}
+               <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
+                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 {canEdit && (
+                   <button onClick={() => { openEditModal(t); setDetailTicket(null) }}
+                           className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
+                           style={{ borderColor: inputBorder, color: textPrimary }}>
+                     <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
+                     Edit Update
+                   </button>
+                 )}
                 </div>
-                <button onClick={() => setDetailTicket(null)}
-                        className="p-2 rounded-lg shrink-0 hover:bg-slate-500/10 transition-colors"
-                        style={{ color: textMuted }}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Two Column Body */}
-              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
-                
-                {/* Left Column: Details */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-1">
-                  <Row icon={User}    label="Customer"   val={custName} />
-                  <Row icon={Wrench}  label="Ticket No." val={t.ticketNumber || t.ticket_number || ''} />
-                  <Row icon={Wrench}  label="Control No. / SI (Aircon)" val={t.controlNumber || t.control_number || ''} />
-                  <Row icon={Phone}   label="Contact"    val={phone ? (fmtPhone(phone) || phone) : ''} />
-                  {!isMyTickets && <Row icon={MapPin}  label="Address"    val={addr} />}
-                  <Row icon={MapPin}  label="District"   val={district || resolveTicketDistrict(t)} />
-                  <Row icon={Wrench}  label="Service / Driver" val={serviceDriver} />
-                  <Row icon={Wrench}  label="Brand / Unit" val={brand} />
-                  <Row icon={Wrench}  label={isTaguigServices ? "Endorsed By" : "Dealer"}     val={dealer} />
-                  <Row icon={User}    label={isTaguigServices ? "Technician" : "Installer"}  val={installer} />
-                  <Row icon={User}    label="Negotiator" val={negotiatorName} />
-                  <Row icon={Clock}   label="Preferred Date" val={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''} />
-                  <Row icon={Clock}   label="Final Schedule" val={finalScheduleDate ? formatDateKeyLabel(finalScheduleDate) : ''} color={green} />
-                  {isCompleted && archivedSched && (
-                    <Row icon={Clock} label="Scheduled Date" val={archivedSched} />
-                  )}
-                  {isCompleted && installedDate && (
-                    <Row icon={Clock} label="Installed Date" val={installedDate} />
-                  )}
-                  {hasPayment && paymentAmt && (
-                    <Row icon={Wrench} label="Payment Amount" val={paymentAmt} color={green} />
-                  )}
-                  {hasPayment && paymentMode && (
-                    <Row icon={Wrench} label="Mode of Payment" val={paymentMode} />
-                  )}
-                  
-                  {commit && (
-                    <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Commit (Amount)" : "Commit / Description"}</p>
-                      <p className="text-xs leading-relaxed" style={{ color: textPrimary }}>{commit}</p>
-                    </div>
-                  )}
-                  {note && (
-                    <div className="py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Confirmation" : "Note"}</p>
-                      <p className="text-xs leading-relaxed font-semibold" style={{ color: '#EF4444' }}>{note}</p>
-                    </div>
-                  )}
-                  {update && (
-                    <div className="py-2.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>{isTaguigServices ? "Service Status" : "Update"}</p>
-                      <p className="text-xs leading-relaxed font-semibold" style={{ color: updateColor }}>{update}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Column: Update History */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
-                     style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
-                    Update History
-                  </h4>
-                  
-                  {loadingHistory ? (
-                    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2">
-                      <Clock className="w-5 h-5 animate-spin" style={{ color: textMuted }} />
-                      <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs...</span>
-                    </div>
-                  ) : (
-                    <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
-                      {(() => {
-                        const listToRender = [...history]
-                        const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
-                        
-                        if (!hasSubmission && t.createdAt) {
-                          listToRender.push({
-                            id: 'initial-sub',
-                            changeNote: 'Submitted',
-                            changedByUserName: custName,
-                            createdAt: t.createdAt,
-                            newPreferredDate: preferredDate
-                          })
-                        }
-                        
-                        listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                        
-                        if (listToRender.length === 0) {
-                          return (
-                            <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
-                              No update history recorded.
-                            </div>
-                          )
-                        }
-
-                        return listToRender.map((h, idx) => {
-                          const dt = new Date(h.createdAt).toLocaleString('en-PH', {
-                            month: 'short', day: 'numeric', year: 'numeric',
-                            hour: 'numeric', minute: '2-digit', hour12: true
-                          })
-                          
-                          return (
-                            <div key={h.id || idx} className="relative">
-                              <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
-                                    style={{
-                                      borderColor: idx === 0 ? green : border,
-                                      backgroundColor: idx === 0 ? green : cardBg
-                                    }} />
-                              
-                              <div className="text-xs">
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
-                                    {h.changeNote || 'Ticket details updated'}
-                                  </span>
-                                  <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
-                                    {dt}
-                                  </span>
-                                </div>
-                                
-                                <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
-                                  <p className="text-[10px] font-semibold">
-                                    By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
-                                  </p>
-                                  {h.newStatus && h.newStatus !== h.previousStatus && (
-                                    <p className="text-[10px]">
-                                      Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
-                                    </p>
-                                  )}
-                                  {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
-                                    <p className="text-[10px]">
-                                      Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
-                                    </p>
-                                  )}
-                                  {h.newAssignedToName && (
-                                    <p className="text-[10px]">
-                                      Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Footer Actions */}
-              <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
-                   style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-                {canEdit && (
-                  <button onClick={() => { openEditModal(t); setDetailTicket(null) }}
-                          className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
-                          style={{ borderColor: inputBorder, color: textPrimary }}>
-                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
-                    Edit Update
-                  </button>
-                )}
-
               </div>
             </div>
-          </div>
         )
       })()}
 
