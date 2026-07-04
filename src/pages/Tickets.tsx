@@ -3040,7 +3040,12 @@ export default function Tickets() {
   // ── Cell edit / expand ────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
-  const [statusPicker, setStatusPicker] = useState<{ ticket: Ticket; x: number; y: number } | null>(null)
+  const [statusPicker, setStatusPicker] = useState<{
+    ticket: Ticket
+    mode: 'inline' | 'edit-form'
+    x: number
+    y: number
+  } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
@@ -3403,19 +3408,40 @@ export default function Tickets() {
 
   const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
 
+  const openStatusPicker = useCallback((
+    ticket: Ticket,
+    mode: 'inline' | 'edit-form' = 'inline',
+    anchorEl?: HTMLElement | null,
+  ) => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cancelEdit()
+    setExpandedCell(null)
+
+    const popupW = 300
+    const popupH = 520
+    const el = anchorEl
+      || (mode === 'inline'
+        ? document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null
+        : null)
+    const rect = el?.getBoundingClientRect()
+    const left = rect
+      ? Math.min(Math.max(8, rect.left), window.innerWidth - popupW - 8)
+      : Math.max(8, (window.innerWidth - popupW) / 2)
+    const below = rect ? rect.bottom + 6 : 80
+    const above = rect ? rect.top - popupH - 6 : 80
+    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.7) <= window.innerHeight - 8
+    const top = fitsBelow
+      ? Math.min(below, window.innerHeight - 120)
+      : Math.max(8, above)
+
+    setStatusPicker({ ticket, mode, x: left, y: top })
+  }, [])
+
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
-      const el = document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null
-      const rect = el?.getBoundingClientRect()
-      const popupW = 320
-      const popupH = 560
-      const x = Math.min(rect?.left ?? 80, window.innerWidth - popupW - 12)
-      const y = rect
-        ? (rect.bottom + 8 + popupH > window.innerHeight ? Math.max(12, rect.top - popupH - 8) : rect.bottom + 8)
-        : 80
-      setStatusPicker({ ticket, x: Math.max(12, x), y })
+      openStatusPicker(ticket)
       return
     }
     setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets) })
@@ -4551,15 +4577,7 @@ export default function Tickets() {
                                 e.stopPropagation()
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
-                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                                  const popupW = 320
-                                  const popupH = 560
-                                  const x = Math.min(rect.left, window.innerWidth - popupW - 12)
-                                  const y = rect.bottom + 8 + popupH > window.innerHeight
-                                    ? Math.max(12, rect.top - popupH - 8)
-                                    : rect.bottom + 8
-                                  cancelEdit()
-                                  setStatusPicker({ ticket, x: Math.max(12, x), y })
+                                  openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
                                 setExpandedCell(prev =>
@@ -4936,104 +4954,137 @@ export default function Tickets() {
         )
       })()}
 
-      {/* ── Status Picker Popup ── */}
-      {statusPicker && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[10900]" style={{ backgroundColor: 'rgba(15,23,42,0.28)' }} onClick={() => setStatusPicker(null)}>
-          <div
-            className="fixed w-80 rounded-2xl shadow-2xl overflow-hidden"
-            style={{
-              left: statusPicker.x,
-              top: statusPicker.y,
-              backgroundColor: cardBg,
-              border: `1px solid ${border}`,
-              boxShadow: isLight ? '0 24px 48px rgba(15,23,42,0.22)' : '0 24px 48px rgba(0,0,0,0.55)',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-4 py-3.5 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>SET STATUS</p>
-                <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>
-                  {getCustomerDisplayName(statusPicker.ticket) || statusPicker.ticket.title}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStatusPicker(null)}
-                className="p-2 rounded-lg hover:bg-slate-500/10 shrink-0"
-                style={{ color: textMuted }}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* ── Status Picker Modal ── */}
+      {statusPicker && (() => {
+        const pickerTicket = statusPicker.ticket
+        const pickerMode = statusPicker.mode
+        const currentStatus = pickerMode === 'edit-form'
+          ? String(editForm.status || getScheduleStatusValue(pickerTicket)).toUpperCase().replace(/\s+/g, '_')
+          : getScheduleStatusValue(pickerTicket)
+        const currentLabel = getScheduleStatusLabel(currentStatus)
+        const currentStyle = getScheduleStatusBadgeStyle(currentStatus, isLight)
 
-            <div className="max-h-[min(560px,75vh)] overflow-y-auto p-3 flex flex-col gap-3">
-              {([
-                { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
-                { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
-              ] as const).map((section, sectionIdx) => (
-                <div key={section.title} className={sectionIdx > 0 ? 'pt-3' : ''} style={sectionIdx > 0 ? { borderTop: `1px solid ${border}` } : undefined}>
-                  <p className="px-2 pb-2 text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{section.title}</p>
-                  <div className="flex flex-col gap-1.5">
-                    {section.opts.map(opt => {
-                      const current = getScheduleStatusValue(statusPicker.ticket)
-                      const active = current === opt.value
-                      const style = getScheduleStatusBadgeStyle(opt.value, isLight)
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => {
-                            const ticket = statusPicker.ticket
-                            setStatusPicker(null)
-                            if (opt.value === 'RESCHED') {
-                              openReschedDialog(ticket)
-                              return
-                            }
-                            if (opt.value === current) return
-                            void saveCellEdit(ticket, 'STATUS', opt.value)
-                          }}
-                          className="flex items-center justify-between gap-3 w-full px-3.5 py-3.5 rounded-xl text-left transition-all"
-                          style={{
-                            backgroundColor: active ? style.backgroundColor : (isLight ? '#f8fafc' : '#0a1424'),
-                            border: `2px solid ${active ? style.borderColor : (isLight ? '#e2e8f0' : '#1e293b')}`,
-                            minHeight: 52,
-                          }}
-                          onMouseEnter={e => {
-                            if (!active) {
-                              (e.currentTarget as HTMLElement).style.backgroundColor = style.backgroundColor
-                              ;(e.currentTarget as HTMLElement).style.borderColor = style.borderColor
-                            }
-                          }}
-                          onMouseLeave={e => {
-                            if (!active) {
-                              (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f8fafc' : '#0a1424'
-                              ;(e.currentTarget as HTMLElement).style.borderColor = isLight ? '#e2e8f0' : '#1e293b'
-                            }
-                          }}
-                        >
-                          <span
-                            className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wide border"
-                            style={{ color: style.color, backgroundColor: style.backgroundColor, borderColor: style.borderColor }}
-                          >
-                            {opt.label}
-                          </span>
-                          {active && (
-                            <span className="text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
-                              CURRENT
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+        const pickStatus = (value: string) => {
+          setStatusPicker(null)
+          if (pickerMode === 'edit-form') {
+            setEditForm(prev => ({
+              ...prev,
+              status: value,
+              rescheduleToDate: value === 'RESCHED'
+                ? (prev.rescheduleToDate || prev.preferredDate || editOriginalDate || '')
+                : '',
+            }))
+            return
+          }
+          if (value === 'RESCHED') {
+            openReschedDialog(pickerTicket)
+            return
+          }
+          if (value === currentStatus) return
+          void saveCellEdit(pickerTicket, 'STATUS', value)
+        }
+
+        return ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[12000]" onClick={() => setStatusPicker(null)}>
+            <div
+              className="fixed w-[300px] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{
+                left: statusPicker.x,
+                top: statusPicker.y,
+                backgroundColor: cardBg,
+                border: `1px solid ${border}`,
+                maxHeight: 'min(520px, 75vh)',
+                boxShadow: isLight
+                  ? '0 18px 40px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.04)'
+                  : '0 18px 40px rgba(0,0,0,0.5)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div
+                className="px-3.5 py-3 flex items-center justify-between gap-2 shrink-0"
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+              >
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>STATUS</p>
+                  <p className="text-xs font-black uppercase truncate mt-0.5" style={{ color: currentStyle.color }}>
+                    {currentLabel}
+                  </p>
                 </div>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setStatusPicker(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-3">
+                {([
+                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
+                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+                ] as const).map((section, sectionIdx) => (
+                  <div
+                    key={section.title}
+                    className={sectionIdx > 0 ? 'pt-2.5' : ''}
+                    style={sectionIdx > 0 ? { borderTop: `1px solid ${border}` } : undefined}
+                  >
+                    <p className="px-2 pb-1.5 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                      {section.title}
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {section.opts.map(opt => {
+                        const active = currentStatus === opt.value
+                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => pickStatus(opt.value)}
+                            className="flex items-center justify-between gap-2 w-full px-3 py-3 rounded-xl text-left transition-all"
+                            style={{
+                              backgroundColor: active ? style.backgroundColor : (isLight ? '#f8fafc' : '#0a1424'),
+                              border: `2px solid ${active ? style.borderColor : (isLight ? '#e2e8f0' : '#1e293b')}`,
+                              minHeight: 48,
+                            }}
+                            onMouseEnter={e => {
+                              if (!active) {
+                                (e.currentTarget as HTMLElement).style.backgroundColor = style.backgroundColor
+                                ;(e.currentTarget as HTMLElement).style.borderColor = style.borderColor
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (!active) {
+                                (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f8fafc' : '#0a1424'
+                                ;(e.currentTarget as HTMLElement).style.borderColor = isLight ? '#e2e8f0' : '#1e293b'
+                              }
+                            }}
+                          >
+                            <span
+                              className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wide border"
+                              style={{ color: style.color, backgroundColor: style.backgroundColor, borderColor: style.borderColor }}
+                            >
+                              {opt.label}
+                            </span>
+                            {active && (
+                              <span className="text-[10px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
+                                NOW
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+          </div>,
+          document.body,
+        )
+      })()}
 
       {/* ── Completion Prompt Modal ── */}
       {completionPrompt && (() => {
@@ -5815,30 +5866,31 @@ export default function Tickets() {
                   </Field>
                   <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
                     <Field label="Status" required>
-                      <select value={editForm.status || 'INSTALLATION'}
-                        onChange={e => {
-                          const next = e.target.value
-                          setEditForm({
-                            ...editForm,
-                            status: next,
-                            rescheduleToDate: next === 'RESCHED'
-                              ? (editForm.rescheduleToDate || editForm.preferredDate || editOriginalDate || '')
-                              : '',
-                          })
-                        }}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
-                        <optgroup label="PENDING">
-                          {SCHEDULE_PENDING_OPTS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="CLOSING">
-                          {SCHEDULE_CLOSING_OPTS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </optgroup>
-                      </select>
+                      {(() => {
+                        const statusVal = String(editForm.status || 'INSTALLATION').toUpperCase().replace(/\s+/g, '_')
+                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+                        const formTicket = (tickets.find(t => t.id === editForm.id) || { id: editForm.id || '', title: editForm.customerName || '' }) as Ticket
+                        return (
+                          <button
+                            type="button"
+                            onClick={e => openStatusPicker(formTicket, 'edit-form', e.currentTarget)}
+                            className="w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 text-left transition-all hover:opacity-95"
+                            style={{
+                              backgroundColor: statusStyle.backgroundColor,
+                              border: `2px solid ${statusStyle.borderColor}`,
+                              minHeight: 48,
+                            }}
+                          >
+                            <span
+                              className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wide border"
+                              style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
+                            >
+                              {getScheduleStatusLabel(statusVal)}
+                            </span>
+                            <ChevronDown className="w-4 h-4 shrink-0" style={{ color: statusStyle.color }} />
+                          </button>
+                        )
+                      })()}
                     </Field>
                     {isReschedStatus && (
                       <div className="flex flex-col gap-3">
