@@ -6059,17 +6059,7 @@ export default function Tickets() {
                      <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
                        {(() => {
                          const listToRender = [...history]
-                         const hasSubmission = listToRender.some(h => !h.previousStatus && h.newStatus === 'PENDING')
-                         
-                         if (!hasSubmission && t.createdAt) {
-                           listToRender.push({
-                             id: 'initial-sub',
-                             changeNote: 'Submitted',
-                             changedByUserName: custName,
-                             createdAt: t.createdAt,
-                             newPreferredDate: preferredDate
-                           })
-                         }
+                         // Removed virtual initial submission
                          
                          listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                          
