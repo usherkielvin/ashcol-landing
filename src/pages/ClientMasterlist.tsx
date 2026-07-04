@@ -627,6 +627,8 @@ const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
   if (isWarrantyRegistrationTicket(ticket)) return true
   if (hasPendingWarrantySignal(ticket)) return true
   if (isRelayPostInstallWarranty(ticket)) return true
+  // Schedule-tab intake (manual / import / input) must stay on Schedules only.
+  if (isScheduledManualTicket(ticket)) return true
   if (hasRelayFinalScheduleDate(ticket)) return true
   if (getRelayStatusLabel(ticket) === 'Installed') return true
   return false
@@ -689,13 +691,16 @@ const isRelayCustomerDuplicate = (candidate: Ticket, existing: Ticket): boolean 
   return relayCustomerPhonesMatch(candidate, existing)
 }
 
-/** Ticket created on Schedules via manual input (has schedule date, not yet relay-complete). */
+/** Ticket created/imported on Schedules (not a Relays negotiation row). */
 const isScheduledManualTicket = (ticket: Ticket): boolean => {
   const details = parseAcDetails(ticket)
   if (details.scheduledDate?.trim()) return true
+  if (details.finalDate?.trim()) return true
   const status = (ticket.status || '').toUpperCase()
-  if (status === 'SCHEDULED') return true
-  return Boolean(details.finalDate?.trim())
+  if (status === 'SCHEDULED' || status === 'RESCHED') return true
+  // Schedule intake always has a preferred/schedule date; Relays pending rows do not.
+  if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
+  return false
 }
 
 /** One row per customer / ticket number on Relays — prefer the scheduled copy. */

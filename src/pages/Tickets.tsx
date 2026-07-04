@@ -590,9 +590,25 @@ function getRelayQueueLabel(ticket: Ticket): string {
   return 'Pending'
 }
 
+/** Tickets entered on Schedules (manual / import) must not appear on My Tickets. */
+function isScheduleTabIntakeTicket(ticket: Ticket): boolean {
+  const stat = (ticket.status || '').toUpperCase()
+  if (stat === 'SCHEDULED' || stat === 'RESCHED') return true
+  if (hasFinalScheduleDate(ticket)) return true
+  const meta = parseAcMeta(ticket)
+  if (!Array.isArray(meta) && meta && typeof meta === 'object') {
+    const scheduledDate = String((meta as { scheduledDate?: string }).scheduledDate || '').trim()
+    if (scheduledDate) return true
+    const intake = (meta as { scheduleIntake?: boolean | string }).scheduleIntake
+    if (intake === true || intake === 'true') return true
+  }
+  return false
+}
+
 function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
   if (stat === 'COMPLETED' || stat === 'CANCELLED') return false
+  if (isScheduleTabIntakeTicket(ticket)) return false
   if (hasFinalScheduleDate(ticket)) return false
 
   const label = getRelayQueueLabel(ticket)
@@ -4987,54 +5003,54 @@ export default function Tickets() {
         return ReactDOM.createPortal(
           <div className="fixed inset-0 z-[12000]" onClick={() => setStatusPicker(null)}>
             <div
-              className="fixed w-[300px] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              className="fixed w-[230px] rounded-xl shadow-2xl overflow-hidden flex flex-col"
               style={{
                 left: statusPicker.x,
                 top: statusPicker.y,
                 backgroundColor: cardBg,
                 border: `1px solid ${border}`,
-                maxHeight: 'min(520px, 75vh)',
+                maxHeight: 'min(450px, 70vh)',
                 boxShadow: isLight
-                  ? '0 18px 40px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.04)'
-                  : '0 18px 40px rgba(0,0,0,0.5)',
+                  ? '0 10px 25px -5px rgba(15,23,42,0.1), 0 8px 10px -6px rgba(15,23,42,0.1)'
+                  : '0 10px 25px -5px rgba(0,0,0,0.5)',
               }}
               onClick={e => e.stopPropagation()}
             >
               <div
-                className="px-3.5 py-3 flex items-center justify-between gap-2 shrink-0"
+                className="px-3 py-2 flex items-center justify-between gap-2 shrink-0"
                 style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
               >
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>STATUS</p>
-                  <p className="text-xs font-black uppercase truncate mt-0.5" style={{ color: currentStyle.color }}>
+                  <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>STATUS</p>
+                  <p className="text-[11px] font-black uppercase truncate mt-0.5" style={{ color: currentStyle.color }}>
                     {currentLabel}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setStatusPicker(null)}
-                  className="p-1.5 rounded-lg hover:bg-slate-500/10 shrink-0"
+                  className="p-1 rounded-md hover:bg-slate-500/10 shrink-0"
                   style={{ color: textMuted }}
                   aria-label="Close"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-3">
+              <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
                 {([
                   { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
                   { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
                 ] as const).map((section, sectionIdx) => (
                   <div
                     key={section.title}
-                    className={sectionIdx > 0 ? 'pt-2.5' : ''}
+                    className={sectionIdx > 0 ? 'pt-2' : ''}
                     style={sectionIdx > 0 ? { borderTop: `1px solid ${border}` } : undefined}
                   >
-                    <p className="px-2 pb-1.5 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                    <p className="px-2 pb-1.5 text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
                       {section.title}
                     </p>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-0.5">
                       {section.opts.map(opt => {
                         const active = currentStatus === opt.value
                         const style = getScheduleStatusBadgeStyle(opt.value, isLight)
@@ -5043,34 +5059,37 @@ export default function Tickets() {
                             key={opt.value}
                             type="button"
                             onClick={() => pickStatus(opt.value)}
-                            className="flex items-center justify-between gap-2 w-full px-3 py-3 rounded-xl text-left transition-all"
+                            className="flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-left transition-colors"
                             style={{
-                              backgroundColor: active ? style.backgroundColor : (isLight ? '#f8fafc' : '#0a1424'),
-                              border: `2px solid ${active ? style.borderColor : (isLight ? '#e2e8f0' : '#1e293b')}`,
-                              minHeight: 48,
+                              backgroundColor: active ? (isLight ? '#f1f5f9' : '#1e293b') : 'transparent',
+                              border: 'none',
                             }}
                             onMouseEnter={e => {
                               if (!active) {
-                                (e.currentTarget as HTMLElement).style.backgroundColor = style.backgroundColor
-                                ;(e.currentTarget as HTMLElement).style.borderColor = style.borderColor
+                                (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#1e293b'
                               }
                             }}
                             onMouseLeave={e => {
                               if (!active) {
-                                (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f8fafc' : '#0a1424'
-                                ;(e.currentTarget as HTMLElement).style.borderColor = isLight ? '#e2e8f0' : '#1e293b'
+                                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
                               }
                             }}
                           >
-                            <span
-                              className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wide border"
-                              style={{ color: style.color, backgroundColor: style.backgroundColor, borderColor: style.borderColor }}
-                            >
-                              {opt.label}
+                            <span className="flex items-center gap-2.5 min-w-0">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0 border"
+                                style={{ backgroundColor: style.color, borderColor: style.borderColor }}
+                              />
+                              <span
+                                className="text-[11px] font-bold uppercase tracking-wide truncate"
+                                style={{ color: active ? (isLight ? '#0f172a' : '#f8fafc') : textPrimary }}
+                              >
+                                {opt.label}
+                              </span>
                             </span>
                             {active && (
-                              <span className="text-[10px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
-                                NOW
+                              <span className="text-[9px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
+                                Active
                               </span>
                             )}
                           </button>
