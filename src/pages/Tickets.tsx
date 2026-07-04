@@ -3960,7 +3960,7 @@ export default function Tickets() {
   }
 
   const promptClearAllVisible = () => {
-    if (!isAdmin || visible.length === 0) return
+    if (!canEdit || visible.length === 0) return
     const count = visible.length
     const scope = [
       globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? getBranchDisplayName(globalBranchId) : 'all branches',
@@ -3979,7 +3979,7 @@ export default function Tickets() {
   }
 
   const commitClearAllVisible = async () => {
-    if (!isAdmin || visible.length === 0) return
+    if (!canEdit || visible.length === 0) return
     const count = visible.length
 
     setSaving(true)
@@ -4623,7 +4623,7 @@ export default function Tickets() {
                     <Upload className="w-3.5 h-3.5 text-amber-500" />
                     Import Excel
                   </button>
-                  {isAdmin && (
+                  {canEdit && (
                     <>
                       <div className="h-px mx-2" style={{ backgroundColor: border }} />
                       <button
@@ -5270,6 +5270,13 @@ export default function Tickets() {
                {/* Footer Actions */}
                <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
                     style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 {canEdit && (
+                   <button onClick={() => { handleDelete(t.id); setDetailTicket(null) }}
+                           className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm">
+                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                     Delete Ticket
+                   </button>
+                 )}
                  {canEdit && (
                    <button onClick={() => { openEditModal(t); setDetailTicket(null) }}
                            className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
@@ -6340,17 +6347,26 @@ export default function Tickets() {
               </div>
             </div>
 
-            <div className="px-6 py-4 flex items-center justify-end gap-3 border-t" style={{ borderColor: border }}>
-              <button onClick={requestCloseEditModal}
-                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
-                Cancel
-              </button>
-              <button onClick={promptSaveEditTicket}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
-                style={{ backgroundColor: green }}>
-                Save Changes
-              </button>
+            <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: border }}>
+              {canEdit ? (
+                <button onClick={() => { handleDelete(editForm.id!); setEditModalOpen(false) }}
+                        className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm">
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  Delete Ticket
+                </button>
+              ) : <div />}
+              <div className="flex gap-3">
+                <button onClick={requestCloseEditModal}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+                  Cancel
+                </button>
+                <button onClick={promptSaveEditTicket}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+                  style={{ backgroundColor: green }}>
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         </div>
