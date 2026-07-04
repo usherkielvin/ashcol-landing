@@ -2,7 +2,7 @@ import { getActivePortalBranchId } from './api'
 import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
-export const TAB_CACHE_TTL_MS = 3 * 60 * 1000
+export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
 
 const VERSION = 1
 

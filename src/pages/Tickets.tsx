@@ -1785,6 +1785,13 @@ export default function Tickets() {
     }
   }, [loading])
   const [fetchError, setFetchError]   = useState<string | null>(null)
+  // Only show the refreshing banner after it has been active for 800ms — avoids flash for fast/cached refreshes
+  const [showRefreshing, setShowRefreshing] = useState(false)
+  useEffect(() => {
+    if (!refreshing) { setShowRefreshing(false); return }
+    const t = setTimeout(() => setShowRefreshing(true), 800)
+    return () => clearTimeout(t)
+  }, [refreshing])
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
   const [dateFilter, setDateFilter]   = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
@@ -4098,8 +4105,11 @@ export default function Tickets() {
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
     const startKey = initDate || todayDateKey()
-    const d = new Date(`${startKey}T00:00:00`)
-    setReschedCalMonth({ year: d.getFullYear(), month: d.getMonth() })
+    const startDate = new Date(`${startKey}T00:00:00`)
+    const todayDate = new Date(`${todayDateKey()}T00:00:00`)
+    // Always open on today's month (or the selected date's month if it's in the future)
+    const calViewDate = startDate >= todayDate ? startDate : todayDate
+    setReschedCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
   }
 
   const closeReschedDialog = () => {
@@ -4998,7 +5008,7 @@ export default function Tickets() {
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
-            {refreshing && (
+            {showRefreshing && (
               <div className="flex items-center gap-2.5 px-4 py-2 border-b select-none" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(22,163,74,0.05)' : 'rgba(22,163,74,0.08)' }}>
                 <svg className="w-4 h-4 shrink-0 animate-spin" viewBox="0 0 20 20" fill="none">
                   <circle cx="10" cy="10" r="7" stroke={isLight ? '#e2e8f0' : '#1e293b'} strokeWidth="2.5" />
@@ -6726,6 +6736,8 @@ export default function Tickets() {
           cur.setMonth(cur.getMonth() + delta)
           setReschedCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
         }
+        // Prevent navigating back before the current month
+        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
         return (
           <div
             key={calKey}
@@ -6765,9 +6777,10 @@ export default function Tickets() {
                 <div className="flex items-center justify-between mb-2 px-1">
                   <button
                     type="button"
-                    onClick={() => goMonth(-1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
-                    style={{ color: textMuted, backgroundColor: 'transparent' }}
+                    onClick={() => !atTodayMonth && goMonth(-1)}
+                    disabled={atTodayMonth}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
+                    style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
                   >
                     ‹
                   </button>
