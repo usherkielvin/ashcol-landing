@@ -130,20 +130,27 @@ const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED
 const TABLE_ROW_HEIGHT = 38
 
 type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP'
+type ScheduleStatusGroup = 'pending' | 'closing'
 
-const SCHEDULE_STATUS_OPTS: { value: string; label: string }[] = [
-  { value: 'INSTALLATION', label: 'Installation' },
-  { value: 'SURVEY', label: 'Survey' },
-  { value: 'RESCHED', label: 'Resched' },
-  { value: 'FOR_APPROVAL', label: 'For Approval' },
-  { value: 'SERVICES', label: 'Service' },
-  { value: 'DONE_CLEANING', label: 'Cleaning' },
-  { value: 'DONE_INSTALLED', label: 'Installed' },
-  { value: 'DONE_SURVEY', label: 'Done Survey' },
-  { value: 'DONE_CHECKUP', label: 'Done Checkup' },
-  { value: 'COMPLETED', label: 'Completed' },
-  { value: 'CANCELLED', label: 'Cancelled' },
+const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
+  // Pending first
+  { value: 'SURVEY', label: 'SURVEY', group: 'pending' },
+  { value: 'CLEANING', label: 'CLEANING', group: 'pending' },
+  { value: 'INSTALLATION', label: 'INSTALLATION', group: 'pending' },
+  { value: 'SERVICES', label: 'SERVICE', group: 'pending' },
+  { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
+  { value: 'FOR_APPROVAL', label: 'FOR APPROVAL', group: 'pending' },
+  // Closing
+  { value: 'DONE_INSTALLED', label: 'DONE INSTALL', group: 'closing' },
+  { value: 'DONE_CLEANING', label: 'DONE CLEANING', group: 'closing' },
+  { value: 'DONE_SURVEY', label: 'DONE SURVEY', group: 'closing' },
+  { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
+  { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
+
+const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
+const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
+const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP'])
 
 function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
   const kind = inferCategoryFromTicket(ticket)
@@ -156,8 +163,14 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'INSTALLATION' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
   }
-  if (normalized === 'SURVEY' || normalized === 'DONE_SURVEY') {
+  if (normalized === 'CLEANING') {
+    return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#7dd3fc' : 'rgba(14,165,233,0.35)' }
+  }
+  if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
+  }
+  if (normalized === 'DONE_SURVEY') {
+    return { color: isLight ? '#5b21b6' : '#ddd6fe', backgroundColor: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.28)', borderColor: isLight ? '#c4b5fd' : 'rgba(167,139,250,0.45)' }
   }
   if (normalized === 'RESCHED') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
@@ -165,17 +178,14 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'FOR_APPROVAL') {
     return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
   }
-  if (normalized === 'DONE_INSTALLED') {
+  if (normalized === 'DONE_INSTALLED' || normalized === 'COMPLETED') {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
   if (normalized === 'DONE_CHECKUP') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
   }
-  if (normalized === 'COMPLETED') {
-    return { color: isLight ? '#047857' : '#34d399', backgroundColor: isLight ? '#d1fae5' : 'rgba(52,211,153,0.15)', borderColor: isLight ? '#a7f3d0' : 'rgba(52,211,153,0.3)' }
-  }
   if (normalized === 'DONE_CLEANING') {
-    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
+    return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)', borderColor: isLight ? '#38bdf8' : 'rgba(14,165,233,0.4)' }
   }
   if (normalized === 'SERVICES') {
     return { color: isLight ? '#0e7490' : '#67e8f9', backgroundColor: isLight ? '#cffafe' : 'rgba(6,182,212,0.15)', borderColor: isLight ? '#67e8f9' : 'rgba(6,182,212,0.3)' }
@@ -197,6 +207,7 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   if (stat === 'COMPLETED') {
     if (/clean/i.test(remarks)) return 'DONE_CLEANING'
     if (/checkup|check-up/i.test(remarks)) return 'DONE_CHECKUP'
+    if (/survey/i.test(remarks)) return 'DONE_SURVEY'
     if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
   }
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
@@ -207,6 +218,13 @@ function getScheduleStatusValue(ticket: Ticket): string {
   const outcome = getScheduleOutcome(ticket)
   if (outcome) return outcome
 
+  const meta = parseAcMeta(ticket)
+  const phase = String(meta.schedulePhase || '').toUpperCase().replace(/\s+/g, '_')
+  if (phase === 'CLEANING') return 'CLEANING'
+  if (phase === 'SURVEY') return 'SURVEY'
+  if (phase === 'INSTALLATION') return 'INSTALLATION'
+  if (phase === 'SERVICES' || phase === 'SERVICE') return 'SERVICES'
+
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI' || stat === 'INSTALLATION') return 'INSTALLATION'
   if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
@@ -214,7 +232,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'CANCELLED') return 'CANCELLED'
-  if (stat === 'COMPLETED') return 'COMPLETED'
+  if (stat === 'COMPLETED') return 'DONE_INSTALLED'
 
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
@@ -224,62 +242,88 @@ function getScheduleStatusValue(ticket: Ticket): string {
 
 function getScheduleStatusLabel(value: string): string {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
-  if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'Installation'
+  if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'INSTALLATION'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
-  return found?.label ?? value.replace(/_/g, ' ')
+  return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
 }
 
 function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   const val = scheduleValue.toUpperCase().replace(/\s+/g, '_')
-  const acUpdates: Record<string, unknown> = {}
+  const acUpdates: Record<string, unknown> = { schedulePhase: '' }
+
+  const setClosing = (outcome: ScheduleOutcome, defaultRemark: string, remarkTest: RegExp) => {
+    body.status = 'COMPLETED'
+    body.scheduleOutcome = outcome
+    acUpdates.scheduleOutcome = outcome
+    acUpdates.schedulePhase = ''
+    const remarks = ticketRemarksText(ticket)
+    if (!remarkTest.test(remarks)) {
+      body.remarks = defaultRemark
+      body.remarksUpdate = defaultRemark
+      acUpdates.update = defaultRemark
+      acUpdates.remarksUpdate = defaultRemark
+    }
+  }
 
   if (val === 'DONE_CLEANING') {
-    body.status = 'COMPLETED'
-    acUpdates.scheduleOutcome = 'DONE_CLEANING'
-    const remarks = ticketRemarksText(ticket)
-    if (!/clean/i.test(remarks)) {
-      body.remarks = 'DONE CLEANING'
-      body.remarksUpdate = 'DONE CLEANING'
-      acUpdates.update = 'DONE CLEANING'
-      acUpdates.remarksUpdate = 'DONE CLEANING'
-    }
+    setClosing('DONE_CLEANING', 'DONE CLEANING', /clean/i)
   } else if (val === 'DONE_CHECKUP') {
-    body.status = 'COMPLETED'
-    acUpdates.scheduleOutcome = 'DONE_CHECKUP'
-    const remarks = ticketRemarksText(ticket)
-    if (!/checkup|check-up/i.test(remarks)) {
-      body.remarks = 'DONE CHECKUP'
-      body.remarksUpdate = 'DONE CHECKUP'
-      acUpdates.update = 'DONE CHECKUP'
-      acUpdates.remarksUpdate = 'DONE CHECKUP'
-    }
+    setClosing('DONE_CHECKUP', 'DONE CHECKUP', /checkup|check-up/i)
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'COMPLETED'
+    body.scheduleOutcome = 'DONE_INSTALLED'
     acUpdates.scheduleOutcome = 'DONE_INSTALLED'
+    acUpdates.schedulePhase = ''
   } else if (val === 'DONE_SURVEY') {
-    body.status = 'SURVEY'
-    acUpdates.scheduleOutcome = 'DONE_SURVEY'
+    setClosing('DONE_SURVEY', 'DONE SURVEY', /survey/i)
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
+    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
+  } else if (val === 'CLEANING') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = categoryDefaultServiceType('SERVICES')
+    body.scheduleOutcome = ''
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'CLEANING'
   } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'INSTALLATION'
     body.serviceType = categoryDefaultServiceType('INSTALLATION')
+    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
-  } else if (val === 'SERVICES') {
+    acUpdates.schedulePhase = 'INSTALLATION'
+  } else if (val === 'SERVICES' || val === 'SERVICE') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'SERVICES'
     body.serviceType = categoryDefaultServiceType('SERVICES')
+    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'SERVICES'
   } else if (val === 'SURVEY') {
     body.status = 'SURVEY'
     body.ticketCategory = 'SURVEY'
     body.serviceType = categoryDefaultServiceType('SURVEY')
+    body.scheduleOutcome = ''
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'SURVEY'
+  } else if (val === 'RESCHED') {
+    body.status = 'RESCHED'
+    body.scheduleOutcome = ''
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'FOR_APPROVAL') {
+    body.status = 'FOR_APPROVAL'
+    body.scheduleOutcome = ''
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'CANCELLED') {
+    body.status = 'CANCELLED'
+    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     body.status = val
+    body.scheduleOutcome = ''
     acUpdates.scheduleOutcome = ''
   }
 
@@ -287,6 +331,14 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     body.acDetails = mergeAcMeta(ticket, acUpdates)
   }
   return body
+}
+
+function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket {
+  return {
+    ...ticket,
+    ...(body as Partial<Ticket>),
+    acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
+  }
 }
 
 function getScheduleRowColors(
@@ -303,8 +355,14 @@ function getScheduleRowColors(
   if (ghostKind === 'completed') {
     if (outcome === 'DONE_CLEANING') {
       return {
-        baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
-        accent: '#3B82F6',
+        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.2)',
+        accent: '#0EA5E9',
+      }
+    }
+    if (outcome === 'DONE_SURVEY') {
+      return {
+        baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.22)',
+        accent: '#8B5CF6',
       }
     }
     if (outcome === 'DONE_CHECKUP') {
@@ -326,14 +384,24 @@ function getScheduleRowColors(
     }
   }
 
+  if (outcome === 'DONE_INSTALLED') {
+    return {
+      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      accent: '#16A34A',
+    }
+  }
+
   if (outcome === 'DONE_SURVEY') {
-    return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
+    return {
+      baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.18)',
+      accent: '#8B5CF6',
+    }
   }
 
   if (outcome === 'DONE_CLEANING') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
-      accent: '#3B82F6',
+      baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)',
+      accent: '#0EA5E9',
     }
   }
 
@@ -355,6 +423,12 @@ function getScheduleRowColors(
     return {
       baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.1)',
       accent: '#8B5CF6',
+    }
+  }
+  if (statusVal === 'CLEANING') {
+    return {
+      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.1)',
+      accent: '#0EA5E9',
     }
   }
   if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
@@ -499,13 +573,13 @@ function hasFinalScheduleDate(ticket: Ticket): boolean {
 /** Relay-board stage — mirrors ClientMasterlist getRelayStatusLabel. */
 function getRelayQueueLabel(ticket: Ticket): string {
   const status = (ticket.status || '').toUpperCase()
-  if (status === 'CANCELLED') return 'Cancelled'
+  if (status === 'CANCELLED') return 'CANCELLED'
   const outcome = getScheduleOutcome(ticket)
-  if (outcome === 'DONE_CHECKUP') return 'Done Checkup'
-  if (outcome === 'DONE_CLEANING') return 'Cleaning'
-  if (outcome === 'DONE_SURVEY') return 'Done Survey'
-  if (outcome === 'DONE_INSTALLED') return 'Installed'
-  if (status === 'COMPLETED') return 'Installed'
+  if (outcome === 'DONE_CHECKUP') return 'DONE CHECKUP'
+  if (outcome === 'DONE_CLEANING') return 'DONE CLEANING'
+  if (outcome === 'DONE_SURVEY') return 'DONE SURVEY'
+  if (outcome === 'DONE_INSTALLED') return 'DONE INSTALL'
+  if (status === 'COMPLETED') return 'INSTALLED'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
   if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
@@ -559,7 +633,7 @@ function isReschedulePending(ticket: Ticket): boolean {
 function getScheduleStatusDisplay(ticket: Ticket): string {
   const val = getScheduleStatusValue(ticket)
   if (val === 'RESCHED') {
-    return 'Resched'
+    return 'RESCHED'
   }
   return getScheduleStatusLabel(val)
 }
@@ -1656,15 +1730,12 @@ export default function Tickets() {
   const [branchEmployees, setBranchEmployees] = useState<BranchStaffOption[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
-  const [savingManual, setSavingManual] = useState(false)
-
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
-  const [savingEdit, setSavingEdit] = useState(false)
 
   const resolveSchedulesNegotiatorBranch = useCallback((overrideBranchId?: string | null): string | null => {
     const scoped = (overrideBranchId || '').trim()
@@ -1714,7 +1785,6 @@ export default function Tickets() {
   const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
   const [reschedToDate, setReschedToDate] = useState('')
   const [reschedPending, setReschedPending] = useState(false)
-  const [savingResched, setSavingResched] = useState(false)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2124,7 +2194,6 @@ export default function Tickets() {
 
   const commitSaveManualTicket = async () => {
     let optimisticTempId = ''
-    setSavingManual(true)
     try {
       const tokenVal = token()
       const category = addForm.ticketCategory || 'INSTALLATION'
@@ -2190,41 +2259,44 @@ export default function Tickets() {
       setTickets(prev => [optimisticTicket, ...prev.filter(t => t.id !== tempId)])
       setAddFormSnapshot(JSON.stringify(addForm))
       setAddModalOpen(false)
-      setSavingManual(false)
-      showToast('Saving ticket in background...')
 
-      const res = await fetch(`${API_BASE_URL}/tickets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${tokenVal}`,
-        },
-        body: JSON.stringify(payload),
-      })
+      void (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/tickets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tokenVal}`,
+            },
+            body: JSON.stringify(payload),
+          })
 
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(errorText || `Failed (HTTP ${res.status})`)
-      }
+          if (!res.ok) {
+            const errorText = await res.text()
+            throw new Error(errorText || `Failed (HTTP ${res.status})`)
+          }
 
-      const payloadResult = await res.json().catch(() => null)
-      const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
-      if (createdTicket?.id) {
-        setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)])
-      }
-      await fetchTickets({ soft: true, force: true })
-      if (createdTicket?.id) {
-        setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)])
-      }
-      showToast('Ticket added successfully ✓')
+          const payloadResult = await res.json().catch(() => null)
+          const createdTicket = (payloadResult?.data?.ticket || payloadResult?.data || payloadResult?.ticket || payloadResult) as Ticket | null
+          if (createdTicket?.id) {
+            setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)])
+          }
+          await fetchTickets({ soft: true, force: true })
+          if (createdTicket?.id) {
+            setTickets(prev => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)])
+          }
+        } catch (err: any) {
+          console.error(err)
+          setTickets(prev => prev.filter(t => t.id !== tempId))
+          alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
+        }
+      })()
     } catch (err: any) {
       console.error(err)
       if (optimisticTempId) {
         setTickets(prev => prev.filter(t => t.id !== optimisticTempId))
       }
       alert(`Could not add ticket: ${err.message || 'Unknown error'}`)
-    } finally {
-      setSavingManual(false)
     }
   }
 
@@ -2353,9 +2425,6 @@ export default function Tickets() {
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
     const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
-    let originalTicketForRollback: Ticket | undefined
-    let optimisticApplied = false
-    setSavingEdit(true)
     try {
       const tokenVal = token()
       const category = editForm.ticketCategory || 'INSTALLATION'
@@ -2426,11 +2495,13 @@ export default function Tickets() {
         Object.assign(body, applyScheduleStatusPatch((editForm as Ticket), scheduleVal))
       }
 
+      const statusOutcome = typeof body.scheduleOutcome === 'string' ? body.scheduleOutcome : ''
+      const statusAcMeta = typeof body.acDetails === 'string'
+        ? parseAcMeta({ acDetails: body.acDetails } as Ticket)
+        : {}
+
       const originalTicket = tickets.find(t => t.id === editForm.id)
-      originalTicketForRollback = originalTicket
-      const hadFinalDate = originalTicket ? hasFinalScheduleDate(originalTicket) : false
       const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
-      const addedFinalDate = Boolean(finalDateKey) && !hadFinalDate
 
       const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
       const paymentMode = editForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
@@ -2442,7 +2513,7 @@ export default function Tickets() {
       if (finalDateKey && !isReschedStatus) {
         body.preferredDate = finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
-        if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove) {
+        if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
           body.status = 'SCHEDULED'
         }
       }
@@ -2477,7 +2548,18 @@ export default function Tickets() {
           editForm.negotiatorId,
         ) || undefined,
         finalDate: isReschedStatus ? '' : finalDateKey,
+        scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
+        schedulePhase: statusAcMeta.schedulePhase ?? '',
       })
+
+      if (String(body.status || '').toUpperCase() === 'COMPLETED') {
+        const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || 'DONE_INSTALLED') as ScheduleOutcome
+        body.scheduleOutcome = outcome
+        body.acDetails = mergeAcMeta({ ...editForm, acDetails: body.acDetails } as Ticket, {
+          scheduleOutcome: outcome,
+          schedulePhase: '',
+        })
+      }
 
       const shouldComplete = Boolean(
         originalTicket
@@ -2485,8 +2567,8 @@ export default function Tickets() {
         && !isDateMove
         && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
         && (
-          scheduleVal === 'DONE_INSTALLED'
-          || scheduleVal === 'DONE_CLEANING'
+          CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
+          || scheduleVal === 'COMPLETED'
           || wantsTicketArchive(
             { ...originalTicket, ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks },
             { ...body, remarksUpdate: body.remarksUpdate, remarks: body.remarks, installationCharges: body.installationCharges, modeOfPayment: body.modeOfPayment },
@@ -2501,94 +2583,69 @@ export default function Tickets() {
         finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
       }
 
-      setTickets(prev => prev.map(t => (
-        t.id === editForm.id
-          ? { ...t, ...finalBody, id: t.id } as Ticket
-          : t
-      )))
-      optimisticApplied = true
       setEditFormSnapshot(JSON.stringify(editForm))
       setEditModalOpen(false)
-      setSavingEdit(false)
-      showToast('Saving ticket in background...')
 
-      const res = await fetch(`${API_BASE_URL}/tickets/${editForm.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${tokenVal}`,
-        },
-        body: JSON.stringify(finalBody),
-      })
-
-      if (!res.ok) {
-        throw new Error(await readApiError(res))
+      if (!originalTicket) {
+        throw new Error('Ticket not found')
       }
 
-      clearRelaysCache()
-      clearWarrantyCache()
+      const archiveOriginal = originalTicket
+      const archiveFinalBody = finalBody
+      const archiveBody = body
+      const needsArchive = shouldComplete && shouldArchiveCompletedSchedule(originalTicket, finalBody)
+      const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
 
-      if (shouldComplete && originalTicket && shouldArchiveCompletedSchedule(originalTicket, finalBody)) {
-        const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
-        const branchId = resolveTicketArchiveBranch(
-          { ...originalTicket, ...body },
-          { installerName: body.installerName as string | undefined },
-        )
-        const archivePayload = buildArchiveServiceReportPayload(
-          originalTicket,
-          branchId,
-          {
-            customerName: body.customerName,
-            location: body.location,
-            contactPhone: body.contactPhone,
-            district: body.district,
-            commitType: body.commitType,
-            sourceVendor: body.sourceVendor,
-            unitType: body.unitType,
-            installerName: body.installerName,
-            serviceVehicle: body.serviceVehicle,
-            installationCharges: finalBody.installationCharges as number | undefined,
-            modeOfPayment: finalBody.modeOfPayment as string | undefined,
-            remarks: finalBody.remarksUpdate as string | undefined,
-            remarksUpdate: finalBody.remarksUpdate as string | undefined,
-            controlNumber: body.controlNumber,
-            ticketNumber: body.ticketNumber,
-            note: originalTicket.note,
-            negotiatorName: resolveNegotiatorName(originalTicket, branchEmployees, editForm.negotiatorId),
-          },
-          schedKey,
-        )
-        if (!archivePayload) {
-          alert('Ticket marked completed but not added to Archives — select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
-        } else {
-          try {
-            await postArchiveServiceReport(archivePayload, tokenVal)
-          } catch (err) {
-            console.warn('Archive service report failed:', err)
-            alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
-          }
-        }
-      }
-
-      showToast(shouldComplete
-        ? 'Ticket completed — see Archives tab ✓'
-        : addedFinalDate
-          ? `Scheduled for ${formatDateKeyLabel(finalDateKey)} — see Schedules tab ✓`
-        : isReschedStatus && editForm.reschedulePending
-          ? 'Marked as rescheduled (pending date) ✓'
-        : isDateMove
-          ? `Rescheduled to ${formatDateKeyLabel(newDateKey)} ✓`
-          : 'Ticket updated successfully ✓')
-      await fetchTickets({ soft: true, force: true })
+      queueTicketPatch(
+        originalTicket,
+        finalBody,
+        needsArchive
+          ? async () => {
+              const branchId = resolveTicketArchiveBranch(
+                { ...archiveOriginal, ...archiveBody },
+                { installerName: archiveBody.installerName as string | undefined },
+              )
+              const archivePayload = buildArchiveServiceReportPayload(
+                archiveOriginal,
+                branchId,
+                {
+                  customerName: archiveBody.customerName,
+                  location: archiveBody.location,
+                  contactPhone: archiveBody.contactPhone,
+                  district: archiveBody.district,
+                  commitType: archiveBody.commitType,
+                  sourceVendor: archiveBody.sourceVendor,
+                  unitType: archiveBody.unitType,
+                  installerName: archiveBody.installerName,
+                  serviceVehicle: archiveBody.serviceVehicle,
+                  installationCharges: archiveFinalBody.installationCharges as number | undefined,
+                  modeOfPayment: archiveFinalBody.modeOfPayment as string | undefined,
+                  remarks: archiveFinalBody.remarksUpdate as string | undefined,
+                  remarksUpdate: archiveFinalBody.remarksUpdate as string | undefined,
+                  controlNumber: archiveBody.controlNumber,
+                  ticketNumber: archiveBody.ticketNumber,
+                  note: archiveOriginal.note,
+                  negotiatorName: resolveNegotiatorName(archiveOriginal, branchEmployees, editForm.negotiatorId),
+                },
+                schedKey,
+              )
+              if (!archivePayload) {
+                alert('Ticket marked completed but not added to Archives — select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
+                return
+              }
+              try {
+                await postArchiveServiceReport(archivePayload, tokenVal)
+              } catch (err) {
+                console.warn('Archive service report failed:', err)
+                alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
+              }
+              void fetchTickets({ soft: true, force: true })
+            }
+          : undefined,
+      )
     } catch (err: unknown) {
       console.error(err)
-      if (optimisticApplied && originalTicketForRollback) {
-        const rollbackTicket = originalTicketForRollback
-        setTickets(prev => prev.map(t => t.id === rollbackTicket.id ? rollbackTicket : t))
-      }
       alert(`Could not update ticket: ${formatFetchError(err)}`)
-    } finally {
-      setSavingEdit(false)
     }
   }
 
@@ -2983,9 +3040,16 @@ export default function Tickets() {
   // ── Cell edit / expand ────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
+  const [statusPicker, setStatusPicker] = useState<{ ticket: Ticket; x: number; y: number } | null>(null)
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
+  const pendingSavesRef = useRef(new Map<string, {
+    body: Record<string, unknown>
+    rollback: Ticket
+    afterSave?: () => Promise<void>
+  }>())
+  const activeSavesRef = useRef(new Set<string>())
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
@@ -3188,10 +3252,11 @@ export default function Tickets() {
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
-      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CLEANING'
+      const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
+      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasFinalDate
 
-      return isInstallation || isResched || isForApproval || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isResched || isForApproval || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
@@ -3289,8 +3354,10 @@ export default function Tickets() {
       } else if (
         scheduleValue === 'INSTALLATION'
         || scheduleValue === 'SERVICES'
+        || scheduleValue === 'CLEANING'
         || scheduleValue === 'DONE_INSTALLED'
         || scheduleValue === 'DONE_CLEANING'
+        || scheduleValue === 'DONE_CHECKUP'
       ) {
         installation++
       }
@@ -3339,8 +3406,85 @@ export default function Tickets() {
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCell(null)
+    if (colLabel === 'STATUS') {
+      const el = document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null
+      const rect = el?.getBoundingClientRect()
+      const popupW = 320
+      const popupH = 560
+      const x = Math.min(rect?.left ?? 80, window.innerWidth - popupW - 12)
+      const y = rect
+        ? (rect.bottom + 8 + popupH > window.innerHeight ? Math.max(12, rect.top - popupH - 8) : rect.bottom + 8)
+        : 80
+      setStatusPicker({ ticket, x: Math.max(12, x), y })
+      return
+    }
     setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets) })
   }
+
+  const applyTicketPatchLocally = useCallback((ticketId: string, body: Record<string, unknown>, rollback?: Ticket) => {
+    setTickets(prev => {
+      const next = prev.map(t => {
+        if (t.id !== ticketId) return t
+        if (rollback) return rollback
+        return mergeTicketPatch(t, body)
+      })
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
+      return next
+    })
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+
+  const flushTicketSave = useCallback(async (ticketId: string) => {
+    if (activeSavesRef.current.has(ticketId)) return
+    activeSavesRef.current.add(ticketId)
+    try {
+      while (pendingSavesRef.current.has(ticketId)) {
+        const job = pendingSavesRef.current.get(ticketId)!
+        pendingSavesRef.current.delete(ticketId)
+        try {
+          const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token()}`,
+            },
+            body: JSON.stringify(job.body),
+          })
+          if (!res.ok) throw new Error(await readApiError(res))
+          clearRelaysCache()
+          clearWarrantyCache()
+          if (job.afterSave) await job.afterSave()
+        } catch (err: unknown) {
+          applyTicketPatchLocally(ticketId, {}, job.rollback)
+          pendingSavesRef.current.delete(ticketId)
+          alert(`Could not save ticket: ${formatFetchError(err)}`)
+          break
+        }
+      }
+    } finally {
+      activeSavesRef.current.delete(ticketId)
+      if (pendingSavesRef.current.has(ticketId)) {
+        void flushTicketSave(ticketId)
+      }
+    }
+  }, [applyTicketPatchLocally])
+
+  /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
+  const queueTicketPatch = useCallback((
+    ticket: Ticket,
+    body: Record<string, unknown>,
+    afterSave?: () => Promise<void>,
+  ) => {
+    const ticketId = ticket.id
+    const existing = pendingSavesRef.current.get(ticketId)
+    pendingSavesRef.current.set(ticketId, {
+      body: existing ? { ...existing.body, ...body } : body,
+      rollback: existing?.rollback ?? ticket,
+      afterSave: afterSave ?? existing?.afterSave,
+    })
+    applyTicketPatchLocally(ticketId, body)
+    void flushTicketSave(ticketId)
+  }, [applyTicketPatchLocally, flushTicketSave])
 
   const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
     const key = cellEditKey(ticket.id, colLabel)
@@ -3349,6 +3493,7 @@ export default function Tickets() {
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
     if (colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED') {
       cancelEdit()
+      setStatusPicker(null)
       requestAnimationFrame(() => {
         const existingRemarks = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
         setCompletionPrompt({
@@ -3364,6 +3509,7 @@ export default function Tickets() {
     const body = buildCellPatchBody(ticket, colLabel, value)
     if (Object.keys(body).length === 0) {
       cancelEdit()
+      setStatusPicker(null)
       return
     }
 
@@ -3390,78 +3536,55 @@ export default function Tickets() {
     } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
       finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     }
-    setSavingCellKey(key)
-    try {
-      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token()}`,
-        },
-        body: JSON.stringify(finalBody),
-      })
-      if (!res.ok) throw new Error(await readApiError(res))
-      clearRelaysCache()
-      clearWarrantyCache()
-      const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
-        || (
-          colLabel === 'UPDATE'
-          && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
-          && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
-        )
-      if (shouldArchive) {
-        const branchId = resolveTicketArchiveBranch(ticket, {
-          installerName: body.installerName as string | undefined,
-          installationCharges: finalBody.installationCharges as number | undefined,
-          modeOfPayment: finalBody.modeOfPayment as string | undefined,
-          remarks: finalBody.remarksUpdate as string | undefined,
-          remarksUpdate: finalBody.remarksUpdate as string | undefined,
-        })
-        const archivePayload = buildArchiveServiceReportPayload(
-          ticket,
-          branchId,
-          {
-            installationCharges: finalBody.installationCharges as number | undefined,
-            modeOfPayment: finalBody.modeOfPayment as string | undefined,
-            remarks: finalBody.remarksUpdate as string | undefined,
-            remarksUpdate: finalBody.remarksUpdate as string | undefined,
-            negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
-          },
-          schedKey,
-        )
-        if (!archivePayload) {
-          alert('Ticket completed but not added to Archives — select a branch in the sidebar.')
-        } else {
-          try {
-            await postArchiveServiceReport(archivePayload, token())
-          } catch (err) {
-            alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
+
+    cancelEdit()
+    setStatusPicker(null)
+
+    const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
+      || (
+        colLabel === 'UPDATE'
+        && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
+        && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
+      )
+
+    const archiveBody = finalBody
+    queueTicketPatch(
+      ticket,
+      finalBody,
+      shouldArchive
+        ? async () => {
+            const branchId = resolveTicketArchiveBranch(ticket, {
+              installerName: body.installerName as string | undefined,
+              installationCharges: archiveBody.installationCharges as number | undefined,
+              modeOfPayment: archiveBody.modeOfPayment as string | undefined,
+              remarks: archiveBody.remarksUpdate as string | undefined,
+              remarksUpdate: archiveBody.remarksUpdate as string | undefined,
+            })
+            const archivePayload = buildArchiveServiceReportPayload(
+              ticket,
+              branchId,
+              {
+                installationCharges: archiveBody.installationCharges as number | undefined,
+                modeOfPayment: archiveBody.modeOfPayment as string | undefined,
+                remarks: archiveBody.remarksUpdate as string | undefined,
+                remarksUpdate: archiveBody.remarksUpdate as string | undefined,
+                negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
+              },
+              schedKey,
+            )
+            if (!archivePayload) {
+              alert('Ticket completed but not added to Archives — select a branch in the sidebar.')
+              return
+            }
+            try {
+              await postArchiveServiceReport(archivePayload, token())
+            } catch (err) {
+              alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
+            }
+            void fetchTickets({ soft: true, force: true })
           }
-        }
-      }
-      setTickets(prev => {
-        const next = prev.map(t => {
-          if (t.id !== ticket.id) return t
-          return {
-            ...t,
-            ...(finalBody as Partial<Ticket>),
-            acDetails: typeof finalBody.acDetails === 'string' ? finalBody.acDetails : t.acDetails,
-          }
-        })
-        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
-        writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
-        return next
-      })
-      if (shouldArchive) {
-        void fetchTickets({ soft: true, force: true })
-      }
-      showToast('Cell updated ✓')
-      cancelEdit()
-    } catch (err: unknown) {
-      alert(`Could not save cell: ${formatFetchError(err)}`)
-    } finally {
-      setSavingCellKey(null)
-    }
+        : undefined,
+    )
   }
 
   const openReschedDialog = (ticket: Ticket) => {
@@ -3476,7 +3599,6 @@ export default function Tickets() {
   }
 
   const closeReschedDialog = () => {
-    if (savingResched) return
     setReschedDialog(null)
     setReschedToDate('')
     setReschedPending(false)
@@ -3499,34 +3621,8 @@ export default function Tickets() {
       return
     }
 
-    setSavingResched(true)
-    try {
-      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token()}`,
-        },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error(await readApiError(res))
-      setTickets(prev => prev.map(t => {
-        if (t.id !== ticket.id) return t
-        return {
-          ...t,
-          ...(body as Partial<Ticket>),
-          acDetails: typeof body.acDetails === 'string' ? body.acDetails : t.acDetails,
-        }
-      }))
-      showToast(reschedPending
-        ? 'Marked as rescheduled (pending date) ✓'
-        : `Rescheduled to ${formatDateKeyLabel(reschedToDate)} ✓`)
-      closeReschedDialog()
-    } catch (err: unknown) {
-      alert(`Could not reschedule: ${formatFetchError(err)}`)
-    } finally {
-      setSavingResched(false)
-    }
+    closeReschedDialog()
+    queueTicketPatch(ticket, body)
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
@@ -3666,47 +3762,8 @@ export default function Tickets() {
     }
 
     if (colLabel === 'STATUS') {
-      const handleSelectStatus = (next: string) => {
-        if (next === 'RESCHED') {
-          cancelEdit()
-          openReschedDialog(ticket)
-          return
-        }
-        if (next === 'DONE_INSTALLED') {
-          cancelEdit()
-          const existingRemarks = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
-          setCompletionPrompt({
-            ticket,
-            value: existingRemarks || 'Installed',
-            modeOfPayment: getPaymentMode(ticket) || 'CASH',
-            amount: String(ticket.installationCharges ?? ticket.installation_charges ?? ''),
-          })
-          return
-        }
-        if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-        void saveCellEdit(ticket, colLabel, next)
-      }
-
-      return wrapEditingCell(
-        <select
-          autoFocus
-          disabled={isSaving}
-          value={editingCell.value}
-          onChange={e => handleSelectStatus(e.target.value)}
-          onBlur={onBlur}
-          onClick={e => e.stopPropagation()}
-          onKeyDown={onKeyDown}
-          className="w-full text-xs font-semibold rounded-md outline-none"
-          style={inputStyle}
-        >
-          {SCHEDULE_STATUS_OPTS.map(opt => (
-            <option key={opt.value} value={opt.value} onClick={() => handleSelectStatus(opt.value)} style={{ color: '#111', backgroundColor: '#fff' }}>
-              {opt.label}
-            </option>
-          ))}
-        </select>,
-        colLabel,
-      )
+      // Status uses the dedicated popup picker instead of an inline select.
+      return null
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
@@ -3854,8 +3911,15 @@ export default function Tickets() {
         if (ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)) {
           if (outcome === 'DONE_CLEANING') {
             return (
-              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Cleaning">
-                CLEANING
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#0369a1' : '#7dd3fc' }} title="Done Cleaning">
+                DONE CLEANING
+              </span>
+            )
+          }
+          if (outcome === 'DONE_SURVEY') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#5b21b6' : '#ddd6fe' }} title="Done Survey">
+                DONE SURVEY
               </span>
             )
           }
@@ -3883,11 +3947,12 @@ export default function Tickets() {
       const display = getScheduleStatusDisplay(ticket) || '—'
       return (
         <span
-          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wide border cursor-pointer"
           style={{ color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor, borderColor: badgeStyle.borderColor, maxWidth: '100%' }}
-          title={display}
+          title={canEdit ? `${display} — CLICK TO CHANGE` : display}
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</span>
+          {canEdit && <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-80" />}
         </span>
       )
     }
@@ -4074,17 +4139,11 @@ export default function Tickets() {
       setAddMenuOpen(false)
     }}>
 
-      {/* Toast */}
+      {/* Toast — success/info only; saves run silently in background */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl transition-all"
              style={{ backgroundColor: green }}>
-          {saving ? '⏳ Saving…' : toast}
-        </div>
-      )}
-      {saving && !toast && (
-        <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl"
-             style={{ backgroundColor: '#6366F1' }}>
-          ⏳ Saving…
+          {toast}
         </div>
       )}
       {scanning && (
@@ -4492,7 +4551,15 @@ export default function Tickets() {
                                 e.stopPropagation()
                                 if (isEditingCell) return
                                 if (isStatusCol && canEdit && !isGhost) {
-                                  startCellEdit(ticket, 'STATUS')
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                  const popupW = 320
+                                  const popupH = 560
+                                  const x = Math.min(rect.left, window.innerWidth - popupW - 12)
+                                  const y = rect.bottom + 8 + popupH > window.innerHeight
+                                    ? Math.max(12, rect.top - popupH - 8)
+                                    : rect.bottom + 8
+                                  cancelEdit()
+                                  setStatusPicker({ ticket, x: Math.max(12, x), y })
                                   return
                                 }
                                 setExpandedCell(prev =>
@@ -4869,6 +4936,105 @@ export default function Tickets() {
         )
       })()}
 
+      {/* ── Status Picker Popup ── */}
+      {statusPicker && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[10900]" style={{ backgroundColor: 'rgba(15,23,42,0.28)' }} onClick={() => setStatusPicker(null)}>
+          <div
+            className="fixed w-80 rounded-2xl shadow-2xl overflow-hidden"
+            style={{
+              left: statusPicker.x,
+              top: statusPicker.y,
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+              boxShadow: isLight ? '0 24px 48px rgba(15,23,42,0.22)' : '0 24px 48px rgba(0,0,0,0.55)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3.5 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>SET STATUS</p>
+                <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                  {getCustomerDisplayName(statusPicker.ticket) || statusPicker.ticket.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusPicker(null)}
+                className="p-2 rounded-lg hover:bg-slate-500/10 shrink-0"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[min(560px,75vh)] overflow-y-auto p-3 flex flex-col gap-3">
+              {([
+                { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
+                { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+              ] as const).map((section, sectionIdx) => (
+                <div key={section.title} className={sectionIdx > 0 ? 'pt-3' : ''} style={sectionIdx > 0 ? { borderTop: `1px solid ${border}` } : undefined}>
+                  <p className="px-2 pb-2 text-[11px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{section.title}</p>
+                  <div className="flex flex-col gap-1.5">
+                    {section.opts.map(opt => {
+                      const current = getScheduleStatusValue(statusPicker.ticket)
+                      const active = current === opt.value
+                      const style = getScheduleStatusBadgeStyle(opt.value, isLight)
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            const ticket = statusPicker.ticket
+                            setStatusPicker(null)
+                            if (opt.value === 'RESCHED') {
+                              openReschedDialog(ticket)
+                              return
+                            }
+                            if (opt.value === current) return
+                            void saveCellEdit(ticket, 'STATUS', opt.value)
+                          }}
+                          className="flex items-center justify-between gap-3 w-full px-3.5 py-3.5 rounded-xl text-left transition-all"
+                          style={{
+                            backgroundColor: active ? style.backgroundColor : (isLight ? '#f8fafc' : '#0a1424'),
+                            border: `2px solid ${active ? style.borderColor : (isLight ? '#e2e8f0' : '#1e293b')}`,
+                            minHeight: 52,
+                          }}
+                          onMouseEnter={e => {
+                            if (!active) {
+                              (e.currentTarget as HTMLElement).style.backgroundColor = style.backgroundColor
+                              ;(e.currentTarget as HTMLElement).style.borderColor = style.borderColor
+                            }
+                          }}
+                          onMouseLeave={e => {
+                            if (!active) {
+                              (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f8fafc' : '#0a1424'
+                              ;(e.currentTarget as HTMLElement).style.borderColor = isLight ? '#e2e8f0' : '#1e293b'
+                            }
+                          }}
+                        >
+                          <span
+                            className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wide border"
+                            style={{ color: style.color, backgroundColor: style.backgroundColor, borderColor: style.borderColor }}
+                          >
+                            {opt.label}
+                          </span>
+                          {active && (
+                            <span className="text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
+                              CURRENT
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* ── Completion Prompt Modal ── */}
       {completionPrompt && (() => {
         const cp = completionPrompt
@@ -4878,33 +5044,24 @@ export default function Tickets() {
         const handleSubmitCompletion = async (e: React.FormEvent) => {
           e.preventDefault()
           setCompletionPrompt(null)
-          setSaving(true)
 
-          try {
-            const schedKey = resolveScheduleCompletionDateKey(t, dateFilter)
-            const remark = stripArchivedRemarkSuffix((cp.value || '').trim()) || 'Installed'
-            const patchBody = enrichCompletePatchBody({
-              installationCharges: parseFloat(cp.amount) || 0,
-              modeOfPayment: cp.modeOfPayment,
-              remarks: remark,
+          const schedKey = resolveScheduleCompletionDateKey(t, dateFilter)
+          const remark = stripArchivedRemarkSuffix((cp.value || '').trim()) || 'Installed'
+          const patchBody = enrichCompletePatchBody({
+            installationCharges: parseFloat(cp.amount) || 0,
+            modeOfPayment: cp.modeOfPayment,
+            remarks: remark,
+            remarksUpdate: remark,
+            scheduleOutcome: 'DONE_INSTALLED',
+            acDetails: mergeAcMeta(t, {
+              scheduleOutcome: 'DONE_INSTALLED',
+              schedulePhase: '',
+              update: remark,
               remarksUpdate: remark,
-              acDetails: mergeAcMeta(t, {
-                scheduleOutcome: 'DONE_INSTALLED',
-                update: remark,
-                remarksUpdate: remark,
-              }),
-            }, t, schedKey)
+            }),
+          }, t, schedKey)
 
-            const patchRes = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token()}`,
-              },
-              body: JSON.stringify(patchBody),
-            })
-            if (!patchRes.ok) throw new Error(await readApiError(patchRes))
-
+          queueTicketPatch(t, patchBody, async () => {
             const branchId = resolveTicketArchiveBranch(t, {
               installationCharges: parseFloat(cp.amount) || 0,
               modeOfPayment: cp.modeOfPayment,
@@ -4923,30 +5080,17 @@ export default function Tickets() {
               },
               schedKey,
             )
-            if (!archivePayload) throw new Error('Select a branch before completing to Archives')
-
-            await postArchiveServiceReport(archivePayload, token())
-            setTickets(prev => {
-              const next = prev.map(x => {
-                if (x.id !== t.id) return x
-                return {
-                  ...x,
-                  ...(patchBody as Partial<Ticket>),
-                  acDetails: typeof patchBody.acDetails === 'string' ? patchBody.acDetails : x.acDetails,
-                }
-              })
-              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
-              writeTabCache(cacheKey, { tickets: next, lastSyncAt: Date.now() })
-              return next
-            })
+            if (!archivePayload) {
+              alert('Select a branch before completing to Archives')
+              return
+            }
+            try {
+              await postArchiveServiceReport(archivePayload, token())
+            } catch (err) {
+              alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
+            }
             void fetchTickets({ soft: true, force: true })
-            showToast('Ticket completed & added to Archives ✓')
-          } catch (error: any) {
-            console.error('Error completing ticket:', error)
-            alert(`Could not complete ticket: ${error.message || 'Unknown error'}`)
-          } finally {
-            setSaving(false)
-          }
+          })
         }
 
         return (
@@ -5033,7 +5177,7 @@ export default function Tickets() {
                     disabled={saving}
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-sm disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, #16A34A, #15803D)' }}>
-                    {saving ? 'Saving…' : 'Confirm installed'}
+                    Confirm installed
                   </button>
                 </div>
               </div>
@@ -5480,10 +5624,9 @@ export default function Tickets() {
                 Cancel
               </button>
               <button onClick={promptSaveManualTicket}
-                disabled={savingManual}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
                 style={{ backgroundColor: green }}>
-                {savingManual ? 'Saving...' : 'Save Changes'}
+                Save Changes
               </button>
             </div>
           </div>
@@ -5672,7 +5815,7 @@ export default function Tickets() {
                   </Field>
                   <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
                     <Field label="Status" required>
-                      <select value={editForm.status || 'PENDING'}
+                      <select value={editForm.status || 'INSTALLATION'}
                         onChange={e => {
                           const next = e.target.value
                           setEditForm({
@@ -5685,9 +5828,16 @@ export default function Tickets() {
                         }}
                         className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
-                        {SCHEDULE_STATUS_OPTS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
+                        <optgroup label="PENDING">
+                          {SCHEDULE_PENDING_OPTS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="CLOSING">
+                          {SCHEDULE_CLOSING_OPTS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </optgroup>
                       </select>
                     </Field>
                     {isReschedStatus && (
@@ -5813,10 +5963,9 @@ export default function Tickets() {
                 Cancel
               </button>
               <button onClick={promptSaveEditTicket}
-                disabled={savingEdit}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
                 style={{ backgroundColor: green }}>
-                {savingEdit ? 'Saving...' : 'Save Changes'}
+                Save Changes
               </button>
             </div>
           </div>
@@ -5851,7 +6000,7 @@ export default function Tickets() {
                 <input
                   type="date"
                   autoFocus={!reschedPending}
-                  disabled={reschedPending || savingResched}
+                  disabled={reschedPending}
                   value={reschedToDate}
                   onChange={e => {
                     setReschedToDate(e.target.value)
@@ -5865,7 +6014,6 @@ export default function Tickets() {
                 <input
                   type="checkbox"
                   checked={reschedPending}
-                  disabled={savingResched}
                   onChange={e => {
                     setReschedPending(e.target.checked)
                     if (e.target.checked) setReschedToDate('')
@@ -5884,8 +6032,7 @@ export default function Tickets() {
               <button
                 type="button"
                 onClick={closeReschedDialog}
-                disabled={savingResched}
-                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
                 style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
               >
                 Cancel
@@ -5893,11 +6040,11 @@ export default function Tickets() {
               <button
                 type="button"
                 onClick={() => void commitInlineReschedule()}
-                disabled={savingResched || (!reschedPending && !reschedToDate.trim())}
+                disabled={!reschedPending && !reschedToDate.trim()}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: green }}
               >
-                {savingResched ? 'Saving...' : reschedPending ? 'Mark Pending' : 'Reschedule'}
+                {reschedPending ? 'Mark Pending' : 'Reschedule'}
               </button>
             </div>
           </div>
