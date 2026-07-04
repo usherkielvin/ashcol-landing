@@ -1169,6 +1169,7 @@ export default function ClientMasterlist() {
   }, [persistRelayTicketsCache])
 
   const flushRelaySave = useCallback(async (ticketId: string) => {
+    if (ticketId.startsWith('temp-')) return
     if (activeRelaySavesRef.current.has(ticketId)) return
     activeRelaySavesRef.current.add(ticketId)
     try {
@@ -1940,20 +1941,47 @@ export default function ClientMasterlist() {
           return
         }
 
+        let finalTicket = createdTicket
+        const pendingSave = pendingRelaySavesRef.current.get(tempId)
+        if (pendingSave) {
+          pendingRelaySavesRef.current.delete(tempId)
+          pendingRelaySavesRef.current.set(createdTicket.id, pendingSave)
+          finalTicket = {
+            ...createdTicket,
+            ...pendingSave.body,
+            acDetails: pendingSave.body.acDetails ? pendingSave.body.acDetails : createdTicket.acDetails
+          } as Ticket
+        }
+
         setTickets(prev => {
           const withoutTemp = prev.filter(t => t.id !== tempId)
-          const merged = mergeRelayTicketLists([createdTicket], withoutTemp)
+          const merged = mergeRelayTicketLists([finalTicket], withoutTemp)
           const filtered = filterRelaysTickets(merged)
           persistRelayTicketsCache(filtered)
           return filtered
         })
         setOpenFieldTickets(prev => {
           const withoutTemp = prev.filter(t => t.id !== tempId)
-          return mergeRelayTicketLists([createdTicket], withoutTemp)
+          return mergeRelayTicketLists([finalTicket], withoutTemp)
         })
-        setLastUpdatedTicketId(createdTicket.id)
+        setLastUpdatedTicketId(finalTicket.id)
+
+        if (selectedPreviewTicket?.id === tempId) {
+          setSelectedPreviewTicket(finalTicket)
+        }
+        if (selectedTicket?.id === tempId) {
+          setSelectedTicket(finalTicket)
+        }
+        if (contextMenu?.ticket.id === tempId) {
+          setContextMenu(prev => prev ? { ...prev, ticket: finalTicket } : null)
+        }
+
         clearRelaysCache()
         clearWarrantyCache()
+
+        if (pendingSave) {
+          void flushRelaySave(finalTicket.id)
+        }
       } catch (err: unknown) {
         applyRelayTicketLocally(tempId, null)
         alert(`Could not submit ticket: ${formatFetchError(err)}`)
