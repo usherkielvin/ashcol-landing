@@ -316,31 +316,24 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   const val = scheduleValue.toUpperCase().replace(/\s+/g, '_')
   const acUpdates: Record<string, unknown> = { schedulePhase: '' }
 
-  const setClosing = (outcome: ScheduleOutcome, defaultRemark: string, remarkTest: RegExp) => {
+  const setClosing = (outcome: ScheduleOutcome) => {
     body.status = 'COMPLETED'
     body.scheduleOutcome = outcome
     acUpdates.scheduleOutcome = outcome
     acUpdates.schedulePhase = ''
-    const remarks = ticketRemarksText(ticket)
-    if (!remarkTest.test(remarks)) {
-      body.remarks = defaultRemark
-      body.remarksUpdate = defaultRemark
-      acUpdates.update = defaultRemark
-      acUpdates.remarksUpdate = defaultRemark
-    }
   }
 
   if (val === 'DONE_CLEANING') {
-    setClosing('DONE_CLEANING', 'DONE CLEANING', /clean/i)
+    setClosing('DONE_CLEANING')
   } else if (val === 'DONE_CHECKUP') {
-    setClosing('DONE_CHECKUP', 'DONE CHECKUP', /checkup|check-up/i)
+    setClosing('DONE_CHECKUP')
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'INSTALLED'
     body.scheduleOutcome = 'DONE_INSTALLED'
     acUpdates.scheduleOutcome = 'DONE_INSTALLED'
     acUpdates.schedulePhase = ''
   } else if (val === 'DONE_SURVEY') {
-    setClosing('DONE_SURVEY', 'DONE SURVEY', /survey/i)
+    setClosing('DONE_SURVEY')
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
@@ -1400,6 +1393,10 @@ function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name:
   return firstName.toUpperCase()
 }
 
+const INLINE_EDIT_COLUMNS = new Set([
+  'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
+  'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
+])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
 const DEFAULT_SCHEDULE_SORT = { column: 'INSTALLER', direction: 'asc' as const }
 
@@ -5798,15 +5795,6 @@ export default function Tickets() {
                                   openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
-                                if (
-                                  (col.label === 'INSTALLER' || col.label === 'NEGOTIATOR' || col.label === 'COMMIT'
-                                    || col.label === 'BRAND' || col.label === 'DLR' || col.label === "CUSTOMER'S NAME"
-                                    || col.label === 'FINAL DATE' || col.label === 'SERVICE')
-                                  && canEdit && !isGhost
-                                ) {
-                                  startCellEdit(ticket, col.label)
-                                  return
-                                }
                                 setExpandedCell(prev =>
                                   prev?.ticketId === ticket.id && prev?.colLabel === col.label
                                     ? null
@@ -5816,8 +5804,9 @@ export default function Tickets() {
                               onDoubleClick={e => {
                                 e.preventDefault()
                                 e.stopPropagation()
-                                if (col.label === 'UPDATE' && canEdit && !isGhost) {
-                                  startCellEdit(ticket, 'UPDATE')
+                                if (!canEdit || isGhost || isEditingCell) return
+                                if (INLINE_EDIT_COLUMNS.has(col.label)) {
+                                  startCellEdit(ticket, col.label)
                                 }
                               }}
                               style={{
@@ -5835,11 +5824,11 @@ export default function Tickets() {
                                 overflow: 'visible',
                                 textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
-                                cursor: canEdit && !isGhost ? 'default' : 'default',
+                                cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                 verticalAlign: 'middle',
                                 textAlign: col.align || 'left',
-                                userSelect: canEdit && !isGhost ? 'none' : undefined,
-                                WebkitUserSelect: canEdit && !isGhost ? 'none' : undefined,
+                                userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
+                                WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
                                 ...(col.sticky
                                   ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
                                   : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
