@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -1143,15 +1143,62 @@ function resolveNegotiatorDisplayName(
   return ''
 }
 
+function namesMatchLoosely(a: string, b: string): boolean {
+  const na = a.trim().toLowerCase()
+  const nb = b.trim().toLowerCase()
+  if (!na || !nb) return false
+  if (na === nb) return true
+  if (na.includes(nb) || nb.includes(na)) return true
+  const fa = na.split(/\s+/)[0]
+  const fb = nb.split(/\s+/)[0]
+  return fa.length >= 2 && fb.length >= 2 && fa === fb
+}
+
+function isTicketAssigneeNegotiator(
+  ticket: Ticket,
+  employees?: BranchStaffOption[],
+): boolean {
+  const negId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+  const assignedTo = (ticket.assignedTo || '').trim()
+  if (negId && assignedTo && negId === assignedTo) return true
+  if (assignedTo && employees?.length) {
+    const emp = employees.find(e => e.id === assignedTo)
+    if (emp && isNegotiatorCandidate(emp)) return true
+  }
+  return false
+}
+
+/** True when a name belongs to this ticket's negotiator or any branch negotiator (e.g. Jane Martos on Sales). */
 function isNegotiatorInstallerName(
   ticket: Ticket,
   installer: string,
-  employees?: { id: string; name: string }[],
+  employees?: BranchStaffOption[],
+  branchId?: string | null,
 ): boolean {
   const val = installer.trim()
   if (!val) return false
-  const negotiator = resolveNegotiatorDisplayName(ticket, employees)
-  return Boolean(negotiator && val.localeCompare(negotiator, undefined, { sensitivity: 'base' }) === 0)
+
+  const meta = parseAcMeta(ticket)
+  const ticketNegotiatorNames = [
+    resolveNegotiatorDisplayName(ticket, employees),
+    String(meta.negotiatorName || meta.negotiator || '').trim(),
+  ].filter(Boolean)
+
+  for (const candidate of ticketNegotiatorNames) {
+    if (namesMatchLoosely(val, candidate)) return true
+  }
+
+  const shortNeg = getTicketNegotiatorName(ticket, employees)
+  if (shortNeg && namesMatchLoosely(val, shortNeg)) return true
+
+  if (employees?.length) {
+    const negotiators = filterBranchNegotiators(employees, branchId)
+    for (const n of negotiators) {
+      if (n.name?.trim() && namesMatchLoosely(val, n.name)) return true
+    }
+  }
+
+  return false
 }
 
 function resolveInstallerFieldRaw(ticket: Ticket): string {
@@ -1161,24 +1208,39 @@ function resolveInstallerFieldRaw(ticket: Ticket): string {
   return direct || fromMeta
 }
 
-/** Sort/display key for installer/technician — includes assigned tech when installer column empty. */
-function getInstallerSortKey(
+/** Explicit installer/technician field only — never negotiator or assigned sales staff. */
+function getInstallerDisplay(
   ticket: Ticket,
-  employees?: { id: string; name: string }[],
+  employees?: BranchStaffOption[],
+  branchId?: string | null,
 ): string {
   const installer = resolveInstallerFieldRaw(ticket)
-  if (installer && !isNegotiatorInstallerName(ticket, installer, employees)) return installer
-  const assigned = (ticket.assignedEmployeeName || ticket.assigned_employee_name || '').trim()
-  if (assigned && !isNegotiatorInstallerName(ticket, assigned, employees)) return assigned
+  if (installer && !isNegotiatorInstallerName(ticket, installer, employees, branchId)) return installer
   return ''
 }
 
-/** Field installer/technician only — never the relay negotiator. */
-function getInstallerDisplay(
+/** Sort key — may fall back to assigned field tech when installer column is empty. */
+function getInstallerSortKey(
   ticket: Ticket,
-  employees?: { id: string; name: string }[],
+  employees?: BranchStaffOption[],
+  branchId?: string | null,
 ): string {
-  return getInstallerSortKey(ticket, employees)
+  const fromField = getInstallerDisplay(ticket, employees, branchId)
+  if (fromField) return fromField
+  if (isTicketAssigneeNegotiator(ticket, employees)) return ''
+  const assigned = (ticket.assignedEmployeeName || ticket.assigned_employee_name || '').trim()
+  if (assigned && !isNegotiatorInstallerName(ticket, assigned, employees, branchId)) return assigned
+  return ''
+}
+
+function resolveInstallerFieldForCarry(
+  ticket: Ticket,
+  employees?: BranchStaffOption[],
+  branchId?: string | null,
+): string {
+  const raw = resolveInstallerFieldRaw(ticket)
+  if (raw && !isNegotiatorInstallerName(ticket, raw, employees, branchId)) return raw
+  return ''
 }
 
 
@@ -1383,10 +1445,11 @@ function compareNameSiteStrings(a: string, b: string): number {
 function ticketColumnText(
   ticket: Ticket,
   colLabel: string,
-  options?: { myTickets?: boolean; employees?: { id: string; name: string }[] },
+  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null },
 ): string {
   const myTickets = options?.myTickets ?? false
   const employees = options?.employees
+  const branchId = options?.branchId
   switch (colLabel) {
     case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
@@ -1396,7 +1459,7 @@ function ticketColumnText(
     case 'STATUS': return ticket.status || ''
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
-    case 'INSTALLER': return getInstallerDisplay(ticket, employees)
+    case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
@@ -1408,7 +1471,7 @@ function compareTicketsByColumn(
   a: Ticket,
   b: Ticket,
   colLabel: string,
-  options?: { myTickets?: boolean; employees?: { id: string; name: string }[] },
+  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null },
 ): number {
   const av = ticketColumnText(a, colLabel, options)
   const bv = ticketColumnText(b, colLabel, options)
@@ -1844,7 +1907,8 @@ function getCellRawValue(
   ticket: Ticket,
   colLabel: string,
   myTickets = false,
-  employees?: { id: string; name: string }[],
+  employees?: BranchStaffOption[],
+  branchId?: string | null,
 ): string {
   switch (colLabel) {
     case 'TICKET NO': return getTicketNumberDisplay(ticket)
@@ -1855,7 +1919,7 @@ function getCellRawValue(
     case 'STATUS': return getScheduleStatusValue(ticket)
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
-    case 'INSTALLER': return getInstallerDisplay(ticket, employees)
+    case 'INSTALLER': return getInstallerDisplay(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
@@ -2961,7 +3025,7 @@ export default function Tickets() {
       unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
-      installerName: getInstallerDisplay(ticket, branchEmployees),
+      installerName: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || (isMyTickets && user?.id ? user.id : ''),
       branchId: ticket.branchId || ticket.branch_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
@@ -4284,7 +4348,7 @@ export default function Tickets() {
 
   const visible = useMemo(() => {
     let list = filtered
-    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees }
+    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId }
     list = [...list].sort((a, b) => {
       // Schedules: always group rows by installer/technician name first.
       if (!isMyTickets) {
@@ -4305,7 +4369,7 @@ export default function Tickets() {
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId])
 
   const sortDiffersFromDefault =
     sortConfig.column !== defaultSortForSchedulesView(isMyTickets).column
@@ -4383,7 +4447,7 @@ export default function Tickets() {
       case 'PAYMENT':         return formatCombinedPayment(ticket)
       case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-      case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees)
+      case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
       case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
       case 'NOTE':            return ticket.note || ''
       case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
@@ -4455,7 +4519,7 @@ export default function Tickets() {
       openStatusPicker(ticket)
       return
     }
-    const value = getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees)
+    const value = getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees, activeBranchId)
     cellEditDraftRef.current = { ticketId: ticket.id, colLabel, value }
     setEditingCell({ ticketId: ticket.id, colLabel, value })
   }
@@ -5275,11 +5339,11 @@ export default function Tickets() {
     }
 
     if (label === 'INSTALLER') {
-      const rawInstaller = getInstallerDisplay(ticket, branchEmployees)
+      const rawInstaller = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
       let curInstaller = rawInstaller
       if (!curInstaller && idx != null && idx > 0) {
         for (let i = idx - 1; i >= 0; i--) {
-          const prev = getInstallerDisplay(visible[i], branchEmployees)
+          const prev = resolveInstallerFieldForCarry(visible[i], branchEmployees, activeBranchId)
           if (prev) {
             curInstaller = prev
             break
@@ -5289,7 +5353,7 @@ export default function Tickets() {
       const isEmpty = !curInstaller
 
       const prevInstaller = idx != null && idx > 0
-        ? getInstallerDisplay(visible[idx - 1], branchEmployees)
+        ? resolveInstallerFieldForCarry(visible[idx - 1], branchEmployees, activeBranchId)
         : ''
       const curToken = parseNameSiteToken(curInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
@@ -6148,7 +6212,7 @@ export default function Tickets() {
         const district = parseDistrict(t.location, t.district)
         const brand = parseBrand(t)
         const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-        const installer = getInstallerDisplay(t, branchEmployees)
+        const installer = getInstallerDisplay(t, branchEmployees, activeBranchId)
         const serviceDriver = formatServiceDriver(t)
         const update = t.remarks || ''
         const note = t.note || ''
