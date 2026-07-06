@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
@@ -403,25 +403,17 @@ export default function AuditFinanceExpenses() {
           }
         } else {
           const storedGlobal = localStorage.getItem('ashcol-global-branch-id')
-          if (storedGlobal && finalList.some(b => b.id === storedGlobal)) {
-            setBranchId(storedGlobal)
-          } else {
-            setBranchId(prev => {
-              if (prev && finalList.some(b => b.id === prev)) {
-                return prev
-              }
-              const fallbackId = finalList[0].id
-              if (isAdmin && !storedGlobal) {
-                localStorage.setItem('ashcol-global-branch-id', fallbackId)
-                window.dispatchEvent(new Event('ashcol-global-branch-change'))
-              }
-              return fallbackId
-            })
+          const resolved = resolveArchivesBranchFilter(storedGlobal, finalList, user)
+          const nextId = resolved || finalList[0]?.id || ''
+          setBranchId(nextId)
+          if (isAdmin && !storedGlobal && nextId) {
+            localStorage.setItem('ashcol-global-branch-id', nextId)
+            window.dispatchEvent(new Event('ashcol-global-branch-change'))
           }
         }
       }
     } catch (e) { console.error(e) }
-  }, [isBranchScopedUser, user?.branchId, user?.email, isAdmin])
+  }, [isBranchScopedUser, user, user?.branchId, user?.email, isAdmin])
 
   const reload = useCallback(async () => {
     try {
@@ -438,17 +430,18 @@ export default function AuditFinanceExpenses() {
 
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!isAdmin || branches.length === 0) return
     const syncFromGlobal = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
-      if (gId) {
-        setBranchId(gId)
+      const resolved = resolveArchivesBranchFilter(gId, branches, user)
+      if (resolved) {
+        setBranchId((prev) => (prev !== resolved ? resolved : prev))
       }
     }
     syncFromGlobal()
     window.addEventListener('ashcol-global-branch-change', syncFromGlobal)
     return () => window.removeEventListener('ashcol-global-branch-change', syncFromGlobal)
-  }, [isAdmin])
+  }, [isAdmin, branches, user])
 
   useEffect(() => {
     if (!branchId) return
