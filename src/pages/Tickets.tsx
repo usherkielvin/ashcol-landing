@@ -5687,8 +5687,9 @@ export default function Tickets() {
                       const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
                       const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
                       const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
+                      const rawBranch = ticket.branchId || ticket.branch_id || null;
                       const branchLabel = getBranchDisplayName(
-                        resolveScopedBranchId(ticket.branchId || ticket.branch_id || '') || ticket.branchId || ticket.branch_id,
+                        resolveScopedBranchId(rawBranch) || rawBranch,
                       );
                       
                       return (
