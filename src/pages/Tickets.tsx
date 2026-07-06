@@ -1695,7 +1695,12 @@ function getCellRawValue(
   }
 }
 
-function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string): Record<string, unknown> {
+function buildCellPatchBody(
+  ticket: Ticket,
+  colLabel: string,
+  rawValue: string,
+  employees: BranchStaffOption[] = [],
+): Record<string, unknown> {
   const v = rawValue.trim()
   const body: Record<string, unknown> = {}
   let acBase: Ticket = ticket
@@ -1753,6 +1758,27 @@ function buildCellPatchBody(ticket: Ticket, colLabel: string, rawValue: string):
       } else {
         body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
       }
+      break
+    }
+    case 'FINAL DATE': {
+      const dateKey = v.split('T')[0].split(' ')[0].trim()
+      if (!dateKey) break
+      body.finalDate = dateKey
+      body.preferredDate = dateKey
+      body.acDetails = mergeAcMeta(acBase, { finalDate: dateKey })
+      const stat = (ticket.status || '').toUpperCase()
+      if (['PENDING', 'ASSIGNED'].includes(stat)) body.status = 'SCHEDULED'
+      break
+    }
+    case 'NEGOTIATOR': {
+      if (!v) break
+      const needle = v.toLowerCase()
+      const emp = employees.find(e =>
+        e.id === v
+        || (e.name || '').trim().toLowerCase() === needle
+        || (e.name || '').toLowerCase().includes(needle),
+      )
+      if (emp?.id) body.negotiatorId = emp.id
       break
     }
     default:
@@ -2133,10 +2159,19 @@ export default function Tickets() {
     [negotiatorsForBranch, activeBranchId],
   )
 
-  const editModalNegotiators = useMemo(
-    () => negotiatorsForBranch(editForm.branchId || activeBranchId),
-    [negotiatorsForBranch, editForm.branchId, activeBranchId],
-  )
+  const editModalNegotiators = useMemo(() => {
+    const base = negotiatorsForBranch(editForm.branchId || activeBranchId)
+    let list = [...base]
+    const ticketNegoId = (editForm.negotiatorId || '').trim()
+    if (ticketNegoId) {
+      const fromEmp = branchEmployees.find(e => e.id === ticketNegoId)
+      if (fromEmp) list = appendCurrentNegotiator(list, fromEmp)
+    }
+    if (currentNegotiatorOption) {
+      list = appendCurrentNegotiator(list, currentNegotiatorOption)
+    }
+    return list
+  }, [negotiatorsForBranch, editForm.branchId, editForm.negotiatorId, activeBranchId, branchEmployees, currentNegotiatorOption])
 
   const activeBranchLabel = useMemo(
     () => getBranchDisplayName(resolveSchedulesNegotiatorBranch(activeBranchId) || activeBranchId),
@@ -2786,7 +2821,7 @@ export default function Tickets() {
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
       installerName: getInstallerDisplay(ticket, branchEmployees),
-      negotiatorId: ticket.negotiatorId || ticket.negotiator_id || '',
+      negotiatorId: ticket.negotiatorId || ticket.negotiator_id || (isMyTickets && user?.id ? user.id : ''),
       branchId: ticket.branchId || ticket.branch_id || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
@@ -3008,11 +3043,17 @@ export default function Tickets() {
       }
 
       const selectedNegotiator = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
-      if (selectedNegotiator) {
+      const explicitBranch = resolvePortalWriteBranchId(
+        editForm.branchId,
+        user?.email,
+        user?.jobTitle,
+      ) || (editForm.branchId || '').trim()
+      if (explicitBranch) {
+        body.branchId = explicitBranch
+      } else if (selectedNegotiator) {
         const negoBranchRaw = (selectedNegotiator.branchId || '').trim()
         if (negoBranchRaw) {
-          body.branchId = negoBranchRaw
-          editForm.branchId = negoBranchRaw
+          body.branchId = resolvePortalWriteBranchId(negoBranchRaw, selectedNegotiator.email, selectedNegotiator.jobTitle) || negoBranchRaw
         }
       }
 
@@ -3061,6 +3102,7 @@ export default function Tickets() {
       if (paymentMode) body.modeOfPayment = paymentMode
 
       if (finalDateKey && !isReschedStatus) {
+        body.finalDate = finalDateKey
         body.preferredDate = finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
         if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
@@ -4308,7 +4350,7 @@ export default function Tickets() {
     if (savingCellKey === key) return
 
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
-    const body = buildCellPatchBody(ticket, colLabel, value)
+    const body = buildCellPatchBody(ticket, colLabel, value, branchEmployees)
     if (Object.keys(body).length === 0) {
       cancelEdit()
       setStatusPicker(null)
@@ -4618,6 +4660,25 @@ export default function Tickets() {
     if (colLabel === 'STATUS') {
       // Status uses the dedicated popup picker instead of an inline select.
       return null
+    }
+
+    if (colLabel === 'FINAL DATE') {
+      return wrapEditingCell(
+        <input
+          autoFocus
+          disabled={isSaving}
+          type="date"
+          value={editingCell.value}
+          onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={onBlur}
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          className="w-full rounded-md outline-none"
+          style={{ ...inputStyle, minWidth: '10rem', colorScheme: isLight ? 'light' : 'dark' }}
+        />,
+        colLabel,
+      )
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
@@ -6893,6 +6954,23 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
+                  {isMyTickets && isTaguigBranchRef(editForm.branchId || activeBranchId) && (
+                    <Field label="Taguig branch" required>
+                      <select
+                        value={
+                          String(editForm.branchId || '').toUpperCase().includes('SERVICE')
+                            ? 'BR-TAGUIG-SERVICES'
+                            : 'BR-TAGUIG-SALES'
+                        }
+                        onChange={e => setEditForm({ ...editForm, branchId: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                      >
+                        <option value="BR-TAGUIG-SALES">TAGUIG - SALES</option>
+                        <option value="BR-TAGUIG-SERVICES">TAGUIG - SERVICES</option>
+                      </select>
+                    </Field>
+                  )}
                   <Field label="Negotiator" required>
                     <select value={editForm.negotiatorId || ''}
                       onChange={e => setEditForm({ ...editForm, negotiatorId: e.target.value })}

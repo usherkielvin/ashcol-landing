@@ -23,10 +23,8 @@ const historyDateTime = (value?: string) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   const time = date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-  return `${time} ${day}/${month}/${year}`
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return `${time} · ${dateStr}`
 }
 const expenseRecordHistory = (row: AuditExpense) => {
   const stored = row.updateHistory || []
@@ -1582,24 +1580,48 @@ export default function AuditFinanceExpenses() {
       </div>
 
       {detailRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
           onClick={() => { if (!isEditingInModal) setDetailRow(null) }}>
-          <div className="w-full max-w-2xl rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh]"
-            style={{ backgroundColor: cardBg, border: `1px solid ${neutralBorder}` }}
+          <div className="w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+            style={{ backgroundColor: cardBg, border: `1px solid ${isLight ? '#e2e8f0' : '#1e2d48'}`, boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${neutralBorder}` }}>
-              <div className="flex items-center gap-2">
-                <div>
-                  <h3 className="font-bold" style={{ color: textPrimary }}>
-                    {isEditingInModal ? 'Edit Expense Record' : 'Expense Record Details'}
-                  </h3>
-                  <p className="text-xs" style={{ color: textMuted }}>{detailRow.branchName} - {detailRow.date}</p>
+
+            {/* ── Premium Header ── */}
+            <div className="relative px-6 pt-6 pb-5 shrink-0 overflow-hidden"
+              style={{ background: isLight
+                ? 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)'
+                : 'linear-gradient(135deg, #0a1628 0%, #0e2144 100%)' }}>
+              <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, #10B981 0%, transparent 60%)' }} />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0" style={{ background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <Receipt size={18} style={{ color: '#10B981' }} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <h3 className="text-base font-black tracking-tight" style={{ color: '#fff' }}>
+                        {isEditingInModal ? 'Edit Expense Record' : 'Expense Record'}
+                      </h3>
+                      {!isEditingInModal && detailRow.expenseCategory && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(16,185,129,0.18)', color: '#10B981', border: '1px solid rgba(16,185,129,0.3)' }}>
+                          {detailRow.expenseCategory}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                      {detailRow.branchName} &nbsp;·&nbsp; {detailRow.date}
+                    </p>
+                  </div>
                 </div>
+                <button type="button"
+                  onClick={() => { if (!isEditingInModal || window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setDetailRow(null) } }}
+                  className="p-1.5 rounded-lg transition-colors shrink-0"
+                  style={{ color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.07)' }}
+                  aria-label="Close details modal">
+                  <X size={18} />
+                </button>
               </div>
-              <button type="button" onClick={() => { if (!isEditingInModal || window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setDetailRow(null) } }} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }} aria-label="Close details modal">
-                <X size={22} />
-              </button>
             </div>
 
             {isEditingInModal ? (
@@ -1747,69 +1769,111 @@ export default function AuditFinanceExpenses() {
                 </div>
               </div>
             ) : (
-              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-y-auto">
-                {[
-                  ['Submitted by', formatDisplayUserLabel(detailRow.inputBy)],
-                  ['Incurred by', detailRow.incurredBy || '-'],
-                  ['Company', detailRow.company || '-'],
-                  ['Receipt No.', detailRow.receiptNo || '-'],
-                  ['Category', detailRow.expenseCategory || '-'],
-                  ['Source', detailRow.sourceOfFunds || '-'],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>{label}</div>
-                    <div className="mt-1 font-semibold break-words" style={{ color: textPrimary }}>
-                      {['Submitted by', 'Incurred by'].includes(label) ? (
-                        <EmployeeNameLink nameOrId={value} />
-                      ) : (
-                        value
-                      )}
+              <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
+
+                {/* ── Info Grid ── */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { label: 'Submitted By', value: formatDisplayUserLabel(detailRow.inputBy), isPerson: true },
+                    { label: 'Incurred By', value: detailRow.incurredBy || '—', isPerson: true },
+                    { label: 'Company / Vendor', value: detailRow.company || '—', isPerson: false },
+                    { label: 'Receipt No.', value: detailRow.receiptNo || '—', isPerson: false },
+                    { label: 'Source of Funds', value: detailRow.sourceOfFunds || '—', isPerson: false },
+                  ].map(({ label, value, isPerson }) => (
+                    <div key={label}
+                      className="rounded-xl px-3.5 py-3 flex flex-col gap-0.5"
+                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{label}</span>
+                      <span className="text-sm font-semibold leading-snug break-words" style={{ color: textPrimary }}>
+                        {isPerson ? <EmployeeNameLink nameOrId={value} /> : value}
+                      </span>
                     </div>
+                  ))}
+
+                  {/* Description spans full width */}
+                  <div className="col-span-2 rounded-xl px-3.5 py-3"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+                    <span className="text-[10px] font-bold uppercase tracking-widest block mb-1" style={{ color: textMuted }}>Description</span>
+                    <span className="text-sm font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '—'}</span>
                   </div>
-                ))}
-                <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Description</div>
-                  <div className="mt-1 font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '-'}</div>
                 </div>
-                <div className="sm:col-span-2 rounded-lg p-3 flex items-center justify-between" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                  <span className="text-xs font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>Amount</span>
-                  <span className="text-xl font-black" style={{ color: textPrimary }}>{peso(detailRow.amount)}</span>
+
+                {/* ── Amount Highlight ── */}
+                <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                  style={{ background: isLight
+                    ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)'
+                    : 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03))',
+                    border: `1px solid ${isLight ? '#bbf7d0' : 'rgba(16,185,129,0.2)'}` }}>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest block" style={{ color: isLight ? '#059669' : '#34d399' }}>Total Amount</span>
+                    <span className="text-[11px] font-medium" style={{ color: isLight ? '#6ee7b7' : 'rgba(52,211,153,0.6)' }}>Philippine Peso</span>
+                  </div>
+                  <span className="text-3xl font-black" style={{ color: isLight ? '#059669' : '#10B981' }}>
+                    ₱{peso(detailRow.amount)}
+                  </span>
                 </div>
-                <div className="sm:col-span-2 rounded-lg p-3" style={{ backgroundColor: neutralSurface, border: `1px solid ${neutralBorder}` }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: neutralMuted }}>History</div>
-                  <div className="mt-2 flex flex-col gap-2">
-                    {expenseRecordHistory(detailRow).map((entry, idx) => (
-                      <div key={`${entry.action}-${entry.at}-${idx}`} className="flex items-start gap-2 text-xs">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: neutralMuted }} />
-                        <span style={{ color: textPrimary }}>
-                          <span className="font-semibold">{entry.action === 'created' ? 'Created' : 'Updated'}</span>
-                          {' by '}
-                          <span className="font-semibold"><EmployeeNameLink nameOrId={formatDisplayUserLabel(entry.by)} /></span>
-                          {' at '}
-                          <span style={{ color: neutralMuted }}>{historyDateTime(entry.at)}</span>
-                        </span>
+
+                {/* ── Timeline History ── */}
+                <div className="rounded-xl px-4 py-4"
+                  style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+                  <span className="text-[10px] font-bold uppercase tracking-widest block mb-3" style={{ color: textMuted }}>Activity History</span>
+                  <div className="relative flex flex-col gap-0">
+                    {expenseRecordHistory(detailRow).map((entry, idx, arr) => (
+                      <div key={`${entry.action}-${entry.at}-${idx}`} className="flex gap-3 relative">
+                        {/* timeline spine */}
+                        {idx < arr.length - 1 && (
+                          <div className="absolute left-[9px] top-5 bottom-0 w-px" style={{ backgroundColor: isLight ? '#e2e8f0' : '#1e2d48' }} />
+                        )}
+                        {/* dot */}
+                        <div className="mt-1 flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center"
+                          style={{
+                            backgroundColor: entry.action === 'created'
+                              ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.12)')
+                              : (isLight ? '#ede9fe' : 'rgba(99,102,241,0.12)'),
+                            border: `2px solid ${entry.action === 'created' ? '#10B981' : '#6366F1'}`
+                          }}>
+                          <div className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: entry.action === 'created' ? '#10B981' : '#6366F1' }} />
+                        </div>
+                        <div className="pb-4 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                            <span className="text-xs font-bold" style={{ color: textPrimary }}>
+                              {entry.action === 'created' ? 'Created' : 'Updated'}
+                            </span>
+                            <span className="text-xs" style={{ color: textMuted }}>by</span>
+                            <span className="text-xs font-semibold" style={{ color: entry.action === 'created' ? '#10B981' : '#6366F1' }}>
+                              <EmployeeNameLink nameOrId={formatDisplayUserLabel(entry.by)} />
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                            {historyDateTime(entry.at)}
+                          </span>
+                        </div>
                       </div>
                     ))}
+                    {expenseRecordHistory(detailRow).length === 0 && (
+                      <span className="text-xs" style={{ color: textMuted }}>No history available.</span>
+                    )}
                   </div>
                 </div>
+
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-2 px-5 py-4 shrink-0" style={{ borderTop: `1px solid ${neutralBorder}` }}>
+            {/* ── Footer ── */}
+            <div className="flex items-center justify-between gap-2 px-6 py-4 shrink-0"
+              style={{ borderTop: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
               {isEditingInModal ? (
                 <>
-                  <button type="button" onClick={() => { if (window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setEditing(null) } }}
+                  <button type="button"
+                    onClick={() => { if (window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setEditing(null) } }}
                     className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
-                    style={{ 
-                      color: textPrimary, 
-                      borderColor: border, 
-                      backgroundColor: neutralSurface 
-                    }}>
+                    style={{ color: textPrimary, borderColor: isLight ? '#e2e8f0' : '#1e2d48', backgroundColor: isLight ? '#f8fafc' : '#0c1829' }}>
                     Cancel
                   </button>
                   <button type="button" onClick={submitReceipt} disabled={savingReceipt}
-                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white shadow transition-all duration-150 active:scale-95"
-                    style={{ backgroundColor: editAccent }}>
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition-all duration-150 active:scale-95"
+                    style={{ backgroundColor: editAccent, boxShadow: '0 4px 14px rgba(99,102,241,0.35)' }}>
                     {savingReceipt ? <Loader2 size={14} className="animate-spin" /> : null}
                     Apply Changes
                   </button>
@@ -1817,24 +1881,20 @@ export default function AuditFinanceExpenses() {
               ) : (
                 <>
                   <button type="button" onClick={() => setDetailRow(null)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
-                    style={{ 
-                      color: textPrimary, 
-                      borderColor: border, 
-                      backgroundColor: neutralSurface 
-                    }}>
+                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
+                    style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0f1c30', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
                     Close
                   </button>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => startEditInModal(detailRow)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-150 active:scale-95"
-                      style={{ backgroundColor: textPrimary, color: cardBg }}>
-                      <Pencil size={14} /> Edit
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all duration-150 active:scale-95"
+                      style={{ backgroundColor: '#334155', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                      <Pencil size={13} /> Edit
                     </button>
                     <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
-                      style={{ color: danger, border: `1px solid ${danger}` }}>
-                      <Trash2 size={14} /> Delete
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-150 active:scale-95"
+                      style={{ color: '#fff', backgroundColor: danger, boxShadow: '0 2px 8px rgba(239,68,68,0.3)' }}>
+                      <Trash2 size={13} /> Delete
                     </button>
                   </div>
                 </>

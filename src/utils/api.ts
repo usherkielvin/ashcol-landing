@@ -445,7 +445,21 @@ export function filterBranchNegotiators(
       u.role?.toLowerCase() === 'admin' ||
       u.role?.toLowerCase() === 'administrator' ||
       u.role?.toLowerCase() === 'management'
-    return isGlobal || branchScopesMatch(u.branchId, branchSource, u.email)
+    if (isGlobal) return true
+
+    const normalizedSource = branchSource.toUpperCase()
+    const normalizedUserBranch = (u.branchId || '').toUpperCase()
+
+    const isSourceTaguigSales = normalizedSource === 'BR-TAGUIG-SALES'
+      || (normalizedSource.includes('TAGUIG') && !normalizedSource.includes('SERVICE'))
+    const isUserTaguigServices = normalizedUserBranch === 'BR-TAGUIG-SERVICES'
+      || (normalizedUserBranch.includes('TAGUIG') && normalizedUserBranch.includes('SERVICE'))
+
+    if (isSourceTaguigSales && isUserTaguigServices) {
+      return true
+    }
+
+    return branchScopesMatch(u.branchId, branchSource, u.email)
   })
   if (matched.length > 0) {
     return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
