@@ -5,7 +5,7 @@ export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
 export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
 export const SCHEDULES_CACHE_TTL_MS = 45 * 1000
 
-const VERSION = 1
+const VERSION = 2
 
 type PortalUserLike = { role?: string | null; branchId?: string | null } | null | undefined
 
@@ -46,6 +46,14 @@ export function patchTabCache<T extends object>(key: string, patch: Partial<T>):
 }
 
 export type SchedulesTabCache = { tickets: unknown[]; lastSyncAt?: number }
+
+export function writeSchedulesTabCache(key: string, tickets: unknown[], source: 'server' | 'local'): void {
+  const existing = readTabCache<SchedulesTabCache>(key)
+  writeTabCache(key, {
+    tickets,
+    lastSyncAt: source === 'server' ? Date.now() : existing?.lastSyncAt,
+  })
+}
 
 export function schedulesCacheKey(
   user: PortalUserLike,
