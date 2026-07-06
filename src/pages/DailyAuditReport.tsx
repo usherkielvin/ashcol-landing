@@ -531,27 +531,21 @@ export default function DailyAuditReport() {
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })
     : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
 
-  const todayKey = (() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })()
-
   const weeklyDayTabs = useMemo(() => {
-    const base = date ? new Date(date + 'T00:00:00') : new Date()
-    const day = base.getDay()
-    const diff = day === 0 ? -6 : 1 - day
-    const start = new Date(base)
-    start.setDate(base.getDate() + diff)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const toKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start)
-      d.setDate(start.getDate() + i)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      const isToday = key === todayKey
+      const d = new Date(today)
+      d.setDate(today.getDate() - (6 - i))
+      const key = toKey(d)
+      const isToday = i === 6
       const dayName = isToday ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
       const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
       return { key, dayName, dateLabel }
     })
-  }, [date, todayKey])
+  }, [])
 
   const isCustomAuditDate = viewMode === 'single' && date !== '' && !weeklyDayTabs.some(t => t.key === date)
 

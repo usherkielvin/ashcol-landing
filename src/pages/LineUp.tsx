@@ -20,7 +20,7 @@ import { useTheme } from '../contexts/ThemeContext'
 
 import { useAuth } from '../contexts/AuthContext'
 
-import { API_BASE_URL, isSameBaseBranch, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId } from '../utils/api'
 
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -334,6 +334,11 @@ export default function LineUp() {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
 
   const [branchId, setBranchId] = useState('')
+
+  const lineupApiBranchId = useMemo(
+    () => resolvePortalWriteBranchId(branchId, user?.email, user?.jobTitle) || branchId,
+    [branchId, user?.email, user?.jobTitle],
+  )
 
   const checkBranchMatch = useCallback((userBranchId: string, currentBranchId: string) => {
     if (!userBranchId || !currentBranchId) return false
@@ -774,11 +779,13 @@ export default function LineUp() {
 
     if (!bId) return
 
+    const apiBranch = resolvePortalWriteBranchId(bId, user?.email, user?.jobTitle) || bId
+
     try {
 
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-      const res = await fetch(`${API_BASE_URL}/v1/lineup/suggestions?branchId=${bId}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/lineup/suggestions?branchId=${encodeURIComponent(apiBranch)}`, {
 
         headers: { Authorization: `Bearer ${token}` }
 
@@ -822,7 +829,7 @@ export default function LineUp() {
 
     }
 
-  }, [])
+  }, [user?.email, user?.jobTitle])
 
   useEffect(() => {
 
@@ -1046,7 +1053,7 @@ export default function LineUp() {
     setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${branchId}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${date}&branchId=${encodeURIComponent(lineupApiBranchId)}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.ok) {
@@ -1077,7 +1084,7 @@ export default function LineUp() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, branchId])
+  }, [date, branchId, lineupApiBranchId])
 
   useEffect(() => {
 
@@ -1109,7 +1116,7 @@ export default function LineUp() {
 
         lineupDate: date,
 
-        branchId: branchId,
+        branchId: lineupApiBranchId,
 
         service: '__NOTES__',
 
@@ -1891,7 +1898,7 @@ export default function LineUp() {
 
       lineupDate: date,
 
-      branchId: branchId,
+      branchId: lineupApiBranchId,
 
       service: '',
 
@@ -2007,7 +2014,7 @@ export default function LineUp() {
 
     try {
 
-      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
 
         method: 'DELETE',
 
@@ -2287,7 +2294,7 @@ export default function LineUp() {
 
     try {
 
-      const res = await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+      const res = await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
 
         method: 'DELETE',
 
@@ -2495,7 +2502,7 @@ export default function LineUp() {
 
             try {
 
-              await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+              await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
 
                 method: 'DELETE',
 
@@ -2923,7 +2930,7 @@ export default function LineUp() {
 
     try {
 
-      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${branchId}&date=${date}&includeNotes=false`, {
+      await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
 
         method: 'DELETE',
 
@@ -3485,6 +3492,8 @@ export default function LineUp() {
 
   const [loadingWeekly, setLoadingWeekly] = useState(false)
 
+  const [savedWeeks, setSavedWeeks] = useState<string[]>([])
+
   const wRows = wKind === 'drivers' ? wDrivers : wInstallers
 
   const wSetRows = (next: WPersonSchedule[]) => {
@@ -3509,7 +3518,7 @@ export default function LineUp() {
 
   const fetchWeeklySchedule = useCallback(async () => {
 
-    if (!branchId) return
+    if (!lineupApiBranchId) return
 
     setLoadingWeekly(true)
 
@@ -3517,81 +3526,78 @@ export default function LineUp() {
 
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
-      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${wWeekKey}&branchId=${branchId}`, {
-
-        headers: { Authorization: `Bearer ${token}` }
-
-      })
+      const res = await fetch(
+        `${API_BASE_URL}/v1/lineup/week?weekStart=${wWeekKey}&branchId=${encodeURIComponent(lineupApiBranchId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
 
       if (res.ok) {
 
         const data = await res.json()
 
-        if (Array.isArray(data)) {
+        setSavedWeeks(Array.isArray(data.savedWeeks) ? data.savedWeeks : [])
 
-          const driversRec = data.find(r => r.service === '__WEEKLY_DRIVERS__')
+        const driversRec = data.weeklyDrivers as LineUpRow | null | undefined
 
-          const installersRec = data.find(r => r.service === '__WEEKLY_INSTALLERS__')
+        const installersRec = data.weeklyInstallers as LineUpRow | null | undefined
 
-          if (driversRec) {
+        if (driversRec?.remarks) {
 
-            setWDriversRecord(driversRec)
+          setWDriversRecord(driversRec)
 
-            try {
+          try {
 
-              const parsed = JSON.parse(driversRec.remarks)
+            const parsed = JSON.parse(driversRec.remarks)
 
-              if (Array.isArray(parsed)) {
+            if (Array.isArray(parsed)) {
 
-                setWDrivers(parsed)
+              setWDrivers(parsed)
 
-                wSaveSchedule('drivers', wWeekKey, parsed, branchId)
-
-              }
-
-            } catch (err) {
-
-              console.error("Failed to parse weekly drivers from DB:", err)
+              wSaveSchedule('drivers', wWeekKey, parsed, branchId)
 
             }
 
-          } else {
+          } catch (err) {
 
-            setWDriversRecord(null)
-
-            setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
+            console.error("Failed to parse weekly drivers from DB:", err)
 
           }
 
-          if (installersRec) {
+        } else {
 
-            setWInstallersRecord(installersRec)
+          setWDriversRecord(null)
 
-            try {
+          setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
 
-              const parsed = JSON.parse(installersRec.remarks)
+        }
 
-              if (Array.isArray(parsed)) {
+        if (installersRec?.remarks) {
 
-                setWInstallers(parsed)
+          setWInstallersRecord(installersRec)
 
-                wSaveSchedule('installers', wWeekKey, parsed, branchId)
+          try {
 
-              }
+            const parsed = JSON.parse(installersRec.remarks)
 
-            } catch (err) {
+            if (Array.isArray(parsed)) {
 
-              console.error("Failed to parse weekly installers from DB:", err)
+              setWInstallers(parsed)
+
+              wSaveSchedule('installers', wWeekKey, parsed, branchId)
 
             }
 
-          } else {
+          } catch (err) {
 
-            setWInstallersRecord(null)
-
-            setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
+            console.error("Failed to parse weekly installers from DB:", err)
 
           }
+
+        } else {
+
+          setWInstallersRecord(null)
+
+          setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
 
         }
 
@@ -3607,7 +3613,7 @@ export default function LineUp() {
 
     }
 
-  }, [wWeekKey, branchId, wDays, suggestions])
+  }, [wWeekKey, lineupApiBranchId, wDays, branchId])
 
   useEffect(() => {
 
@@ -3617,7 +3623,7 @@ export default function LineUp() {
 
   const handleSaveWeeklySchedule = async () => {
 
-    if (!branchId) return
+    if (!lineupApiBranchId) return
 
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
@@ -3627,13 +3633,10 @@ export default function LineUp() {
 
     try {
 
-      // 1. Fetch current Monday entries first to avoid race conditions or duplicates
-
-      const checkRes = await fetch(`${API_BASE_URL}/v1/lineup?date=${wWeekKey}&branchId=${branchId}`, {
-
-        headers: { Authorization: `Bearer ${token}` }
-
-      })
+      const checkRes = await fetch(
+        `${API_BASE_URL}/v1/lineup/week?weekStart=${wWeekKey}&branchId=${encodeURIComponent(lineupApiBranchId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
 
       
 
@@ -3647,17 +3650,11 @@ export default function LineUp() {
 
         const data = await checkRes.json()
 
-        if (Array.isArray(data)) {
+        if (data.weeklyDrivers) dbDriversRec = data.weeklyDrivers as LineUpRow
 
-          const foundD = data.find(r => r.service === '__WEEKLY_DRIVERS__')
+        if (data.weeklyInstallers) dbInstallersRec = data.weeklyInstallers as LineUpRow
 
-          if (foundD) dbDriversRec = foundD
-
-          const foundI = data.find(r => r.service === '__WEEKLY_INSTALLERS__')
-
-          if (foundI) dbInstallersRec = foundI
-
-        }
+        if (Array.isArray(data.savedWeeks)) setSavedWeeks(data.savedWeeks)
 
       }
 
@@ -3673,7 +3670,7 @@ export default function LineUp() {
 
         lineupDate: wWeekKey,
 
-        branchId: branchId,
+        branchId: lineupApiBranchId,
 
         service: '__WEEKLY_DRIVERS__',
 
@@ -3707,7 +3704,7 @@ export default function LineUp() {
 
         lineupDate: wWeekKey,
 
-        branchId: branchId,
+        branchId: lineupApiBranchId,
 
         service: '__WEEKLY_INSTALLERS__',
 
@@ -7009,6 +7006,35 @@ export default function LineUp() {
           </div>
 
         </div>
+
+        {savedWeeks.length > 0 && (
+          <div
+            className="rounded-lg mb-4 px-4 py-2 flex flex-wrap items-center gap-2"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+          >
+            <span className="text-[10px] font-bold uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
+              Saved weeks
+            </span>
+            {savedWeeks.slice(0, 10).map(week => {
+              const active = week === wWeekKey
+              return (
+                <button
+                  key={week}
+                  type="button"
+                  onClick={() => wReloadWeek(week)}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-bold transition-all"
+                  style={{
+                    backgroundColor: active ? '#16a34a' : (isLight ? '#f1f5f9' : '#0f172a'),
+                    color: active ? '#fff' : textMuted,
+                    border: `1px solid ${active ? '#16a34a' : border}`,
+                  }}
+                >
+                  {wFormatWeekLabel(wGetWeekDays(week))}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {/* Legend strip */}
 
