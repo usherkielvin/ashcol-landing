@@ -1246,13 +1246,45 @@ function applyImportFieldsFromRow(
   return updatedFields
 }
 
-function formatServiceDriver(ticket: Ticket): string {
-  const vehicle = getF(ticket, 'serviceVehicle', 'service_vehicle')
-  const type = getF(ticket, 'serviceType', 'service_type')
-  if (vehicle && type && !vehicle.toLowerCase().includes(type.toLowerCase())) {
-    return `${type} · ${vehicle}`
+function normalizeDriverToken(raw: string): string {
+  return raw.trim().toUpperCase().replace(/\s+/g, '_').replace(/\//g, '_')
+}
+
+/** Tokens that belong in serviceType / schedule status — not driver names. */
+function isDriverPlaceholderToken(raw: string): boolean {
+  const val = (raw || '').trim()
+  if (!val) return true
+  const norm = normalizeDriverToken(val)
+  if (/^S[\/_]?I$/i.test(val)) return true
+  if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === norm || opt.label.toUpperCase() === val.toUpperCase())) {
+    return true
   }
-  return vehicle || type || ''
+  const placeholders = new Set([
+    'INSTALLATION', 'INSTALL', 'INSTALLED', 'SERVICE', 'SERVICES', 'SURVEY', 'CLEANING',
+    'RESCHED', 'FOR_APPROVAL', 'FOR_QUOTATION', 'SCHEDULED', 'PENDING', 'ASSIGNED',
+    'IN_PROGRESS', 'ON_THE_WAY', 'COMPLETED', 'CANCELLED',
+    'DONE_INSTALLED', 'DONE_SURVEY', 'DONE_CLEANING', 'DONE_CHECKUP',
+    'FREE_INSTALLATION', 'ADMIN_TASK', 'CLAIMS', 'HR_TASKS', 'PARTS_SALES',
+    'PAYROLL_TASKS', 'QUOTATION', 'REQUEST_FOR_FUND', 'WTY_REGISTRATION',
+  ])
+  return placeholders.has(norm)
+}
+
+function getTicketDriverName(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  const candidates = [
+    getF(ticket, 'serviceVehicle', 'service_vehicle'),
+    String(meta.driverName || meta.driver || meta.serviceVehicle || meta.driver_name || ''),
+  ]
+  for (const c of candidates) {
+    const trimmed = c.trim()
+    if (trimmed && !isDriverPlaceholderToken(trimmed)) return trimmed
+  }
+  return ''
+}
+
+function formatServiceDriver(ticket: Ticket): string {
+  return getTicketDriverName(ticket)
 }
 
 /** Parse "ALLAN - 3" / "T3 (DOMINIC) - 7" into name + site number for grouping. */
@@ -1801,9 +1833,14 @@ function buildCellPatchBody(
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
     case 'SERVICE': {
-      const { serviceType, serviceVehicle } = parseServiceDriverValue(v)
+      const category = inferCategoryFromTicket(ticket)
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(v, category)
       body.serviceType = serviceType
       body.serviceVehicle = serviceVehicle || undefined
+      body.acDetails = mergeAcMeta(acBase, {
+        driverName: serviceVehicle || undefined,
+        serviceVehicle: serviceVehicle || undefined,
+      })
       break
     }
     case 'UPDATE': {
@@ -5724,6 +5761,12 @@ export default function Tickets() {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
+                        const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO'])
+                        const cellVal = getCellDisplay(ticket, col.label)
+                        const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
+                        const emptyCellBg = isCellEmpty
+                          ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
+                          : undefined
                         return (
                           <td key={col.label}
                               data-cell-key={`${ticket.id}:${col.label}`}
@@ -5741,7 +5784,7 @@ export default function Tickets() {
                                 if (
                                   (col.label === 'INSTALLER' || col.label === 'NEGOTIATOR' || col.label === 'COMMIT'
                                     || col.label === 'BRAND' || col.label === 'DLR' || col.label === "CUSTOMER'S NAME"
-                                    || col.label === 'FINAL DATE')
+                                    || col.label === 'FINAL DATE' || col.label === 'SERVICE')
                                   && canEdit && !isGhost
                                 ) {
                                   startCellEdit(ticket, col.label)
@@ -5764,7 +5807,7 @@ export default function Tickets() {
                                 padding: isEditingCell ? '6px' : '0 12px',
                                 color: isGhost ? textMuted : textPrimary,
                                 fontSize: '11px', fontWeight: isGhost ? 500 : 500,
-                                backgroundColor: bg,
+                                backgroundColor: emptyCellBg ?? bg,
                                 borderRight: `1px solid ${tableBorder}`,
                                 borderBottom: `1px solid ${tableBorder}`,
                                 width: col.w,
