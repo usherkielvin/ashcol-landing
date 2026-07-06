@@ -334,8 +334,10 @@ export function resolveArchivesBranchFilter(
 
 /** Taguig Sales vs Services classification for schedule tickets. */
 export function isTaguigServiceTicket(ticket: Record<string, unknown>): boolean {
-  const branchId = String(ticket.branchId || ticket.branch_id || '')
-  if (branchId.toUpperCase() === 'BR-TAGUIG-SERVICES') return true
+  const branchId = String(ticket.branchId || ticket.branch_id || '').toUpperCase()
+  // Explicit branch on the ticket wins over dealer/installer heuristics.
+  if (branchId === 'BR-TAGUIG-SERVICES') return true
+  if (branchId === 'BR-TAGUIG-SALES') return false
 
   let meta: Record<string, unknown> = {}
   const acRaw = ticket.acDetails || ticket.ac_details

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -247,6 +247,21 @@ function getScheduleStatusLabel(value: string): string {
   if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'INSTALLATION'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
+}
+
+/** Overview search cards: one badge — workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
+function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string } {
+  const workflow = (ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  const workflowStatuses = new Set([
+    'SCHEDULED', 'ASSIGNED', 'RESCHED', 'PENDING', 'IN_PROGRESS', 'ON_THE_WAY',
+    'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED',
+  ])
+  if (workflowStatuses.has(workflow)) {
+    const norm = workflow === 'FOR_QUOTATION' ? 'FOR_APPROVAL' : workflow
+    return { value: norm, label: getScheduleStatusLabel(norm) }
+  }
+  const phase = getScheduleStatusValue(ticket)
+  return { value: phase, label: getScheduleStatusLabel(phase) }
 }
 
 /** True when ticket still carries reschedule ghost metadata (old date row / Moved to…). */
@@ -1790,7 +1805,6 @@ export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
   const location = useLocation()
-  const navigate = useNavigate()
   const isMyTickets = location.pathname === '/my-tickets'
   const isLight    = theme === 'light'
 
@@ -5095,38 +5109,6 @@ export default function Tickets() {
       {!isMyTickets && ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2 w-full">
-            {/* Tab Selector pills (Schedules vs Overview) */}
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg border bg-slate-500/5" style={{ borderColor: inputBorder }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('schedules')
-                  navigate('/schedules')
-                }}
-                className="px-2.5 py-1 rounded-md text-[10px] font-bold transition-all"
-                style={{
-                  backgroundColor: activeTab === 'schedules' ? green : 'transparent',
-                  color: activeTab === 'schedules' ? '#ffffff' : textMuted,
-                }}
-              >
-                Schedules
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('overview')
-                  navigate('/tickets')
-                }}
-                className="px-2.5 py-1 rounded-md text-[10px] font-bold transition-all"
-                style={{
-                  backgroundColor: activeTab === 'overview' ? green : 'transparent',
-                  color: activeTab === 'overview' ? '#ffffff' : textMuted,
-                }}
-              >
-                Overview
-              </button>
-            </div>
-
             {/* Weekly Date Tabs Picker */}
             {activeTab === 'schedules' && (
               <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
@@ -5703,9 +5685,11 @@ export default function Tickets() {
                     {overviewResults.map(ticket => {
                       const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
                       const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
-                      const category = inferCategoryFromTicket(ticket);
-                      const statusVal = getScheduleStatusValue(ticket);
+                      const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
                       const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
+                      const branchLabel = getBranchDisplayName(
+                        resolveScopedBranchId(ticket.branchId || ticket.branch_id || '') || ticket.branchId || ticket.branch_id,
+                      );
                       
                       return (
                         <div 
@@ -5719,14 +5703,14 @@ export default function Tickets() {
                               <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
                                 {ticketNum}
                               </span>
-                              <div className="flex gap-1.5 items-center">
-                                {/* Category Badge */}
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: 'rgba(22,163,74,0.1)', color: green }}>
-                                  {category}
-                                </span>
-                                {/* Status Badge */}
+                              <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                                {branchLabel && branchLabel !== '—' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
+                                    {branchLabel}
+                                  </span>
+                                )}
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
-                                  {statusVal}
+                                  {statusLabel}
                                 </span>
                               </div>
                             </div>
