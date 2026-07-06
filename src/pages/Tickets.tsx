@@ -418,6 +418,12 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     merged.preferredDate = (body.preferredDate as string) || dateKey
     merged.preferred_date = merged.preferredDate
   }
+  if (Object.prototype.hasOwnProperty.call(body, 'serviceVehicle')) {
+    const sv = body.serviceVehicle
+    const cleared = sv == null || sv === ''
+    merged.serviceVehicle = cleared ? undefined : String(sv)
+    merged.service_vehicle = merged.serviceVehicle
+  }
   return merged
 }
 
@@ -1300,8 +1306,14 @@ function isDriverPlaceholderToken(raw: string): boolean {
   const val = (raw || '').trim()
   if (!val) return true
   const norm = normalizeDriverToken(val)
+  const upper = val.toUpperCase()
+  if (/^S[\/_]?I(\s|$|[-·•])/i.test(val)) return true
+  if (/^SURVEY(\s|&|$|[-·•])/i.test(val)) return true
+  if (/^SERVICE(\s|&|$|[-·•])/i.test(val)) return true
+  if (/^INSTALL(\s|&|$|[-·•])/i.test(val)) return true
+  if (upper.includes('SURVEY') && upper.includes('INSTALL')) return true
   if (/^S[\/_]?I$/i.test(val)) return true
-  if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === norm || opt.label.toUpperCase() === val.toUpperCase())) {
+  if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === norm || opt.label.toUpperCase() === upper)) {
     return true
   }
   const placeholders = new Set([
@@ -1311,8 +1323,15 @@ function isDriverPlaceholderToken(raw: string): boolean {
     'DONE_INSTALLED', 'DONE_SURVEY', 'DONE_CLEANING', 'DONE_CHECKUP',
     'FREE_INSTALLATION', 'ADMIN_TASK', 'CLAIMS', 'HR_TASKS', 'PARTS_SALES',
     'PAYROLL_TASKS', 'QUOTATION', 'REQUEST_FOR_FUND', 'WTY_REGISTRATION',
+    'SURVEY_&_INSTALL', 'SURVEY_AND_INSTALL',
   ])
   return placeholders.has(norm)
+}
+
+function normalizeDriverInput(raw: string): string {
+  const trimmed = (raw || '').trim()
+  if (!trimmed || isDriverPlaceholderToken(trimmed)) return ''
+  return trimmed
 }
 
 function getTicketDriverName(ticket: Ticket): string {
@@ -1890,12 +1909,14 @@ function buildCellPatchBody(
       break
     case 'SERVICE': {
       const category = inferCategoryFromTicket(ticket)
-      const { serviceType, serviceVehicle } = parseServiceDriverValue(v, category)
+      const driver = normalizeDriverInput(v)
+      const { serviceType } = parseServiceDriverValue('', category)
       body.serviceType = serviceType
-      body.serviceVehicle = serviceVehicle || undefined
+      body.serviceVehicle = driver
       body.acDetails = mergeAcMeta(acBase, {
-        driverName: serviceVehicle || undefined,
-        serviceVehicle: serviceVehicle || undefined,
+        driverName: driver,
+        serviceVehicle: driver,
+        driver_name: driver,
       })
       break
     }
