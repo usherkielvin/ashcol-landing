@@ -88,12 +88,26 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
   const raw = (globalOrBranchId || '').trim()
   const lower = raw.toLowerCase()
   const emailLower = (email || '').toLowerCase()
-  const isServices = lower.endsWith('-services')
-    || lower.endsWith('-service')
-    || lower === 'br-taguig-services'
-    || emailLower.includes('service')
 
   if (isTaguigBranchRef(raw)) {
+    let isServices: boolean
+    if (
+      lower.endsWith('-services')
+      || lower.endsWith('-service')
+      || lower === 'br-taguig-services'
+      || (lower.includes('taguig') && lower.includes('service'))
+    ) {
+      isServices = true
+    } else if (
+      lower.endsWith('-sales')
+      || lower === 'br-taguig-sales'
+      || lower.includes('sales')
+    ) {
+      isServices = false
+    } else {
+      isServices = emailLower.includes('service')
+    }
+
     return {
       branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',

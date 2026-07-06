@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, schedulesCacheKey, writeTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
@@ -3886,7 +3886,7 @@ export default function Tickets() {
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
     const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
     const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
-    const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt) : false
+    const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
@@ -3990,6 +3990,21 @@ export default function Tickets() {
     }
     void fetchTickets({ soft: hasCache })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets])
+
+  useEffect(() => {
+    if (!hasLoadedOnceRef.current || isMyTickets) return
+    void fetchTickets({ soft: true, force: true })
+  }, [dateFilter, fetchTickets, isMyTickets])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && hasLoadedOnceRef.current) {
+        void fetchTickets({ soft: true, force: true })
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [fetchTickets])
 
   useEffect(() => {
     if (!canEdit) return
@@ -4309,6 +4324,8 @@ export default function Tickets() {
           // so refreshes (e.g. cache TTL) do not wipe the row from the UI.
           clearRelaysCache()
           clearWarrantyCache()
+          clearSchedulesCache()
+          void fetchTickets({ soft: true, force: true })
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
           console.error('[Schedules] Background save FAILED', ticketId, payload, err)
@@ -4327,7 +4344,7 @@ export default function Tickets() {
         void flushTicketSave(ticketId)
       }
     }
-  }, [restoreTicketLocally, token])
+  }, [restoreTicketLocally, token, fetchTickets])
   flushTicketSaveRef.current = (ticketId: string) => { void flushTicketSave(ticketId) }
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */

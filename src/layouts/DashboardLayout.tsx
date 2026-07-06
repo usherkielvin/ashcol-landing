@@ -752,18 +752,17 @@ export default function DashboardLayout() {
               >
                 <Menu className="w-4 h-4" />
               </button>
-            </div>
 
-            {/* Centered Page Title */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center text-center pointer-events-none z-10">
-              <h1 className="text-[15px] font-black tracking-tight" style={{ color: textPrimary }}>
-                {currentPage}
-              </h1>
-              {branchLabel ? (
-                <p className="text-[11px] hidden sm:block truncate max-w-[200px] md:max-w-md" style={{ color: textMuted }} title={branchLabel}>
-                  {isPortalAdminUser ? `Active Branch · ${branchLabel}` : `Branch · ${branchLabel}`}
-                </p>
-              ) : null}
+              <div className="flex flex-col justify-center">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
+                  {currentPage}
+                </span>
+                {branchLabel ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
+                    {branchLabel}
+                  </h1>
+                ) : null}
+              </div>
             </div>
 
             {/* Right: Actions */}

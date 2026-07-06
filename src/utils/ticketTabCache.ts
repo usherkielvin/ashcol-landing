@@ -3,6 +3,7 @@ import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './local
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
 export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
+export const SCHEDULES_CACHE_TTL_MS = 45 * 1000
 
 const VERSION = 1
 
@@ -150,6 +151,20 @@ export function warrantyCacheIsFresh(branchId?: string): boolean {
   return isTabCacheFresh(at)
 }
 
+export function clearSchedulesCache(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('schedules:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+  } catch (e) {
+    console.warn('Error clearing schedules cache:', e)
+  }
+}
 export function clearRelaysCache(): void {
   try {
     const keysToRemove: string[] = []
