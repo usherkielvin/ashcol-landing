@@ -66,7 +66,6 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Tickets',
       Icon: MdOutlineConfirmationNumber,
       subItems: [
-        { name: 'Overview', icon: <MdOutlineDashboard size={16} />, path: findPath('Overview') },
         { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
