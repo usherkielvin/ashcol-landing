@@ -1400,7 +1400,12 @@ function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name:
   return firstName.toUpperCase()
 }
 
-const DEFAULT_TICKET_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
+const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
+const DEFAULT_SCHEDULE_SORT = { column: 'INSTALLER', direction: 'asc' as const }
+
+function defaultSortForSchedulesView(isMyTickets: boolean) {
+  return isMyTickets ? DEFAULT_MY_TICKETS_SORT : DEFAULT_SCHEDULE_SORT
+}
 
 function parseServiceDriverValue(
   raw?: string,
@@ -2070,7 +2075,13 @@ export default function Tickets() {
     return () => clearTimeout(t)
   }, [refreshing])
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(DEFAULT_TICKET_SORT)
+  const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
+    () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
+  )
+
+  useEffect(() => {
+    setSortConfig(defaultSortForSchedulesView(isMyTickets))
+  }, [isMyTickets])
   const [dateFilter, setDateFilter]   = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
@@ -4245,6 +4256,10 @@ export default function Tickets() {
         const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees }
         const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
         if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
+        if (!isMyTickets && sortConfig.column !== 'INSTALLER') {
+          const byInstaller = compareTicketsByColumn(a, b, 'INSTALLER', cmpOpts)
+          if (byInstaller !== 0) return byInstaller
+        }
         if (sortConfig.column !== "CUSTOMER'S NAME") {
           const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME", cmpOpts)
           if (byCustomer !== 0) return byCustomer
@@ -4256,15 +4271,16 @@ export default function Tickets() {
   }, [filtered, sortConfig, isMyTickets, branchEmployees])
 
   const sortDiffersFromDefault =
-    sortConfig.column !== DEFAULT_TICKET_SORT.column || sortConfig.direction !== DEFAULT_TICKET_SORT.direction
+    sortConfig.column !== defaultSortForSchedulesView(isMyTickets).column
+    || sortConfig.direction !== defaultSortForSchedulesView(isMyTickets).direction
 
   const handleColumnSort = useCallback((colLabel: string) => {
     setSortConfig(prev => {
       if (prev.column !== colLabel) return { column: colLabel, direction: 'asc' }
       if (prev.direction === 'asc') return { column: colLabel, direction: 'desc' }
-      return DEFAULT_TICKET_SORT
+      return defaultSortForSchedulesView(isMyTickets)
     })
-  }, [])
+  }, [isMyTickets])
 
   const duplicateNameKeys = useMemo(() => {
     const counts = new Map<string, number>()
@@ -5530,7 +5546,7 @@ export default function Tickets() {
           {sortDiffersFromDefault && (
             <button
               type="button"
-              onClick={() => setSortConfig(DEFAULT_TICKET_SORT)}
+              onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
               className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
               style={{ color: green }}
             >
