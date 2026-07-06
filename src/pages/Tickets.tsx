@@ -394,11 +394,42 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
 }
 
 function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket {
-  return {
+  const merged: Ticket = {
     ...ticket,
     ...(body as Partial<Ticket>),
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   }
+  const aliasPairs: [string, string][] = [
+    ['installer_name', 'installerName'],
+    ['customer_name', 'customerName'],
+    ['contact_phone', 'contactPhone'],
+    ['preferred_date', 'preferredDate'],
+    ['negotiator_id', 'negotiatorId'],
+    ['branch_id', 'branchId'],
+    ['ticket_number', 'ticketNumber'],
+    ['control_number', 'controlNumber'],
+    ['remarks_update', 'remarksUpdate'],
+    ['source_vendor', 'sourceVendor'],
+    ['service_vehicle', 'serviceVehicle'],
+    ['unit_type', 'unitType'],
+    ['commit_type', 'commitType'],
+    ['installation_charges', 'installationCharges'],
+    ['mode_of_payment', 'modeOfPayment'],
+  ]
+  for (const [snake, camel] of aliasPairs) {
+    if (camel in body) (merged as unknown as Record<string, unknown>)[snake] = body[camel]
+    if (snake in body) (merged as unknown as Record<string, unknown>)[camel] = body[snake]
+  }
+  if (typeof body.finalDate === 'string' && body.finalDate) {
+    const dateKey = body.finalDate
+    merged.preferredDate = (body.preferredDate as string) || dateKey
+    merged.preferred_date = merged.preferredDate
+  }
+  return merged
+}
+
+function resolveTicketScheduleDateKey(ticket: Ticket): string {
+  return getFinalDateKey(ticket) || getPreferredDateKey(ticket) || ''
 }
 
 function mergeAcDetailsStrings(base?: string, overlay?: string): string | undefined {
@@ -1766,7 +1797,7 @@ function buildCellPatchBody(
       body.commitType = v || undefined
       break
     case 'INSTALLER':
-      body.installerName = v || undefined
+      body.installerName = v
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
     case 'SERVICE': {
@@ -2014,6 +2045,9 @@ export default function Tickets() {
   const [toast, setToast]             = useState<string | null>(null)
   const fetchSeqRef = useRef(0)
   const hasLoadedOnceRef = useRef(false)
+  const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
+  const [promptAmount, setPromptAmount] = useState<string>('')
+  const [promptMode, setPromptMode] = useState<string>('CASH')
 
   useEffect(() => {
     if (isMyTickets) {
@@ -3219,9 +3253,6 @@ export default function Tickets() {
         finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
       }
 
-      setEditFormSnapshot(JSON.stringify(editForm))
-      setEditModalOpen(false)
-
       const archiveOriginal = originalTicket
       const archiveFinalBody = finalBody
       const archiveBody = body
@@ -3275,6 +3306,10 @@ export default function Tickets() {
             }
           : undefined,
       )
+
+      setEditFormSnapshot(JSON.stringify(editForm))
+      setEditModalOpen(false)
+      showToast('Saved — syncing in background')
     } catch (err: unknown) {
       console.error(err)
       alert(`Could not update ticket: ${formatFetchError(err)}`)
@@ -3825,6 +3860,8 @@ export default function Tickets() {
   } | null>(null)
   const [savingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cellEditDraftRef = useRef<{ ticketId: string; colLabel: string; value: string } | null>(null)
+  const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => {})
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
@@ -3961,9 +3998,9 @@ export default function Tickets() {
         if (pendingSavesRef.current.has(t.id) || activeSavesRef.current.has(t.id)) {
           return local
         }
-        // Server has this ticket and no pending save — trust server, release lock
+        // Server has this ticket and no pending save — keep local edits visible over stale list rows
         pending.delete(t.id)
-        return t
+        return mergeTicketPatch(t, local as unknown as Record<string, unknown>)
       })
       // Temp / just-created tickets not in server payload yet — keep showing them
       for (const [id, local] of pending) {
@@ -4264,10 +4301,30 @@ export default function Tickets() {
     }
   }
 
-  const cancelEdit = () => {
+  const discardCellEdit = () => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cellEditBlurTimer.current = null
+    cellEditDraftRef.current = null
     setEditingCell(null)
   }
+
+  const commitCellEdit = useCallback(() => {
+    if (cellEditBlurTimer.current) {
+      clearTimeout(cellEditBlurTimer.current)
+      cellEditBlurTimer.current = null
+    }
+    const draft = cellEditDraftRef.current
+      || (editingCell ? { ticketId: editingCell.ticketId, colLabel: editingCell.colLabel, value: editingCell.value } : null)
+    if (!draft) return
+    cellEditDraftRef.current = null
+    setEditingCell(null)
+    const ticket = tickets.find(t => t.id === draft.ticketId)
+      || optimisticTicketsRef.current.get(draft.ticketId)
+    if (!ticket) return
+    void saveCellEditRef.current(ticket, draft.colLabel, draft.value)
+  }, [editingCell, tickets])
+
+  const cancelEdit = discardCellEdit
 
   const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
 
@@ -4307,23 +4364,45 @@ export default function Tickets() {
       openStatusPicker(ticket)
       return
     }
-    setEditingCell({ ticketId: ticket.id, colLabel, value: getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees) })
+    const value = getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees)
+    cellEditDraftRef.current = { ticketId: ticket.id, colLabel, value }
+    setEditingCell({ ticketId: ticket.id, colLabel, value })
   }
 
   const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
+    const prevTicket = tickets.find(t => t.id === ticketId) || optimisticTicketsRef.current.get(ticketId)
     optimisticTicketsRef.current.set(ticketId, nextTicket)
+
+    if (!isMyTickets) {
+      const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
+      const nextDate = resolveTicketScheduleDateKey(nextTicket)
+      if (nextDate && nextDate !== prevDate) {
+        setDateFilter(nextDate)
+      }
+    }
+
     setTickets(prev => {
       const exists = prev.some(t => t.id === ticketId)
-      return exists
+      const next = exists
         ? prev.map(t => (t.id === ticketId ? nextTicket : t))
         : [nextTicket, ...prev]
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      writeSchedulesTabCache(cacheKey, next, 'local')
+      return next
     })
-  }, [])
+    setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...nextTicket } : prev))
+  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets])
 
   const restoreTicketLocally = useCallback((ticketId: string, rollback: Ticket) => {
     optimisticTicketsRef.current.delete(ticketId)
-    setTickets(prev => prev.map(t => (t.id === ticketId ? rollback : t)))
-  }, [])
+    setTickets(prev => {
+      const next = prev.map(t => (t.id === ticketId ? rollback : t))
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      writeSchedulesTabCache(cacheKey, next, 'local')
+      return next
+    })
+    setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...rollback } : prev))
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
     // Never PATCH optimistic temp ids — edits stay queued until promoteTempTicketState.
@@ -4347,6 +4426,17 @@ export default function Tickets() {
             body: JSON.stringify(payload),
           })
           if (!res.ok) throw new Error(await readApiError(res))
+          const savedPayload = await res.json().catch(() => null)
+          const savedTicket = parseCreatedTicketResponse(savedPayload) as Ticket | null
+          if (savedTicket?.id) {
+            const base = optimisticTicketsRef.current.get(ticketId)
+              || tickets.find(t => t.id === ticketId)
+            if (base) {
+              const mergedSaved = mergeTicketPatch(base, savedTicket as unknown as Record<string, unknown>)
+              optimisticTicketsRef.current.set(ticketId, mergedSaved)
+              setTickets(prev => prev.map(t => (t.id === ticketId ? mergedSaved : t)))
+            }
+          }
           console.log('[Schedules] Saved to database', {
             ticketId,
             status: payload.status,
@@ -4378,7 +4468,7 @@ export default function Tickets() {
         void flushTicketSave(ticketId)
       }
     }
-  }, [restoreTicketLocally, token, fetchTickets])
+  }, [restoreTicketLocally, token, fetchTickets, tickets])
   flushTicketSaveRef.current = (ticketId: string) => { void flushTicketSave(ticketId) }
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
@@ -4406,7 +4496,12 @@ export default function Tickets() {
     }
   }, [applyTicketLocally, flushTicketSave])
 
-  const saveCellEdit = async (ticket: Ticket, colLabel: string, value: string) => {
+  const saveCellEdit = (
+    ticket: Ticket,
+    colLabel: string,
+    value: string,
+    injectedPayment?: { amount: number; modeOfPayment: string }
+  ) => {
     const key = cellEditKey(ticket.id, colLabel)
     if (savingCellKey === key) return
 
@@ -4418,6 +4513,11 @@ export default function Tickets() {
       return
     }
 
+    if (injectedPayment) {
+      body.modeOfPayment = injectedPayment.modeOfPayment
+      body.installationCharges = injectedPayment.amount
+    }
+
     // Remarks always save in-cell — never open a payment popup.
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
@@ -4426,7 +4526,10 @@ export default function Tickets() {
       : ''
     if (colLabel === 'UPDATE' && isInstalledRemarks(remarkText)) {
       finalBody = enrichCompletePatchBody(body, ticket, schedKey)
-    } else if ((body.status as string | undefined)?.toUpperCase() === 'COMPLETED') {
+    } else if (
+      (body.status as string | undefined)?.toUpperCase() === 'COMPLETED'
+      || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
+    ) {
       finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     }
 
@@ -4440,11 +4543,10 @@ export default function Tickets() {
       || (
         colLabel === 'UPDATE'
         && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
-        && String(finalBody.status || '').toUpperCase() === 'COMPLETED'
+        && (String(finalBody.status || '').toUpperCase() === 'COMPLETED' || String(finalBody.status || '').toUpperCase() === 'INSTALLED')
       )
 
     const archiveBody = finalBody
-    const nextTicket = mergeTicketPatch(ticket, finalBody)
     queueTicketPatch(
       ticket,
       finalBody,
@@ -4484,9 +4586,11 @@ export default function Tickets() {
     )
 
     if (focusRemarksAfterStatus) {
+      const nextTicket = mergeTicketPatch(ticket, finalBody)
       requestAnimationFrame(() => startCellEdit(nextTicket, 'UPDATE'))
     }
   }
+  saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
 
   const openReschedDialog = (ticket: Ticket) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
@@ -4700,19 +4804,23 @@ export default function Tickets() {
     }
 
     const commit = () => {
-      if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-      void saveCellEdit(ticket, colLabel, editingCell.value)
+      void commitCellEdit()
     }
 
     const onBlur = () => {
-      cellEditBlurTimer.current = setTimeout(commit, 120)
+      cellEditBlurTimer.current = setTimeout(commit, 80)
+    }
+
+    const syncDraftValue = (value: string) => {
+      cellEditDraftRef.current = { ticketId: ticket.id, colLabel, value }
+      setEditingCell(prev => (prev ? { ...prev, value } : null))
     }
 
     const onKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        cancelEdit()
-      } else if (e.key === 'Enter' && !e.shiftKey && colLabel !== 'DESTINATION' && colLabel !== 'COMMIT' && colLabel !== 'UPDATE') {
+        discardCellEdit()
+      } else if (e.key === 'Enter' && !e.shiftKey && colLabel !== 'DESTINATION' && colLabel !== 'COMMIT') {
         e.preventDefault()
         commit()
       }
@@ -4730,7 +4838,7 @@ export default function Tickets() {
           disabled={isSaving}
           type="date"
           value={editingCell.value}
-          onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onChange={e => syncDraftValue(e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onMouseDown={e => e.stopPropagation()}
@@ -4749,7 +4857,7 @@ export default function Tickets() {
           disabled={isSaving}
           rows={3}
           value={editingCell.value}
-          onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onChange={e => syncDraftValue(e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onMouseDown={e => e.stopPropagation()}
@@ -4757,9 +4865,11 @@ export default function Tickets() {
           ref={el => {
             if (!el || el.dataset.caretReady === '1') return
             el.dataset.caretReady = '1'
-            el.focus()
-            const len = el.value.length
-            try { el.setSelectionRange(len, len) } catch { /* ignore */ }
+            setTimeout(() => {
+              el.focus()
+              const len = el.value.length
+              try { el.setSelectionRange(len, len) } catch { /* ignore */ }
+            }, 50)
           }}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
@@ -4775,9 +4885,10 @@ export default function Tickets() {
         disabled={isSaving}
         type="text"
         value={editingCell.value}
-        onChange={e => setEditingCell(prev => prev ? { ...prev, value: e.target.value } : null)}
+        onChange={e => syncDraftValue(e.target.value)}
         onBlur={onBlur}
         onClick={e => e.stopPropagation()}
+        onMouseDown={e => e.stopPropagation()}
         onKeyDown={onKeyDown}
         className="w-full rounded-md outline-none"
         style={inputStyle}
@@ -5146,7 +5257,7 @@ export default function Tickets() {
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
       setContextMenu(null)
-      if (!saving && !editModalOpen && !addModalOpen) cancelEdit()
+      if (!saving && !editModalOpen && !addModalOpen) commitCellEdit()
       setHoveredCell(null)
       setExpandedCell(null)
       setAddMenuOpen(false)
@@ -5627,9 +5738,13 @@ export default function Tickets() {
                                   openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
-                                // Remarks: edit in the cell (caret focus), never a popup.
-                                if (col.label === 'UPDATE' && canEdit && !isGhost) {
-                                  startCellEdit(ticket, 'UPDATE')
+                                if (
+                                  (col.label === 'INSTALLER' || col.label === 'NEGOTIATOR' || col.label === 'COMMIT'
+                                    || col.label === 'BRAND' || col.label === 'DLR' || col.label === "CUSTOMER'S NAME"
+                                    || col.label === 'FINAL DATE')
+                                  && canEdit && !isGhost
+                                ) {
+                                  startCellEdit(ticket, col.label)
                                   return
                                 }
                                 setExpandedCell(prev =>
@@ -6312,6 +6427,14 @@ export default function Tickets() {
             openReschedDialog(pickerTicket)
             return
           }
+          if (value === 'DONE_INSTALLED') {
+            if (!ticketHasPaymentInfo(pickerTicket)) {
+              setPaymentPrompt({ ticket: pickerTicket, nextStatus: value })
+              setPromptAmount('')
+              setPromptMode('CASH')
+              return
+            }
+          }
           if (value === currentStatus) return
           void saveCellEdit(pickerTicket, 'STATUS', value)
         }
@@ -6902,7 +7025,10 @@ export default function Tickets() {
       {editModalOpen && ReactDOM.createPortal((() => {
         const isReschedStatus = (editForm.status || '').toUpperCase() === 'RESCHED'
         const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
-        const showPaymentSection = ticketHasPaymentInfo(editForm) || Boolean(editForm.modeOfPayment || editForm.installationCharges != null)
+        const showPaymentSection = ticketHasPaymentInfo(editForm)
+          || Boolean(editForm.modeOfPayment || editForm.installationCharges != null)
+          || (editForm.status || '').toUpperCase() === 'INSTALLED'
+          || (editForm.status || '').toUpperCase() === 'DONE_INSTALLED'
         const reschedFieldStyle = {
           backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)',
           border: `2px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.55)'}`,
@@ -7439,6 +7565,99 @@ export default function Tickets() {
               </div>
             </div>
           </div>
+        )
+      })()}
+
+      {paymentPrompt && (() => {
+        const { ticket } = paymentPrompt
+        const isFree = promptMode === 'FREE' || promptMode === 'FREE INSTALL'
+        const handleSubmit = (e: React.FormEvent) => {
+          e.preventDefault()
+          const amt = isFree ? 0 : parseFloat(promptAmount) || 0
+          void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: amt, modeOfPayment: promptMode })
+          setPaymentPrompt(null)
+        }
+        return ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+               onClick={() => setPaymentPrompt(null)}>
+            <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                 onClick={e => e.stopPropagation()}>
+              <form onSubmit={handleSubmit}>
+                <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Payment Details
+                    </h3>
+                    <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
+                      Set payment to complete and archive this ticket
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setPaymentPrompt(null)} className="p-1 rounded-md hover:bg-slate-500/10" style={{ color: textMuted }}>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-6 flex flex-col gap-4">
+                  <div className="p-3.5 rounded-xl border flex flex-col gap-1" style={{ backgroundColor: isLight ? '#f8fafc' : '#070d19', borderColor: border }}>
+                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: textMuted }}>Customer</span>
+                    <span className="text-xs font-bold" style={{ color: textPrimary }}>{getCustomerDisplayName(ticket)}</span>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Mode of Payment</label>
+                    <select
+                      value={promptMode}
+                      onChange={e => {
+                        const m = e.target.value
+                        setPromptMode(m)
+                        if (m === 'FREE' || m === 'FREE INSTALL') setPromptAmount('0')
+                      }}
+                      required
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="CASH">CASH</option>
+                      <option value="BANK TRANSFER">BANK TRANSFER</option>
+                      <option value="GCASH">GCASH</option>
+                      <option value="CHEQUE">CHEQUE</option>
+                      <option value="FREE INSTALL">FREE INSTALL</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (₱)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required={!isFree}
+                      disabled={isFree}
+                      placeholder="0.00"
+                      value={promptAmount}
+                      onChange={e => setPromptAmount(e.target.value)}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    />
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 flex justify-end gap-3 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                  <button type="button" onClick={() => setPaymentPrompt(null)} className="px-4 py-2 rounded-xl text-xs font-bold border transition-all" style={{ borderColor: inputBorder, color: textMuted }}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md"
+                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                  >
+                    Complete & Archive
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
         )
       })()}
     </div>
