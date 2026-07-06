@@ -531,6 +531,30 @@ export default function DailyAuditReport() {
     ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })
     : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
 
+  const todayKey = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+
+  const weeklyDayTabs = useMemo(() => {
+    const base = date ? new Date(date + 'T00:00:00') : new Date()
+    const day = base.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const start = new Date(base)
+    start.setDate(base.getDate() + diff)
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const isToday = key === todayKey
+      const dayName = isToday ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
+      const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+      return { key, dayName, dateLabel }
+    })
+  }, [date, todayKey])
+
+  const isCustomAuditDate = viewMode === 'single' && date !== '' && !weeklyDayTabs.some(t => t.key === date)
+
   const renderMobileMetric = (label: string, value: string, color = textPrimary) => (
     <div className="flex flex-col gap-0.5 min-w-0">
       <span className="text-[10px] font-medium truncate" style={{ color: textMuted }}>{label}</span>
@@ -634,18 +658,50 @@ export default function DailyAuditReport() {
             ))}
           </div>
           {viewMode === 'single' ? (
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs flex-1 min-w-[130px] cursor-pointer"
-              onClick={() => openDatePicker(mobileDateRef.current)}
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-              <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                tabIndex={-1}
-                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
-              <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
-                {formatDateTriggerLabel(date)}
-              </span>
-            </div>
+            <>
+              {/* Weekly day tabs (mobile) */}
+              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5">
+                {weeklyDayTabs.map(tab => {
+                  const isActive = date === tab.key
+                  return (
+                    <button key={tab.key} type="button"
+                      onClick={() => setDate(tab.key)}
+                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      style={{
+                        backgroundColor: isActive ? '#10B981' : 'transparent',
+                        borderColor: isActive ? '#10B981' : inputBorder,
+                        color: isActive ? '#ffffff' : textMuted,
+                      }}
+                    >
+                      {tab.dayName} {tab.dateLabel}
+                    </button>
+                  )
+                })}
+
+                {isCustomAuditDate && (
+                  <button type="button"
+                    onClick={() => openDatePicker(mobileDateRef.current)}
+                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                    style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+                  >
+                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                  </button>
+                )}
+
+                <button type="button"
+                  onClick={() => openDatePicker(mobileDateRef.current)}
+                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                  title="Pick date"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                </button>
+
+                <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                  tabIndex={-1}
+                  className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+              </div>
+            </>
           ) : (
             <>
               <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
@@ -704,20 +760,53 @@ export default function DailyAuditReport() {
             ))}
           </div>
 
-          {/* Date picker(s) */}
+          {/* Date picker(s) - desktop */}
           {viewMode === 'single' ? (
-            <div
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer"
-              onClick={() => openDatePicker(desktopDateRef.current)}
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-              <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-              <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                tabIndex={-1}
-                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
-              <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
-                {formatDateTriggerLabel(date)}
-              </span>
-            </div>
+            <>
+              {/* Weekly day tabs (desktop) */}
+              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+                {weeklyDayTabs.map(tab => {
+                  const isActive = date === tab.key
+                  return (
+                    <button key={tab.key} type="button"
+                      onClick={() => setDate(tab.key)}
+                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      style={{
+                        backgroundColor: isActive ? '#10B981' : 'transparent',
+                        borderColor: isActive ? '#10B981' : inputBorder,
+                        color: isActive ? '#ffffff' : textMuted,
+                      }}
+                    >
+                      {tab.dayName} {tab.dateLabel}
+                    </button>
+                  )
+                })}
+
+                {isCustomAuditDate && (
+                  <button type="button"
+                    onClick={() => openDatePicker(desktopDateRef.current)}
+                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                    style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+                  >
+                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                  </button>
+                )}
+
+                <button type="button"
+                  onClick={() => openDatePicker(desktopDateRef.current)}
+                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                  title="Pick date"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                </button>
+
+                <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date}
+                  onChange={e => setDate(e.target.value)}
+                  tabIndex={-1}
+                  className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+              </div>
+            </>
           ) : (
             <div className="flex items-center gap-1.5">
               {[{ val: rangeFrom, set: setRangeFrom }, { val: rangeTo, set: setRangeTo }].map((p, i) => (

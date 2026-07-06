@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Upload, ChevronDown, Camera, Loader2, Pencil,
+  Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -2005,6 +2005,7 @@ export default function Tickets() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
 
   useEffect(() => {
     if (!contextMenu) return
@@ -2811,7 +2812,7 @@ export default function Tickets() {
     const form = {
       id: ticket.id,
       preferredDate: preferred,
-      finalDate: getFinalDateKey(ticket),
+      finalDate: getFinalDateKey(ticket) || preferred || '',
       customerName: ticket.customerName || ticket.customer_name || ticket.title || '',
       contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
       location: formatAddress(ticket.location),
@@ -5922,14 +5923,16 @@ export default function Tickets() {
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-[3px]"
                style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-               onClick={() => setDetailTicket(null)}>
+               onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}>
             <div className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95"
                  style={{
                    backgroundColor: cardBg,
                    border: `1px solid ${border}`,
                    height: 'calc(100vh - 6px)',
                    maxHeight: 'calc(100vh - 6px)',
-                   maxWidth: 'min(1180px, calc(100vw - 6px))',
+                   maxWidth: showHistoryPanel
+                     ? 'min(1480px, calc(100vw - 6px))'
+                     : 'min(1180px, calc(100vw - 6px))',
                  }}
                  onClick={e => e.stopPropagation()}>
 
@@ -5970,7 +5973,7 @@ export default function Tickets() {
                        )}
                      </div>
                    </div>
-                   <button type="button" onClick={() => setDetailTicket(null)}
+                   <button type="button" onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
                            className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                      <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
                    </button>
@@ -6100,6 +6103,7 @@ export default function Tickets() {
                  </div>
 
                  {/* Right Column: Update History */}
+                 {showHistoryPanel && (
                  <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
                       style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
@@ -6184,24 +6188,31 @@ export default function Tickets() {
                      </div>
                    )}
                  </div>
+                 )}
                </div>
 
                {/* Footer Actions */}
                <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
                     style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
+                   className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
+                   style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
+                   <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                   {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
+                 </button>
                  {canEdit && (
-                   <button onClick={() => { handleDelete(t.id); setDetailTicket(null) }}
+                   <button onClick={() => { handleDelete(t.id); setDetailTicket(null); setShowHistoryPanel(false) }}
                            className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm">
                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
                      Delete Ticket
                    </button>
                  )}
                  {canEdit && (
-                   <button onClick={() => { openEditModal(t); setDetailTicket(null) }}
+                   <button onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
                            className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
                            style={{ borderColor: inputBorder, color: textPrimary }}>
                      <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
-                     Edit Update
+                     Edit Details
                    </button>
                  )}
                 </div>
@@ -6954,7 +6965,7 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  {isMyTickets && isTaguigBranchRef(editForm.branchId || activeBranchId) && (
+                  {isTaguigBranchRef(editForm.branchId || activeBranchId) && (
                     <Field label="Taguig branch" required>
                       <select
                         value={
@@ -6996,23 +7007,29 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Final Schedule Date" full={isMyTickets}>
+                  <Field label="Final Schedule Date" full={isMyTickets || Boolean(editForm.finalDate || editOriginalDate)}>
                     <input
                       type="date"
                       value={editForm.finalDate || ''}
-                      onChange={e => setEditForm({ ...editForm, finalDate: e.target.value })}
+                      onChange={e => setEditForm({ ...editForm, finalDate: e.target.value, preferredDate: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full max-w-xs"
                       style={{
                         minWidth: '11rem',
-                        backgroundColor: isMyTickets ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
-                        border: `1px solid ${isMyTickets ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)') : inputBorder}`,
+                        backgroundColor: (isMyTickets || editForm.finalDate || editOriginalDate)
+                          ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)')
+                          : inputBg,
+                        border: `1px solid ${(isMyTickets || editForm.finalDate || editOriginalDate)
+                          ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)')
+                          : inputBorder}`,
                         color: textPrimary,
                         colorScheme: isLight ? 'light' : 'dark',
                       }}
                     />
-                    {isMyTickets && (
+                    {(isMyTickets || editForm.finalDate || editOriginalDate) && (
                       <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
-                        Set the install date here — once saved, this ticket moves to the Schedules tab.
+                        {isMyTickets
+                          ? 'Set the install date here — once saved, this ticket moves to the Schedules tab.'
+                          : 'Change the date or branch — the ticket appears on Schedules for that branch and date.'}
                       </p>
                     )}
                   </Field>
