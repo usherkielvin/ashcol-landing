@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, schedulesCacheKey, writeSchedulesTabCache, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
@@ -128,8 +128,14 @@ type ImportUnmatchedRow = {
 
 
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'COMPLETED', 'CANCELLED']
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED']
 const TABLE_ROW_HEIGHT = 38
+
+/** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
+function isInstalledWorkflowStatus(status?: string | null): boolean {
+  const s = (status || '').toUpperCase()
+  return s === 'INSTALLED' || s === 'COMPLETED'
+}
 
 type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP'
 type ScheduleStatusGroup = 'pending' | 'closing'
@@ -180,7 +186,7 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'FOR_APPROVAL') {
     return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
   }
-  if (normalized === 'DONE_INSTALLED' || normalized === 'COMPLETED') {
+  if (normalized === 'DONE_INSTALLED' || normalized === 'INSTALLED' || normalized === 'COMPLETED') {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
   if (normalized === 'DONE_CHECKUP') {
@@ -206,7 +212,7 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
   const stat = String(ticket.status || '').toUpperCase()
-  if (stat === 'COMPLETED') {
+  if (isInstalledWorkflowStatus(stat)) {
     if (/clean/i.test(remarks)) return 'DONE_CLEANING'
     if (/checkup|check-up/i.test(remarks)) return 'DONE_CHECKUP'
     if (/survey/i.test(remarks)) return 'DONE_SURVEY'
@@ -234,7 +240,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'CANCELLED') return 'CANCELLED'
-  if (stat === 'COMPLETED') return 'DONE_INSTALLED'
+  if (stat === 'INSTALLED' || stat === 'COMPLETED') return 'DONE_INSTALLED'
 
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
@@ -244,6 +250,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
 
 function getScheduleStatusLabel(value: string): string {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
+  if (normalized === 'INSTALLED') return 'INSTALLED'
   if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'INSTALLATION'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
@@ -254,7 +261,7 @@ function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string 
   const workflow = (ticket.status || '').toUpperCase().replace(/\s+/g, '_')
   const workflowStatuses = new Set([
     'SCHEDULED', 'ASSIGNED', 'RESCHED', 'PENDING', 'IN_PROGRESS', 'ON_THE_WAY',
-    'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED',
+    'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED', 'INSTALLED',
   ])
   if (workflowStatuses.has(workflow)) {
     const norm = workflow === 'FOR_QUOTATION' ? 'FOR_APPROVAL' : workflow
@@ -328,7 +335,7 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   } else if (val === 'DONE_CHECKUP') {
     setClosing('DONE_CHECKUP', 'DONE CHECKUP', /checkup|check-up/i)
   } else if (val === 'DONE_INSTALLED') {
-    body.status = 'COMPLETED'
+    body.status = 'INSTALLED'
     body.scheduleOutcome = 'DONE_INSTALLED'
     acUpdates.scheduleOutcome = 'DONE_INSTALLED'
     acUpdates.schedulePhase = ''
@@ -418,7 +425,7 @@ function mergePatchBodies(a: Record<string, unknown>, b: Record<string, unknown>
   return merged
 }
 
-/** Ensure PATCH body is valid for schedule status saves (esp. COMPLETED + scheduleOutcome). */
+/** Ensure PATCH body is valid for schedule status saves (esp. INSTALLED/COMPLETED + scheduleOutcome). */
 function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, unknown> {
   const next: Record<string, unknown> = { ...body }
   const outcomeRaw = typeof next.scheduleOutcome === 'string' ? next.scheduleOutcome.trim() : ''
@@ -428,8 +435,13 @@ function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, 
     delete next.scheduleOutcome
   }
 
-  const status = String(next.status || '').toUpperCase()
-  if (status === 'COMPLETED' && !next.scheduleOutcome) {
+  let status = String(next.status || '').toUpperCase()
+  const outcome = String(next.scheduleOutcome || '').toUpperCase()
+  if (status === 'COMPLETED' && outcome === 'DONE_INSTALLED') {
+    status = 'INSTALLED'
+    next.status = 'INSTALLED'
+  }
+  if ((status === 'INSTALLED' || status === 'COMPLETED') && !next.scheduleOutcome) {
     let fromAc = ''
     if (typeof next.acDetails === 'string') {
       try {
@@ -439,6 +451,9 @@ function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, 
       } catch { /* ignore */ }
     }
     next.scheduleOutcome = fromAc || 'DONE_INSTALLED'
+    if (status === 'INSTALLED' || (!fromAc && status === 'COMPLETED')) {
+      next.status = 'INSTALLED'
+    }
     if (typeof next.acDetails === 'string') {
       next.acDetails = mergeAcMeta(
         { acDetails: next.acDetails } as Ticket,
@@ -695,7 +710,7 @@ function getRelayQueueLabel(ticket: Ticket): string {
   if (outcome === 'DONE_CLEANING') return 'DONE CLEANING'
   if (outcome === 'DONE_SURVEY') return 'DONE SURVEY'
   if (outcome === 'DONE_INSTALLED') return 'DONE INSTALL'
-  if (status === 'COMPLETED') return 'INSTALLED'
+  if (isInstalledWorkflowStatus(status)) return 'INSTALLED'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
   if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
@@ -723,7 +738,7 @@ function isScheduleTabIntakeTicket(ticket: Ticket): boolean {
 
 function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
-  if (stat === 'COMPLETED' || stat === 'CANCELLED') return false
+  if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
   if (isScheduleTabIntakeTicket(ticket)) return false
   if (hasFinalScheduleDate(ticket)) return false
 
@@ -870,7 +885,7 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
 
 function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
-  if ((ticket.status || '').toUpperCase() !== 'COMPLETED') return false
+  if (!isInstalledWorkflowStatus(ticket.status)) return false
   const sched = getArchivedScheduleDate(ticket)
   if (sched === dateKey) return true
   if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
@@ -879,7 +894,7 @@ function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
 
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
-  if ((ticket.status || '').toUpperCase() === 'COMPLETED') return false
+  if (isInstalledWorkflowStatus(ticket.status)) return false
   if (ticketMatchesDateKey(ticket, dateKey)) return false
   return getPreviousScheduleDates(ticket).includes(dateKey)
 }
@@ -910,7 +925,7 @@ function ticketRemarksText(ticket: Partial<Ticket>, fields?: Partial<Ticket>): s
 function qualifiesForInstallComplete(ticket: Partial<Ticket>, fields?: Partial<Ticket>): boolean {
   const remarks = ticketRemarksText(ticket, fields)
   const status = String(fields?.status ?? ticket.status ?? '').toUpperCase()
-  const installed = isInstalledRemarks(remarks) || status === 'COMPLETED'
+  const installed = isInstalledRemarks(remarks) || isInstalledWorkflowStatus(status)
   return installed
 }
 
@@ -3828,6 +3843,33 @@ export default function Tickets() {
     return () => clearTimeout(timer)
   }, [editingCell, expandedCell])
 
+  useEffect(() => {
+    if (!expandedCell) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      const popover = tableScrollRef.current?.querySelector('[data-expanded-popover="true"]')
+      if (popover?.contains(target)) return
+      const cell = tableScrollRef.current?.querySelector(
+        `[data-cell-key="${expandedCell.ticketId}:${expandedCell.colLabel}"]`,
+      )
+      if (cell?.contains(target)) return
+      setExpandedCell(null)
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpandedCell(null)
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [expandedCell])
+
 
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
@@ -3884,8 +3926,18 @@ export default function Tickets() {
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
+    const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
+    const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
+    const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+
+    if (options?.soft && !options?.force && cacheFresh && hasCache) {
+      hasLoadedOnceRef.current = true
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
 
     // Keep local creates/edits visible until the server list includes them;
     // never re-show tickets the user already deleted in this session.
@@ -3983,7 +4035,7 @@ export default function Tickets() {
 
   useEffect(() => {
     if (!hasLoadedOnceRef.current || isMyTickets) return
-    void fetchTickets({ soft: true, force: true })
+    void fetchTickets({ soft: true })
   }, [dateFilter, fetchTickets, isMyTickets])
 
   useEffect(() => {
@@ -4051,7 +4103,7 @@ export default function Tickets() {
 
       if (!isFieldCategory(inferCategoryFromTicket(t))) return false
 
-      if (stat === 'COMPLETED') {
+      if (isInstalledWorkflowStatus(stat)) {
         return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
 
@@ -4801,15 +4853,7 @@ export default function Tickets() {
       const district = resolveTicketDistrict(ticket)
       if (cellExpanded) {
         return (
-          <div
-            className="relative z-20 -mx-2 -my-1 w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-xl px-3 py-2 text-xs leading-relaxed font-semibold shadow-xl"
-            style={{
-              color: textPrimary,
-              backgroundColor: cardBg,
-              border: `1px solid ${inputBorder}`,
-              boxShadow: isLight ? '0 14px 30px rgba(15,23,42,0.16)' : '0 14px 30px rgba(0,0,0,0.35)',
-            }}
-          >
+          <>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Full Address</div>
               <button
@@ -4818,16 +4862,21 @@ export default function Tickets() {
                   e.stopPropagation()
                   void copyTextToClipboard(fullAddress)
                 }}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-slate-500/10"
-                style={{ color: textMuted, borderColor: inputBorder }}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
                 title="Copy address"
                 aria-label="Copy address"
               >
                 <Copy className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="whitespace-normal break-words text-left normal-case">{fullAddress || '—'}</div>
-          </div>
+            <div
+              className="whitespace-normal break-words text-left normal-case font-semibold leading-relaxed"
+              style={{ color: textPrimary }}
+            >
+              {fullAddress || '—'}
+            </div>
+          </>
         )
       }
       return withEditPencil(
@@ -5600,9 +5649,17 @@ export default function Tickets() {
                                 </div>
                                 {isExpandedCell && (
                                   <div
-                                    className="absolute left-0 top-full mt-0.5 z-[140] min-w-[min(100%,240px)] max-w-[380px] rounded-xl shadow-2xl border p-3"
-                                    style={{ backgroundColor: cardBg, borderColor: border }}
+                                    data-expanded-popover="true"
+                                    className="absolute left-0 top-full z-[140] mt-1 w-[min(22rem,calc(100vw-2rem))] max-w-[380px] rounded-lg border px-3 py-2 text-xs"
+                                    style={{
+                                      backgroundColor: cardBg,
+                                      borderColor: inputBorder,
+                                      boxShadow: isLight
+                                        ? '0 8px 24px rgba(15,23,42,0.12)'
+                                        : '0 8px 24px rgba(0,0,0,0.35)',
+                                    }}
                                     onClick={e => e.stopPropagation()}
+                                    onPointerDown={e => e.stopPropagation()}
                                   >
                                     {renderCell(ticket, col, idx, isGhost, ghostKind, true)}
                                   </div>
@@ -5869,7 +5926,7 @@ export default function Tickets() {
         const preferredDate = t.preferredDate || t.preferred_date
         const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
-        const isCompleted = (t.status || '').toUpperCase() === 'COMPLETED'
+        const isCompleted = isInstalledWorkflowStatus(t.status)
         const hasPayment = ticketHasPaymentInfo(t)
         const paymentAmt = formatPaymentAmount(t)
         const paymentMode = getPaymentMode(t)
