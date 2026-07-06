@@ -1148,18 +1148,31 @@ function isNegotiatorInstallerName(
   return Boolean(negotiator && val.localeCompare(negotiator, undefined, { sensitivity: 'base' }) === 0)
 }
 
+function resolveInstallerFieldRaw(ticket: Ticket): string {
+  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
+  const meta = parseAcMeta(ticket)
+  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
+  return direct || fromMeta
+}
+
+/** Sort/display key for installer/technician — includes assigned tech when installer column empty. */
+function getInstallerSortKey(
+  ticket: Ticket,
+  employees?: { id: string; name: string }[],
+): string {
+  const installer = resolveInstallerFieldRaw(ticket)
+  if (installer && !isNegotiatorInstallerName(ticket, installer, employees)) return installer
+  const assigned = (ticket.assignedEmployeeName || ticket.assigned_employee_name || '').trim()
+  if (assigned && !isNegotiatorInstallerName(ticket, assigned, employees)) return assigned
+  return ''
+}
+
 /** Field installer/technician only — never the relay negotiator. */
 function getInstallerDisplay(
   ticket: Ticket,
   employees?: { id: string; name: string }[],
 ): string {
-  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
-  const meta = parseAcMeta(ticket)
-  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
-  const installer = direct || fromMeta
-  if (!installer) return ''
-  if (isNegotiatorInstallerName(ticket, installer, employees)) return ''
-  return installer
+  return getInstallerSortKey(ticket, employees)
 }
 
 
@@ -1319,20 +1332,22 @@ function formatServiceDriver(ticket: Ticket): string {
   return getTicketDriverName(ticket)
 }
 
-/** Parse "ALLAN - 3" / "T3 (DOMINIC) - 7" into name + site number for grouping. */
+/** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
 function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
   if (!v || v === '—') return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
   const m = v.match(/^(.+?)\s*-\s*(\d+)\s*$/i)
   if (m) {
     const label = m[1].trim()
+    const baseName = (label.split('/')[0] || label).trim()
     return {
-      name: label.toUpperCase(),
+      name: baseName.toUpperCase(),
       site: parseInt(m[2], 10) || 0,
       label,
     }
   }
-  return { name: v.toUpperCase(), site: Number.MAX_SAFE_INTEGER, label: v }
+  const baseName = (v.includes('/') ? v.split('/')[0] : v).trim()
+  return { name: baseName.toUpperCase(), site: Number.MAX_SAFE_INTEGER, label: v }
 }
 
 function compareNameSiteStrings(a: string, b: string): number {
@@ -4248,22 +4263,26 @@ export default function Tickets() {
 
   const visible = useMemo(() => {
     let list = filtered
-    if (sortConfig) {
-      list = [...list].sort((a, b) => {
-        const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees }
+    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees }
+    list = [...list].sort((a, b) => {
+      // Schedules: always group rows by installer/technician name first.
+      if (!isMyTickets) {
+        const byInstaller = compareTicketsByColumn(a, b, 'INSTALLER', cmpOpts)
+        if (byInstaller !== 0) {
+          const desc = sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
+          return desc ? -byInstaller : byInstaller
+        }
+      }
+      if (isMyTickets || sortConfig.column !== 'INSTALLER') {
         const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
         if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
-        if (!isMyTickets && sortConfig.column !== 'INSTALLER') {
-          const byInstaller = compareTicketsByColumn(a, b, 'INSTALLER', cmpOpts)
-          if (byInstaller !== 0) return byInstaller
-        }
-        if (sortConfig.column !== "CUSTOMER'S NAME") {
-          const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME", cmpOpts)
-          if (byCustomer !== 0) return byCustomer
-        }
-        return 0
-      })
-    }
+      }
+      if (sortConfig.column !== "CUSTOMER'S NAME") {
+        const byCustomer = compareTicketsByColumn(a, b, "CUSTOMER'S NAME", cmpOpts)
+        if (byCustomer !== 0) return byCustomer
+      }
+      return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
+    })
     return list
   }, [filtered, sortConfig, isMyTickets, branchEmployees])
 
