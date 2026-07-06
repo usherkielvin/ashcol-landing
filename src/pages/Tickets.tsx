@@ -1059,6 +1059,45 @@ function normalizeCustomerKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+function importPhonesMatch(a: string, b: string): boolean {
+  const da = (a || '').replace(/\D/g, '')
+  const db = (b || '').replace(/\D/g, '')
+  if (da.length < 10 || db.length < 10) return false
+  const ta = da.length >= 10 ? da.slice(-10) : da
+  const tb = db.length >= 10 ? db.slice(-10) : db
+  return ta === tb
+}
+
+function importNamesMatch(a: string, b: string): boolean {
+  const na = (a || '').toLowerCase().trim()
+  const nb = (b || '').toLowerCase().trim()
+  if (!na || !nb) return false
+  return na === nb || na.includes(nb) || nb.includes(na)
+}
+
+function importBrandsMatch(rowBrand: string, ticket: Ticket): boolean {
+  const rb = (rowBrand || '').trim().toLowerCase()
+  const tb = parseBrand(ticket).trim().toLowerCase()
+  if (!rb && !tb) return true
+  if (!rb || !tb) return false
+  return rb === tb || tb.includes(rb) || rb.includes(tb)
+}
+
+/** Match import row to ticket — same customer + phone may have multiple units (different brand). */
+function importRowMatchesTicket(row: ImportUnmatchedRow, ticket: Ticket): boolean {
+  const status = (ticket.status || '').toUpperCase()
+  if (status === 'COMPLETED' || status === 'CANCELLED' || status === 'INSTALLED') return false
+
+  const rowCtrl = (row.controlNo || '').trim().toLowerCase()
+  const tCtrl = (ticket.controlNumber || ticket.control_number || '').trim().toLowerCase()
+  if (rowCtrl && tCtrl) return rowCtrl === tCtrl
+
+  if (!importNamesMatch(row.name, getCustomerDisplayName(ticket))) return false
+  const tPhone = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+  if (!importPhonesMatch(row.phone, tPhone)) return false
+  return importBrandsMatch(row.brand, ticket)
+}
+
 function parseImportMoney(raw?: string | number | null): number | undefined {
   if (raw == null) return undefined
   if (typeof raw === 'number' && !Number.isNaN(raw)) return raw
@@ -2339,47 +2378,9 @@ export default function Tickets() {
     let autoCompletedCount = 0
 
     for (const row of sheetRows) {
-      const rowName = row.name
-      const rowPhone = row.phone
-
       const match = tickets.find(t => {
         if (usedTicketIds.has(t.id)) return false
-
-        const status = (t.status || '').toUpperCase()
-        const isDone = status === 'COMPLETED' || status === 'CANCELLED'
-
-        // 1. Match by control number if both have it
-        const rowCtrl = (row.controlNo || '').trim().toLowerCase()
-        const tCtrl = (t.controlNumber || t.control_number || '').trim().toLowerCase()
-        if (rowCtrl && tCtrl && rowCtrl === tCtrl) {
-          if (isDone) {
-            // "dont fetch done for control #"
-            return false
-          }
-          return true
-        }
-
-        // 2. Otherwise fall back to name and phone matching, but ignore done tickets
-        if (isDone) return false
-
-        const tName = (t.customerName || t.customer_name || t.title || '').toLowerCase().trim()
-        const cleanRowName = rowName.toLowerCase().trim()
-
-        if (cleanRowName && tName) {
-          if (tName === cleanRowName || tName.includes(cleanRowName) || cleanRowName.includes(tName)) {
-            return true
-          }
-        }
-
-        const tPhone = (t.contactPhone || t.contact_phone || t.customer_phone || t.phone || '').replace(/\D/g, '')
-        const cleanRowPhone = rowPhone.replace(/\D/g, '')
-        if (cleanRowPhone && tPhone) {
-          if (tPhone === cleanRowPhone || tPhone.includes(cleanRowPhone) || cleanRowPhone.includes(tPhone)) {
-            return true
-          }
-        }
-
-        return false
+        return importRowMatchesTicket(row, t)
       })
 
       if (match) {
