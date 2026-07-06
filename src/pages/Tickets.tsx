@@ -3883,8 +3883,8 @@ export default function Tickets() {
       { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: "COMMIT",                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
@@ -5073,13 +5073,42 @@ export default function Tickets() {
     }
 
     if (label === 'INSTALLER') {
-      const curInstaller = getInstallerDisplay(ticket, branchEmployees)
+      const rawInstaller = getInstallerDisplay(ticket, branchEmployees)
+      let curInstaller = rawInstaller
+      if (!curInstaller && idx != null && idx > 0) {
+        for (let i = idx - 1; i >= 0; i--) {
+          const prev = getInstallerDisplay(visible[i], branchEmployees)
+          if (prev) {
+            curInstaller = prev
+            break
+          }
+        }
+      }
+      const isEmpty = !curInstaller
+
       const prevInstaller = idx != null && idx > 0
         ? getInstallerDisplay(visible[idx - 1], branchEmployees)
         : ''
       const curToken = parseNameSiteToken(curInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
+
+      if (isEmpty) {
+        return withEditPencil(
+          <div
+            className="w-full flex items-center justify-center rounded px-2 py-0.5 font-black text-[9px] border"
+            style={{
+              backgroundColor: isLight ? '#fef2f2' : 'rgba(239, 68, 68, 0.15)',
+              color: isLight ? '#b91c1c' : '#fca5a5',
+              borderColor: isLight ? '#fca5a5' : 'rgba(239, 68, 68, 0.3)',
+            }}
+          >
+            EMPTY
+          </div>,
+          ticket, label, rowGhost
+        )
+      }
+
       return withEditPencil(
         <span
           style={{
@@ -5091,7 +5120,7 @@ export default function Tickets() {
           }}
           title={curInstaller}
         >
-          {curInstaller || '—'}
+          {curInstaller}
         </span>,
         ticket, label, rowGhost,
       )
