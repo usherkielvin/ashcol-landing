@@ -5795,11 +5795,13 @@ export default function Tickets() {
                                   openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
-                                setExpandedCell(prev =>
-                                  prev?.ticketId === ticket.id && prev?.colLabel === col.label
-                                    ? null
-                                    : { ticketId: ticket.id, colLabel: col.label },
-                                )
+                                if (col.label !== 'UPDATE') {
+                                  setExpandedCell(prev =>
+                                    prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                      ? null
+                                      : { ticketId: ticket.id, colLabel: col.label },
+                                  )
+                                }
                               }}
                               onDoubleClick={e => {
                                 e.preventDefault()
