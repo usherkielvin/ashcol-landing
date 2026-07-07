@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -2131,9 +2131,25 @@ export default function Tickets() {
   const green       = '#16A34A'
 
   // ── Data state ────────────────────────────────────────────────────────────
-  const [tickets, setTickets]         = useState<Ticket[]>([])
-  const [loading, setLoading]         = useState(false)
-  const [hasHydratedOnce, setHasHydratedOnce] = useState(false)
+  const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
+  if (!initialSchedulesRef.current) {
+    const pathname = window.location.pathname
+    const dateKey = pathname === '/my-tickets' ? '' : todayDateKey()
+    initialSchedulesRef.current = getInitialSchedulesFromCache(pathname, dateKey || undefined)
+  }
+  const initialSchedules = initialSchedulesRef.current
+  const initialSchedulesReady = initialSchedules.hasCache || initialSchedules.sessionLoaded
+
+  const fetchSeqRef = useRef(0)
+  const hasLoadedOnceRef = useRef(initialSchedulesReady)
+
+  const [tickets, setTickets] = useState<Ticket[]>(() =>
+    initialSchedules.hasCache
+      ? normalizeRelayScheduleTicketList(initialSchedules.tickets as Ticket[])
+      : [],
+  )
+  const [loading, setLoading] = useState(() => !initialSchedulesReady)
+  const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress]       = useState(0)
 
   useEffect(() => {
@@ -2214,6 +2230,7 @@ export default function Tickets() {
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     const cacheKey = schedulesCacheKeyForTab()
+    markSchedulesSessionLoaded(cacheKey)
     writeSchedulesTabCache(cacheKey, normalizeRelayScheduleTicketList(list), 'local')
     return true
   }, [schedulesCacheKeyForTab])
@@ -2222,7 +2239,7 @@ export default function Tickets() {
   useLayoutEffect(() => {
     if (isMyTickets) return
     hydrateFromTabCache()
-  }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId])
+  }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -2254,8 +2271,6 @@ export default function Tickets() {
 
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
-  const fetchSeqRef = useRef(0)
-  const hasLoadedOnceRef = useRef(false)
   const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
   const [promptMode, setPromptMode] = useState<string>('CASH')
@@ -4139,8 +4154,9 @@ export default function Tickets() {
     const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
     const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
     const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
-    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
-    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
+    const hasCache = Array.isArray(cached?.tickets)
+    const sessionLoaded = isSchedulesSessionLoaded(cacheKey)
+    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
 
     const applyOptimisticOverlay = (list: Ticket[]) => {
       const normalized = normalizeRelayScheduleTicketList(list)
@@ -4174,14 +4190,18 @@ export default function Tickets() {
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       setLoading(false)
+      markSchedulesSessionLoaded(cacheKey)
       return
     }
 
-    if (hasCache) {
-      setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
+    if (hasCache || sessionLoaded) {
+      if (hasCache) {
+        setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
+      }
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       setLoading(false)
+      if (hasCache) markSchedulesSessionLoaded(cacheKey)
     } else if (showSkeleton) {
       setLoading(true)
     }
@@ -4202,6 +4222,7 @@ export default function Tickets() {
       writeSchedulesTabCache(cacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
+      markSchedulesSessionLoaded(cacheKey)
     } catch {
       if (seq !== fetchSeqRef.current) return
       if (!hasCache) setFetchError('Failed to load tickets. Check your connection.')

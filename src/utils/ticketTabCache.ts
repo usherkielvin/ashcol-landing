@@ -1,4 +1,4 @@
-import { getActivePortalBranchId } from './api'
+import { getActivePortalBranchId, isPortalAdmin } from './api'
 import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
 import { normalizeRelayScheduleTicket, shouldExcludeRelayFromTab } from './relayScheduleSync'
 
@@ -51,6 +51,69 @@ export type SchedulesTabCache = { tickets: unknown[]; lastSyncAt?: number }
 
 export function readSchedulesTabCache(key: string): SchedulesTabCache | null {
   return readTabCache<SchedulesTabCache>(key)
+}
+
+export function storedPortalUser(): { role?: string | null; branchId?: string | null } | null {
+  try {
+    const raw = sessionStorage.getItem('ashcol-user') || localStorage.getItem('ashcol-user')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function schedulesDateKeyLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function schedulesSessionLoadedKey(cacheKey: string): string {
+  return `ashcol-schedules-loaded:${cacheKey}`
+}
+
+export function markSchedulesSessionLoaded(cacheKey: string): void {
+  try {
+    sessionStorage.setItem(schedulesSessionLoadedKey(cacheKey), String(Date.now()))
+  } catch {
+    // ignore
+  }
+}
+
+export function isSchedulesSessionLoaded(cacheKey: string): boolean {
+  try {
+    return sessionStorage.getItem(schedulesSessionLoadedKey(cacheKey)) != null
+  } catch {
+    return false
+  }
+}
+
+/** Synchronous cache read for useState initializers — survives route unmount/remount. */
+export function getInitialSchedulesFromCache(
+  pathname: string,
+  dateFilter?: string,
+): { tickets: unknown[]; hasCache: boolean; cacheKey: string; sessionLoaded: boolean } {
+  const isMyTickets = pathname === '/my-tickets'
+  if (pathname !== '/schedules' && !isMyTickets) {
+    return { tickets: [], hasCache: false, cacheKey: '', sessionLoaded: false }
+  }
+
+  const user = storedPortalUser()
+  const globalBranchId = localStorage.getItem('ashcol-global-branch-id')
+  const role = (user?.role || '').toLowerCase()
+  const isCustomer = role === 'customer'
+  const isAdmin = isPortalAdmin(role)
+  const datePart = isMyTickets ? undefined : (dateFilter?.trim() || schedulesDateKeyLocal())
+
+  const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets, datePart)
+  const cached = readSchedulesTabCache(cacheKey)
+  const hasCache = Array.isArray(cached?.tickets)
+  const tickets = hasCache ? cached!.tickets! : []
+  return {
+    tickets,
+    hasCache,
+    cacheKey,
+    sessionLoaded: isSchedulesSessionLoaded(cacheKey),
+  }
 }
 
 export function writeSchedulesTabCache(key: string, tickets: unknown[], source: 'server' | 'local'): void {
