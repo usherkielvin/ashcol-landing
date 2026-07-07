@@ -729,7 +729,13 @@ function stripArchivedRemarkSuffix(text: string): string {
 }
 
 function getFinalDateKey(ticket: Ticket): string {
-  const raw = parseAcMeta(ticket).finalDate
+  const top = String(
+    (ticket as Ticket & { finalDate?: string; final_date?: string }).finalDate
+    || (ticket as Ticket & { final_date?: string }).final_date
+    || '',
+  ).trim()
+  if (top) return top.split('T')[0].split(' ')[0].trim()
+  const raw = parseAcMeta(ticket).finalDate || (parseAcMeta(ticket) as { final_date?: string }).final_date
   if (!raw) return ''
   return String(raw).split('T')[0].split(' ')[0].trim()
 }

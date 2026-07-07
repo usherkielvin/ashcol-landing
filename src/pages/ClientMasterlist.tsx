@@ -112,6 +112,8 @@ interface Ticket {
   negotiatorId?: string
   negotiator_id?: string
   negotiatorName?: string
+  finalDate?: string
+  final_date?: string
   storeReferralFee?: number | string
   store_referral_fee?: number | string
   promodiserCommission?: number | string
@@ -425,6 +427,25 @@ function formatPhilippinePhoneInput(raw: string): string {
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
 }
 
+const readFinalDateFromAc = (acDetails?: string | null): string => {
+  if (!acDetails?.trim()) return ''
+  try {
+    const parsed = JSON.parse(acDetails)
+    const raw = String(parsed?.finalDate || parsed?.final_date || '').trim()
+    if (!raw) return ''
+    return raw.split('T')[0].split(' ')[0].trim()
+  } catch {
+    return ''
+  }
+}
+
+/** API may expose finalDate on the ticket root or only inside ac_details. */
+const resolveRelayFinalDate = (ticket: Ticket): string => {
+  const top = (ticket.finalDate || ticket.final_date || '').trim()
+  if (top) return top.split('T')[0].split(' ')[0].trim()
+  return readFinalDateFromAc(ticket.acDetails)
+}
+
 const parseAcDetails = (ticket: Ticket) => {
   const fallback = {
     landmarks: '',
@@ -450,11 +471,16 @@ const parseAcDetails = (ticket: Ticket) => {
     warrantyRegistrationStatus: '',
     warrantyRegisteredBy: '',
   }
-  if (!ticket.acDetails) return fallback
+  if (!ticket.acDetails) {
+    return { ...fallback, finalDate: resolveRelayFinalDate(ticket) }
+  }
   try {
-    return { ...fallback, ...JSON.parse(ticket.acDetails) }
+    const parsed = JSON.parse(ticket.acDetails)
+    const finalDate = resolveRelayFinalDate(ticket)
+      || String(parsed?.finalDate || parsed?.final_date || '').trim().split('T')[0].split(' ')[0]
+    return { ...fallback, ...parsed, finalDate }
   } catch (e) {
-    return fallback
+    return { ...fallback, finalDate: resolveRelayFinalDate(ticket) }
   }
 }
 
@@ -564,13 +590,13 @@ const formatMoney = (val?: string | number | null) => {
 
 const getRelayStatusLabel = (ticket: Ticket) => {
   const status = (ticket.status || '').toUpperCase()
-  const details = parseAcDetails(ticket)
+  const finalDate = resolveRelayFinalDate(ticket)
   const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
   // finalDate = negotiator set install date → leaves Relays for Schedules
-  if (details.finalDate?.trim()) return 'Scheduled'
+  if (finalDate) return 'Scheduled'
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
@@ -631,7 +657,7 @@ const isRelayPostInstallWarranty = (ticket: Ticket) => {
 }
 
 /** Negotiator set install date — ticket belongs on Schedules, not Relays. */
-const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(parseAcDetails(ticket).finalDate?.trim())
+const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(resolveRelayFinalDate(ticket))
 
 /** Ticket created/imported on Schedules (not a Relays negotiation row). */
 const isScheduledManualTicket = (ticket: Ticket): boolean => {
@@ -2571,6 +2597,7 @@ export default function ClientMasterlist() {
   }
 
   const getRelayStatusShort = (ticket: Ticket) => {
+    if (resolveRelayFinalDate(ticket)) return 'SCHEDULED'
     const label = getRelayStatusLabel(ticket)
     if (label === 'Pending') return 'PENDING'
     if (label === 'Cancelled') return 'CANCELLED'
@@ -3017,9 +3044,9 @@ export default function ClientMasterlist() {
                   const ticketNo = getTicketNumber(ticket)
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
-                  const finalDateLabel = details.finalDate
-                    ? formatRelayDate(String(details.finalDate).slice(0, 10))
-                    : ''
+                  const statusIsScheduled = relayStatus === 'SCHEDULED'
+                  const finalDateKey = resolveRelayFinalDate(ticket)
+                  const finalDateLabel = finalDateKey ? formatRelayDate(finalDateKey) : ''
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
                     // TICKET NO
                     { value: (
@@ -3030,7 +3057,7 @@ export default function ClientMasterlist() {
                     // STATUS
                     { value: (
                       <span className="font-semibold w-full truncate block text-center" style={{
-                        color: statusIsAssigned || relayStatus === 'SCHEDULED' ? '#10B981' : '#F59E0B'
+                        color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
                       }}>
                         {relayStatus}
                       </span>
@@ -3099,7 +3126,7 @@ export default function ClientMasterlist() {
                       <span
                         className="font-semibold w-full truncate block text-center"
                         title={relayStatus}
-                        style={{ color: statusIsAssigned ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
+                        style={{ color: statusIsAssigned || statusIsScheduled ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
                         {relayStatus}
                       </span>
                     ) },
