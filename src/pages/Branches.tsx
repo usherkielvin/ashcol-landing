@@ -461,7 +461,7 @@ export default function Branches() {
           })
         }
 
-        const lineupRoster = lineupByBranchId[api.id]
+        const lineupRoster = api.id ? lineupByBranchId[api.id] : undefined
         if (lineupRoster) {
           if (drivers.length === 0 && lineupRoster.drivers.length > 0) {
             drivers = [...lineupRoster.drivers]
@@ -933,7 +933,7 @@ export default function Branches() {
                     >
                       View Full Details
                     </button>
-                    {isRoleAdmin && (
+                    {(isRoleAdmin || ((user?.role === 'MANAGER' || user?.role === 'OIC') && user.branchId && isSameBaseBranch(user.branchId, branch.id))) && (
                       <button 
                         onClick={() => handleEditClick(branch)}
                         className="px-3 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all hover:text-[#10B981] hover:border-[#10B981]"
