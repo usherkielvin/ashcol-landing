@@ -2012,6 +2012,21 @@ export default function Tickets() {
   )
 
   useEffect(() => {
+    const handleTabCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent
+      const updatedTicket = customEvent.detail?.ticket
+      if (!updatedTicket?.id) return
+      
+      setTickets(prev => {
+        if (!prev.some(t => t.id === updatedTicket.id)) return prev
+        return prev.map(t => (t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t))
+      })
+    }
+    window.addEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
+    return () => window.removeEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
+  }, [])
+
+  useEffect(() => {
     if (location.pathname === '/tickets') {
       setActiveTab('overview')
     } else if (location.pathname === '/schedules') {
@@ -4079,7 +4094,7 @@ export default function Tickets() {
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
-  const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean }) => {
+  const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean; quiet?: boolean }) => {
     if (!user) return
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
@@ -4137,7 +4152,7 @@ export default function Tickets() {
       if (!showSkeleton) setLoading(false)
     }
     if (showSkeleton) setLoading(true)
-    else setRefreshing(true)
+    else if (!options?.quiet) setRefreshing(true)
     setFetchError(null)
     try {
       const ep = isMyTickets
@@ -4589,7 +4604,7 @@ export default function Tickets() {
           clearRelaysCache()
           clearWarrantyCache()
           clearSchedulesCache()
-          void fetchTickets({ soft: true, force: true })
+          void fetchTickets({ soft: true, force: true, quiet: true })
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
           console.error('[Schedules] Background save FAILED', ticketId, payload, err)

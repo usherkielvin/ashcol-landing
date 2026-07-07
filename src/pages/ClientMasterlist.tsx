@@ -951,6 +951,21 @@ export default function ClientMasterlist() {
   const branchFilterRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const handleTabCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent
+      const updatedTicket = customEvent.detail?.ticket
+      if (!updatedTicket?.id) return
+      
+      setTickets(prev => {
+        if (!prev.some(t => t.id === updatedTicket.id)) return prev
+        return prev.map(t => (t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t))
+      })
+    }
+    window.addEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
+    return () => window.removeEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
+  }, [])
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
         setIsCreateDropdownOpen(false)

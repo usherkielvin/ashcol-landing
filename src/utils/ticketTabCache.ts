@@ -240,7 +240,7 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
       writeTabCache(key, { ...cached, tickets, lastSyncAt: Date.now() })
     }
 
-    window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { ticketId: id } }))
+    window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { ticketId: id, ticket: normalized } }))
   } catch (e) {
     console.warn('syncTicketAcrossTabCaches failed', e)
   }
