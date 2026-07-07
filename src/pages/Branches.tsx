@@ -112,64 +112,6 @@ const getConciseLocationTag = (branch: Branch) => {
   return (loc || reg || 'LUZON').toUpperCase()
 }
 
-const MOCK_ROSTER: Record<string, { oic: string; drivers: string[]; installers: string[] }> = {
-  'head office': {
-    oic: 'Juan Dela Cruz',
-    drivers: ['ANGELO', 'JOJO'],
-    installers: ['RANIL', 'JHUMAR', 'KENNAN']
-  },
-  'ashcol valenzuela': {
-    oic: 'Mark Valenzuela',
-    drivers: ['ADAM', 'DOMINIC'],
-    installers: ['CRIS', 'SONNY', 'RYAN', 'ALLAN']
-  },
-  'ashcol bulacan': {
-    oic: 'Bernardo Bulacan',
-    drivers: ['ANGELO', 'ADAM'],
-    installers: ['RANIL', 'CRIS', 'ALLAN']
-  },
-  'ashcol pampanga': {
-    oic: 'Pedring Pampanga',
-    drivers: ['JOJO', 'DOMINIC'],
-    installers: ['JHUMAR', 'KENNAN', 'RYAN']
-  },
-  'ashcol rizal': {
-    oic: 'Ronaldo Rizal',
-    drivers: ['ANGELO', 'DOMINIC'],
-    installers: ['SONNY', 'ALLAN', 'RYAN']
-  },
-  'ashcol laguna': {
-    oic: 'Lando Laguna',
-    drivers: ['JOJO', 'ADAM'],
-    installers: ['RANIL', 'JHUMAR', 'CRIS']
-  },
-  'ashcol batangas': {
-    oic: 'Barako Barako',
-    drivers: ['ANGELO', 'JOJO'],
-    installers: ['KENNAN', 'SONNY', 'ALLAN']
-  },
-  'ashcol gen. trias': {
-    oic: 'Genaro Trias',
-    drivers: ['ADAM', 'DOMINIC'],
-    installers: ['RYAN', 'JHUMAR', 'CRIS']
-  },
-  'ashcol candelaria': {
-    oic: 'Candy Candelaria',
-    drivers: ['ANGELO', 'DOMINIC'],
-    installers: ['RANIL', 'KENNAN', 'SONNY']
-  },
-  'ashcol dasmariñas': {
-    oic: 'Dario Dasma',
-    drivers: ['JOJO', 'ADAM'],
-    installers: ['RYAN', 'CRIS', 'ALLAN']
-  },
-  'ashcol silang': {
-    oic: 'Silvestre Silang',
-    drivers: ['ANGELO', 'JOJO'],
-    installers: ['JHUMAR', 'KENNAN', 'SONNY']
-  }
-}
-
 const isTaguigBranchId = (id?: string | null) =>
   !!id && (
     id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b' ||
@@ -434,6 +376,27 @@ export default function Branches() {
         employeesList = payload?.data || payload || []
       }
 
+      const lineupByBranchId: Record<string, { drivers: string[]; installers: string[] }> = {}
+      await Promise.all(
+        apiBranches.map(async (api: Branch) => {
+          if (!api.id) return
+          try {
+            const res = await fetch(
+              `${apiUrl}/v1/lineup/suggestions?branchId=${encodeURIComponent(api.id)}`,
+              { headers },
+            )
+            if (!res.ok) return
+            const data = await res.json()
+            lineupByBranchId[api.id] = {
+              drivers: Array.isArray(data?.drivers) ? data.drivers.filter(Boolean) : [],
+              installers: Array.isArray(data?.installers) ? data.installers.filter(Boolean) : [],
+            }
+          } catch {
+            // Lineup suggestions are optional — branch cards fall back to employee roster only.
+          }
+        }),
+      )
+
       const merged: Branch[] = []
 
       const processBranch = (api: Branch, suffix?: 'sales' | 'services', customName?: string) => {
@@ -488,28 +451,27 @@ export default function Branches() {
           branchStaff.forEach((e: any) => {
             if (isSalesCoordinator(e)) return
             const title = (e.jobTitle || '').toLowerCase()
-            const nameUpper = e.name.toUpperCase()
-            const isDriver = title.includes('driver') || ['ANGELO', 'JOJO', 'ADAM', 'DOMINIC'].includes(nameUpper)
+            const isDriver = title.includes('driver')
+            const isInstaller = title.includes('installer') || title.includes('technician')
             if (isDriver) {
               drivers.push(e.name)
-            } else {
+            } else if (isInstaller || !title.includes('coordinator')) {
               installers.push(e.name)
             }
           })
         }
 
-        // Fallback to mock if empty
-        const key = apiName.replace('ashcol ', '').trim()
-        const fallbackName = suffix ? `taguig - ${suffix}` : key
-        const fallback = MOCK_ROSTER[fallbackName] || MOCK_ROSTER[key] || {
-          oic: suffix === 'services' ? 'Taguig Services OIC' : 'Unassigned',
-          drivers: ['ANGELO', 'JOJO'],
-          installers: ['RANIL', 'JHUMAR', 'KENNAN']
+        const lineupRoster = lineupByBranchId[api.id]
+        if (lineupRoster) {
+          if (drivers.length === 0 && lineupRoster.drivers.length > 0) {
+            drivers = [...lineupRoster.drivers]
+          }
+          if (installers.length === 0 && lineupRoster.installers.length > 0) {
+            installers = [...lineupRoster.installers]
+          }
         }
 
-        if (!oicName) oicName = fallback.oic
-        if (drivers.length === 0) drivers = fallback.drivers
-        if (installers.length === 0) installers = fallback.installers
+        if (!oicName) oicName = 'Unassigned'
 
         return {
           ...api,
