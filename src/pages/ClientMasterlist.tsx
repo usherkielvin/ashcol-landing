@@ -570,7 +570,7 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
   // finalDate = negotiator set install date → leaves Relays for Schedules
-  if (details.finalDate?.trim() && (ticket.branchId || ticket.assignedTo || negotiatorId)) return 'Scheduled'
+  if (details.finalDate?.trim()) return 'Scheduled'
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
@@ -2038,7 +2038,11 @@ export default function ClientMasterlist() {
   const handleDrawerActionSave = (draft: RelayEditDraft) => {
     if (!selectedTicket) return
     const keepPendingAssignment = getTicketCategory(selectedTicket) === 'Collection'
-    const finalStatus = (draft.assignTechId && draft.updateStatus === 'PENDING') ? 'ASSIGNED' : draft.updateStatus
+    let finalStatus = (draft.assignTechId && draft.updateStatus === 'PENDING') ? 'ASSIGNED' : draft.updateStatus
+    const existingDetails = parseAcDetails(selectedTicket)
+    if (existingDetails.finalDate?.trim() && finalStatus === 'ASSIGNED') {
+      finalStatus = 'SCHEDULED'
+    }
 
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
     if (isAssignedOrScheduled && !draft.assignTechId) {
@@ -2082,7 +2086,6 @@ export default function ClientMasterlist() {
     payload.installationCharges = Number(draft.installationCharges)
     payload.modeOfPayment = draft.modeOfPayment || null
     payload.controlNumber = draft.controlNumber || null
-    const existingDetails = parseAcDetails(selectedTicket)
     const acDetailsObj = {
       landmarks: draft.landmarks || '',
       brand: draft.brand || '',

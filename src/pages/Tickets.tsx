@@ -259,6 +259,9 @@ function getScheduleStatusLabel(value: string): string {
 /** Overview search cards: one badge — workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
 function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string } {
   const workflow = (ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  if (workflow === 'ASSIGNED' && hasFinalScheduleDate(ticket)) {
+    return { value: 'SCHEDULED', label: getScheduleStatusLabel('SCHEDULED') }
+  }
   const workflowStatuses = new Set([
     'SCHEDULED', 'ASSIGNED', 'RESCHED', 'PENDING', 'IN_PROGRESS', 'ON_THE_WAY',
     'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED', 'INSTALLED',
@@ -417,6 +420,10 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     const dateKey = body.finalDate
     merged.preferredDate = (body.preferredDate as string) || dateKey
     merged.preferred_date = merged.preferredDate
+    const stat = (ticket.status || '').toUpperCase()
+    if (['PENDING', 'ASSIGNED'].includes(stat) && !body.status) {
+      merged.status = 'SCHEDULED'
+    }
   }
   if (Object.prototype.hasOwnProperty.call(body, 'serviceVehicle')) {
     const sv = body.serviceVehicle
