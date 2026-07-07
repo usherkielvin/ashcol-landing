@@ -1,5 +1,6 @@
 import { getActivePortalBranchId } from './api'
 import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
+import { normalizeRelayScheduleTicket, shouldExcludeRelayFromTab } from './relayScheduleSync'
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
 export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
@@ -200,5 +201,47 @@ export function clearWarrantyCache(): void {
     keysToRemove.forEach(k => localStorage.removeItem(k))
   } catch (e) {
     console.warn('Error clearing warranty cache:', e)
+  }
+}
+
+/** Clear schedules + relays tab caches (use after cross-tab ticket sync). */
+export function clearRelayScheduleCaches(): void {
+  clearSchedulesCache()
+  clearRelaysCache()
+}
+
+/** Push one ticket into every relays/schedules tab cache so both tabs stay aligned. */
+export function syncTicketAcrossTabCaches(ticket: Record<string, unknown>): void {
+  const id = String(ticket.id || '').trim()
+  if (!id) return
+
+  try {
+    const normalized = normalizeRelayScheduleTicket(ticket)
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key || (!key.startsWith('relays:') && !key.startsWith('schedules:'))) continue
+
+      const cached = readTabCache<{ tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }>(key)
+      if (!Array.isArray(cached?.tickets)) continue
+
+      const hadRow = cached.tickets.some((t: unknown) => String((t as { id?: string })?.id) === id)
+      let tickets = cached.tickets.map((t: unknown) => {
+        if (String((t as { id?: string })?.id) !== id) return t
+        return { ...(t as object), ...normalized }
+      })
+
+      if (key.startsWith('relays:')) {
+        tickets = tickets.filter((t: unknown) => !shouldExcludeRelayFromTab(t as Record<string, unknown>))
+      } else if (!hadRow && !shouldExcludeRelayFromTab(normalized)) {
+        tickets = [normalized, ...tickets]
+      }
+
+      writeTabCache(key, { ...cached, tickets, lastSyncAt: Date.now() })
+    }
+
+    window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { ticketId: id } }))
+  } catch (e) {
+    console.warn('syncTicketAcrossTabCaches failed', e)
   }
 }

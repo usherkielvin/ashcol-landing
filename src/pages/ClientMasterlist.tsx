@@ -9,7 +9,15 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError } from '../utils/api'
-import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import {
+  hasRelayLeftQueue,
+  normalizeRelayScheduleTicket,
+  normalizeRelayScheduleTicketList,
+  resolveRelayFinalDate,
+  mergeRelayScheduleTicketPatch,
+  applyRelayScheduleSyncToPatch,
+} from '../utils/relayScheduleSync'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
@@ -427,25 +435,6 @@ function formatPhilippinePhoneInput(raw: string): string {
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
 }
 
-const readFinalDateFromAc = (acDetails?: string | null): string => {
-  if (!acDetails?.trim()) return ''
-  try {
-    const parsed = JSON.parse(acDetails)
-    const raw = String(parsed?.finalDate || parsed?.final_date || '').trim()
-    if (!raw) return ''
-    return raw.split('T')[0].split(' ')[0].trim()
-  } catch {
-    return ''
-  }
-}
-
-/** API may expose finalDate on the ticket root or only inside ac_details. */
-const resolveRelayFinalDate = (ticket: Ticket): string => {
-  const top = (ticket.finalDate || ticket.final_date || '').trim()
-  if (top) return top.split('T')[0].split(' ')[0].trim()
-  return readFinalDateFromAc(ticket.acDetails)
-}
-
 const parseAcDetails = (ticket: Ticket) => {
   const fallback = {
     landmarks: '',
@@ -595,8 +584,8 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
-  // finalDate = negotiator set install date → leaves Relays for Schedules
-  if (finalDate) return 'Scheduled'
+  // finalDate / schedule phase = on Schedules tab, not relay assigned queue
+  if (finalDate || hasRelayLeftQueue(ticket)) return 'Scheduled'
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
@@ -657,7 +646,7 @@ const isRelayPostInstallWarranty = (ticket: Ticket) => {
 }
 
 /** Negotiator set install date — ticket belongs on Schedules, not Relays. */
-const hasRelayFinalScheduleDate = (ticket: Ticket) => Boolean(resolveRelayFinalDate(ticket))
+const hasRelayFinalScheduleDate = (ticket: Ticket) => hasRelayLeftQueue(ticket)
 
 /** Ticket created/imported on Schedules (not a Relays negotiation row). */
 const isScheduledManualTicket = (ticket: Ticket): boolean => {
@@ -694,7 +683,22 @@ const shouldExcludeFromRelaysTab = (ticket: Ticket) => {
   return false
 }
 
-const filterRelaysTickets = (list: Ticket[]) => list.filter(t => !shouldExcludeFromRelaysTab(t))
+const filterRelaysTickets = (list: Ticket[]) => {
+  const leftQueueNumbers = new Set(
+    list.filter(hasRelayLeftQueue).map(t => normalizeRelayTicketNumber(t)).filter(Boolean) as string[],
+  )
+  const leftQueueCustomers = new Set(
+    list.filter(hasRelayLeftQueue).map(normalizeRelayCustomerKey).filter(Boolean) as string[],
+  )
+  return list.filter(t => {
+    if (shouldExcludeFromRelaysTab(t)) return false
+    const ticketNo = normalizeRelayTicketNumber(t)
+    if (ticketNo && leftQueueNumbers.has(ticketNo) && !hasRelayLeftQueue(t)) return false
+    const customerKey = normalizeRelayCustomerKey(t)
+    if (customerKey && leftQueueCustomers.has(customerKey) && !hasRelayLeftQueue(t)) return false
+    return true
+  })
+}
 
 const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): string | null => {
   const raw = ticket.ticketNumber?.trim()
@@ -713,9 +717,9 @@ const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): strin
 }
 
 const relayTicketDisplayScore = (ticket: Ticket) => {
-  const details = parseAcDetails(ticket)
   let score = 0
-  if (details.finalDate?.trim()) score += 100
+  if (resolveRelayFinalDate(ticket)) score += 100
+  if (hasRelayLeftQueue(ticket)) score += 80
   const label = getRelayStatusLabel(ticket)
   if (label === 'Scheduled') score += 50
   if (label === 'Assigned') score += 25
@@ -791,11 +795,23 @@ const dedupeRelaysDisplayByTicketNumber = (list: Ticket[]) => {
 
 function mergeRelayTicketLists(server: Ticket[], local: Ticket[]): Ticket[] {
   const byId = new Map<string, Ticket>()
+  const pick = (a: Ticket, b: Ticket) =>
+    relayTicketDisplayScore(b) > relayTicketDisplayScore(a) ? b : a
+
   for (const t of server) {
-    if (t?.id) byId.set(t.id, t)
+    if (!t?.id) continue
+    const existing = byId.get(t.id)
+    byId.set(t.id, existing ? pick(existing, t) : t)
   }
   for (const t of local) {
-    if (t?.id && !byId.has(t.id)) byId.set(t.id, t)
+    if (!t?.id) continue
+    const existing = byId.get(t.id)
+    if (!existing) {
+      byId.set(t.id, t)
+      continue
+    }
+    if (t.id.startsWith('temp-')) continue
+    byId.set(t.id, pick(existing, t))
   }
   return Array.from(byId.values()).sort((a, b) => {
     const da = String(a.createdAt || '')
@@ -1193,18 +1209,19 @@ export default function ClientMasterlist() {
     nextTicket: Ticket | null,
     rollback?: Ticket,
   ) => {
+    const normalizedNext = nextTicket ? normalizeRelayScheduleTicket(nextTicket) : null
     const patchList = (prev: Ticket[], filterOut: boolean) => {
       let list = prev.slice()
       if (rollback) {
         const idx = list.findIndex(t => t.id === ticketId)
         if (idx >= 0) list[idx] = rollback
         else list = [rollback, ...list]
-      } else if (nextTicket === null) {
+      } else if (normalizedNext === null) {
         list = list.filter(t => t.id !== ticketId)
       } else {
         const idx = list.findIndex(t => t.id === ticketId)
-        if (idx >= 0) list[idx] = nextTicket
-        else list = [nextTicket, ...list]
+        if (idx >= 0) list[idx] = normalizedNext
+        else list = [normalizedNext, ...list]
       }
       return filterOut ? filterRelaysTickets(list) : list
     }
@@ -1215,6 +1232,7 @@ export default function ClientMasterlist() {
       return next
     })
     setOpenFieldTickets(prev => patchList(prev, false))
+    if (normalizedNext) syncTicketAcrossTabCaches(normalizedNext)
   }, [persistRelayTicketsCache])
 
   const flushRelaySave = useCallback(async (ticketId: string) => {
@@ -1239,7 +1257,11 @@ export default function ClientMasterlist() {
             const errData = await res.json().catch(() => null)
             throw new Error(errData?.message || errData?.error || `Status ${res.status}`)
           }
-          clearRelaysCache()
+          const saved = await res.json().catch(() => null)
+          const savedTicket = (saved?.data?.ticket || saved?.ticket || saved) as Ticket | null
+          if (savedTicket?.id) {
+            syncTicketAcrossTabCaches(mergeRelayScheduleTicketPatch(savedTicket, job.body))
+          }
           clearWarrantyCache()
         } catch (err: unknown) {
           applyRelayTicketLocally(ticketId, null, job.rollback)
@@ -1262,12 +1284,13 @@ export default function ClientMasterlist() {
     optimisticTicket: Ticket,
   ) => {
     const ticketId = ticket.id
+    const syncedBody = applyRelayScheduleSyncToPatch(body, ticket)
     const existing = pendingRelaySavesRef.current.get(ticketId)
     pendingRelaySavesRef.current.set(ticketId, {
-      body: existing ? { ...existing.body, ...body } : body,
+      body: existing ? { ...existing.body, ...syncedBody } : syncedBody,
       rollback: existing?.rollback ?? ticket,
     })
-    applyRelayTicketLocally(ticketId, optimisticTicket)
+    applyRelayTicketLocally(ticketId, mergeRelayScheduleTicketPatch(optimisticTicket, syncedBody))
     setLastUpdatedTicketId(ticketId)
     void flushRelaySave(ticketId)
   }, [applyRelayTicketLocally, flushRelaySave])
@@ -1410,6 +1433,20 @@ export default function ClientMasterlist() {
     resetTicketTableScroll()
   }, [activeTab])
 
+  // When Schedules tab saves, merge the same ticket into this Relays view.
+  useEffect(() => {
+    const onCacheUpdated = () => {
+      const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+      const cached = readTabCache<RelaysTabCache>(cacheKey)
+      if (Array.isArray(cached?.tickets)) {
+        setTickets(filterRelaysTickets(normalizeRelayScheduleTicketList(cached.tickets as Ticket[])))
+        setOpenFieldTickets(normalizeRelayScheduleTicketList(cached.tickets as Ticket[]))
+      }
+    }
+    window.addEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
+    return () => window.removeEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
+  }, [ticketScope, user, globalBranchId])
+
   // Load Initial Data — cache-first, background refresh
   const fetchData = useCallback(async (options?: { soft?: boolean }) => {
     const seq = ++fetchSeqRef.current
@@ -1423,7 +1460,7 @@ export default function ClientMasterlist() {
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
     if (hasCache && !forceRefresh) {
-      setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
+      setTickets(filterRelaysTickets(normalizeRelayScheduleTicketList(cached!.tickets as Ticket[])))
       setOpenFieldTickets(cached!.tickets as Ticket[])
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) setEmployees(cached!.employees as any[])
@@ -1450,7 +1487,7 @@ export default function ClientMasterlist() {
 
       if (seq !== fetchSeqRef.current) return
 
-      let tList: Ticket[] = (tListRaw as Ticket[]) || []
+      let tList: Ticket[] = normalizeRelayScheduleTicketList((tListRaw as Ticket[]) || [])
       let bList: { id: string; name: string }[] = hasCache && cached!.branches
         ? (cached!.branches as { id: string; name: string }[])
         : []
@@ -1498,7 +1535,7 @@ export default function ClientMasterlist() {
     const cached = readTabCache<RelaysTabCache>(cacheKey)
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     if (hasCache) {
-      setTickets(filterRelaysTickets(cached!.tickets as Ticket[]))
+      setTickets(filterRelaysTickets(normalizeRelayScheduleTicketList(cached!.tickets as Ticket[])))
       setOpenFieldTickets(cached!.tickets as Ticket[])
       if (cached!.branches?.length) setBranches(cached!.branches as { id: string; name: string }[])
       if (cached!.employees?.length) {
@@ -2597,7 +2634,7 @@ export default function ClientMasterlist() {
   }
 
   const getRelayStatusShort = (ticket: Ticket) => {
-    if (resolveRelayFinalDate(ticket)) return 'SCHEDULED'
+    if (hasRelayLeftQueue(ticket)) return 'SCHEDULED'
     const label = getRelayStatusLabel(ticket)
     if (label === 'Pending') return 'PENDING'
     if (label === 'Cancelled') return 'CANCELLED'
