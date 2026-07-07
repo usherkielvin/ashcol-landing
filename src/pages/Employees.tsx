@@ -265,6 +265,7 @@ export default function Employees() {
   const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history'>('overview')
   const [employeeTicketHistory, setEmployeeTicketHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [historyDateFilter, setHistoryDateFilter] = useState<string>('')
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -384,18 +385,49 @@ export default function Employees() {
       setLoadingHistory(true)
       try {
         const headers = { Authorization: `Bearer ${token()}` }
-        const q = encodeURIComponent(selectedEmployee.name)
-        const res = await fetch(`${API_BASE_URL}/tickets?q=${q}&size=50`, { headers })
+        const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
+        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=1000` : `${API_BASE_URL}/tickets/branch?size=1000`
+        const res = await fetch(endpoint, { headers })
         if (!res.ok) return
         const data = await res.json()
         const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
+        
         const nameNorm = selectedEmployee.name.toLowerCase().trim()
+        const empId = selectedEmployee.id
+        const empEmail = selectedEmployee.email.toLowerCase().trim()
+        const empPersonalEmail = (selectedEmployee.personalEmail || '').toLowerCase().trim()
+
         const relevant = tickets.filter((t: any) => {
-          const installer = (t.installerName || t.installer_name || '').toLowerCase()
-          const negotiator = (t.negotiatorId || t.negotiator_id || '').toLowerCase()
-          const customer = (t.customerName || t.customer_name || '').toLowerCase()
-          return installer.includes(nameNorm) || negotiator.includes(nameNorm) || customer.includes(nameNorm)
+          // 1. Created by this employee
+          if (t.customerId === empId) return true
+          if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
+
+          // 2. Negotiator
+          if (t.negotiatorId === empId) return true
+          if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
+
+          // 3. Assignee / Installer / Driver
+          if (t.assignedTo === empId) return true
+          if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
+          if (t.installerId === empId) return true
+          if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
+
+          // 4. Closed by
+          if (t.closedBy === empId) return true
+          if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
+          if (t.closedBy && t.closedBy.toLowerCase().trim() === empEmail) return true
+
+          // 5. Warranty registration completed by
+          if (t.warrantyRegistrationCompletedBy === empId) return true
+          if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
+
+          // 6. Emails match
+          const customerEmail = (t.customerEmail || '').toLowerCase().trim()
+          if (customerEmail && (customerEmail === empEmail || (empPersonalEmail && customerEmail === empPersonalEmail))) return true
+
+          return false
         })
+
         relevant.sort((a: any, b: any) => {
           const da = a.updatedAt || a.updated_at || a.createdAt || a.created_at || ''
           const db = b.updatedAt || b.updated_at || b.createdAt || b.created_at || ''
@@ -409,7 +441,7 @@ export default function Employees() {
       }
     }
     fetchHistory()
-  }, [activeDrawerTab, selectedEmployee])
+  }, [activeDrawerTab, selectedEmployee, user])
 
   // ── Data Loaders ────────────────────────────────────────────────────────────
   const fetchBranches = async () => {
@@ -1464,58 +1496,110 @@ export default function Employees() {
               {/* ── History Tab ── */}
               {activeDrawerTab === 'history' && (
                 <div className="p-6">
-                  {loadingHistory ? (
-                    <div className="flex flex-col items-center justify-center py-16 gap-3">
-                      <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
-                      <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading ticket history…</span>
+                  {/* Date Filter Control */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 p-3 rounded-xl border" style={{ borderColor: border, backgroundColor: inputBg }}>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Filter by Date</span>
+                      <span className="text-[11px]" style={{ color: textMuted }}>Show tickets created or updated on:</span>
                     </div>
-                  ) : employeeTicketHistory.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 border border-dashed rounded-2xl" style={{ borderColor: border, backgroundColor: inputBg }}>
-                      <RefreshCw className="w-8 h-8 mb-3" style={{ color: textMuted }} />
-                      <span className="text-sm font-bold" style={{ color: textMuted }}>No ticket history found</span>
-                      <span className="text-xs mt-1" style={{ color: textMuted }}>No tickets are associated with this employee.</span>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="date"
+                        value={historyDateFilter}
+                        onChange={e => setHistoryDateFilter(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        style={{
+                          backgroundColor: cardBg,
+                          borderColor: border,
+                          color: textPrimary
+                        }}
+                      />
+                      {historyDateFilter && (
+                        <button
+                          onClick={() => setHistoryDateFilter('')}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-slate-500/10"
+                          style={{
+                            color: '#EF4444',
+                            border: `1px solid ${border}`
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <div className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: textMuted }}>
-                        {employeeTicketHistory.length} tickets found
+                  </div>
+
+                  {(() => {
+                    const displayedHistory = employeeTicketHistory.filter((t: any) => {
+                      if (!historyDateFilter) return true
+                      
+                      const checkDate = (dateStr: string) => {
+                        if (!dateStr) return false
+                        const d = new Date(dateStr)
+                        const yyyy = d.getFullYear()
+                        const mm = String(d.getMonth() + 1).padStart(2, '0')
+                        const dd = String(d.getDate()).padStart(2, '0')
+                        return `${yyyy}-${mm}-${dd}` === historyDateFilter
+                      }
+                      
+                      return checkDate(t.createdAt || t.created_at) || checkDate(t.updatedAt || t.updated_at)
+                    })
+
+                    return loadingHistory ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3">
+                        <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
+                        <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading ticket history…</span>
                       </div>
-                      {employeeTicketHistory.map((t: any, idx: number) => {
-                        const custName = t.customerName || t.customer_name || '—'
-                        const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
-                        const status = (t.status || '').toUpperCase()
-                        const district = t.district || t.destination || ''
-                        const brand = t.brand || ''
-                        const date = t.updatedAt || t.updated_at || t.createdAt || t.created_at || ''
-                        const dateStr = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
-                        const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
-                        const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
-                        const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
-                        const statusBg = isInstalled ? 'rgba(16,185,129,0.1)' : isActive ? 'rgba(59,130,246,0.1)' : status === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.08)'
-                        return (
-                          <div key={t.id || idx}
-                            className="p-3.5 rounded-xl border flex items-center gap-4 hover:scale-[1.005] transition-all"
-                            style={{ borderColor: border, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}
-                          >
-                            <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black" style={{ backgroundColor: statusBg, color: statusColor }}>
-                              #{tNum.slice(-2)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{custName}</span>
-                                <span className="text-[10px] font-black uppercase tracking-wider shrink-0 px-2 py-0.5 rounded-full" style={{ backgroundColor: statusBg, color: statusColor }}>{status || '—'}</span>
+                    ) : displayedHistory.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 border border-dashed rounded-2xl" style={{ borderColor: border, backgroundColor: inputBg }}>
+                        <RefreshCw className="w-8 h-8 mb-3" style={{ color: textMuted }} />
+                        <span className="text-sm font-bold" style={{ color: textMuted }}>No ticket history found</span>
+                        <span className="text-xs mt-1" style={{ color: textMuted }}>
+                          {historyDateFilter ? `No tickets created or updated on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this employee.'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: textMuted }}>
+                          {displayedHistory.length} tickets found {historyDateFilter && `for ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
+                        </div>
+                        {displayedHistory.map((t: any, idx: number) => {
+                          const custName = t.customerName || t.customer_name || '—'
+                          const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
+                          const status = (t.status || '').toUpperCase()
+                          const district = t.district || t.destination || ''
+                          const brand = t.brand || ''
+                          const date = t.updatedAt || t.updated_at || t.createdAt || t.created_at || ''
+                          const dateStr = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+                          const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
+                          const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
+                          const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
+                          const statusBg = isInstalled ? 'rgba(16,185,129,0.1)' : isActive ? 'rgba(59,130,246,0.1)' : status === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.08)'
+                          return (
+                            <div key={t.id || idx}
+                              className="p-3.5 rounded-xl border flex items-center gap-4 hover:scale-[1.005] transition-all"
+                              style={{ borderColor: border, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}
+                            >
+                              <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black" style={{ backgroundColor: statusBg, color: statusColor }}>
+                                #{tNum.slice(-2)}
                               </div>
-                              <div className="flex items-center gap-3 mt-0.5 text-[11px]" style={{ color: textMuted }}>
-                                {brand && <span>{brand}</span>}
-                                {district && <span>· {district}</span>}
-                                {dateStr && <span>· {dateStr}</span>}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{custName}</span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider shrink-0 px-2 py-0.5 rounded-full" style={{ backgroundColor: statusBg, color: statusColor }}>{status || '—'}</span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-0.5 text-[11px]" style={{ color: textMuted }}>
+                                  {brand && <span>{brand}</span>}
+                                  {district && <span>· {district}</span>}
+                                  {dateStr && <span>· {dateStr}</span>}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 
