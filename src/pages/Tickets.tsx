@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketEffectiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
@@ -4158,10 +4158,11 @@ export default function Tickets() {
       const ep = isMyTickets
         ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
         : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-      const size = isMyTickets ? 200 : isAdmin ? 300 : 200
+      const size = isMyTickets ? 200 : (!isMyTickets && dateFilter ? 500 : isAdmin ? 300 : 200)
       const list = await fetchTicketsPage(ep, token(), {
         size,
         ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
+        ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
       })
       if (seq !== fetchSeqRef.current) return
       const merged = applyOptimisticOverlay(list as Ticket[])
@@ -4177,7 +4178,7 @@ export default function Tickets() {
         setRefreshing(false)
       }
     }
-  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, token])
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token])
 
   useEffect(() => {
     const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
@@ -4273,8 +4274,7 @@ export default function Tickets() {
       if (isMyTickets) {
         const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-          const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
-            || t.branchId || t.branch_id || ''
+          const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
           if (!b) return false
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
@@ -4309,8 +4309,7 @@ export default function Tickets() {
       const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
         list = list.filter(t => {
-          const b = resolveTicketEffectiveBranchId(t, installerLineupIndex, driverOnlyNames)
-            || t.branchId || t.branch_id || ''
+          const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
           if (!b) return false
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {

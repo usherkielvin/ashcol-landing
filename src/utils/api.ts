@@ -576,6 +576,25 @@ export function isListedOnNonTaguigLineup(
   return resolveInstallerLineupBranchMatches(installerName, index, driverOnlyNames).some((id) => !isTaguigBranchRef(id))
 }
 
+/** Schedules tab branch filter — stored branch_id wins over lineup installer roster. */
+export function resolveTicketScheduleBranchId(
+  ticket: {
+    branchId?: string | null
+    branch_id?: string | null
+    installerLineupBranchId?: string | null
+    installer_lineup_branch_id?: string | null
+    installerName?: string | null
+    installer_name?: string | null
+    technicianName?: string | null
+  },
+  lineupIndex?: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
+): string {
+  const stored = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+  if (stored && stored !== 'ALL_BRANCHES') return stored
+  return resolveTicketEffectiveBranchId(ticket, lineupIndex, driverOnlyNames)
+}
+
 /** Locked branch scope for a ticket (lineup installer roster, then stored branch_id). */
 export function resolveTicketEffectiveBranchId(
   ticket: {
@@ -824,12 +843,20 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
 export async function fetchTicketsPage(
   endpoint: string,
   token: string,
-  options: { size?: number; categoryGroup?: 'FIELD' | 'OFFICE'; status?: string } = {},
+  options: {
+    size?: number
+    categoryGroup?: 'FIELD' | 'OFFICE'
+    status?: string
+    date?: string
+    statusGroup?: string
+  } = {},
 ): Promise<unknown[]> {
   const size = options.size ?? 200
   const headers = { Authorization: `Bearer ${token}` }
   const base: Record<string, string> = { page: '0', size: String(size) }
   if (options.status) base.status = options.status
+  if (options.date) base.date = options.date
+  if (options.statusGroup) base.statusGroup = options.statusGroup
 
   const attempts: Record<string, string>[] = options.categoryGroup
     ? [{ ...base, categoryGroup: options.categoryGroup }, base]

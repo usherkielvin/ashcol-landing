@@ -106,6 +106,7 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
   syncAlias(next, 'sourceVendor', 'source_vendor')
 
   const finalDate = resolveRelayFinalDate(next)
+  const stat = String(next.status || '').toUpperCase()
   if (finalDate) {
     next.finalDate = finalDate
     next.final_date = finalDate
@@ -116,21 +117,25 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
     const ac = String(next.acDetails || next.ac_details || '')
     next.acDetails = mergeAcJson(ac, { finalDate })
     next.ac_details = next.acDetails
-    const stat = String(next.status || '').toUpperCase()
     if (['PENDING', 'ASSIGNED'].includes(stat)) {
       next.status = 'SCHEDULED'
     }
-  } else if (hasRelayLeftQueue(next)) {
+  } else {
     const preferred = String(next.preferredDate || next.preferred_date || '').trim().split('T')[0]
-    if (preferred) {
+    const shouldBackfill = Boolean(
+      preferred && (
+        ['SCHEDULED', 'RESCHED', 'SURVEY', 'FOR_APPROVAL', 'FOR_QUOTATION'].includes(stat)
+        || hasRelayLeftQueue(next)
+      ),
+    )
+    if (shouldBackfill) {
       next.finalDate = preferred
       next.final_date = preferred
       const ac = String(next.acDetails || next.ac_details || '')
       next.acDetails = mergeAcJson(ac, { finalDate: preferred })
       next.ac_details = next.acDetails
+      if (stat === 'ASSIGNED') next.status = 'SCHEDULED'
     }
-    const stat = String(next.status || '').toUpperCase()
-    if (stat === 'ASSIGNED') next.status = 'SCHEDULED'
   }
 
   return next
