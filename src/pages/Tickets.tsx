@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, readTabCacheEntry, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, clearSchedulesCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -2132,8 +2132,8 @@ export default function Tickets() {
 
   // ── Data state ────────────────────────────────────────────────────────────
   const [tickets, setTickets]         = useState<Ticket[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [refreshing, setRefreshing]   = useState(false)
+  const [loading, setLoading]         = useState(false)
+  const [hasHydratedOnce, setHasHydratedOnce] = useState(false)
   const [progress, setProgress]       = useState(0)
 
   useEffect(() => {
@@ -2154,13 +2154,6 @@ export default function Tickets() {
     }
   }, [loading])
   const [fetchError, setFetchError]   = useState<string | null>(null)
-  // Only show the refreshing banner after it has been active for 800ms — avoids flash for fast/cached refreshes
-  const [showRefreshing, setShowRefreshing] = useState(false)
-  useEffect(() => {
-    if (!refreshing) { setShowRefreshing(false); return }
-    const t = setTimeout(() => setShowRefreshing(true), 800)
-    return () => clearTimeout(t)
-  }, [refreshing])
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
@@ -2186,6 +2179,50 @@ export default function Tickets() {
   const deletedTicketsRef = useRef(new Set<string>())
   /** Latest flushTicketSave — used by create/import paths defined earlier in the component. */
   const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => {})
+
+  const schedulesCacheKeyForTab = useCallback(
+    (dateOverride?: string) => schedulesCacheKey(
+      user,
+      globalBranchId,
+      isCustomer,
+      isAdmin,
+      isMyTickets,
+      isMyTickets ? undefined : (dateOverride ?? dateFilter),
+    ),
+    [user, globalBranchId, isCustomer, isAdmin, isMyTickets, dateFilter],
+  )
+
+  const hydrateFromTabCache = useCallback((): boolean => {
+    const cached = readSchedulesTabCache(schedulesCacheKeyForTab())
+    if (!Array.isArray(cached?.tickets)) return false
+
+    const pending = optimisticTicketsRef.current
+    const deleted = deletedTicketsRef.current
+    let list = (cached.tickets as Ticket[]).filter(t =>
+      !deleted.has(t.id) && (!isTempTicketId(t.id) || pending.has(t.id)),
+    )
+    if (pending.size > 0) {
+      const serverIds = new Set(list.map(t => t.id))
+      list = list.map(t => pending.get(t.id) || t)
+      for (const [id, local] of pending) {
+        if (!serverIds.has(id) && !deleted.has(id)) list.unshift(local)
+      }
+    }
+
+    setTickets(normalizeRelayScheduleTicketList(list))
+    setLoading(false)
+    setHasHydratedOnce(true)
+    hasLoadedOnceRef.current = true
+    const cacheKey = schedulesCacheKeyForTab()
+    writeSchedulesTabCache(cacheKey, normalizeRelayScheduleTicketList(list), 'local')
+    return true
+  }, [schedulesCacheKeyForTab])
+
+  // Paint cached rows before first paint when switching branch/date — no loading screen flash.
+  useLayoutEffect(() => {
+    if (isMyTickets) return
+    hydrateFromTabCache()
+  }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId])
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
@@ -2888,7 +2925,7 @@ export default function Tickets() {
       optimisticTicketsRef.current.set(tempId, optimisticTicket)
       setTickets(prev => {
         const next = [optimisticTicket, ...prev.filter(t => t.id !== tempId)]
-        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+        const cacheKey = schedulesCacheKeyForTab()
         writeSchedulesTabCache(cacheKey, next, 'local')
         return next
       })
@@ -2918,7 +2955,7 @@ export default function Tickets() {
             || payloadResult) as Ticket | null
           if (!createdTicket?.id) {
             // Keep temp row visible; refresh will merge when server has it
-            void fetchTickets({ soft: true, force: true })
+            void fetchTickets({ soft: true, force: true, quiet: true })
             console.log('[Schedules] Created ticket in database (refreshing list)', { tempId })
             return
           }
@@ -2944,7 +2981,7 @@ export default function Tickets() {
             }
             setTickets(prev => {
               const next = prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)
-              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              const cacheKey = schedulesCacheKeyForTab()
               writeSchedulesTabCache(cacheKey, next, 'local')
               return next
             })
@@ -2954,7 +2991,7 @@ export default function Tickets() {
           // Swap temp → real id (carry any cell edits made while create was in flight)
           setTickets(prev => {
             const next = [promoted.ticket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
-            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            const cacheKey = schedulesCacheKeyForTab()
             writeSchedulesTabCache(cacheKey, next, 'local')
             return next
           })
@@ -2976,7 +3013,7 @@ export default function Tickets() {
           deletedTicketsRef.current.delete(tempId)
           setTickets(prev => {
             const next = prev.filter(t => t.id !== tempId)
-            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            const cacheKey = schedulesCacheKeyForTab()
             writeSchedulesTabCache(cacheKey, next, 'local')
             return next
           })
@@ -3438,7 +3475,7 @@ export default function Tickets() {
                 console.warn('Archive service report failed:', err)
                 alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
               }
-              void fetchTickets({ soft: true, force: true })
+              void fetchTickets({ soft: true, force: true, quiet: true })
             }
           : undefined,
       )
@@ -3706,7 +3743,7 @@ export default function Tickets() {
       optimisticTicketsRef.current.delete(job.ticket.id)
       setTickets(prev => {
         const next = prev.filter(t => t.id !== job.ticket.id)
-        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+        const cacheKey = schedulesCacheKeyForTab()
         writeSchedulesTabCache(cacheKey, next, 'local')
         return next
       })
@@ -3822,7 +3859,7 @@ export default function Tickets() {
                   next.unshift(real)
                 }
               }
-              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              const cacheKey = schedulesCacheKeyForTab()
               writeSchedulesTabCache(cacheKey, next, 'local')
               return next
             })
@@ -3844,7 +3881,7 @@ export default function Tickets() {
             }
 
             // Confirm list from server (temps already swapped / removed)
-            await fetchTickets({ soft: true, force: true })
+            await fetchTickets({ soft: true, force: true, quiet: true })
           } else {
             failCount += createTemps.length
             importErrors.push(await readApiError(res))
@@ -3857,7 +3894,7 @@ export default function Tickets() {
             setTickets(prev => {
               const tempIds = new Set(createTemps.map(c => c.tempId))
               const next = prev.filter(t => !tempIds.has(t.id))
-              const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+              const cacheKey = schedulesCacheKeyForTab()
               writeSchedulesTabCache(cacheKey, next, 'local')
               return next
             })
@@ -3876,7 +3913,7 @@ export default function Tickets() {
           setTickets(prev => {
             const tempIds = new Set(createTemps.map(c => c.tempId))
             const next = prev.filter(t => !tempIds.has(t.id))
-            const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+            const cacheKey = schedulesCacheKeyForTab()
             writeSchedulesTabCache(cacheKey, next, 'local')
             return next
           })
@@ -4097,7 +4134,7 @@ export default function Tickets() {
   const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean; quiet?: boolean }) => {
     if (!user) return
     const seq = ++fetchSeqRef.current
-    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+    const cacheKey = schedulesCacheKeyForTab()
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
     const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
     const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
@@ -4105,16 +4142,6 @@ export default function Tickets() {
     const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
     const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache
 
-    if (options?.soft && !options?.force && cacheFresh && hasCache) {
-      hasLoadedOnceRef.current = true
-      setLoading(false)
-      setRefreshing(false)
-      return
-    }
-
-    // Keep local creates/edits visible until the server list includes them;
-    // never re-show tickets the user already deleted in this session.
-    // Drop orphaned temp-import / temp-* ids left in tab cache from a prior session.
     const applyOptimisticOverlay = (list: Ticket[]) => {
       const normalized = normalizeRelayScheduleTicketList(list)
       const deleted = deletedTicketsRef.current
@@ -4122,7 +4149,6 @@ export default function Tickets() {
       const withoutDeleted = normalized.filter(t =>
         !deleted.has(t.id) && (!isTempTicketId(t.id) || pending.has(t.id)),
       )
-      // Server no longer has a deleted id — drop the tombstone
       for (const id of [...deleted]) {
         if (!list.some(t => t.id === id) && !isTempTicketId(id)) deleted.delete(id)
       }
@@ -4131,28 +4157,34 @@ export default function Tickets() {
       const merged = withoutDeleted.map(t => {
         const local = pending.get(t.id)
         if (!local) return t
-        // Still saving — keep local version
         if (pendingSavesRef.current.has(t.id) || activeSavesRef.current.has(t.id)) {
           return local
         }
-        // Server has this ticket and no pending save — keep local edits visible over stale list rows
         pending.delete(t.id)
         return mergeTicketPatch(t, local as unknown as Record<string, unknown>)
       })
-      // Temp / just-created tickets not in server payload yet — keep showing them
       for (const [id, local] of pending) {
         if (!serverIds.has(id) && !deleted.has(id)) merged.unshift(local)
       }
       return merged
     }
 
+    if (options?.soft && !options?.force && cacheFresh && hasCache) {
+      setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
+      hasLoadedOnceRef.current = true
+      setHasHydratedOnce(true)
+      setLoading(false)
+      return
+    }
+
     if (hasCache) {
       setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
       hasLoadedOnceRef.current = true
-      if (!showSkeleton) setLoading(false)
+      setHasHydratedOnce(true)
+      setLoading(false)
+    } else if (showSkeleton) {
+      setLoading(true)
     }
-    if (showSkeleton) setLoading(true)
-    else if (!options?.quiet) setRefreshing(true)
     setFetchError(null)
     try {
       const ep = isMyTickets
@@ -4169,54 +4201,32 @@ export default function Tickets() {
       setTickets(merged)
       writeSchedulesTabCache(cacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
+      setHasHydratedOnce(true)
     } catch {
       if (seq !== fetchSeqRef.current) return
       if (!hasCache) setFetchError('Failed to load tickets. Check your connection.')
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
-        setRefreshing(false)
       }
     }
-  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token])
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
 
   useEffect(() => {
-    const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
-    const cached = readTabCache<SchedulesTabCache>(cacheKey)
-    const hasCache = Array.isArray(cached?.tickets) && cached.tickets.length > 0
-    if (hasCache) {
-      const pending = optimisticTicketsRef.current
-      const deleted = deletedTicketsRef.current
-      const list = (cached!.tickets as Ticket[]).filter(t =>
-        !deleted.has(t.id) && (!isTempTicketId(t.id) || pending.has(t.id)),
-      )
-      if (pending.size === 0) {
-        setTickets(list)
-      } else {
-        const serverIds = new Set(list.map(t => t.id))
-        const merged = list.map(t => pending.get(t.id) || t)
-        for (const [id, local] of pending) {
-          if (!serverIds.has(id) && !deleted.has(id)) merged.unshift(local)
-        }
-        setTickets(merged)
-      }
-      setLoading(false)
-      hasLoadedOnceRef.current = true
-    } else {
-      hasLoadedOnceRef.current = false
-    }
-    void fetchTickets({ soft: hasCache, force: true })
-  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets])
+    const hadCache = hydrateFromTabCache()
+    void fetchTickets({ soft: hadCache || hasLoadedOnceRef.current, force: !hadCache, quiet: true })
+  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
     if (!hasLoadedOnceRef.current || isMyTickets) return
-    void fetchTickets({ soft: true })
-  }, [dateFilter, fetchTickets, isMyTickets])
+    const hadCache = hydrateFromTabCache()
+    void fetchTickets({ soft: true, quiet: true, force: !hadCache })
+  }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === 'visible' && hasLoadedOnceRef.current) {
-        void fetchTickets({ soft: true, force: true })
+        void fetchTickets({ soft: true, force: true, quiet: true })
       }
     }
     document.addEventListener('visibilitychange', onVisible)
@@ -4225,7 +4235,7 @@ export default function Tickets() {
 
   useEffect(() => {
     const onCacheUpdated = () => {
-      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      const cacheKey = schedulesCacheKeyForTab()
       const cached = readTabCache<SchedulesTabCache>(cacheKey)
       if (Array.isArray(cached?.tickets)) {
         setTickets(normalizeRelayScheduleTicketList(cached.tickets as Ticket[]))
@@ -4233,7 +4243,7 @@ export default function Tickets() {
     }
     window.addEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
     return () => window.removeEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
-  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   useEffect(() => {
     if (!canEdit) return
@@ -4538,24 +4548,23 @@ export default function Tickets() {
       const next = exists
         ? prev.map(t => (t.id === ticketId ? normalized : t))
         : [normalized, ...prev]
-      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
-      writeSchedulesTabCache(cacheKey, next, 'local')
+      writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
       return next
     })
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
-  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const restoreTicketLocally = useCallback((ticketId: string, rollback: Ticket) => {
     optimisticTicketsRef.current.delete(ticketId)
     setTickets(prev => {
       const next = prev.map(t => (t.id === ticketId ? rollback : t))
-      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      const cacheKey = schedulesCacheKeyForTab()
       writeSchedulesTabCache(cacheKey, next, 'local')
       return next
     })
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...rollback } : prev))
-  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
     // Never PATCH optimistic temp ids — edits stay queued until promoteTempTicketState.
@@ -4602,7 +4611,6 @@ export default function Tickets() {
           // so refreshes (e.g. cache TTL) do not wipe the row from the UI.
           clearRelaysCache()
           clearWarrantyCache()
-          clearSchedulesCache()
           void fetchTickets({ soft: true, force: true, quiet: true })
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
@@ -4734,7 +4742,7 @@ export default function Tickets() {
             } catch (err) {
               alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
             }
-            void fetchTickets({ soft: true, force: true })
+            void fetchTickets({ soft: true, force: true, quiet: true })
           }
         : undefined,
     )
@@ -4823,7 +4831,7 @@ export default function Tickets() {
     optimisticTicketsRef.current.delete(ticketId)
     setTickets(prev => {
       const next = prev.filter(t => t.id !== ticketId)
-      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+      const cacheKey = schedulesCacheKeyForTab()
               writeSchedulesTabCache(cacheKey, next, 'local')
       return next
     })
@@ -4857,7 +4865,7 @@ export default function Tickets() {
         setTickets(prev => {
           if (prev.some(t => t.id === ticketId)) return prev
           const next = [rollback, ...prev]
-          const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets)
+          const cacheKey = schedulesCacheKeyForTab()
           writeSchedulesTabCache(cacheKey, next, 'local')
           return next
         })
@@ -5623,7 +5631,7 @@ export default function Tickets() {
       )}
 
       {/* Stats bar */}
-      {!isMyTickets && activeTab === 'schedules' && !loading && tickets.length > 0 && (
+      {!isMyTickets && activeTab === 'schedules' && (hasHydratedOnce || tickets.length > 0) && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
              style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
@@ -5669,7 +5677,7 @@ export default function Tickets() {
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
-          loading && tickets.length === 0 ? (
+          loading && !hasHydratedOnce && tickets.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
                style={{ backgroundColor: cardBg }}>
             <div className="relative flex items-center justify-center w-36 h-36">
@@ -5733,15 +5741,6 @@ export default function Tickets() {
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
-            {showRefreshing && (
-              <div className="flex items-center gap-2.5 px-4 py-2 border-b select-none" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(22,163,74,0.05)' : 'rgba(22,163,74,0.08)' }}>
-                <svg className="w-4 h-4 shrink-0 animate-spin" viewBox="0 0 20 20" fill="none">
-                  <circle cx="10" cy="10" r="7" stroke={isLight ? '#e2e8f0' : '#1e293b'} strokeWidth="2.5" />
-                  <path d="M10 3 A7 7 0 0 1 17 10" stroke={green} strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-                <span className="text-[11px] font-semibold" style={{ color: green }}>Updating schedules…</span>
-              </div>
-            )}
             <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
               <colgroup>
                 {columns.map(col => (

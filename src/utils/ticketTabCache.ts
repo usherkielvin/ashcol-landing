@@ -4,7 +4,8 @@ import { normalizeRelayScheduleTicket, shouldExcludeRelayFromTab } from './relay
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
 export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
-export const SCHEDULES_CACHE_TTL_MS = 45 * 1000
+/** Background re-fetch interval; cached rows are always shown instantly regardless of age. */
+export const SCHEDULES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const VERSION = 2
 
@@ -48,6 +49,10 @@ export function patchTabCache<T extends object>(key: string, patch: Partial<T>):
 
 export type SchedulesTabCache = { tickets: unknown[]; lastSyncAt?: number }
 
+export function readSchedulesTabCache(key: string): SchedulesTabCache | null {
+  return readTabCache<SchedulesTabCache>(key)
+}
+
 export function writeSchedulesTabCache(key: string, tickets: unknown[], source: 'server' | 'local'): void {
   const existing = readTabCache<SchedulesTabCache>(key)
   writeTabCache(key, {
@@ -62,9 +67,11 @@ export function schedulesCacheKey(
   isCustomer?: boolean,
   isAdmin?: boolean,
   isMyTickets?: boolean,
+  dateFilter?: string,
 ): string {
   const ep = isMyTickets ? 'assigned' : isCustomer ? 'my' : isAdmin ? 'all' : 'branch'
-  return `schedules:v${VERSION}:${ep}:${branchCachePart(user, globalBranchId)}`
+  const datePart = !isMyTickets && dateFilter?.trim() ? `:${dateFilter.trim()}` : ''
+  return `schedules:v${VERSION}:${ep}:${branchCachePart(user, globalBranchId)}${datePart}`
 }
 
 export type RelaysTabCache = {
