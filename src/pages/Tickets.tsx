@@ -467,6 +467,8 @@ function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, 
   }
   return applyRelayScheduleSyncToPatch(next)
 }
+
+function getScheduleRowColors(
   ticket: Ticket,
   ghostKind: 'completed' | 'resched' | null,
   isLight: boolean,
@@ -1997,6 +1999,8 @@ function buildCellPatchBody(
   }
   return applyRelayScheduleSyncToPatch(body, ticket)
 }
+
+export default function Tickets() {
   const { theme } = useTheme()
   const { user }  = useAuth()
   const location = useLocation()

@@ -2,24 +2,7 @@
  * Shared relay ↔ schedules ticket sync (one row, matching status/dates/customer).
  */
 
-export type RelayScheduleTicket = Record<string, unknown> & {
-  id?: string
-  status?: string
-  customerName?: string
-  customer_name?: string
-  preferredDate?: string
-  preferred_date?: string
-  finalDate?: string
-  final_date?: string
-  negotiatorId?: string
-  negotiator_id?: string
-  sourceVendor?: string
-  acDetails?: string
-  ac_details?: string
-  assignedTo?: string
-  ticketNumber?: string
-  installationCharges?: number
-}
+export type RelayScheduleTicket = any
 
 function syncAlias(ticket: RelayScheduleTicket, camel: string, snake: string): void {
   const c = ticket[camel]
@@ -112,8 +95,8 @@ function mergeAcJson(acDetails: string | undefined, updates: Record<string, unkn
 }
 
 /** Align relay + schedules fields on a ticket row (after fetch or save). */
-export function normalizeRelayScheduleTicket<T extends RelayScheduleTicket>(ticket: T): T {
-  const next = { ...ticket } as T
+export function normalizeRelayScheduleTicket(ticket: any): any {
+  const next = { ...ticket }
   syncAlias(next, 'customerName', 'customer_name')
   syncAlias(next, 'preferredDate', 'preferred_date')
   syncAlias(next, 'negotiatorId', 'negotiator_id')
@@ -195,12 +178,12 @@ export function applyRelayScheduleSyncToPatch(
   return next
 }
 
-export function mergeRelayScheduleTicketPatch<T extends RelayScheduleTicket>(
-  ticket: T,
+export function mergeRelayScheduleTicketPatch(
+  ticket: any,
   body: Record<string, unknown>,
-): T {
+): any {
   const syncedBody = applyRelayScheduleSyncToPatch(body, ticket)
-  const merged = { ...ticket, ...syncedBody } as T
+  const merged = { ...ticket, ...syncedBody }
   if (typeof syncedBody.acDetails === 'string') {
     merged.acDetails = syncedBody.acDetails
     merged.ac_details = syncedBody.acDetails
@@ -208,7 +191,7 @@ export function mergeRelayScheduleTicketPatch<T extends RelayScheduleTicket>(
   return normalizeRelayScheduleTicket(merged)
 }
 
-export function normalizeRelayScheduleTicketList<T extends RelayScheduleTicket>(list: T[]): T[] {
+export function normalizeRelayScheduleTicketList(list: any[]): any[] {
   return list.map(t => normalizeRelayScheduleTicket(t))
 }
 

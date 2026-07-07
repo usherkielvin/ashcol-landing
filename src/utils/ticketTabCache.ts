@@ -211,7 +211,7 @@ export function clearRelayScheduleCaches(): void {
 }
 
 /** Push one ticket into every relays/schedules tab cache so both tabs stay aligned. */
-export function syncTicketAcrossTabCaches(ticket: Record<string, unknown>): void {
+export function syncTicketAcrossTabCaches(ticket: any): void {
   const id = String(ticket.id || '').trim()
   if (!id) return
 
