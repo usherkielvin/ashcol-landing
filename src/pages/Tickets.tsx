@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
+import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
@@ -1909,7 +1910,7 @@ function buildCellPatchBody(
 ): Record<string, unknown> {
   const v = rawValue.trim()
   const body: Record<string, unknown> = {}
-  let acBase: Ticket = ticket
+  const acBase: Ticket = ticket
 
   switch (colLabel) {
     case "CUSTOMER'S NAME":
@@ -3774,7 +3775,7 @@ export default function Tickets() {
     })
 
     void (async () => {
-      let successCount = patchJobs.length
+      const successCount = patchJobs.length
       let completeCount = 0
       let failCount = 0
       let createdCount = 0
@@ -4325,7 +4326,7 @@ export default function Tickets() {
         return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
 
-      let hasFinalDate = Boolean(getFinalDateKey(t))
+      const hasFinalDate = Boolean(getFinalDateKey(t))
 
       const scheduleValue = getScheduleStatusValue(t)
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
@@ -5763,7 +5764,92 @@ export default function Tickets() {
               paddingBottom: activeCellOverlay ? 72 : 12,
             }}
           >
-            <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+            {isMyTickets && (
+              <div className="md:hidden w-full">
+                <ResponsiveTable 
+                  data={filtered} 
+                  columns={(() => {
+                    const MOBILE_VISIBLE_COLS = new Set(['TICKET NO', 'STATUS', "CUSTOMER'S NAME", 'DESTINATION', 'TYPE'])
+                    return columns.map((col: any) => {
+                      const isMobileVisible = MOBILE_VISIBLE_COLS.has(col.label)
+                      
+                      if (col.label === 'TICKET NO') {
+                        return {
+                          header: col.display,
+                          accessorKey: col.label,
+                          isMobileVisible,
+                          cellRenderer: (ticket: Ticket, idx?: number) => {
+                            const cleanTicketNo = String((ticket as any).ticketId || (ticket as any).ticket_id || ticket.id || getCellDisplay(ticket, col.label)).substring(0, 8).toUpperCase()
+                            return (
+                              <div className="flex items-center justify-end min-w-0 w-full" title={cleanTicketNo}>
+                                <span className="text-slate-400 dark:text-slate-500 mr-2 text-xs shrink-0">{idx !== undefined ? idx + 1 : ''}.</span>
+                                <span className="font-mono font-bold truncate max-w-[150px] block text-right" style={{ color: textPrimary }}>{cleanTicketNo}</span>
+                              </div>
+                            )
+                          }
+                        }
+                      }
+                      
+                      if (col.label === 'STATUS') {
+                        return {
+                          header: col.display,
+                          accessorKey: col.label,
+                          isMobileVisible,
+                          cellRenderer: (ticket: Ticket) => {
+                            return (
+                              <div 
+                                className="flex justify-end w-full cursor-pointer items-center"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (canEdit) {
+                                    openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement);
+                                  }
+                                }}
+                              >
+                                {renderCell(ticket, col)}
+                              </div>
+                            )
+                          }
+                        }
+                      }
+
+                      if (col.label === "CUSTOMER'S NAME") {
+                        return {
+                          header: col.display,
+                          accessorKey: col.label,
+                          isMobileVisible,
+                          cellRenderer: (ticket: Ticket) => {
+                            const val = getCellDisplay(ticket, col.label)
+                            return (
+                              <span className="font-bold text-gray-900 dark:text-gray-100 block truncate max-w-[180px] text-right ml-auto" title={val}>
+                                {val || '-'}
+                              </span>
+                            )
+                          }
+                        }
+                      }
+                      
+                      return {
+                        header: col.display,
+                        accessorKey: col.label,
+                        isMobileVisible,
+                        cellRenderer: (ticket: Ticket) => {
+                          const val = getCellDisplay(ticket, col.label)
+                          return (
+                            <span className="truncate block w-full text-sm text-right" title={val}>
+                              {val || '-'}
+                            </span>
+                          )
+                        }
+                      }
+                    }) as ResponsiveColumnDef<any>[]
+                  })() as any} 
+                />
+              </div>
+            )}
+            
+            <div className={isMyTickets ? "hidden md:block w-full" : "w-full"}>
+              <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
@@ -5993,6 +6079,7 @@ export default function Tickets() {
                 }))}
               </tbody>
             </table>
+            </div>
           </div>
         )) : (
           /* Render Overview Search Panel */
