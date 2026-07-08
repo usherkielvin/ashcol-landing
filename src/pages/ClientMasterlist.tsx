@@ -1342,7 +1342,7 @@ export default function ClientMasterlist() {
   // Column configuration for expand / collapse functionality
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
 
-  const tableRowBorder = isLight ? '#cbd5e1' : '#2a3f5f'
+  const tableRowBorder = isLight ? '#e2e8f0' : '#1e293b'
   const tableColBorder = `1px solid ${tableRowBorder}`
   const cellPadY = 8
   const cellPadX = 10
@@ -1364,28 +1364,28 @@ export default function ClientMasterlist() {
     const rawCols = activeTab === 'MY_TICKETS' ? [
       { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
-      { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: false },
+      { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
+      { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
+      { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
+      { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: true, right: false },
+      { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: true },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
       { label: 'STATUS',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CATEGORY',     weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'CUSTOMER NAME', weight: 14, expMul: 1.5,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'DISTRICT',     weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'CUSTOMER NAME', weight: 14, expMul: 1.5,  sticky: false, freeze: false, center: false, right: false },
+      { label: 'DISTRICT',     weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
+      { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
 
     const weights = rawCols.map(col => {
@@ -1413,7 +1413,7 @@ export default function ClientMasterlist() {
   const columnTextAlign = (col: (typeof columns)[number], cell?: { right?: boolean; center?: boolean }) => {
     if (cell?.right || col.right) return 'right' as const
     if (cell?.center ?? col.center) return 'center' as const
-    return 'center' as const
+    return 'left' as const
   }
 
   // Right-click context menu state
@@ -2891,6 +2891,19 @@ export default function ClientMasterlist() {
           {/* Action buttons wrapper with right alignment */}
           {isAdmin && (
             <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={createDropdownRef}>
+              {/* Delete All Action */}
+              {filtered.length > 0 && (
+                <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 bg-transparent text-red-600 border border-red-600 hover:bg-red-50 dark:text-red-500 dark:border-red-500 dark:hover:bg-red-950/30"
+                  title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL_PENDING')
+                    ? 'Only matching filtered records will be deleted'
+                    : 'Deletes all records permanently'}>
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}</span>
+                  <span className="sm:hidden">{actionSaving ? 'Deleting...' : 'Delete All'}</span>
+                </button>
+              )}
+
               <div className="flex items-center rounded-lg overflow-hidden shadow-sm border transition-all"
                 style={{
                   borderColor: isLight ? '#059669' : '#10B981',
@@ -3026,7 +3039,7 @@ export default function ClientMasterlist() {
                       ...columnCellStyle(col),
                       ...(col.sticky ? { left: col.left } : {}),
                     }}>
-                    <div className="flex items-center justify-center gap-1.5 w-full text-center">
+                    <div className={`flex items-center gap-1.5 w-full ${columnTextAlign(col) === 'left' ? 'justify-start text-left' : columnTextAlign(col) === 'right' ? 'justify-end text-right' : 'justify-center text-center'}`}>
                       <span>{col.label}</span>
                     </div>
                   </th>
@@ -3094,6 +3107,7 @@ export default function ClientMasterlist() {
                     : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
                     : (isLight ? '#f1f5f9' : '#0f1e36')
                   const ticketNo = getTicketNumber(ticket)
+                  const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
                   const statusIsScheduled = relayStatus === 'SCHEDULED'
@@ -3102,13 +3116,16 @@ export default function ClientMasterlist() {
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
                     // TICKET NO
                     { value: (
-                      <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
-                        {displayUpper(ticketNo)}
-                      </span>
+                      <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
+                        <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
+                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                          {displayUpper(cleanTicketNo)}
+                        </span>
+                      </div>
                     ) },
                     // STATUS
                     { value: (
-                      <span className="font-semibold w-full truncate block text-center" style={{
+                      <span className="font-semibold w-full truncate block" style={{
                         color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
                       }}>
                         {relayStatus}
@@ -3116,46 +3133,46 @@ export default function ClientMasterlist() {
                     ) },
                     // CUSTOMER NAME
                     { value: (
-                      <span className="truncate block font-semibold w-full text-center" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
+                      <span className="truncate block font-semibold w-full" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
                     // DISTRICT
                     { value: (
-                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(district)}>
+                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(district)}>
                         {displayUpper(district)}
                       </span>
                     ) },
                     // BRAND
                     { value: (
-                      <span className="truncate block w-full text-center text-xs font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
                         {displayUpper(brandLabel) || '—'}
                       </span>
                     ) },
                     // STORE / SOURCE
                     { value: (
-                      <span className="truncate block w-full text-center text-xs" title={displayUpper(storeStyle.label)}>
+                      <span className="truncate block w-full text-xs" title={displayUpper(storeStyle.label)}>
                         {displayUpper(storeStyle.label)}
                       </span>
                     ) },
                     // COMMIT
                     { value: (
-                      <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
+                      <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
                         {displayUpper(ticket.commitType || '') || '—'}
                       </span>
                     ) },
                     // PREFERRED DATE
-                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
                     // NEGOTIATOR
                     { value: (
-                      <span className="truncate block w-full text-center font-semibold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full font-semibold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
                     // FINAL DATE (read-only — set by negotiator when scheduling)
                     { value: (
                       <span
-                        className="whitespace-nowrap block w-full text-center font-semibold"
+                        className="whitespace-nowrap block w-full font-semibold"
                         style={{ color: finalDateLabel ? '#10B981' : textMuted }}
                         title={finalDateLabel || 'Pending negotiator schedule'}
                       >
@@ -3164,57 +3181,60 @@ export default function ClientMasterlist() {
                     ) },
                     // REMARKS
                     { value: (
-                      <span className="truncate block w-full text-center text-xs" title={ticket.remarksUpdate || ''}>
+                      <span className="truncate block w-full text-xs" title={ticket.remarksUpdate || ''}>
                         {ticket.remarksUpdate || lastUpdate || '—'}
                       </span>
                     ) }
                   ] : [
                     { value: (
-                      <span className="font-mono font-bold w-full truncate block text-center" title={ticketNo} style={{ color: textPrimary }}>
-                        {displayUpper(ticketNo)}
-                      </span>
+                      <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
+                        <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
+                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                          {displayUpper(cleanTicketNo)}
+                        </span>
+                      </div>
                     ) },
                     { value: (
                       <span
-                        className="font-semibold w-full truncate block text-center"
+                        className="font-semibold w-full truncate block"
                         title={relayStatus}
                         style={{ color: statusIsAssigned || statusIsScheduled ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
                         {relayStatus}
                       </span>
                     ) },
                     { value: (
-                      <span className="truncate block w-full text-center font-semibold" style={{ color: textPrimary }} title={categoryLabel}>
+                      <span className="truncate block w-full font-semibold" style={{ color: textPrimary }} title={categoryLabel}>
                         {categoryLabel}
                       </span>
                     ) },
                     { value: (
                       <span
-                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full text-center`}
+                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full`}
                         title={displayUpper(ticket.customerName || 'Direct Client')}
                         style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
-                    { value: <span className="block w-full truncate text-center">{displayUpper(district)}</span> },
-                    { value: <span className="truncate block w-full text-center" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full text-center">{displayUpper(relayedDate)}</span> },
-                    { value: <span className="truncate block w-full text-center" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
-                    { value: <span className="truncate block w-full text-center text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
+                    { value: <span className="block w-full truncate">{displayUpper(district)}</span> },
+                    { value: <span className="truncate block w-full" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(relayedDate)}</span> },
+                    { value: <span className="truncate block w-full" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
+                    { value: <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
                     { value: (
-                      <span className="truncate block w-full text-center max-w-full" title={displayUpper(negotiator)}>
+                      <span className="truncate block w-full max-w-full" title={displayUpper(negotiator)}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
                     { value: (
                       <span
-                        className="whitespace-nowrap block w-full text-center font-semibold"
+                        className="whitespace-nowrap block w-full font-semibold"
                         style={{ color: finalDateLabel ? '#10B981' : textMuted }}
                         title={finalDateLabel || 'Pending negotiator schedule'}
                       >
                         {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
                       </span>
                     ) },
-                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full text-center`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -3273,8 +3293,8 @@ export default function ClientMasterlist() {
                                 : { position: 'relative' as const, zIndex: isExpandedCell ? 20 : undefined }),
                             }}>
                             {canExpandCell ? (
-                              <div className="relative w-full h-full flex items-center justify-center" style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
-                                <div className="w-full min-w-0 overflow-hidden">
+                              <div className={`relative w-full h-full flex items-center ${columnTextAlign(col, cell) === 'left' ? 'justify-start' : columnTextAlign(col, cell) === 'right' ? 'justify-end' : 'justify-center'}`} style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
+                                <div className={`w-full min-w-0 overflow-hidden ${columnTextAlign(col, cell) === 'left' ? 'text-left' : columnTextAlign(col, cell) === 'right' ? 'text-right' : 'text-center'}`}>
                                   {cell.value}
                                 </div>
                                 {isExpandedCell && (
@@ -3287,7 +3307,11 @@ export default function ClientMasterlist() {
                                   </div>
                                 )}
                               </div>
-                            ) : cell.value}
+                            ) : (
+                              <div className={`w-full min-w-0 overflow-hidden ${columnTextAlign(col, cell) === 'left' ? 'text-left' : columnTextAlign(col, cell) === 'right' ? 'text-right' : 'text-center'}`}>
+                                {cell.value}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
@@ -3317,20 +3341,6 @@ export default function ClientMasterlist() {
             ))}
           </div>
 
-          {/* Danger Zone Action (Admin Only) */}
-          {isAdmin && filtered.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider hidden sm:inline">⚠ Danger Zone:</span>
-              <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 border border-red-500/25 text-red-500 bg-red-500/5 hover:bg-red-500 hover:text-white"
-                title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL_PENDING')
-                  ? 'Only matching filtered records will be deleted'
-                  : 'Deletes all records permanently'}>
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                {actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}
-              </button>
-            </div>
-          )}
         </div>
       </div>
 

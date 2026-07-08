@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import {
   FileText, Clock, CheckCircle, AlertCircle,
   ChevronRight, Wrench, Zap, Wind, Building2, Circle,
   CalendarDays, MapPin, RefreshCw, ExternalLink, Navigation,
-  ClipboardList, Phone,
+  ClipboardList, Phone, Menu, Moon, Sun,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -13,7 +13,7 @@ import FleetMap from '../components/FleetMap'
 import GlobalSearch from '../components/GlobalSearch'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
 import { inferCategoryFromTicket, isFieldCategory } from '../constants/ticketCategories'
-import { isPortalAdmin } from '../utils/api'
+import { isPortalAdmin, formatBranchName } from '../utils/api'
 
 import { 
   FiSearch, 
@@ -153,11 +153,14 @@ function ticketsLink(ticketId?: string, status?: string) {
 }
 
 export default function Dashboard() {
+  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
   const navigate = useNavigate()
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
+  const activeBranchId = localStorage.getItem('ashcol-global-branch-id')
+  const activeBranchName = activeBranchId ? formatBranchName(activeBranchId) : 'TAGUIG - SALES'
   const isCustomer = role === 'customer'
   const isEmployee = role === 'employee' || role === 'oic'
   const isAdminOrManager = isPortalAdmin(role) || role === 'manager'
@@ -638,10 +641,32 @@ export default function Dashboard() {
   /* ── Customer, manager, admin dashboard (original flow) ──────── */
   return (
     <div className="w-full h-full flex flex-col font-sans">
+
+      {/* Mobile Top Header (< md) */}
+      <header className="flex md:hidden items-center justify-between w-full p-4 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0">
+        <button
+          onClick={() => setSidebarOpen?.(true)}
+          className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="flex flex-col items-center justify-center">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">OVERVIEW</span>
+          <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+            {activeBranchName}
+          </span>
+        </div>
+        <button
+          onClick={toggleTheme}
+          className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-colors"
+        >
+          {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
+        </button>
+      </header>
       
       {/* 1. Full-width Hero Header (Compacted to match global header) */}
       <header 
-        className="relative flex justify-between items-start py-4 px-8 border-b z-10 sticky top-0 transition-colors shrink-0"
+        className="relative hidden md:flex justify-between items-start py-4 px-8 border-b z-10 sticky top-0 transition-colors shrink-0"
         style={{
           backgroundColor: isLight ? '#ffffff' : '#0a1120',
           borderColor: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)'
@@ -660,7 +685,7 @@ export default function Dashboard() {
         {/* Center: Title (Absolutely positioned to stay centered) */}
         <div className="absolute left-1/2 -translate-x-1/2 text-center pt-1 pointer-events-none">
           <h2 className="text-lg font-bold uppercase tracking-widest transition-colors" style={{ color: isLight ? '#111827' : '#ffffff' }}>Overview</h2>
-          <p className="text-sm uppercase tracking-wider font-medium mt-1 transition-colors" style={{ color: isLight ? '#9ca3af' : '#6b7280' }}>Branch - Bulacan</p>
+          <p className="text-sm uppercase tracking-wider font-medium mt-1 transition-colors" style={{ color: isLight ? '#9ca3af' : '#6b7280' }}>{activeBranchName}</p>
         </div>
 
         {/* Right: Date & Controls */}

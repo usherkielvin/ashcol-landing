@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -2001,9 +2001,10 @@ function buildCellPatchBody(
 }
 
 export default function Tickets() {
-  const { theme } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const { user }  = useAuth()
   const location = useLocation()
+  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const isMyTickets = location.pathname === '/my-tickets'
   const isLight    = theme === 'light'
 
@@ -5995,8 +5996,31 @@ export default function Tickets() {
           </div>
         )) : (
           /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 md:px-8">
-            <div className="max-w-4xl w-full mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
+          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#0a1120]">
+            {/* Mobile Top Header (< md) */}
+            <header className="flex md:hidden items-center justify-between w-full p-4 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0">
+              <button
+                onClick={() => setSidebarOpen?.(true)}
+                className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="flex flex-col items-center justify-center">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">OVERVIEW</span>
+                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {isPortalAdmin(user?.role) && localStorage.getItem('ashcol-global-branch-id') ? (localStorage.getItem('ashcol-global-branch-id') === 'BR-TAGUIG-SERVICES' ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES') : 'TAGUIG - SALES'}
+                </span>
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-colors"
+              >
+                {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
+              </button>
+            </header>
+
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 md:px-8 bg-transparent">
+              <div className="max-w-4xl w-full mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
               
               {/* Header Section */}
               <div className="text-center">
@@ -6154,6 +6178,7 @@ export default function Tickets() {
 
             </div>
           </div>
+        </div>
         )}
       </div>
 
