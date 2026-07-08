@@ -49,8 +49,18 @@ export function patchTabCache<T extends object>(key: string, patch: Partial<T>):
 
 export type SchedulesTabCache = { tickets: unknown[]; lastSyncAt?: number }
 
+/** Survives route unmount within the same SPA session (localStorage can miss / lag). */
+const schedulesMemory = new Map<string, SchedulesTabCache>()
+
 export function readSchedulesTabCache(key: string): SchedulesTabCache | null {
-  return readTabCache<SchedulesTabCache>(key)
+  const mem = schedulesMemory.get(key)
+  if (mem && Array.isArray(mem.tickets)) return mem
+  const disk = readTabCache<SchedulesTabCache>(key)
+  if (disk && Array.isArray(disk.tickets)) {
+    schedulesMemory.set(key, disk)
+    return disk
+  }
+  return disk
 }
 
 export function storedPortalUser(): { role?: string | null; branchId?: string | null } | null {
@@ -112,16 +122,19 @@ export function getInitialSchedulesFromCache(
     tickets,
     hasCache,
     cacheKey,
-    sessionLoaded: isSchedulesSessionLoaded(cacheKey),
+    sessionLoaded: isSchedulesSessionLoaded(cacheKey) || hasCache,
   }
 }
 
 export function writeSchedulesTabCache(key: string, tickets: unknown[], source: 'server' | 'local'): void {
-  const existing = readTabCache<SchedulesTabCache>(key)
-  writeTabCache(key, {
+  const existing = readSchedulesTabCache(key)
+  const next: SchedulesTabCache = {
     tickets,
     lastSyncAt: source === 'server' ? Date.now() : existing?.lastSyncAt,
-  })
+  }
+  schedulesMemory.set(key, next)
+  writeTabCache(key, next)
+  markSchedulesSessionLoaded(key)
 }
 
 export function schedulesCacheKey(
@@ -232,14 +245,21 @@ export function warrantyCacheIsFresh(branchId?: string): boolean {
 
 export function clearSchedulesCache(): void {
   try {
+    schedulesMemory.clear()
     const keysToRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && key.startsWith('schedules:')) {
+      if (key && (key.startsWith('ashcol-cache:schedules:') || key.startsWith('schedules:'))) {
         keysToRemove.push(key)
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k))
+    const sessionKeys: string[] = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key && key.startsWith('ashcol-schedules-loaded:')) sessionKeys.push(key)
+    }
+    sessionKeys.forEach(k => sessionStorage.removeItem(k))
   } catch (e) {
     console.warn('Error clearing schedules cache:', e)
   }
@@ -287,13 +307,10 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
 
   try {
     const normalized = normalizeRelayScheduleTicket(ticket)
+    const PREFIX = 'ashcol-cache:'
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (!key || (!key.startsWith('relays:') && !key.startsWith('schedules:'))) continue
-
-      const cached = readTabCache<{ tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }>(key)
-      if (!Array.isArray(cached?.tickets)) continue
+    const touchKey = (logicalKey: string, cached: { tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }) => {
+      if (!Array.isArray(cached?.tickets)) return
 
       const hadRow = cached.tickets.some((t: unknown) => String((t as { id?: string })?.id) === id)
       let tickets = cached.tickets.map((t: unknown) => {
@@ -301,13 +318,34 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
         return { ...(t as object), ...normalized }
       })
 
-      if (key.startsWith('relays:')) {
+      if (logicalKey.startsWith('relays:')) {
         tickets = tickets.filter((t: unknown) => !shouldExcludeRelayFromTab(t as Record<string, unknown>))
-      } else if (!hadRow && !shouldExcludeRelayFromTab(normalized)) {
+      } else if (logicalKey.startsWith('schedules:') && !hadRow && !shouldExcludeRelayFromTab(normalized)) {
         tickets = [normalized, ...tickets]
       }
 
-      writeTabCache(key, { ...cached, tickets, lastSyncAt: Date.now() })
+      const next = { ...cached, tickets, lastSyncAt: Date.now() }
+      if (logicalKey.startsWith('schedules:')) {
+        schedulesMemory.set(logicalKey, { tickets, lastSyncAt: next.lastSyncAt })
+        markSchedulesSessionLoaded(logicalKey)
+      }
+      writeTabCache(logicalKey, next)
+    }
+
+    for (const [memKey, memVal] of schedulesMemory.entries()) {
+      touchKey(memKey, memVal)
+    }
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const rawKey = localStorage.key(i)
+      if (!rawKey) continue
+      const logicalKey = rawKey.startsWith(PREFIX) ? rawKey.slice(PREFIX.length) : rawKey
+      if (!logicalKey.startsWith('relays:') && !logicalKey.startsWith('schedules:')) continue
+      if (logicalKey.startsWith('schedules:') && schedulesMemory.has(logicalKey)) continue
+
+      const cached = readTabCache<{ tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }>(logicalKey)
+      if (!cached) continue
+      touchKey(logicalKey, cached)
     }
 
     window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { ticketId: id, ticket: normalized } }))

@@ -4151,13 +4151,18 @@ export default function Tickets() {
     if (!user) return
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKeyForTab()
-    const cached = readTabCache<SchedulesTabCache>(cacheKey)
+    const cached = readSchedulesTabCache(cacheKey)
     const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
-    const cacheAt = cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
+    const cacheAt = cached?.lastSyncAt ?? cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
     const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
     const hasCache = Array.isArray(cached?.tickets)
-    const sessionLoaded = isSchedulesSessionLoaded(cacheKey)
-    const showSkeleton = !options?.soft && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
+    const sessionLoaded = isSchedulesSessionLoaded(cacheKey) || hasCache
+    // Soft / quiet refreshes must never show the full-page loading UI.
+    const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
+    if (options?.soft || options?.quiet || hasCache || sessionLoaded || hasLoadedOnceRef.current) {
+      setLoading(false)
+      setHasHydratedOnce(true)
+    }
 
     const applyOptimisticOverlay = (list: Ticket[]) => {
       const normalized = normalizeRelayScheduleTicketList(list)
@@ -4236,11 +4241,16 @@ export default function Tickets() {
 
   useEffect(() => {
     const hadCache = hydrateFromTabCache()
-    void fetchTickets({ soft: hadCache || hasLoadedOnceRef.current, force: !hadCache, quiet: true })
+    // Always soft after first paint / cache hit so remounts never flash the full loading screen.
+    void fetchTickets({
+      soft: true,
+      force: !hadCache && !hasLoadedOnceRef.current,
+      quiet: true,
+    })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
-    if (!hasLoadedOnceRef.current || isMyTickets) return
+    if (isMyTickets) return
     const hadCache = hydrateFromTabCache()
     void fetchTickets({ soft: true, quiet: true, force: !hadCache })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
@@ -4248,6 +4258,7 @@ export default function Tickets() {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === 'visible' && hasLoadedOnceRef.current) {
+        // Quiet background refresh only — never hard loading UI.
         void fetchTickets({ soft: true, force: true, quiet: true })
       }
     }
@@ -5699,7 +5710,7 @@ export default function Tickets() {
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
-          loading && !hasHydratedOnce && tickets.length === 0 ? (
+          loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
                style={{ backgroundColor: cardBg }}>
             <div className="relative flex items-center justify-center w-36 h-36">
