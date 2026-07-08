@@ -803,7 +803,9 @@ export default function DashboardLayout() {
             ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
             : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+              : currentPage === 'HRIS'
+                ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
+                : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}
           {!isLight && (

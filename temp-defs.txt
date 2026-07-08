@@ -1,0 +1,93 @@
+﻿    const leaveRequestResponsiveColumns: ResponsiveColumnDef<LeaveRequest>[] = [
+      {
+        header: 'Request ID',
+        accessorKey: 'id',
+        isMobileVisible: true,
+        cellRenderer: (req) => <span className="font-mono text-xs text-gray-500">{req.id.substring(0, 8).toUpperCase()}</span>
+      },
+      {
+        header: 'Employee Name',
+        accessorKey: 'employeeId',
+        isMobileVisible: true,
+        cellRenderer: (req) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(req.employeeId)}</span>
+      },
+      {
+        header: 'Leave Type',
+        accessorKey: 'leaveType',
+        isMobileVisible: true,
+      },
+      {
+        header: 'Start Date',
+        accessorKey: 'startDate',
+        isMobileVisible: false,
+      },
+      {
+        header: 'End Date',
+        accessorKey: 'endDate',
+        isMobileVisible: false,
+      },
+      {
+        header: 'Status',
+        accessorKey: 'status',
+        isMobileVisible: true,
+        cellRenderer: (req) => (
+          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+            style={{
+              backgroundColor: req.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : req.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)',
+              color: req.status === 'PENDING' ? '#F59E0B' : req.status === 'APPROVED' ? '#3B82F6' : '#EF4444'
+            }}
+          >
+            {req.status}
+          </span>
+        )
+      },
+      {
+        header: 'Approved By',
+        accessorKey: 'approvedBy',
+        isMobileVisible: false,
+      },
+      {
+        header: 'Approved At',
+        accessorKey: 'approvedAt',
+        isMobileVisible: false,
+      },
+    ]
+
+    const leaveBalancesResponsiveColumns: ResponsiveColumnDef<LeaveBalance>[] = [
+      {
+        header: 'Employee Name',
+        accessorKey: 'employeeId',
+        isMobileVisible: true,
+        cellRenderer: (bal) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(bal.employeeId)}</span>
+      },
+      {
+        header: 'Year',
+        accessorKey: 'year',
+        isMobileVisible: true,
+      },
+      {
+        header: 'Vacation',
+        accessorKey: 'vacation',
+        isMobileVisible: false,
+      },
+      {
+        header: 'Sick',
+        accessorKey: 'sick',
+        isMobileVisible: false,
+      },
+      {
+        header: 'Emergency',
+        accessorKey: 'emergency',
+        isMobileVisible: false,
+      },
+      {
+        header: 'Used',
+        accessorKey: 'used',
+        isMobileVisible: false,
+      }
+    ]
+
+    return (
+      <>
+        {/* Desktop View (Completely isolated) */}
+        <div className="hidden md:block">

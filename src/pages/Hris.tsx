@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'rea
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
+import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
   FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
-  Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2
+  Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2, ChevronRight
 } from 'lucide-react'
 
-// ── Types ──────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface User {
   id: string
   name: string
@@ -130,12 +131,12 @@ export default function Hris() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [employeeNameInput, setEmployeeNameInput] = useState('')
 
-  // ── Helper: Get JWT Token ─────────────────────────────────────────
+  // â”€â”€ Helper: Get JWT Token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const getToken = useCallback((): string => {
     return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
   }, [])
 
-  // ── Fetch Operations ──────────────────────────────────────────────
+  // â”€â”€ Fetch Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchData = useCallback(async () => {
     setError(null)
     const token = getToken()
@@ -170,7 +171,7 @@ export default function Hris() {
     fetchData()
   }, [fetchData])
 
-  // ── User ID Helper ───────────────────────────────────────────────
+  // â”€â”€ User ID Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const getUserName = (userId: string) => {
     const found = users.find(u => u.id === userId)
     return found ? found.name : 'Unknown Employee'
@@ -193,7 +194,7 @@ export default function Hris() {
     return found ? getBranchDisplayName(found.branchId || null) : 'N/A'
   }
 
-  // ── Action Handlers ───────────────────────────────────────────────
+  // â”€â”€ Action Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   
   // Scan Driver Sheet (Vision OCR)
   const handleScanDriverSheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -456,7 +457,7 @@ export default function Hris() {
     } catch (err) { /* ignore */ }
   }
 
-  // ── Leaves Computations (Excel Summary) ───────────────────────────
+  // â”€â”€ Leaves Computations (Excel Summary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const filteredLeaves = useMemo(() => {
     return leaves.filter(l => {
       const matchesSearch = getUserName(l.employeeId).toLowerCase().includes(searchQuery.toLowerCase())
@@ -472,7 +473,7 @@ export default function Hris() {
     return { total, pending, approved }
   }, [filteredLeaves])
 
-  // ── Cash Advances Computations (Excel Summary) ────────────────────
+  // â”€â”€ Cash Advances Computations (Excel Summary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const activeBranchFilter = useMemo(() => {
     const role = (user?.role || '').toLowerCase()
     if (isPortalAdmin(role)) {
@@ -516,7 +517,7 @@ export default function Hris() {
     }
   }, [filteredAdvances])
 
-  // ── CSS Injection for spreadsheet cells ───────────────────────────
+  // â”€â”€ CSS Injection for spreadsheet cells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const id = 'excel-workspace-styles'
     if (document.getElementById(id)) return
@@ -534,9 +535,98 @@ export default function Hris() {
     document.head.appendChild(style)
   }, [])
 
+  const leaveRequestResponsiveColumns: ResponsiveColumnDef<LeaveRequest>[] = [
+    {
+      header: 'Request ID',
+      accessorKey: 'id',
+      isMobileVisible: true,
+      cellRenderer: (req) => <span className="font-mono text-xs text-gray-500">{req.id.substring(0, 8).toUpperCase()}</span>
+    },
+    {
+      header: 'Employee Name',
+      accessorKey: 'employeeId',
+      isMobileVisible: true,
+      cellRenderer: (req) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(req.employeeId)}</span>
+    },
+    {
+      header: 'Leave Type',
+      accessorKey: 'leaveType',
+      isMobileVisible: true,
+    },
+    {
+      header: 'Start Date',
+      accessorKey: 'startDate',
+      isMobileVisible: false,
+    },
+    {
+      header: 'End Date',
+      accessorKey: 'endDate',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      isMobileVisible: true,
+      cellRenderer: (req) => (
+        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+          style={{
+            backgroundColor: req.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : req.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)',
+            color: req.status === 'PENDING' ? '#F59E0B' : req.status === 'APPROVED' ? '#3B82F6' : '#EF4444'
+          }}
+        >
+          {req.status}
+        </span>
+      )
+    },
+    {
+      header: 'Approved By',
+      accessorKey: 'approvedBy',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Approved At',
+      accessorKey: 'approvedAt',
+      isMobileVisible: false,
+    },
+  ]
+
+  const leaveBalancesResponsiveColumns: ResponsiveColumnDef<LeaveBalance>[] = [
+    {
+      header: 'Employee Name',
+      accessorKey: 'employeeId',
+      isMobileVisible: true,
+      cellRenderer: (bal) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(bal.employeeId)}</span>
+    },
+    {
+      header: 'Year',
+      accessorKey: 'year',
+      isMobileVisible: true,
+    },
+    {
+      header: 'Vacation (Allocated)',
+      accessorKey: 'vacationAllocated',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Sick (Allocated)',
+      accessorKey: 'sickAllocated',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Emergency (Allocated)',
+      accessorKey: 'emergencyAllocated',
+      isMobileVisible: false,
+    }
+  ]
+
   return (
-    <div
-      className="flex flex-col gap-5 min-h-full"
+    <>
+      {/* ────────────────────────────────────────────────────────────
+          DESKTOP VIEW (FORKED)
+          ──────────────────────────────────────────────────────────── */}
+      <div className="hidden md:block">
+      <div
+        className="flex flex-col gap-5 min-h-full"
       style={{
         fontFamily: "'Inter', sans-serif",
         backgroundColor: pageBg,
@@ -550,7 +640,7 @@ export default function Hris() {
         ['--excel-tab-active-bg' as any]: cardBg,
       }}
     >
-      {/* ── Title Header ────────────────────────────────────────── */}
+      {/* â”€â”€ Title Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-black tracking-tight mb-1 flex items-center gap-2.5">
@@ -563,7 +653,7 @@ export default function Hris() {
         </div>
       </div>
 
-      {/* ── Error Banner ────────────────────────────────────────── */}
+      {/* â”€â”€ Error Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {error && (
         <div
           className="flex items-center gap-3 p-4 rounded-xl"
@@ -578,7 +668,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Excel style sheet tabs ───────────────────────────────── */}
+      {/* â”€â”€ Excel style sheet tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="excel-tab-bar">
           {[
@@ -614,7 +704,7 @@ export default function Hris() {
               <Search className="absolute left-3.5 top-3 w-4 h-4" style={{ color: textMuted }} />
               <input
                 type="text"
-                placeholder="Search employee name…"
+                placeholder="Search employee nameâ€¦"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
@@ -737,7 +827,7 @@ export default function Hris() {
           </div>
         </div>
 
-        {/* ── Leaves Grid Table View ─────────────────────────────── */}
+        {/* â”€â”€ Leaves Grid Table View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'leaves' && (
           <>
             <div className="overflow-x-auto">
@@ -782,8 +872,8 @@ export default function Hris() {
                           {l.status}
                         </span>
                       </td>
-                      <td>{l.approvedBy ? getUserName(l.approvedBy) : '—'}</td>
-                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : '—'}</td>
+                      <td>{l.approvedBy ? getUserName(l.approvedBy) : 'â€”'}</td>
+                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : 'â€”'}</td>
                       <td>
                         {l.status === 'PENDING' ? (
                           <div className="flex items-center gap-1">
@@ -859,7 +949,7 @@ export default function Hris() {
           </>
         )}
 
-        {/* ── Cash Advances Grid Table View ───────────────────────── */}
+        {/* â”€â”€ Cash Advances Grid Table View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'advances' && (
           <div className="overflow-x-auto">
             <table className="excel-table">
@@ -881,8 +971,8 @@ export default function Hris() {
                     <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
                     <td className="font-semibold">{getUserName(a.employeeId)}</td>
                     <td className="text-xs font-semibold text-slate-500">{getBranchDisplayName(a.branchId || null)}</td>
-                    <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
+                    <td className="font-semibold">â‚±{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || 'â€”'}</td>
                     <td>
                       <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
                         style={{
@@ -963,7 +1053,7 @@ export default function Hris() {
                 {/* Excel Summary Row */}
                 <tr className="excel-total-row">
                   <td colSpan={3}>Grand Total:</td>
-                  <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td className="font-bold text-emerald-600 dark:text-emerald-400">â‚±{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
                 </tr>
               </tbody>
@@ -971,7 +1061,7 @@ export default function Hris() {
           </div>
         )}
 
-        {/* ── Drivers Sheets List View ───────────────────────────── */}
+        {/* â”€â”€ Drivers Sheets List View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'drivers' && (
           <div className="overflow-x-auto">
             <table className="excel-table">
@@ -995,12 +1085,12 @@ export default function Hris() {
                 }).map(s => (
                   <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="font-semibold">{s.driverName}</td>
-                    <td>{s.branch || '—'}</td>
-                    <td>{s.position || '—'}</td>
-                    <td className="font-medium">{s.cutOffPeriod || '—'}</td>
-                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}</td>
-                    <td>{s.validatedBy || '—'}</td>
-                    <td className="font-bold">{s.totalApprovedOt || '—'}</td>
+                    <td>{s.branch || 'â€”'}</td>
+                    <td>{s.position || 'â€”'}</td>
+                    <td className="font-medium">{s.cutOffPeriod || 'â€”'}</td>
+                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : 'â€”'}</td>
+                    <td>{s.validatedBy || 'â€”'}</td>
+                    <td className="font-bold">{s.totalApprovedOt || 'â€”'}</td>
                     <td>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -1031,8 +1121,237 @@ export default function Hris() {
           </div>
         )}
       </div>
+      </div>
+      </div>
+      {/* ────────────────────────────────────────────────────────────
+          END DESKTOP VIEW
+          ──────────────────────────────────────────────────────────── */}
 
-      {/* ── Modals: Apply Leave ──────────────────────────────────── */}
+      {/* ────────────────────────────────────────────────────────────
+          MOBILE VIEW (FORKED)
+          ──────────────────────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col w-full bg-slate-50 dark:bg-slate-950 min-h-screen">
+        
+        {/* Part 1: Mobile Header (Static, scrolls away) */}
+        <div className="w-full bg-white dark:bg-slate-900 px-5 pt-5 pb-2">
+          <h2 className="text-2xl font-black tracking-tight flex items-center gap-2.5 text-gray-900 dark:text-white">
+            <FileSpreadsheet className="w-7 h-7 text-[#10B981]" />
+            HRIS Ledger
+          </h2>
+        </div>
+
+        {/* Sticky Tab Bar */}
+        <div className="w-full bg-white dark:bg-slate-900 sticky top-0 z-40 border-b border-gray-200 dark:border-slate-700 shadow-sm">
+          <div className="flex w-full overflow-x-auto no-scrollbar px-5">
+          {[
+            { id: 'leaves', mobileLabel: 'Leaves', icon: Calendar },
+            { id: 'advances', mobileLabel: 'Cash Advances', icon: CreditCard },
+            { id: 'drivers', mobileLabel: 'Drivers', icon: FileSpreadsheet }
+          ].map(tab => {
+            const TabIcon = tab.icon
+            const active = activeTab === tab.id
+            return (
+              <div
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as any)
+                  setStatusFilter('ALL')
+                  setSearchQuery('')
+                }}
+                className={`flex-shrink-0 whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                  active 
+                    ? 'text-green-700 border-b-2 border-green-500 dark:text-green-400 dark:border-green-400' 
+                    : 'text-gray-500 border-b-2 border-transparent hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <TabIcon className="w-4 h-4" />
+                <span>{tab.mobileLabel}</span>
+              </div>
+            )
+          })}
+          </div>
+        </div>
+
+        {/* Main Mobile Content Area */}
+        <div className="w-full px-5 py-4 flex flex-col gap-4 dark:bg-slate-950">
+          {/* Scrolling Search/Filters */}
+          <div className="flex flex-col gap-3">
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search employee name..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/40 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+          <div className="relative w-full">
+            <Filter className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl text-sm font-bold appearance-none border border-gray-200 bg-white focus:outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            >
+              <option value="ALL">Status: All</option>
+              <option value="PENDING">PENDING</option>
+              <option value="APPROVED">APPROVED</option>
+              {activeTab === 'leaves' ? (
+                <option value="REJECTED">REJECTED</option>
+              ) : (
+                <>
+                  <option value="DISBURSED">DISBURSED</option>
+                  <option value="REJECTED">REJECTED</option>
+                </>
+              )}
+            </select>
+          </div>
+        </div>
+
+        {/* Part 2: Mobile Leaves Sheet */}
+        {activeTab === 'leaves' && (
+          <div className="flex flex-col gap-4 mt-2">
+            <button
+              onClick={() => setShowLeaveModal(true)}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Apply Leave
+            </button>
+            {/* Summary Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">Total</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white">{leavesSummary.total}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-emerald-500 mb-1">Approved</p>
+                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{leavesSummary.approved}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-amber-500 mb-1">Pending</p>
+                <p className="text-lg font-black text-amber-600 dark:text-amber-400">{leavesSummary.pending}</p>
+              </div>
+            </div>
+
+            {/* Mobile Tables */}
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Requests</h3>
+              <ResponsiveTable columns={leaveRequestResponsiveColumns} data={filteredLeaves} />
+            </div>
+
+            <div className="mt-4">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Balances</h3>
+              <ResponsiveTable columns={leaveBalancesResponsiveColumns} data={balances} />
+            </div>
+          </div>
+        )}
+
+        {/* Part 3: Mobile Cash Advances Sheet */}
+        {activeTab === 'advances' && (
+          <div className="flex flex-col gap-3 mt-2">
+            <button
+              onClick={() => setShowAdvanceModal(true)}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Request Cash Advance
+            </button>
+            {filteredAdvances.map(a => (
+              <div
+                key={a.id}
+                onClick={() => {
+                  setSelectedAdvance(a)
+                  setShowDetailsModal(true)
+                }}
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(a.employeeId)}</span>
+                  <span className="font-bold text-green-700 dark:text-green-500">
+                    ₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-500 dark:text-slate-400 truncate mb-3">
+                  {a.purpose || '-'}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400 dark:text-slate-500">
+                    {new Date(a.createdAt).toLocaleString('en-US', {
+                      month: 'short',
+                      day: '2-digit',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </span>
+                  <div className="flex items-center">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+                      style={{
+                        backgroundColor: a.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : a.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : a.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                        color: a.status === 'PENDING' ? '#F59E0B' : a.status === 'APPROVED' ? '#3B82F6' : a.status === 'DISBURSED' ? '#10B981' : '#EF4444'
+                      }}
+                    >
+                      {a.status}
+                    </span>
+                    <ChevronRight className="w-3 h-3 ml-1 text-gray-400 dark:text-slate-500" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Part 4: Mobile Drivers Monitoring Ledger */}
+        {activeTab === 'drivers' && (
+          <div className="flex flex-col mt-2">
+            <button
+              onClick={() => {
+                setEditingSheet({
+                  driverId: '',
+                  helperIds: [],
+                  plateNumber: '',
+                  dateRange: '',
+                  cutOffPeriod: '',
+                  validatedBy: '',
+                  totalApprovedOt: '',
+                  remarksOic: '',
+                  idleTimeRemarks: '',
+                  rows: Array.from({ length: 7 }, (_, i) => ({
+                    logDate: `June ${i + 2}`,
+                    postedSchedule: '7:00 AM',
+                    bioTimeIn: '',
+                    bioTimeOut: '',
+                    departureTime: '',
+                    arrivalTime: '',
+                    sites: []
+                  }))
+                })
+                setShowDriverSheetModal(true)
+              }}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium mb-4 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add Driver Sheet
+            </button>
+            {driverSheets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <FileSpreadsheet className="w-12 h-12 text-gray-300 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-gray-500 dark:text-slate-400 font-medium mb-1">No driver sheets found</p>
+                <button className="w-full max-w-[250px] mt-4 bg-green-600 hover:bg-green-700 text-white rounded-lg py-3 font-bold transition-colors">
+                  + Import Scan (Pic/PDF)
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                {/* Normally we'd map populated cards here, but prompt just requested empty state. */}
+                <p className="text-gray-500 dark:text-slate-400">Populated driver sheets view.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        </div>
+      </div>
+
+      {/* â”€â”€ Modals: Apply Leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showLeaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeaveModal(false)} />
@@ -1084,7 +1403,7 @@ export default function Hris() {
                   rows={3}
                   value={leaveReason}
                   onChange={e => setLeaveReason(e.target.value)}
-                  placeholder="State the reason for leave request…"
+                  placeholder="State the reason for leave requestâ€¦"
                   className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
@@ -1111,7 +1430,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Modals: Request Cash Advance ─────────────────────────── */}
+      {/* â”€â”€ Modals: Request Cash Advance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showAdvanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAdvanceModal(false)} />
@@ -1136,7 +1455,7 @@ export default function Hris() {
                 <input
                   type="text"
                   required
-                  placeholder="Type employee name…"
+                  placeholder="Type employee nameâ€¦"
                   value={employeeNameInput}
                   onChange={e => {
                     setEmployeeNameInput(e.target.value)
@@ -1177,7 +1496,7 @@ export default function Hris() {
               <div>
                 <label className="text-xs font-bold mb-1.5 block" style={{ color: textPrimary }}>Requested Amount (PHP)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₱</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">â‚±</span>
                   <input
                     type="number"
                     required
@@ -1199,7 +1518,7 @@ export default function Hris() {
                   rows={3}
                   value={advancePurpose}
                   onChange={e => setAdvancePurpose(e.target.value)}
-                  placeholder="State the reason or purpose of this cash advance request…"
+                  placeholder="State the reason or purpose of this cash advance requestâ€¦"
                   className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
@@ -1227,7 +1546,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Modals: Confirm Cash Advance Status Change ───────────── */}
+      {/* â”€â”€ Modals: Confirm Cash Advance Status Change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {confirmingAdvance && confirmingStatus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setConfirmingAdvance(null); setConfirmingStatus(null); }} />
@@ -1249,7 +1568,7 @@ export default function Hris() {
             <div className="space-y-4">
               <div className="text-xs text-slate-400 font-semibold space-y-1">
                 <p>Employee: <span className="font-bold" style={{ color: textPrimary }}>{getUserName(confirmingAdvance.employeeId)}</span></p>
-                <p>Amount: <span className="font-bold" style={{ color: textPrimary }}>₱{confirmingAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
+                <p>Amount: <span className="font-bold" style={{ color: textPrimary }}>â‚±{confirmingAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
               </div>
 
               <div>
@@ -1294,7 +1613,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Modals: View Cash Advance Details ────────────────────── */}
+      {/* â”€â”€ Modals: View Cash Advance Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showDetailsModal && selectedAdvance && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDetailsModal(false); setSelectedAdvance(null); }} />
@@ -1341,7 +1660,7 @@ export default function Hris() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Amount</span>
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">₱{selectedAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">â‚±{selectedAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Submitted At</span>
@@ -1374,7 +1693,7 @@ export default function Hris() {
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 block">Reviewed By</span>
                     <span className="font-semibold" style={{ color: textPrimary }}>
-                      {selectedAdvance.approvedBy ? getUserName(selectedAdvance.approvedBy) : '—'}
+                      {selectedAdvance.approvedBy ? getUserName(selectedAdvance.approvedBy) : 'â€”'}
                     </span>
                   </div>
                   <div>
@@ -1387,7 +1706,7 @@ export default function Hris() {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true
-                      }) : '—'}
+                      }) : 'â€”'}
                     </span>
                   </div>
                   {selectedAdvance.disbursedAt && (
@@ -1432,7 +1751,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Modals: Driver Route Sheet Preview/Edit ─────────────── */}
+      {/* â”€â”€ Modals: Driver Route Sheet Preview/Edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showDriverSheetModal && editingSheet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} />
@@ -1767,6 +2086,7 @@ export default function Hris() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
+
