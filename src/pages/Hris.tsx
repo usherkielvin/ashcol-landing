@@ -1753,7 +1753,9 @@ export default function Hris() {
 
       {/* â”€â”€ Modals: Driver Route Sheet Preview/Edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showDriverSheetModal && editingSheet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <>
+          {/* ── DESKTOP MODAL (hidden on mobile) ── */}
+          <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} />
           <div className="relative w-full max-w-6xl rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <h3 className="text-lg font-black mb-4">Drivers Daily Route Monitoring & Overtime Form</h3>
@@ -2085,6 +2087,132 @@ export default function Hris() {
             </form>
           </div>
         </div>
+
+        {/* ── MOBILE FORM (full-screen, md:hidden) ── */}
+        <div className="md:hidden fixed inset-0 z-40 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-y-auto pt-16">
+          {/* Part 1: Header & Metadata Inputs */}
+          <div className="w-full bg-white px-4 pt-5 pb-3 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-gray-900 leading-tight">Drivers Route & Overtime Form</h3>
+              <button type="button" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} className="p-2 -mr-2 rounded-full bg-slate-100 text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveDriverSheet} className="flex flex-col flex-1 pb-4">
+            <div className="grid grid-cols-1 gap-4 w-full px-4 pt-4">
+              {[
+                { label: 'Driver Name', key: 'driverName', type: 'text', required: true },
+                { label: 'Branch', key: 'branch', type: 'text' },
+                { label: 'Position', key: 'position', type: 'text' },
+                { label: 'Filed By', key: 'filedBy', type: 'text' },
+                { label: 'Date Filed', key: 'dateFiled', type: 'date' },
+                { label: 'Cut-Off Period', key: 'cutOffPeriod', type: 'text', placeholder: 'E.g., June 2-8, 2026' },
+                { label: 'Validated By', key: 'validatedBy', type: 'text' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{f.label}</label>
+                  <input
+                    type={f.type}
+                    required={f.required}
+                    placeholder={f.placeholder}
+                    value={(editingSheet as any)[f.key] || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, [f.key]: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Part 2: The Horizontal Scrolling Timesheet */}
+            <div className="w-full overflow-x-auto no-scrollbar border border-gray-200 rounded-lg shadow-sm bg-white my-4">
+              <table className="min-w-max w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-left">Date</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-left">Schedule</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Bio In</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Bio Out</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Garage Dep</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center border-r border-gray-200">Garage Arr</th>
+                    {['1ST','2ND','3RD','4TH','5TH'].map((n, i) => (
+                      <th key={i} colSpan={4} className={`whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-center border-r border-gray-200 ${
+                        i===0 ? 'bg-emerald-50 text-emerald-700'
+                        : i===1 ? 'bg-blue-50 text-blue-700'
+                        : i===2 ? 'bg-purple-50 text-purple-700'
+                        : i===3 ? 'bg-amber-50 text-amber-700'
+                        : 'bg-rose-50 text-rose-700'
+                      }`}>{n} SITE VISIT</th>
+                    ))}
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <th colSpan={6} className="border-r border-gray-200"></th>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Fragment key={i}>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-left">CX Name</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center">Arrival</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center">Departure</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center border-r border-gray-200">Idle</th>
+                      </Fragment>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(editingSheet.rows || []).map((row: any, rIdx: number) => (
+                    <tr key={rIdx} className="hover:bg-slate-50">
+                      <td className="px-2 py-1"><input type="text" value={row.logDate || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].logDate=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.postedSchedule || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].postedSchedule=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.bioTimeIn || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].bioTimeIn=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.bioTimeOut || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].bioTimeOut=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.departureTime || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].departureTime=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={row.arrivalTime || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].arrivalTime=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      {Array.from({ length: 5 }).map((_, sIdx) => {
+                        const site = row.sites?.[sIdx] || { cxName: '', arrival: '', departure: '', idleTime: '' }
+                        const updateSite = (field: string, val: string) => {
+                          const nr = [...editingSheet.rows]
+                          if (!nr[rIdx].sites) nr[rIdx].sites = []
+                          while (nr[rIdx].sites.length <= sIdx) nr[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                          nr[rIdx].sites[sIdx][field] = val
+                          setEditingSheet({ ...editingSheet, rows: nr })
+                        }
+                        return (
+                          <Fragment key={sIdx}>
+                            <td className="px-2 py-1"><input type="text" value={site.cxName || ''} onChange={e => updateSite('cxName', e.target.value)} className="w-full min-w-[140px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1"><input type="text" value={site.arrival || ''} onChange={e => updateSite('arrival', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1"><input type="text" value={site.departure || ''} onChange={e => updateSite('departure', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={site.idleTime || ''} onChange={e => updateSite('idleTime', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                          </Fragment>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Part 3: Bottom Metrics & Action Controls */}
+            <div className="flex flex-col gap-4 w-full px-4">
+              {[
+                { label: 'Total Approved OT', key: 'totalApprovedOt' },
+                { label: 'Remarks of OIC/BC', key: 'remarksOic' },
+                { label: 'Idle Time Remarks', key: 'idleTimeRemarks' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{f.label}</label>
+                  <input type="text" value={(editingSheet as any)[f.key] || ''} onChange={e => setEditingSheet({ ...editingSheet, [f.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/40" />
+                </div>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col-reverse gap-3 w-full px-4 pt-4 pb-12">
+              <button type="button" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} className="w-full py-3.5 text-center font-medium rounded-lg text-base bg-slate-100 text-slate-700">Cancel</button>
+              <button type="submit" className="w-full py-3.5 text-center font-medium rounded-lg text-base text-white bg-[#10B981] hover:bg-green-600 active:scale-[0.99] transition-all">Save Route Sheet</button>
+            </div>
+          </form>
+        </div>
+        </>
       )}
     </>
   )

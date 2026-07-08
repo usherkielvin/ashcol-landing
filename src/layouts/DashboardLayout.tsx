@@ -736,7 +736,7 @@ export default function DashboardLayout() {
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         {currentPage !== 'Overview' && (
           <header 
-            className="flex-none z-20 backdrop-blur-md"
+            className="flex-none z-50 backdrop-blur-md"
             style={{ 
               backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)',
               borderBottom: `1px solid ${border}` 
