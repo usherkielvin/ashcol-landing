@@ -36,6 +36,7 @@ import {
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
+import { ScheduleEditTicketModal } from '../components/schedules/ScheduleEditTicketModal'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -2930,6 +2931,8 @@ export default function Tickets() {
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editOriginalDate, setEditOriginalDate] = useState('')
+  const [editInitialStatus, setEditInitialStatus] = useState('')
+  const [editFormSnapshot, setEditFormSnapshot] = useState('')
 
   useEffect(() => {
     if (!editModalOpen || branches.length > 0) return
@@ -3656,7 +3659,9 @@ export default function Tickets() {
   const openEditModal = (ticket: Ticket) => {
     const preferred = getPreferredDateKey(ticket)
     const status = getScheduleStatusValue(ticket)
+    const payment = resolveTicketPayment(ticket)
     setEditOriginalDate(preferred)
+    setEditInitialStatus(status)
     setEditTicket(ticket)
     const rawBranch = ticket.branchId || ticket.branch_id || ''
     const resolvedBranch = resolveBranch(rawBranch)
@@ -3679,14 +3684,15 @@ export default function Tickets() {
       controlNumber: ticket.controlNumber || ticket.control_number || '',
       ticketCategory: inferCategoryFromTicket(ticket),
       status,
-      installationCharges: ticket.installationCharges ?? ticket.installation_charges,
-      modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment,
+      installationCharges: ticket.installationCharges ?? ticket.installation_charges ?? payment.amount,
+      modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment ?? payment.mode,
       remarks: ticket.remarks || ticket.remarksUpdate || '',
       acDetails: ticket.acDetails || ticket.ac_details,
       rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
       reschedulePending: isReschedulePending(ticket),
     }
     setEditForm(form)
+    setEditFormSnapshot(JSON.stringify(form))
     setEditModalOpen(true)
   }
 
@@ -3696,7 +3702,41 @@ export default function Tickets() {
     setConfirmModal(null)
   }, [])
 
+  const requestCloseEditModal = useCallback(() => {
+    if (JSON.stringify(editForm) !== editFormSnapshot) {
+      setConfirmModal({
+        title: 'Discard changes?',
+        message: 'Unsaved edits on this ticket will be lost.',
+        detail: editForm.customerName?.trim() || undefined,
+        variant: 'discard',
+        confirmText: 'Discard',
+        cancelText: 'Keep Editing',
+        onConfirm: () => closeEditModal(),
+      })
+      return
+    }
+    closeEditModal()
+  }, [closeEditModal, editForm, editFormSnapshot])
 
+  const patchScheduleEditForm = useCallback((patch: Partial<typeof editForm>) => {
+    setEditForm(prev => {
+      const next = { ...prev, ...patch }
+      if (patch.branchId !== undefined) {
+        next.branchId = resolveBranch(patch.branchId)?.id || patch.branchId
+      }
+      if (patch.negotiatorId !== undefined) {
+        const foundEmp = editModalNegotiators.find(emp => emp.id === patch.negotiatorId)
+        const negoBranchId = foundEmp?.branchId
+          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
+          : prev.branchId
+        if (negoBranchId) next.branchId = negoBranchId
+      }
+      if (patch.branchId !== undefined && patch.negotiatorId === '') {
+        next.negotiatorId = ''
+      }
+      return next
+    })
+  }, [editModalNegotiators, resolveBranch])
 
   const openAddModal = () => {
     const form = {
@@ -4156,6 +4196,15 @@ export default function Tickets() {
     } finally {
       setEditSaving(false)
     }
+  }
+
+  const promptSaveEditTicket = () => {
+    const error = validateEditFormFor(editForm)
+    if (error) {
+      alert(error)
+      return
+    }
+    void commitSaveEditTicket()
   }
 
   const resolveImportBranchId = useCallback((ticketBranchId?: string) => {
@@ -8937,7 +8986,7 @@ export default function Tickets() {
         document.body,
       )}
 
-      {editModalOpen && editTicket && (
+      {editModalOpen && editTicket && activeTab === 'overview' && (
         <RelayEditTicketModal
           ticket={editTicket}
           ticketNumberLabel={editTicket.ticketNumber || editTicket.ticket_number || editTicket.id}
@@ -8983,6 +9032,44 @@ export default function Tickets() {
             assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
             assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
           }}
+        />
+      )}
+
+      {editModalOpen && editTicket && activeTab !== 'overview' && (
+        <ScheduleEditTicketModal
+          form={editForm}
+          onChange={patchScheduleEditForm}
+          editOriginalDate={editOriginalDate}
+          editInitialStatus={editInitialStatus}
+          isLight={isLight}
+          isTaguigServices={isTaguigServices}
+          canEdit={canEdit}
+          saving={editSaving}
+          cardBg={cardBg}
+          border={border}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          green={green}
+          branches={branches}
+          negotiators={editModalNegotiators}
+          driverRoster={editModalRoster.drivers}
+          installerRoster={editModalRoster.installers}
+          formatBranchLabel={formatAssignedBranchLabel}
+          formatNegotiatorLabel={formatNegotiatorLabel}
+          formatDateLabel={formatDateKeyLabel}
+          getStatusLabel={getScheduleStatusLabel}
+          getStatusBadgeStyle={getScheduleStatusBadgeStyle}
+          ticketHasPaymentInfo={ticketHasPaymentInfo}
+          qualifiesForInstallComplete={(form) => qualifiesForInstallComplete(form, { remarksUpdate: form.remarks, remarks: form.remarks, installationCharges: form.installationCharges, modeOfPayment: form.modeOfPayment })}
+          onOpenStatusPicker={(anchor) => {
+            const formTicket = (tickets.find(t => t.id === editForm.id) || editTicket) as Ticket
+            openStatusPicker(formTicket, 'edit-form', anchor)
+          }}
+          onClose={requestCloseEditModal}
+          onDelete={canEdit ? () => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } } : undefined}
+          onSave={promptSaveEditTicket}
         />
       )}
 
