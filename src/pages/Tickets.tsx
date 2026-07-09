@@ -1169,9 +1169,10 @@ function resolveTicketPaymentAmount(ticket: Ticket): number | undefined {
 
 function resolveTicketPaymentModeRaw(ticket: Ticket): string {
   const meta = parseAcMeta(ticket)
+  const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
   return (
     getF(ticket, 'modeOfPayment', 'mode_of_payment')
-    || String(meta.modeOfPayment || meta.paymentStatus || meta.paymentMode || '').trim()
+    || String(ext.paymentStatus || ext.paymentMode || meta.modeOfPayment || meta.paymentStatus || meta.paymentMode || '').trim()
   )
 }
 
@@ -1201,6 +1202,27 @@ function formatPaymentAmount(ticket: Ticket): string {
   const amount = resolveTicketPayment(ticket).amount
   if (amount == null) return ''
   return amount.toLocaleString('en-PH')
+}
+
+function getSchedulePaymentDisplay(ticket: Ticket): string {
+  const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
+  const modeRaw = (
+    ticket.modeOfPayment
+    ?? ticket.mode_of_payment
+    ?? ext.paymentStatus
+    ?? ext.paymentMode
+    ?? ''
+  ).trim()
+  const mode = normalizeImportPaymentMode(modeRaw) || modeRaw.toUpperCase()
+  const amount = parseImportMoney(
+    ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged,
+  )
+  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
+  const amountStr = amount != null && amount > 0 ? amount.toLocaleString('en-PH') : ''
+  if (mode && amountStr) return `${mode} ${amountStr}`
+  if (mode) return mode
+  if (amountStr) return amountStr
+  return formatCombinedPayment(ticket)
 }
 
 function formatCombinedPayment(ticket: Ticket): string {
@@ -5162,9 +5184,22 @@ export default function Tickets() {
         commit: getF(ticket, 'commitType', 'commitTerms', 'description'),
         installer: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
         update: getScheduleUpdateDisplay(ticket),
-        payment: formatCombinedPayment(ticket),
+        payment: getSchedulePaymentDisplay(ticket),
       }))
   }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId])
+
+  const showcasePaymentByRowId = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const ticket of visible) {
+      if (dateFilter && isScheduleGhostOnDate(ticket, dateFilter)) continue
+      const payment = getSchedulePaymentDisplay(ticket)
+      if (!payment) continue
+      const ticketNo = getTicketNumberDisplay(ticket)
+      if (ticketNo) map[ticketNo] = payment
+      if (ticket.id) map[String(ticket.id)] = payment
+    }
+    return map
+  }, [visible, dateFilter])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -5180,7 +5215,7 @@ export default function Tickets() {
       case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
       case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
       case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
-      case 'PAYMENT':         return formatCombinedPayment(ticket)
+      case 'PAYMENT':         return getSchedulePaymentDisplay(ticket)
       case 'MOP':             return getPaymentMode(ticket)
       case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
       case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
@@ -6409,7 +6444,7 @@ export default function Tickets() {
     }
 
     if (label === 'PAYMENT') {
-      const combined = formatCombinedPayment(ticket)
+      const combined = getSchedulePaymentDisplay(ticket)
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
       if (cellExpanded) {
@@ -9358,6 +9393,7 @@ export default function Tickets() {
           dateKey={dateFilter || ''}
           isTaguigServices={isTaguigServices}
           rows={showcaseRows}
+          paymentByRowId={showcasePaymentByRowId}
         />
       )}
     </div>

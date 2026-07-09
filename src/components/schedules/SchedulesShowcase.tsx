@@ -25,6 +25,8 @@ type SchedulesShowcaseProps = {
   dateKey?: string
   isTaguigServices: boolean
   rows: ScheduleShowcaseRow[]
+  /** Live payment text keyed by showcase row id — used at PDF export time. */
+  paymentByRowId?: Record<string, string>
 }
 
 const HEADER_GREEN = '#16a34a'
@@ -41,6 +43,18 @@ function showcaseCellText(value: string): string {
   const trimmed = (value || '').trim()
   if (!trimmed || trimmed === '—') return '—'
   return trimmed.replace(/\s+/g, ' ')
+}
+
+function pdfCellText(value: string): string {
+  const trimmed = (value || '').trim()
+  if (!trimmed || trimmed === '—') return ''
+  return trimmed.replace(/\s+/g, ' ').toUpperCase()
+}
+
+function resolveRowPayment(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>): string {
+  const fromMap = paymentByRowId?.[row.id]?.trim()
+  if (fromMap) return fromMap
+  return (row.payment || '').trim()
 }
 
 function parseDateMeta(dateKey: string, dateLabel: string) {
@@ -71,9 +85,7 @@ function buildHeaders(isTaguigServices: boolean) {
   const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
   return [
     'NAME',
-    'DESTINATION',
     'DISTRICT',
-    'CONTACT NO.',
     'BRAND',
     dealerLabel,
     'STATUS',
@@ -84,32 +96,47 @@ function buildHeaders(isTaguigServices: boolean) {
   ]
 }
 
-function rowToCells(row: ScheduleShowcaseRow) {
+function rowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
+  const payment = resolveRowPayment(row, paymentByRowId)
   return [
     showcaseCellText(row.name),
-    showcaseCellText(row.destination),
     showcaseCellText(row.district),
-    showcaseCellText(row.contact),
     showcaseCellText(row.brand),
     showcaseCellText(row.dealer),
     showcaseCellText(row.status),
     showcaseCellText(row.commit),
     showcaseCellText(row.installer),
     showcaseCellText(row.update),
-    showcaseCellText(row.payment),
+    showcaseCellText(payment),
   ]
 }
 
-function buildBody(rows: ScheduleShowcaseRow[]) {
-  return rows.map(row => rowToCells(row))
+function rowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
+  const payment = resolveRowPayment(row, paymentByRowId)
+  return [
+    pdfCellText(row.name),
+    pdfCellText(row.district),
+    pdfCellText(row.brand),
+    pdfCellText(row.dealer),
+    pdfCellText(row.status),
+    pdfCellText(row.commit),
+    pdfCellText(row.installer),
+    pdfCellText(row.update),
+    pdfCellText(payment),
+  ]
+}
+
+function buildBody(rows: ScheduleShowcaseRow[], paymentByRowId?: Record<string, string>) {
+  return rows.map(row => rowToPdfCells(row, paymentByRowId))
 }
 
 const PDF_BW_TABLE = {
   theme: 'grid' as const,
   styles: {
     font: 'helvetica',
-    fontSize: 6.6,
-    cellPadding: 0.055,
+    fontSize: 7,
+    cellPadding: 0.09,
+    minCellHeight: 0.32,
     lineColor: [0, 0, 0] as [number, number, number],
     lineWidth: 0.012,
     textColor: [0, 0, 0] as [number, number, number],
@@ -122,8 +149,9 @@ const PDF_BW_TABLE = {
     textColor: [0, 0, 0] as [number, number, number],
     fontStyle: 'bold' as const,
     halign: 'center' as const,
-    fontSize: 6,
-    cellPadding: 0.06,
+    fontSize: 6.5,
+    cellPadding: 0.08,
+    minCellHeight: 0.26,
     lineColor: [0, 0, 0] as [number, number, number],
   },
 }
@@ -165,8 +193,9 @@ async function exportShowcasePdfDocument(options: {
   dateKey: string
   isTaguigServices: boolean
   rows: ScheduleShowcaseRow[]
+  paymentByRowId?: Record<string, string>
 }) {
-  const { filename, dateLabel, dateKey, isTaguigServices, rows } = options
+  const { filename, dateLabel, dateKey, isTaguigServices, rows, paymentByRowId } = options
   const { jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
 
@@ -174,7 +203,7 @@ async function exportShowcasePdfDocument(options: {
   const pageWidth = pdf.internal.pageSize.getWidth()
   const tableWidth = pageWidth - PDF_MARGIN_X * 2
   const headers = buildHeaders(isTaguigServices)
-  const body = buildBody(rows)
+  const body = buildBody(rows, paymentByRowId)
 
   const drawDateHeader = () => drawPdfDateTable(pdf, autoTable, dateKey, dateLabel)
   let tableStartY = drawDateHeader() + 0.14
@@ -186,29 +215,19 @@ async function exportShowcasePdfDocument(options: {
     head: [headers],
     body: rows.length > 0
       ? body
-      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']],
+      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '']],
     showHead: 'everyPage',
     ...PDF_BW_TABLE,
     columnStyles: {
-      0: { cellWidth: 1.12 },
-      1: { cellWidth: 2.55 },
-      2: { halign: 'center', cellWidth: 0.68 },
-      3: { halign: 'center', cellWidth: 0.78 },
-      4: { cellWidth: 0.88 },
-      5: { cellWidth: 0.78 },
+      0: { cellWidth: 1.35 },
+      1: { halign: 'center', cellWidth: 0.82 },
+      2: { cellWidth: 0.95 },
+      3: { cellWidth: 0.82 },
+      4: { halign: 'center', cellWidth: 0.82 },
+      5: { cellWidth: 1.05 },
       6: { halign: 'center', cellWidth: 0.82 },
-      7: { cellWidth: 0.92 },
-      8: { halign: 'center', cellWidth: 0.75 },
-      9: { cellWidth: 2.55 },
-      10: { halign: 'right', cellWidth: 1.05, fontStyle: 'bold' },
-    },
-    didParseCell: (data) => {
-      if (data.section === 'body') {
-        const raw = String(data.cell.raw ?? '').trim()
-        if (raw && raw !== '—') {
-          data.cell.text = [raw.toUpperCase()]
-        }
-      }
+      7: { cellWidth: 2.55 },
+      8: { halign: 'right', cellWidth: 3.26, fontStyle: 'bold', overflow: 'linebreak' as const },
     },
     didDrawPage: (data) => {
       if (data.pageNumber > 1) {
@@ -233,6 +252,7 @@ export function SchedulesShowcase({
   dateKey = '',
   isTaguigServices,
   rows,
+  paymentByRowId,
 }: SchedulesShowcaseProps) {
   const [exportingPdf, setExportingPdf] = useState(false)
   const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
@@ -266,6 +286,7 @@ export function SchedulesShowcase({
         dateKey,
         isTaguigServices,
         rows,
+        paymentByRowId,
       })
     } catch (err) {
       console.error('Schedules PDF export failed', err)
@@ -273,7 +294,7 @@ export function SchedulesShowcase({
     } finally {
       setExportingPdf(false)
     }
-  }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, rows])
+  }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, paymentByRowId, rows])
 
   if (!open) return null
 
@@ -469,24 +490,24 @@ export function SchedulesShowcase({
                         </td>
                       </tr>
                     ) : rows.map(row => {
-                      const cells = rowToCells(row)
+                      const cells = rowToCells(row, paymentByRowId)
                       return (
                         <tr key={`${row.index}-${row.id}`}>
                           {cells.map((value, cellIdx) => {
-                            const isUpdate = cellIdx === 9
-                            const isDestination = cellIdx === 1
+                            const isUpdate = cellIdx === 7
                             const isName = cellIdx === 0
-                            const isCommit = cellIdx === 7
-                            const isPayment = cellIdx === 10
-                            const wrap = isUpdate || isDestination || isName || isCommit || isPayment
-                            const center = [2, 3, 6, 8].includes(cellIdx)
+                            const isCommit = cellIdx === 5
+                            const isPayment = cellIdx === 8
+                            const isBrand = cellIdx === 2
+                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand
+                            const center = [1, 4, 6].includes(cellIdx)
                             return (
                               <td
                                 key={cellIdx}
                                 style={{
                                   border: `1px solid ${TABLE_BORDER}`,
-                                  padding: '6px 7px',
-                                  fontSize: isUpdate ? '10px' : '9.5px',
+                                  padding: '8px 7px',
+                                  fontSize: isUpdate || isPayment ? '10px' : '9.5px',
                                   fontWeight: isPayment ? 700 : 500,
                                   color: INK,
                                   backgroundColor: PAPER,
@@ -494,8 +515,8 @@ export function SchedulesShowcase({
                                   textAlign: isPayment ? 'right' : center ? 'center' : 'left',
                                   whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
                                   wordBreak: wrap ? 'break-word' : 'normal',
-                                  minWidth: isUpdate ? 200 : isDestination ? 180 : undefined,
-                                  lineHeight: 1.35,
+                                  minWidth: isUpdate ? 220 : isPayment ? 160 : undefined,
+                                  lineHeight: 1.4,
                                 }}
                               >
                                 {value}
