@@ -1347,6 +1347,27 @@ function findTicketInListByRef(
   return list.find(t => normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === tn) || null
 }
 
+function computeSafePopoverPosition(
+  anchor: DOMRect,
+  popoverW: number,
+  popoverH: number,
+  align: 'left' | 'center' | 'right' = 'left',
+): { left: number; top: number; width: number } {
+  const margin = 8
+  const width = Math.min(popoverW, window.innerWidth - margin * 2)
+  const height = popoverH
+  let left = anchor.left
+  if (align === 'right') left = anchor.right - width
+  else if (align === 'center') left = anchor.left + anchor.width / 2 - width / 2
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin))
+  let top = anchor.bottom + 4
+  if (top + height > window.innerHeight - margin) {
+    const above = anchor.top - height - 4
+    top = above >= margin ? above : Math.max(margin, window.innerHeight - height - margin)
+  }
+  return { left, top, width }
+}
+
 function applyImportFieldsFromRow(
   row: Pick<
     ImportUnmatchedRow,
@@ -1593,6 +1614,14 @@ function getBranchDisplayName(id: string | null): string {
     name = name.slice(7).trim()
   }
   return name
+}
+
+/** Format negotiator for dropdown: FIRSTNAME (BRANCH_SHORT), e.g. BEVERLYN (RIZAL) */
+function formatNegotiatorLabel(emp: { name?: string | null; branchId?: string | null }): string {
+  const fullName = (emp.name || '').trim()
+  const firstName = fullName.split(/\s+/)[0].toUpperCase()
+  const branch = getBranchDisplayName(emp.branchId || null)
+  return branch ? `${firstName} (${branch})` : firstName
 }
 
 function todayDateKey() {
@@ -2215,6 +2244,11 @@ export default function Tickets() {
       : [],
   )
   const [loading, setLoading] = useState(() => !initialSchedulesReady)
+  const [syncing, setSyncing] = useState(() => {
+    if (!initialSchedulesReady) return true
+    const init = initialSchedulesRef.current
+    return !(init?.hasCache && Array.isArray(init.tickets) && init.tickets.length > 0)
+  })
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress]       = useState(0)
 
@@ -2249,6 +2283,7 @@ export default function Tickets() {
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
+  const [expandedPopoverPos, setExpandedPopoverPos] = useState<{ left: number; top: number; width: number } | null>(null)
   const pendingSavesRef = useRef(new Map<string, PendingTicketSave>())
   const activeSavesRef = useRef(new Set<string>())
   /** Local optimistic tickets that must survive in-flight list refreshes until PATCH/POST settles. */
@@ -2289,6 +2324,7 @@ export default function Tickets() {
 
     setTickets(normalizeRelayScheduleTicketList(list))
     setLoading(false)
+    setSyncing(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     const cacheKey = schedulesCacheKeyForTab()
@@ -4237,9 +4273,9 @@ export default function Tickets() {
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
-      const popover = tableScrollRef.current?.querySelector('[data-expanded-popover="true"]')
+      const popover = document.querySelector('[data-expanded-popover="true"]')
       if (popover?.contains(target)) return
-      const cell = tableScrollRef.current?.querySelector(
+      const cell = document.querySelector(
         `[data-cell-key="${expandedCell.ticketId}:${expandedCell.colLabel}"]`,
       )
       if (cell?.contains(target)) return
@@ -4255,6 +4291,41 @@ export default function Tickets() {
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [expandedCell])
+
+  useLayoutEffect(() => {
+    if (!expandedCell) {
+      setExpandedPopoverPos(null)
+      return
+    }
+
+    const position = () => {
+      const cell = document.querySelector(
+        `[data-cell-key="${expandedCell.ticketId}:${expandedCell.colLabel}"]`,
+      ) as HTMLElement | null
+      if (!cell) return
+      const align: 'left' | 'center' | 'right' =
+        expandedCell.colLabel === 'UPDATE' || expandedCell.colLabel === 'PAYMENT'
+          ? 'right'
+          : expandedCell.colLabel === 'DESTINATION'
+            ? 'left'
+            : 'left'
+      const anchor = cell.getBoundingClientRect()
+      const baseW = Math.min(380, window.innerWidth - 16)
+      const popover = document.querySelector('[data-expanded-popover="true"]') as HTMLElement | null
+      const h = popover?.offsetHeight || 120
+      setExpandedPopoverPos(computeSafePopoverPosition(anchor, baseW, h, align))
+    }
+
+    position()
+    const raf = requestAnimationFrame(position)
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
     }
   }, [expandedCell])
 
@@ -4318,12 +4389,17 @@ export default function Tickets() {
     const cacheAt = cached?.lastSyncAt ?? cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
     const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
     const hasCache = Array.isArray(cached?.tickets)
+    const cacheHasRows = hasCache && (cached!.tickets as Ticket[]).length > 0
     const sessionLoaded = isSchedulesSessionLoaded(cacheKey) || hasCache
+    const skipNetwork = Boolean(options?.soft && !options?.force && cacheFresh && cacheHasRows)
     // Soft / quiet refreshes must never show the full-page loading UI.
     const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
-    if (options?.soft || options?.quiet || hasCache || sessionLoaded || hasLoadedOnceRef.current) {
+    if ((options?.soft || options?.quiet || hasCache || sessionLoaded || hasLoadedOnceRef.current) && !skipNetwork) {
       setLoading(false)
       setHasHydratedOnce(true)
+    }
+    if (!skipNetwork) {
+      setSyncing(true)
     }
 
     const applyOptimisticOverlay = (list: Ticket[]) => {
@@ -4359,11 +4435,12 @@ export default function Tickets() {
       return merged
     }
 
-    if (options?.soft && !options?.force && cacheFresh && hasCache) {
+    if (skipNetwork) {
       setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       setLoading(false)
+      setSyncing(false)
       markSchedulesSessionLoaded(cacheKey)
       return
     }
@@ -4403,6 +4480,7 @@ export default function Tickets() {
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
+        setSyncing(false)
       }
     }
   }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
@@ -6304,11 +6382,11 @@ export default function Tickets() {
                   <tr>
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3 py-6">
-                        {loading ? (
+                        {(loading || syncing) && !searchQuery ? (
                           <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
                             <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
                             <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
-                              Synching to the database...
+                              Syncing with portal database...
                             </p>
                           </div>
                         ) : (
@@ -6447,23 +6525,6 @@ export default function Tickets() {
                                 <div className={`min-w-0 overflow-hidden ${col.align === 'center' ? 'w-auto max-w-full' : 'w-full'}`}>
                                   {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                 </div>
-                                {isExpandedCell && (
-                                  <div
-                                    data-expanded-popover="true"
-                                    className="absolute left-0 top-full z-[140] mt-1 w-[min(22rem,calc(100vw-2rem))] max-w-[380px] rounded-lg border px-3 py-2 text-xs"
-                                    style={{
-                                      backgroundColor: cardBg,
-                                      borderColor: inputBorder,
-                                      boxShadow: isLight
-                                        ? '0 8px 24px rgba(15,23,42,0.12)'
-                                        : '0 8px 24px rgba(0,0,0,0.35)',
-                                    }}
-                                    onClick={e => e.stopPropagation()}
-                                    onPointerDown={e => e.stopPropagation()}
-                                  >
-                                    {renderCell(ticket, col, idx, isGhost, ghostKind, true)}
-                                  </div>
-                                )}
                               </div>
                             )}
                           </td>
@@ -7977,10 +8038,10 @@ export default function Tickets() {
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
                     >
                       <option value="">
-                        {addModalNegotiators.length ? `-- Select ${activeBranchLabel} negotiator --` : '-- No negotiators for this branch --'}
+                        {addModalNegotiators.length ? 'Select negotiator' : 'No negotiators for this branch'}
                       </option>
                       {addModalNegotiators.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
                       ))}
                     </select>
                     {addModalNegotiators.length === 0 && (
@@ -8175,12 +8236,10 @@ export default function Tickets() {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-50"
                       style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
                     >
-                      <option value="">{editForm.branchId ? '-- Select OIC / negotiator --' : 'Select branch first'}</option>
-                      {editModalNegotiators.map(emp => {
-                        const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
-                        return <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
-                      })}
+                      <option value="">{editForm.branchId ? 'Select negotiator' : 'Select branch first'}</option>
+                      {editModalNegotiators.map(emp => (
+                        <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                      ))}
                     </select>
                   </Field>
                 </div>
@@ -8495,6 +8554,43 @@ export default function Tickets() {
       })(), document.body)}
 
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
+
+      {expandedCell && expandedPopoverPos && (() => {
+        const ticket = tickets.find(t => t.id === expandedCell.ticketId)
+          || optimisticTicketsRef.current.get(expandedCell.ticketId)
+        if (!ticket) return null
+        const col = columns.find(c => c.label === expandedCell.colLabel)
+        if (!col) return null
+        const idx = visible.findIndex(t => t.id === ticket.id)
+        const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
+        const isGhost = Boolean(ghostKind)
+        return ReactDOM.createPortal(
+          <div
+            data-expanded-popover="true"
+            className="rounded-lg border px-3 py-2 text-xs"
+            style={{
+              position: 'fixed',
+              left: expandedPopoverPos.left,
+              top: expandedPopoverPos.top,
+              width: expandedPopoverPos.width,
+              maxWidth: 'calc(100vw - 1rem)',
+              maxHeight: 'min(320px, calc(100vh - 1rem))',
+              overflowY: 'auto',
+              zIndex: 14000,
+              backgroundColor: cardBg,
+              borderColor: inputBorder,
+              boxShadow: isLight
+                ? '0 8px 24px rgba(15,23,42,0.12)'
+                : '0 8px 24px rgba(0,0,0,0.35)',
+            }}
+            onClick={e => e.stopPropagation()}
+            onPointerDown={e => e.stopPropagation()}
+          >
+            {renderCell(ticket, col, idx >= 0 ? idx : undefined, isGhost, ghostKind, true)}
+          </div>,
+          document.body,
+        )
+      })()}
 
       {reschedDialog && (() => {
         const todayKey = todayDateKey()

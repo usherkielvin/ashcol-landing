@@ -426,8 +426,10 @@ export function isNegotiatorCandidate(user: {
   const roleLower = (user.role || '').toLowerCase().replace(/\s+/g, '_')
   const jobLower = (user.jobTitle || '').toLowerCase()
   if (roleLower === 'customer') return false
+  // Exclude portal-level admins (system admins, management accounts) — they are not branch OICs
+  if (roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator') return false
 
-  const officeRoles = ['admin', 'management', 'administrator', 'manager', 'oic', 'employee', 'staff']
+  const officeRoles = ['manager', 'oic', 'employee', 'staff']
   if (officeRoles.includes(roleLower)) return true
   if (
     jobLower.includes('oic')
