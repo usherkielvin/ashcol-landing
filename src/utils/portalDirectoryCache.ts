@@ -40,8 +40,8 @@ export async function fetchCachedEmployees(
   options?: { force?: boolean },
 ): Promise<Array<Record<string, unknown>>> {
   const key = employeesKey(role)
+  const cached = readTabCacheEntry<Array<Record<string, unknown>>>(key)
   if (!options?.force) {
-    const cached = readTabCacheEntry<Array<Record<string, unknown>>>(key)
     if (cached && isTabCacheFresh(cached.savedAt)) {
       return cached.data
     }

@@ -2397,6 +2397,42 @@ export default function Tickets() {
       .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
       .catch(() => setBranches([]))
   }, [])
+
+  const resolveBranch = useCallback((branchIdOrName?: string | null) => {
+    if (!branchIdOrName) return null
+    let found = branches.find(b => b.id === branchIdOrName)
+    if (found) return found
+    found = branches.find(b => b.name.toLowerCase() === branchIdOrName.toLowerCase())
+    if (found) return found
+    const idLower = branchIdOrName.toLowerCase()
+    let keyword = ''
+    if (idLower === '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-calauan') keyword = 'calauan'
+    else if (idLower === '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-silang') keyword = 'silang'
+    else if (idLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || idLower === 'br-taguig-sales' || idLower === 'br-taguig-services' || idLower === 'br-taguig') keyword = 'taguig'
+    else if (idLower === '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-rizal') keyword = 'rizal'
+    else if (idLower === '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-pampanga') keyword = 'pampanga'
+    else if (idLower === '2880c407-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-bulacan') keyword = 'bulacan'
+    else if (idLower === '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-dasma') keyword = 'dasma'
+    else if (idLower === '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-candelaria') keyword = 'candelaria'
+    if (keyword) {
+      found = branches.find(b => b.name.toLowerCase().includes(keyword))
+      if (found) return found
+    }
+    found = branches.find(b => b.name.toLowerCase().includes(idLower) || idLower.includes(b.name.toLowerCase()))
+    return found || null
+  }, [branches])
+
+  const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
+    const resolved = resolveBranch(branchId)
+    if (!resolved && !branchId) return '—'
+    const id = (resolved?.id || branchId || '').toUpperCase()
+    const name = resolved?.name || ''
+    if (id === 'BR-TAGUIG-SALES' || id.endsWith('-SALES')) return 'TAGUIG - SALES'
+    if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) {
+      return 'TAGUIG - SERVICES'
+    }
+    return name || getBranchDisplayName(branchId || null)
+  }, [resolveBranch])
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
@@ -2487,6 +2523,13 @@ export default function Tickets() {
       setAddForm(prev => ({ ...prev, negotiatorId: '' }))
     }
   }, [addModalOpen, addModalNegotiators, addForm.negotiatorId])
+
+  useEffect(() => {
+    if (!editModalOpen || !editForm.negotiatorId) return
+    if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
+      setEditForm(prev => ({ ...prev, negotiatorId: '' }))
+    }
+  }, [editModalOpen, editModalNegotiators, editForm.negotiatorId])
 
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
   const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
@@ -3076,6 +3119,8 @@ export default function Tickets() {
     const status = getScheduleStatusValue(ticket)
     setEditOriginalDate(preferred)
     setEditInitialStatus(status)
+    const rawBranch = ticket.branchId || ticket.branch_id || ''
+    const resolvedBranch = resolveBranch(rawBranch)
     const form = {
       id: ticket.id,
       preferredDate: preferred,
@@ -3089,8 +3134,8 @@ export default function Tickets() {
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
       installerName: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
-      negotiatorId: ticket.negotiatorId || ticket.negotiator_id || (isMyTickets && user?.id ? user.id : ''),
-      branchId: ticket.branchId || ticket.branch_id || '',
+      negotiatorId: ticket.negotiatorId || ticket.negotiator_id || ticket.assignedTo || (isMyTickets && user?.id ? user.id : ''),
+      branchId: resolvedBranch?.id || rawBranch || activeBranchId || '',
       ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
       controlNumber: ticket.controlNumber || ticket.control_number || '',
       ticketCategory: inferCategoryFromTicket(ticket),
@@ -3175,6 +3220,12 @@ export default function Tickets() {
       }
     }
     if (!editForm.negotiatorId) return 'Negotiator is required'
+    if (!editForm.branchId?.trim()) return 'Assigned branch is required'
+    const selectedNeg = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
+    if (selectedNeg?.branchId && editForm.branchId
+      && !branchScopesMatch(selectedNeg.branchId, editForm.branchId, selectedNeg.email)) {
+      return 'Negotiator must belong to the assigned branch'
+    }
     if (!editForm.customerName?.trim()) return 'Customer Name is required'
     if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
     if (!editForm.location?.trim()) return 'Destination/Address is required'
@@ -3304,6 +3355,7 @@ export default function Tickets() {
         serviceVehicle: serviceVehicle || undefined,
         installerName: editForm.installerName?.trim() || undefined,
         negotiatorId: editForm.negotiatorId,
+        assignedTo: editForm.negotiatorId,
         ticketNumber: editForm.ticketNumber?.trim() || undefined,
         controlNumber: editForm.controlNumber?.trim() || undefined,
         remarks: remarksVal,
@@ -3311,10 +3363,19 @@ export default function Tickets() {
       }
 
       const selectedNegotiator = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
+      if (!selectedNegotiator) {
+        alert('Select a negotiator for the assigned branch.')
+        return
+      }
+      if (selectedNegotiator.branchId && editForm.branchId
+        && !branchScopesMatch(selectedNegotiator.branchId, editForm.branchId, selectedNegotiator.email)) {
+        alert('Negotiator must belong to the assigned branch.')
+        return
+      }
       const explicitBranch = resolvePortalWriteBranchId(
         editForm.branchId,
-        user?.email,
-        user?.jobTitle,
+        selectedNegotiator?.email || user?.email,
+        selectedNegotiator?.jobTitle || user?.jobTitle,
       ) || (editForm.branchId || '').trim()
       if (explicitBranch) {
         body.branchId = explicitBranch
@@ -6346,9 +6407,10 @@ export default function Tickets() {
                       const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
                       const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
                       const rawBranch = ticket.branchId || ticket.branch_id || null;
-                      const branchLabel = getBranchDisplayName(
+                      const branchLabel = formatAssignedBranchLabel(
                         resolveScopedBranchId(rawBranch) || rawBranch,
                       );
+                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || '—';
                       
                       return (
                         <div 
@@ -6388,6 +6450,12 @@ export default function Tickets() {
                                 <div className="flex items-center gap-1.5">
                                   <span className="font-bold">Contact:</span>
                                   <span>{ticket.contactPhone}</span>
+                                </div>
+                              )}
+                              {negotiatorLabel !== '—' && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold">Negotiator:</span>
+                                  <span>{negotiatorLabel}</span>
                                 </div>
                               )}
                               {ticket.assignedEmployeeName && (
@@ -6548,7 +6616,7 @@ export default function Tickets() {
         const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP'
           ? (isLight ? '#1d4ed8' : '#93c5fd')
           : green
-        const branchName = branches.find(b => b.id === (t.branchId || t.branch_id))?.name || 'UNASSIGNED'
+        const branchName = formatAssignedBranchLabel(t.branchId || t.branch_id)
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
@@ -6602,7 +6670,7 @@ export default function Tickets() {
                        }}>
                          {scheduleStatusDisplay}
                        </span>
-                       {branchName !== 'UNASSIGNED' && (
+                       {branchName && branchName !== '—' && (
                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
                            backgroundColor: inputBg,
                            color: textMuted,
@@ -6698,6 +6766,7 @@ export default function Tickets() {
                    <div>
                      <SHead title="Scheduling Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       <DField label="Assigned Branch" value={branchName} />
                        <DField label="Preferred Date" value={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '—'} />
                        <DField label="Final Schedule" value={finalScheduleDate ? formatDateKeyLabel(finalScheduleDate) : '—'} green />
                        {isCompleted && archivedSched && (
@@ -7878,6 +7947,11 @@ export default function Tickets() {
                     Scheduled: <span style={{ color: textPrimary }}>{formatDateKeyLabel(editOriginalDate)}</span>
                   </p>
                 )}
+                {editForm.branchId ? (
+                  <p className="text-[10px] font-semibold mt-1" style={{ color: textMuted }}>
+                    Branch: <span style={{ color: textPrimary }}>{formatAssignedBranchLabel(editForm.branchId)}</span>
+                  </p>
+                ) : null}
               </div>
               <button onClick={requestCloseEditModal} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
@@ -7933,6 +8007,66 @@ export default function Tickets() {
                 </div>
               </div>
 
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
+                  Branch Assignment
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Assigned Branch" required>
+                    <select
+                      value={editForm.branchId || ''}
+                      onChange={e => {
+                        const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
+                        setEditForm(prev => ({
+                          ...prev,
+                          branchId: nextBranchId,
+                          negotiatorId: '',
+                        }))
+                      }}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">Select branch...</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                    {editForm.branchId ? (
+                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
+                        Currently: {formatAssignedBranchLabel(editForm.branchId)}
+                      </p>
+                    ) : null}
+                  </Field>
+                  <Field label="Negotiator" required>
+                    <select
+                      value={editForm.negotiatorId || ''}
+                      onChange={e => {
+                        const val = e.target.value
+                        const foundEmp = editModalNegotiators.find(emp => emp.id === val)
+                        const negoBranchId = foundEmp?.branchId
+                          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
+                          : editForm.branchId
+                        setEditForm(prev => ({
+                          ...prev,
+                          negotiatorId: val,
+                          branchId: negoBranchId || prev.branchId,
+                        }))
+                      }}
+                      disabled={!editForm.branchId}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-50"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">{editForm.branchId ? '-- Select negotiator --' : 'Select branch first'}</option>
+                      {editModalNegotiators.map(emp => {
+                        const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                        return <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                      })}
+                    </select>
+                  </Field>
+                </div>
+              </div>
+
               {/* Service & Unit Info Section */}
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
@@ -7976,34 +8110,6 @@ export default function Tickets() {
                       onChange={e => setEditForm({ ...editForm, installerName: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  {isTaguigBranchRef(editForm.branchId || activeBranchId) && (
-                    <Field label="Taguig branch" required>
-                      <select
-                        value={
-                          String(editForm.branchId || '').toUpperCase().includes('SERVICE')
-                            ? 'BR-TAGUIG-SERVICES'
-                            : 'BR-TAGUIG-SALES'
-                        }
-                        onChange={e => setEditForm({ ...editForm, branchId: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                      >
-                        <option value="BR-TAGUIG-SALES">TAGUIG - SALES</option>
-                        <option value="BR-TAGUIG-SERVICES">TAGUIG - SERVICES</option>
-                      </select>
-                    </Field>
-                  )}
-                  <Field label="Negotiator" required>
-                    <select value={editForm.negotiatorId || ''}
-                      onChange={e => setEditForm({ ...editForm, negotiatorId: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
-                      <option value="">-- Select negotiator --</option>
-                      {editModalNegotiators.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={editForm.ticketNumber || ''}
