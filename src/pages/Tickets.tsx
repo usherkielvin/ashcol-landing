@@ -10,6 +10,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { hasSchedulesCacheForDate, prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import {
@@ -2413,7 +2414,8 @@ export default function Tickets() {
       : [],
   )
   const [loading, setLoading] = useState(() => !initialSchedulesReady)
-  const [syncing, setSyncing] = useState(() => !initialSchedulesReady || initialSchedules.hasCache)
+  const [syncing, setSyncing] = useState(false)
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false)
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress]       = useState(0)
 
@@ -2500,7 +2502,8 @@ export default function Tickets() {
   // Paint cached rows before first paint when switching branch/date — no loading screen flash.
   useLayoutEffect(() => {
     if (isMyTickets) return
-    hydrateFromTabCache()
+    const hydrated = hydrateFromTabCache()
+    if (hydrated) setSyncing(false)
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
   // ── Weekly Tabs Calculation ───────────────────────────────────────────────
@@ -2524,10 +2527,18 @@ export default function Tickets() {
 
   const handleDateFilterChange = useCallback((next: string) => {
     if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
+    const hasCachedDate = !isMyTickets && hasSchedulesCacheForDate(
+      user,
+      globalBranchId,
+      isCustomer,
+      isAdmin,
+      isMyTickets,
+      next,
+    )
     setDateFilter(next)
-    setSyncing(true)
+    if (!hasCachedDate) setSyncing(true)
     resetTicketTableScroll()
-  }, [])
+  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
 
   useLayoutEffect(() => {
     resetTicketTableScroll()
@@ -2703,6 +2714,15 @@ export default function Tickets() {
       .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
       .catch(() => {})
   }, [editModalOpen, branches.length])
+
+  useEffect(() => {
+    if (!editModalOpen || activeTab !== 'overview') return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [editModalOpen, activeTab])
 
   const resolveSchedulesNegotiatorBranch = useCallback((overrideBranchId?: string | null): string | null => {
     const scoped = (overrideBranchId || '').trim()
@@ -4611,7 +4631,11 @@ export default function Tickets() {
       setHasHydratedOnce(true)
     }
     if (!skipNetwork) {
-      setSyncing(true)
+      if (options?.quiet || hasCache || sessionLoaded) {
+        setBackgroundSyncing(true)
+      } else {
+        setSyncing(true)
+      }
     }
 
     const applyOptimisticOverlay = (list: Ticket[]) => {
@@ -4653,6 +4677,7 @@ export default function Tickets() {
       setHasHydratedOnce(true)
       setLoading(false)
       setSyncing(false)
+      setBackgroundSyncing(false)
       markSchedulesSessionLoaded(cacheKey)
       return
     }
@@ -4693,6 +4718,7 @@ export default function Tickets() {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
         setSyncing(false)
+        setBackgroundSyncing(false)
       }
     }
   }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
@@ -4701,7 +4727,7 @@ export default function Tickets() {
 
   useEffect(() => {
     hydrateFromTabCache()
-    // Always refresh from server on mount / branch change — cache is paint-only.
+    void prefetchSchedulesDateWindow(user, globalBranchId)
     void fetchTickets({
       soft: true,
       force: true,
@@ -4715,7 +4741,8 @@ export default function Tickets() {
       schedulesDateFetchMountedRef.current = true
       return
     }
-    hydrateFromTabCache()
+    const hydrated = hydrateFromTabCache()
+    if (hydrated) setSyncing(false)
     void fetchTickets({ soft: true, quiet: true, force: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
@@ -5153,9 +5180,20 @@ export default function Tickets() {
     const prevTicket = tickets.find(t => t.id === ticketId) || optimisticTicketsRef.current.get(ticketId)
     optimisticTicketsRef.current.set(ticketId, normalized)
 
+    const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
+    const nextDate = resolveTicketScheduleDateKey(normalized)
+
+    const patchCacheForDate = (dateKey: string | undefined, listUpdater: (list: Ticket[]) => Ticket[]) => {
+      if (!dateKey || isMyTickets) return
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets, dateKey)
+      const cached = readSchedulesTabCache(cacheKey)
+      const base = Array.isArray(cached?.tickets) ? (cached!.tickets as Ticket[]) : []
+      const nextList = normalizeRelayScheduleTicketList(listUpdater(base))
+      writeSchedulesTabCache(cacheKey, nextList, 'local')
+      markSchedulesSessionLoaded(cacheKey)
+    }
+
     if (!isMyTickets) {
-      const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
-      const nextDate = resolveTicketScheduleDateKey(normalized)
       if (nextDate && nextDate !== prevDate) {
         handleDateFilterChange(nextDate)
       }
@@ -5166,13 +5204,26 @@ export default function Tickets() {
       const next = exists
         ? prev.map(t => (t.id === ticketId ? normalized : t))
         : [normalized, ...prev]
-      writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+      writeSchedulesTabCache(schedulesCacheKeyForTab(nextDate || dateFilter), next, 'local')
       return next
     })
+
+    if (!isMyTickets) {
+      if (prevDate && prevDate !== nextDate) {
+        patchCacheForDate(prevDate, list => list.filter(t => t.id !== ticketId))
+      }
+      if (nextDate) {
+        patchCacheForDate(nextDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return [normalized, ...without]
+        })
+      }
+    }
+
     setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...normalized } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
-  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange])
+  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange, dateFilter])
 
   const resolveLiveScheduleTicket = useCallback((ticket: Ticket): Ticket => {
     return findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
@@ -6644,7 +6695,7 @@ export default function Tickets() {
           </div>
         ) : (
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {(syncing || loading) && !searchQuery && visible.length > 0 && (
+            {syncing && !backgroundSyncing && !searchQuery && visible.length > 0 && (
               <div
                 className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
                 style={{
@@ -6750,7 +6801,7 @@ export default function Tickets() {
                   <tr>
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3 py-6">
-                        {(loading || syncing) && !searchQuery ? (
+                        {syncing && !backgroundSyncing && !searchQuery ? (
                           <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
                             <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
                             <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
@@ -8542,52 +8593,76 @@ export default function Tickets() {
         }
 
         const isOverviewEdit = activeTab === 'overview'
+        const inp = isOverviewEdit
+          ? 'edit-input font-semibold outline-none focus:ring-2 focus:ring-[#16A34A]'
+          : 'rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full min-w-0 max-w-full box-border'
+        const gridCls = isOverviewEdit
+          ? 'edit-field-grid'
+          : 'grid grid-cols-1 md:grid-cols-2 gap-4'
+        const sectionTitleCls = isOverviewEdit
+          ? 'edit-section-title text-slate-400'
+          : 'text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400'
 
         return (
-        <div className={`fixed inset-0 z-[9999] flex flex-col sm:items-center sm:justify-center sm:p-4 backdrop-blur-sm ${isOverviewEdit ? 'bg-white dark:bg-[#0a1120] sm:bg-slate-900/60' : 'bg-slate-900/60'}`}
-             onClick={e => e.stopPropagation()}>
-          <div className="w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col sm:max-h-[90vh]"
-               style={{ backgroundColor: cardBg, border: isOverviewEdit ? 'none' : `1px solid ${border}` }}
-               onClick={e => e.stopPropagation()}
-               onMouseDown={e => e.stopPropagation()}>
-            <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between safe-area-top" style={{ borderBottom: `1px solid ${border}` }}>
-              <div>
-                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
-                  Edit Ticket Details
+        <div
+          className={`fixed inset-0 z-[9999] flex flex-col overflow-hidden sm:items-center sm:justify-center sm:p-4 backdrop-blur-sm ${isOverviewEdit ? 'bg-white dark:bg-[#0a1120] sm:bg-slate-900/60' : 'bg-slate-900/60'}`}
+          onClick={e => e.stopPropagation()}
+        >
+          <div
+            className={`w-full flex flex-col overflow-hidden shadow-2xl min-h-0 min-w-0 max-w-full ${isOverviewEdit ? 'overview-edit-sheet sm:max-w-3xl sm:rounded-2xl' : 'h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl sm:max-h-[90vh]'}`}
+            style={{ backgroundColor: cardBg, border: isOverviewEdit ? 'none' : `1px solid ${border}` }}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div
+              className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 flex items-start justify-between gap-2 safe-area-top min-w-0"
+              style={{ borderBottom: `1px solid ${border}` }}
+            >
+              <div className="min-w-0 flex-1">
+                <h3 className={`font-black uppercase tracking-wide truncate ${isOverviewEdit ? 'text-xs sm:text-sm' : 'text-sm'}`} style={{ color: textPrimary }}>
+                  Edit Ticket
                 </h3>
-                {editForm.id && (
-                  <p className="text-[10px] font-mono font-semibold mt-1" style={{ color: textMuted }}>
-                    Ticket No: {editForm.ticketNumber || 'Auto on create'}
-                  </p>
-                )}
-                {editOriginalDate && !isReschedStatus && (
-                  <p className="text-[10px] font-semibold mt-1" style={{ color: textMuted }}>
-                    Scheduled: <span style={{ color: textPrimary }}>{formatDateKeyLabel(editOriginalDate)}</span>
-                  </p>
-                )}
-                {editForm.branchId ? (
-                  <p className="text-[10px] font-semibold mt-1" style={{ color: textMuted }}>
-                    Branch: <span style={{ color: textPrimary }}>{formatAssignedBranchLabel(editForm.branchId)}</span>
-                  </p>
-                ) : null}
+                <div className={`flex flex-wrap items-center gap-1.5 mt-1 ${isOverviewEdit ? '' : 'flex-col items-start gap-0.5'}`}>
+                  {editForm.id && (
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}>
+                      {editForm.ticketNumber || 'Auto'}
+                    </span>
+                  )}
+                  {editForm.branchId ? (
+                    <span className="text-[9px] font-bold uppercase tracking-wide truncate max-w-full" style={{ color: textMuted }}>
+                      {formatAssignedBranchLabel(editForm.branchId)}
+                    </span>
+                  ) : null}
+                  {editOriginalDate && !isReschedStatus && (
+                    <span className="text-[9px] font-semibold shrink-0" style={{ color: textMuted }}>
+                      {formatDateKeyLabel(editOriginalDate)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <button onClick={requestCloseEditModal} className="p-2 -mr-1 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30" style={{ color: textMuted }}>
+              <button
+                type="button"
+                onClick={requestCloseEditModal}
+                className="p-1.5 shrink-0 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30"
+                style={{ color: textMuted }}
+                aria-label="Close"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="px-4 sm:px-6 py-4 sm:py-6 overflow-y-auto flex-1 flex flex-col gap-5 sm:gap-6 min-h-0">
+            <div className={`edit-sheet-scroll flex flex-col ${isOverviewEdit ? 'px-3 py-3 gap-3 sm:px-6 sm:py-5 sm:gap-5' : 'px-4 sm:px-6 py-4 sm:py-6 gap-5 sm:gap-6 overflow-y-auto flex-1 min-h-0'}`}>
               <div
-                className="rounded-xl p-4"
-                style={{
+                className={isOverviewEdit ? 'pb-1' : 'rounded-xl p-4'}
+                style={isOverviewEdit ? undefined : {
                   border: `1px solid ${isLight ? 'rgba(22,163,74,0.28)' : 'rgba(74,222,128,0.25)'}`,
                   backgroundColor: isLight ? 'rgba(240,253,244,0.85)' : 'rgba(22,163,74,0.08)',
                 }}
               >
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 text-emerald-600">
-                  Branch & OIC Assignment
+                <h4 className={isOverviewEdit ? 'edit-section-title text-emerald-600' : 'text-[10px] font-black uppercase tracking-wider mb-3 text-emerald-600'}>
+                  Branch & OIC
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={gridCls}>
                   <Field label="Assigned Branch" required>
                     <select
                       value={editForm.branchId || ''}
@@ -8599,15 +8674,15 @@ export default function Tickets() {
                           negotiatorId: '',
                         }))
                       }}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                      className={inp}
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
                     >
                       <option value="">{branches.length ? 'Select branch...' : 'Loading branches...'}</option>
                       {branches.map(b => (
                         <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </select>
-                    {editForm.branchId ? (
+                    {!isOverviewEdit && editForm.branchId ? (
                       <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
                         Currently: {formatAssignedBranchLabel(editForm.branchId)}
                       </p>
@@ -8629,8 +8704,8 @@ export default function Tickets() {
                         }))
                       }}
                       disabled={!editForm.branchId}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-50"
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                      className={`${inp} disabled:opacity-50`}
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
                     >
                       <option value="">{editForm.branchId ? 'Select negotiator' : 'Select branch first'}</option>
                       {editModalNegotiators.map(emp => (
@@ -8641,66 +8716,65 @@ export default function Tickets() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Customer Information
+              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
+                <h4 className={sectionTitleCls}>
+                  Customer
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={gridCls}>
                   {!(editForm.status === 'SCHEDULED' || editForm.status === 'INSTALLATION' || editForm.status === 'RESCHED' || editOriginalDate) && (
                     <Field label="Preferred Date" required>
                       <input type="date" value={editForm.preferredDate || ''}
                         onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                        className={inp}
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                     </Field>
                   )}
                   <Field label="Customer Name" required>
                     <input type="text" value={editForm.customerName || ''} 
                       onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Contact No." required>
                     <input type="text" value={editForm.contactPhone || ''} 
                       onChange={e => setEditForm({ ...editForm, contactPhone: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Destination/Address" required full>
                     <textarea value={editForm.location || ''} 
                       onChange={e => setEditForm({ ...editForm, location: e.target.value })}
-                      rows={2}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      rows={isOverviewEdit ? 2 : 2}
+                      className={`${inp} resize-none`}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="District">
                     <input type="text" value={editForm.district || ''} 
                       onChange={e => setEditForm({ ...editForm, district: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Commit Terms">
                     <textarea value={editForm.commitTerms || ''} 
                       onChange={e => setEditForm({ ...editForm, commitTerms: e.target.value })}
                       rows={1}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={`${inp} resize-none`}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                 </div>
               </div>
 
-              {/* Service & Unit Info Section */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Service & Unit Details
+              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
+                <h4 className={sectionTitleCls}>
+                  Service & Unit
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={gridCls}>
                   <Field label="Ticket Type" required>
                     <select
                       value={editForm.ticketCategory || 'INSTALLATION'}
                       onChange={e => setEditForm({ ...editForm, ticketCategory: e.target.value as TicketCategoryValue })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
                     >
                       {FIELD_TICKET_CATEGORIES.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -8710,22 +8784,22 @@ export default function Tickets() {
                   <Field label="Brand / Unit Type">
                     <input type="text" value={editForm.unitType || ''} 
                       onChange={e => setEditForm({ ...editForm, unitType: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Dealer (DLR)">
                     <input type="text" value={editForm.sourceVendor || ''} 
                       onChange={e => setEditForm({ ...editForm, sourceVendor: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Service / Driver">
                     <input type="text" value={editForm.serviceDriver || ''}
                       list="edit-ticket-driver-roster"
                       placeholder={editModalRoster.drivers.length ? 'Select or type driver…' : 'e.g. T3 (DOMINIC) - 1'}
                       onChange={e => setEditForm({ ...editForm, serviceDriver: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                     <datalist id="edit-ticket-driver-roster">
                       {editModalRoster.drivers.map(name => (
                         <option key={name} value={name} />
@@ -8737,8 +8811,8 @@ export default function Tickets() {
                       list="edit-ticket-installer-roster"
                       placeholder={editModalRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
                       onChange={e => setEditForm({ ...editForm, installerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                     <datalist id="edit-ticket-installer-roster">
                       {editModalRoster.installers.map(name => (
                         <option key={name} value={name} />
@@ -8749,24 +8823,25 @@ export default function Tickets() {
                     <input type="text" value={editForm.ticketNumber || ''}
                       placeholder="e.g. AS-01"
                       onChange={e => setEditForm({ ...editForm, ticketNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Control No. / SI (Aircon)">
                     <input type="text" value={editForm.controlNumber || ''}
-                      placeholder="Aircon papers / SI — leave empty if N/A"
+                      placeholder={isOverviewEdit ? 'Optional' : 'Aircon papers / SI — leave empty if N/A'}
                       onChange={e => setEditForm({ ...editForm, controlNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className={inp}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Final Schedule Date" full={isMyTickets || Boolean(editForm.finalDate || editOriginalDate)}>
                     <input
                       type="date"
                       value={editForm.finalDate || ''}
                       onChange={e => setEditForm({ ...editForm, finalDate: e.target.value, preferredDate: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full max-w-xs"
+                      className={inp}
                       style={{
-                        minWidth: '11rem',
+                        width: '100%',
+                        maxWidth: '100%',
                         backgroundColor: (isMyTickets || editForm.finalDate || editOriginalDate)
                           ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)')
                           : inputBg,
@@ -8777,7 +8852,7 @@ export default function Tickets() {
                         colorScheme: isLight ? 'light' : 'dark',
                       }}
                     />
-                    {(isMyTickets || editForm.finalDate || editOriginalDate) && (
+                    {!isOverviewEdit && (isMyTickets || editForm.finalDate || editOriginalDate) && (
                       <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
                         {isMyTickets
                           ? 'Set the install date here — once saved, this ticket moves to the Schedules tab.'
@@ -8785,7 +8860,7 @@ export default function Tickets() {
                       </p>
                     )}
                   </Field>
-                  <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
+                  <div className={`${isOverviewEdit ? 'edit-field-grid' : `grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}`}>
                     <Field label="Status" required>
                       {(() => {
                         const statusVal = String(editForm.status || 'INSTALLATION').toUpperCase().replace(/\s+/g, '_')
@@ -8795,15 +8870,15 @@ export default function Tickets() {
                           <button
                             type="button"
                             onClick={e => openStatusPicker(formTicket, 'edit-form', e.currentTarget)}
-                            className="w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-3 text-left transition-all hover:opacity-95"
+                            className={`w-full max-w-full flex items-center justify-between gap-2 rounded-lg text-left transition-all hover:opacity-95 ${isOverviewEdit ? 'edit-status-btn' : 'rounded-xl px-3.5 py-3'}`}
                             style={{
                               backgroundColor: statusStyle.backgroundColor,
                               border: `2px solid ${statusStyle.borderColor}`,
-                              minHeight: 48,
+                              minHeight: isOverviewEdit ? 40 : 48,
                             }}
                           >
                             <span
-                              className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wide border"
+                              className={`inline-flex items-center rounded-full font-black uppercase tracking-wide border truncate ${isOverviewEdit ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'}`}
                               style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
                             >
                               {getScheduleStatusLabel(statusVal)}
@@ -8814,7 +8889,7 @@ export default function Tickets() {
                       })()}
                     </Field>
                     {isReschedStatus && (
-                      <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-2 min-w-0">
                         <Field label="Reschedule To" required={!editForm.reschedulePending}>
                           <input
                             type="date"
@@ -8826,11 +8901,11 @@ export default function Tickets() {
                               rescheduleToDate: e.target.value,
                               reschedulePending: false,
                             })}
-                            className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-400 w-full disabled:opacity-50"
-                            style={reschedFieldStyle}
+                            className={`${inp} disabled:opacity-50`}
+                            style={{ ...reschedFieldStyle, width: '100%', maxWidth: '100%' }}
                           />
                         </Field>
-                        <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+                        <label className="flex items-center gap-2 text-[11px] font-semibold cursor-pointer" style={{ color: textPrimary }}>
                           <input
                             type="checkbox"
                             checked={Boolean(editForm.reschedulePending)}
@@ -8841,12 +8916,12 @@ export default function Tickets() {
                             })}
                             className="rounded border-slate-300"
                           />
-                          Pending — no date slot available yet
+                          Pending — no date yet
                         </label>
                       </div>
                     )}
                   </div>
-                  {isReschedStatus && editOriginalDate && (
+                  {isReschedStatus && editOriginalDate && !isOverviewEdit && (
                     <p className="text-[11px] font-semibold leading-relaxed md:col-span-2" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
                       {editForm.reschedulePending
                         ? `Stays on ${formatDateKeyLabel(editOriginalDate)} as rescheduled (pending new date).`
@@ -8858,31 +8933,31 @@ export default function Tickets() {
                   <Field label="Remarks / Update" full>
                     <textarea value={editForm.remarks || ''} 
                       onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
-                      rows={2}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      rows={isOverviewEdit ? 2 : 2}
+                      className={`${inp} resize-none`}
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-3 gap-2">
-                  <h4 className="text-[10px] font-black uppercase tracking-wider opacity-60 text-slate-400">
+              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
+                <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+                  <h4 className={sectionTitleCls}>
                     Payment
                   </h4>
                   {!showPaymentSection && (
                     <button
                       type="button"
                       onClick={() => setEditForm(prev => ({ ...prev, modeOfPayment: prev.modeOfPayment || 'CASH' }))}
-                      className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80"
+                      className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80 shrink-0"
                       style={{ borderColor: inputBorder, color: green }}>
-                      + Add payment
+                      + Add
                     </button>
                   )}
                 </div>
                 {showPaymentSection && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl p-4"
-                       style={{
+                  <div className={`${gridCls} ${isOverviewEdit ? '' : 'rounded-xl p-4'}`}
+                       style={isOverviewEdit ? undefined : {
                          border: `1px solid ${ticketHasPaymentInfo(editForm) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
                          backgroundColor: ticketHasPaymentInfo(editForm)
                            ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)')
@@ -8900,8 +8975,8 @@ export default function Tickets() {
                               : prev.installationCharges,
                           }))
                         }}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}>
+                        className={inp}
+                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}>
                         <option value="">-- Select --</option>
                         <option value="CASH">CASH</option>
                         <option value="BANK TRANSFER">BANK TRANSFER</option>
@@ -8916,10 +8991,10 @@ export default function Tickets() {
                         value={editForm.installationCharges ?? ''}
                         disabled={editForm.modeOfPayment === 'FREE' || editForm.modeOfPayment === 'FREE INSTALL'}
                         onChange={e => setEditForm({ ...editForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
-                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                        className={`${inp} disabled:opacity-60`}
+                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                     </Field>
-                    {qualifiesForInstallComplete(editForm, { remarksUpdate: editForm.remarks, remarks: editForm.remarks, installationCharges: editForm.installationCharges, modeOfPayment: editForm.modeOfPayment }) && (editForm.status || '').toUpperCase() !== 'COMPLETED' && (
+                    {qualifiesForInstallComplete(editForm, { remarksUpdate: editForm.remarks, remarks: editForm.remarks, installationCharges: editForm.installationCharges, modeOfPayment: editForm.modeOfPayment }) && (editForm.status || '').toUpperCase() !== 'COMPLETED' && !isOverviewEdit && (
                       <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
                         Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
                       </p>
@@ -8930,7 +9005,7 @@ export default function Tickets() {
             </div>
 
             <div
-              className={`shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex gap-2.5 sm:gap-3 border-t safe-area-bottom ${isOverviewEdit ? 'flex-col-reverse sm:flex-row sm:items-center sm:justify-end' : 'flex-col-reverse sm:flex-row sm:items-center sm:justify-between'}`}
+              className={`shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 flex gap-2 border-t safe-area-bottom min-w-0 ${isOverviewEdit ? 'flex-row sm:justify-end' : 'flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3'}`}
               style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
             >
               {!isOverviewEdit && canEdit ? (
@@ -8943,11 +9018,11 @@ export default function Tickets() {
                   Delete Ticket
                 </button>
               ) : !isOverviewEdit ? <div className="hidden sm:block" /> : null}
-              <div className={`flex gap-2.5 sm:gap-3 ${isOverviewEdit ? 'w-full sm:w-auto' : 'w-full sm:w-auto sm:ml-auto'}`}>
+              <div className={`flex gap-2 min-w-0 ${isOverviewEdit ? 'w-full sm:w-auto' : 'w-full sm:w-auto sm:ml-auto gap-2.5 sm:gap-3'}`}>
                 <button
                   type="button"
                   onClick={requestCloseEditModal}
-                  className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold border transition-colors"
+                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold border transition-colors ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
                   style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}
                 >
                   Cancel
@@ -8956,7 +9031,7 @@ export default function Tickets() {
                   type="button"
                   onClick={promptSaveEditTicket}
                   disabled={editSaving}
-                  className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center justify-center gap-2 ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
                   style={{ backgroundColor: green }}
                 >
                   {editSaving ? (
@@ -9461,7 +9536,7 @@ function Field({ label, required, full, children }: {
   children: React.ReactNode
 }) {
   return (
-    <label className={`flex flex-col gap-1.5 ${full ? 'md:col-span-2' : ''}`}>
+    <label className={`edit-field flex flex-col gap-1.5 min-w-0 w-full max-w-full ${full ? 'md:col-span-2 col-span-1' : ''}`}>
       <span className="text-[10px] font-black uppercase tracking-wider opacity-70">
         {label}{required && <span className="text-red-500"> *</span>}
       </span>

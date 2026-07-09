@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { API_BASE_URL, formatPersonName, resolveImageUrl } from '../utils/api'
+import { prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
 
 export interface AuthUser {
   id?: string
@@ -150,6 +151,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (user) refreshProfile()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warm schedules cache (yesterday / today / tomorrow) as soon as the user is signed in.
+  useEffect(() => {
+    if (!user) return
+    const globalBranchId = localStorage.getItem('ashcol-global-branch-id')
+    void prefetchSchedulesDateWindow(user, globalBranchId, { force: true })
+  }, [user?.id, user?.role, user?.branchId])
 
   // Periodic token expiration check
   useEffect(() => {
