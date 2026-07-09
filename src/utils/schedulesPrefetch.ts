@@ -16,12 +16,17 @@ const PREFETCH_COOLDOWN_MS = 90_000
 export function adjacentScheduleDateKeys(center = new Date()): string[] {
   const base = new Date(center)
   base.setHours(0, 0, 0, 0)
+  const dow = base.getDay()
+  const offset = dow === 0 ? -6 : 1 - dow
+  const monday = new Date(base)
+  monday.setDate(base.getDate() + offset)
+
   const keys: string[] = []
-  for (const offset of [-1, 0, 1]) {
-    const d = new Date(base)
-    d.setDate(base.getDate() + offset)
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
     keys.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     )
   }
   return keys
@@ -48,11 +53,11 @@ function prefetchKey(user: PortalUserLike, globalBranchId?: string | null): stri
   return `${role}:${branch}:${adjacentScheduleDateKeys().join(',')}`
 }
 
-/** Warm schedules cache for yesterday, today, and tomorrow after login / branch change. */
+/** Warm schedules cache for given dates (defaults: yesterday, today, tomorrow). */
 export function prefetchSchedulesDateWindow(
   user: PortalUserLike,
   globalBranchId?: string | null,
-  options?: { force?: boolean },
+  options?: { force?: boolean; dateKeys?: string[] },
 ): Promise<void> {
   if (!user) return Promise.resolve()
   const token = readAuthToken()
@@ -75,7 +80,9 @@ export function prefetchSchedulesDateWindow(
   const isCustomer = role === 'customer'
 
   const job = (async () => {
-    const dates = adjacentScheduleDateKeys()
+    const dates = options?.dateKeys?.length
+      ? [...new Set(options.dateKeys.map(d => d.split('T')[0].split(' ')[0].trim()).filter(Boolean))]
+      : adjacentScheduleDateKeys()
     await Promise.all(
       dates.map(async dateKey => {
         const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)

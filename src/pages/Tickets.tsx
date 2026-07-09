@@ -10,7 +10,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
-import { hasSchedulesCacheForDate, prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
+import { prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import {
@@ -1084,8 +1084,17 @@ function applyReturnToNegotiatorMyTicketsPatch(
 function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
   const isResched = (ticket.status || '').toUpperCase() === 'RESCHED'
+  const meta = parseAcMeta(ticket)
+  const scheduledDate = String(meta.scheduledDate || '').split('T')[0].split(' ')[0].trim()
   const finalDate = !isResched ? getFinalDateKey(ticket) : ''
-  const dateStr = finalDate || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
+  const preferred = getPreferredDateKey(ticket)
+  const dateCandidates = [finalDate, scheduledDate, preferred].filter(Boolean)
+
+  for (const candidate of dateCandidates) {
+    if (candidate === dateKey) return true
+  }
+
+  const dateStr = finalDate || scheduledDate || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
   if (!dateStr) return false
 
   const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
@@ -1664,6 +1673,22 @@ function isTicketNotFoundError(err: unknown): boolean {
   return /ticket not found/i.test(formatFetchError(err))
 }
 
+async function fetchTicketById(authToken: string, ticketId: string): Promise<Ticket | null> {
+  if (!ticketId || !authToken || isTempTicketId(ticketId)) return null
+  try {
+    const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const ticket = parseCreatedTicketResponse(data) as Ticket | null
+    if (!ticket?.id) return null
+    return normalizeRelayScheduleTicket(ticket) as Ticket
+  } catch {
+    return null
+  }
+}
+
 async function lookupTicketByNumberOnServer(
   authToken: string,
   ticketNumber: string,
@@ -1986,6 +2011,15 @@ function todayDateKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function currentWeekMondayDateKey() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  const dow = d.getDay()
+  const offset = dow === 0 ? -6 : 1 - dow
+  d.setDate(d.getDate() + offset)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const SCHEDULES_ACTIVE_DATE_KEY = 'ashcol-schedules-active-date'
 
 function resolveInitialScheduleDate(pathname: string): string {
@@ -1996,7 +2030,7 @@ function resolveInitialScheduleDate(pathname: string): string {
   } catch {
     // ignore
   }
-  return todayDateKey()
+  return currentWeekMondayDateKey()
 }
 
 
@@ -2721,7 +2755,6 @@ export default function Tickets() {
     setLoading(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
-    writeSchedulesTabCache(schedulesCacheKeyForTab(), normalizeRelayScheduleTicketList(list), 'local')
     return true
   }, [schedulesCacheKeyForTab])
 
@@ -2736,16 +2769,30 @@ export default function Tickets() {
   const weeklyTabs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    const todayKey = formatDateToKey(today)
+
+    const dow = today.getDay()
+    const offset = dow === 0 ? -6 : 1 - dow
+    const monday = new Date(today)
+    monday.setDate(today.getDate() + offset)
+
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today)
-      d.setDate(today.getDate() - (6 - i))
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
       const key = formatDateToKey(d)
-      const isToday = i === 6
+      const isToday = key === todayKey
       const dayName = isToday ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
       const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
       return { key, dayName, dateLabel }
     })
   }, [])
+
+  useEffect(() => {
+    if (isMyTickets || !user) return
+    void prefetchSchedulesDateWindow(user, globalBranchId, {
+      dateKeys: weeklyTabs.map(tab => tab.key),
+    })
+  }, [isMyTickets, user, globalBranchId, weeklyTabs])
 
   const isCustomSelected = useMemo(() => {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
@@ -2753,18 +2800,10 @@ export default function Tickets() {
 
   const handleDateFilterChange = useCallback((next: string) => {
     if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
-    const hasCachedDate = !isMyTickets && hasSchedulesCacheForDate(
-      user,
-      globalBranchId,
-      isCustomer,
-      isAdmin,
-      isMyTickets,
-      next,
-    )
     setDateFilter(next)
-    if (!hasCachedDate) setSyncing(true)
+    setSyncing(true)
     resetTicketTableScroll()
-  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets])
+  }, [])
 
   useLayoutEffect(() => {
     resetTicketTableScroll()
@@ -2788,7 +2827,7 @@ export default function Tickets() {
       } catch {
         // ignore
       }
-      setDateFilter(todayDateKey())
+      setDateFilter(currentWeekMondayDateKey())
     }
   }, [isMyTickets, isTaguig])
 
@@ -3656,16 +3695,13 @@ export default function Tickets() {
     }
   }
 
-  const openEditModal = (ticket: Ticket) => {
+  const buildScheduleEditForm = useCallback((ticket: Ticket) => {
     const preferred = getPreferredDateKey(ticket)
     const status = getScheduleStatusValue(ticket)
     const payment = resolveTicketPayment(ticket)
-    setEditOriginalDate(preferred)
-    setEditInitialStatus(status)
-    setEditTicket(ticket)
     const rawBranch = ticket.branchId || ticket.branch_id || ''
     const resolvedBranch = resolveBranch(rawBranch)
-    const form = {
+    return {
       id: ticket.id,
       preferredDate: preferred,
       finalDate: getFinalDateKey(ticket) || preferred || '',
@@ -3691,9 +3727,36 @@ export default function Tickets() {
       rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
       reschedulePending: isReschedulePending(ticket),
     }
+  }, [branchEmployees, activeBranchId, isMyTickets, user?.id, resolveBranch])
+
+  const openEditModal = (ticket: Ticket) => {
+    const localTicket = findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
+    const preferred = getPreferredDateKey(localTicket)
+    setEditOriginalDate(preferred)
+    setEditTicket(localTicket)
+    const form = buildScheduleEditForm(localTicket)
     setEditForm(form)
     setEditFormSnapshot(JSON.stringify(form))
+    setEditInitialStatus(form.status || '')
     setEditModalOpen(true)
+
+    const auth = token()
+    if (!auth || isTempTicketId(localTicket.id)) return
+    void (async () => {
+      const fresh = await fetchTicketById(auth, localTicket.id)
+      if (!fresh) return
+      const merged = locallyEditedTicketIdsRef.current.has(localTicket.id)
+        ? preserveLocalScheduleFields(localTicket, fresh)
+        : normalizeRelayScheduleTicket(mergeTicketPatch(fresh, localTicket as unknown as Record<string, unknown>)) as Ticket
+
+      setTickets(prev => prev.map(t => (t.id === merged.id ? merged : t)))
+      syncTicketAcrossTabCaches(merged)
+
+      const nextForm = buildScheduleEditForm(merged)
+      setEditTicket(merged)
+      setEditForm(prev => (JSON.stringify(prev) === JSON.stringify(form) ? nextForm : prev))
+      setEditFormSnapshot(prevSnap => (prevSnap === JSON.stringify(form) ? JSON.stringify(nextForm) : prevSnap))
+    })()
   }
 
   const closeEditModal = useCallback(() => {
@@ -4902,8 +4965,7 @@ export default function Tickets() {
     const cached = readSchedulesTabCache(cacheKey)
     const hasCache = Array.isArray(cached?.tickets)
     const sessionSynced = isSchedulesSessionLoaded(cacheKey)
-    const manualRefresh = Boolean(options?.force && !options?.quiet)
-    const skipNetwork = sessionSynced && !manualRefresh
+    const skipNetwork = false
     // Soft / quiet refreshes must never show the full-page loading UI.
     const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache
     if ((options?.soft || options?.quiet || hasCache || hasLoadedOnceRef.current) && !skipNetwork) {
@@ -5025,7 +5087,7 @@ export default function Tickets() {
     }
     const hydrated = hydrateFromTabCache()
     if (hydrated) setSyncing(false)
-    void fetchTickets({ soft: true, quiet: true })
+    void fetchTickets({ soft: true, quiet: false, force: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -6808,18 +6870,6 @@ export default function Tickets() {
                   aria-label="Ticket date filter"
                 />
 
-                <button
-                  type="button"
-                  onClick={() => handleDateFilterChange('')}
-                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                  style={{
-                    backgroundColor: dateFilter === '' ? green : 'transparent',
-                    borderColor: dateFilter === '' ? green : inputBorder,
-                    color: dateFilter === '' ? '#ffffff' : textMuted,
-                  }}
-                >
-                  All
-                </button>
               </div>
             )}
 
