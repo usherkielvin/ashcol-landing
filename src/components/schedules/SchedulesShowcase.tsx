@@ -4,6 +4,7 @@ import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
 export type ScheduleShowcaseRow = {
   id: string
   index: number
+  ticketNumber: string
   name: string
   destination: string
   district: string
@@ -121,6 +122,8 @@ function buildHeaders(isTaguigServices: boolean) {
   const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
   const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
   return [
+    'NO.',
+    'TICKET NO',
     'NAME',
     'DISTRICT',
     'BRAND',
@@ -136,10 +139,12 @@ function buildHeaders(isTaguigServices: boolean) {
 function rowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
   return [
+    String(row.index),
+    showcaseCellText(row.ticketNumber),
     showcaseCellText(row.name),
-    showcaseCellText(row.district),
+    showcaseCellText(row.district).toUpperCase(),
     showcaseCellText(row.brand),
-    showcaseCellText(row.dealer),
+    showcaseCellText(row.dealer).toUpperCase(),
     showcaseCellText(row.status),
     showcaseCellText(row.commit),
     showcaseCellText(row.installer),
@@ -151,6 +156,8 @@ function rowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, st
 function rowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
   return [
+    String(row.index),
+    pdfCellText(row.ticketNumber),
     pdfCellText(row.name),
     pdfCellText(row.district),
     pdfCellText(row.brand),
@@ -252,21 +259,23 @@ async function exportShowcasePdfDocument(options: {
     head: [headers],
     body: rows.length > 0
       ? body
-      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '']],
+      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']],
     showHead: 'everyPage',
     ...PDF_BW_TABLE,
     columnStyles: {
-      0: { cellWidth: 1.35 },
-      1: { halign: 'center', cellWidth: 0.82 },
-      2: { cellWidth: 0.95 },
+      0: { halign: 'center', cellWidth: 0.35 },
+      1: { halign: 'center', cellWidth: 0.85 },
+      2: { cellWidth: 1.35 },
       3: { cellWidth: 0.82 },
-      4: { halign: 'center', cellWidth: 1.05 },
-      5: { cellWidth: 1.05 },
-      6: { halign: 'center', cellWidth: 0.82 },
-      7: { cellWidth: 2.55 },
-      8: {
+      4: { cellWidth: 0.95 },
+      5: { cellWidth: 0.82 },
+      6: { halign: 'center', cellWidth: 1.05 },
+      7: { cellWidth: 1.05 },
+      8: { halign: 'center', cellWidth: 0.82 },
+      9: { cellWidth: 2.30 },
+      10: {
         halign: 'right',
-        cellWidth: 2.45,
+        cellWidth: 2.08,
         fontStyle: 'bold',
         fontSize: 7.5,
         overflow: 'linebreak' as const,
@@ -496,8 +505,8 @@ export function SchedulesShowcase({
                   <thead>
                     <tr>
                       {headers.map((label, headerIdx) => {
-                        const isStatus = headerIdx === 4
-                        const isPayment = headerIdx === 8
+                        const isStatus = headerIdx === 6
+                        const isPayment = headerIdx === 10
                         return (
                         <th
                           key={label}
@@ -543,15 +552,16 @@ export function SchedulesShowcase({
                       const cells = rowToCells(row, paymentByRowId)
                       return (
                         <tr key={`${row.index}-${row.id}`}>
-                          {cells.map((value, cellIdx) => {
-                            const isUpdate = cellIdx === 7
-                            const isName = cellIdx === 0
-                            const isCommit = cellIdx === 5
-                            const isStatus = cellIdx === 4
-                            const isPayment = cellIdx === 8
-                            const isBrand = cellIdx === 2
-                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus
-                            const center = [1, 4, 6].includes(cellIdx)
+                           {cells.map((value, cellIdx) => {
+                            const isUpdate = cellIdx === 9
+                            const isName = cellIdx === 2
+                            const isCommit = cellIdx === 7
+                            const isStatus = cellIdx === 6
+                            const isPayment = cellIdx === 10
+                            const isBrand = cellIdx === 4
+                            const isTicketNo = cellIdx === 1
+                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus || isTicketNo
+                            const center = [0, 1, 6, 8].includes(cellIdx)
                             return (
                               <td
                                 key={cellIdx}

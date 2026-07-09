@@ -569,7 +569,17 @@ function mergeServerListWithLocalEdits(serverList: Ticket[], localList: Ticket[]
 }
 
 function resolveTicketScheduleDateKey(ticket: Ticket): string {
-  return getFinalDateKey(ticket) || getPreferredDateKey(ticket) || ''
+  const final = getFinalDateKey(ticket)
+  if (final) return final
+  const scheduled = String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+  if (scheduled) return scheduled
+  return getPreferredDateKey(ticket) || ''
+}
+
+function resolveFormScheduleDateKey(form: { finalDate?: string; preferredDate?: string; rescheduleToDate?: string }): string {
+  const final = form.finalDate?.split('T')[0]?.trim() || ''
+  const preferred = form.preferredDate?.split('T')[0]?.trim() || ''
+  return final || preferred
 }
 
 function mergeAcDetailsStrings(base?: string, overlay?: string): string | undefined {
@@ -901,8 +911,8 @@ function getRelayQueueLabel(ticket: Ticket): string {
 /** Tickets entered on Schedules (manual / import) must not appear on My Tickets. */
 function isScheduleTabIntakeTicket(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
-  if (stat === 'SCHEDULED' || stat === 'RESCHED') return true
   if (hasFinalScheduleDate(ticket)) return true
+  if (stat === 'RESCHED') return true
   const meta = parseAcMeta(ticket)
   if (!Array.isArray(meta) && meta && typeof meta === 'object') {
     const scheduledDate = String((meta as { scheduledDate?: string }).scheduledDate || '').trim()
@@ -1092,24 +1102,6 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
 
   for (const candidate of dateCandidates) {
     if (candidate === dateKey) return true
-  }
-
-  const dateStr = finalDate || scheduledDate || ticket.preferredDate || ticket.preferred_date || ticket.createdAt || ticket.created_at
-  if (!dateStr) return false
-
-  const parsedDate = dateStr.split('T')[0].split(' ')[0].trim()
-  if (parsedDate === dateKey) return true
-
-  if (dateStr.includes('T') || dateStr.includes(':')) {
-    try {
-      const d = new Date(dateStr)
-      if (!isNaN(d.getTime())) {
-        const localY = d.getFullYear()
-        const localM = String(d.getMonth() + 1).padStart(2, '0')
-        const localD = String(d.getDate()).padStart(2, '0')
-        if (`${localY}-${localM}-${localD}` === dateKey) return true
-      }
-    } catch { /* ignore */ }
   }
   return false
 }
@@ -2030,7 +2022,7 @@ function resolveInitialScheduleDate(pathname: string): string {
   } catch {
     // ignore
   }
-  return currentWeekMondayDateKey()
+  return todayDateKey()
 }
 
 
@@ -2481,7 +2473,7 @@ function buildCellPatchBody(
       }
       body.finalDate = dateKey
       body.preferredDate = dateKey
-      body.acDetails = mergeAcMeta(acBase, { finalDate: dateKey })
+      body.acDetails = mergeAcMeta(acBase, { finalDate: dateKey, scheduledDate: dateKey })
       const stat = (ticket.status || '').toUpperCase()
       if (['PENDING', 'ASSIGNED'].includes(stat)) body.status = 'SCHEDULED'
       break
@@ -3731,8 +3723,7 @@ export default function Tickets() {
 
   const openEditModal = (ticket: Ticket) => {
     const localTicket = findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
-    const preferred = getPreferredDateKey(localTicket)
-    setEditOriginalDate(preferred)
+    setEditOriginalDate(resolveTicketScheduleDateKey(localTicket))
     setEditTicket(localTicket)
     const form = buildScheduleEditForm(localTicket)
     setEditForm(form)
@@ -3899,6 +3890,9 @@ export default function Tickets() {
     const fromList = tickets.find(t => t.id === formId)
     if (fromList) return fromList
 
+    const fromOverview = overviewResults.find(t => t.id === formId)
+    if (fromOverview) return fromOverview
+
     const fromOptimistic = optimisticTicketsRef.current.get(formId)
     if (fromOptimistic) return fromOptimistic
 
@@ -3941,6 +3935,7 @@ export default function Tickets() {
         remarks: editForm.remarks,
         remarksUpdate: editForm.remarks,
         preferredDate: editForm.preferredDate,
+        finalDate: editForm.finalDate,
         acDetails: editForm.acDetails,
       } as Ticket
     }
@@ -3970,10 +3965,11 @@ export default function Tickets() {
       const titleVal = `${categoryDefaultServiceType(category)} service`
       const descVal = activeForm.commitTerms?.trim() || 'No additional details provided.'
 
-      const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
+      const oldDateKey = editOriginalDate?.split('T')[0]?.trim()
+        || resolveTicketScheduleDateKey(originalTicket)
       const newDateKey = isReschedStatus
         ? (activeForm.reschedulePending ? '' : activeForm.rescheduleToDate?.split('T')[0]?.trim() || '')
-        : activeForm.preferredDate?.split('T')[0]?.trim() || ''
+        : resolveFormScheduleDateKey(activeForm)
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
       const hadScheduleDate = Boolean(
         oldDateKey
@@ -4104,6 +4100,8 @@ export default function Tickets() {
         }
       }
 
+      const schedulePlacementDate = isReschedStatus ? '' : (finalDateKey || newDateKey)
+
       const isReturningToMyTickets = !isReschedStatus
         && !finalDateKey
         && hadScheduleDate
@@ -4159,6 +4157,7 @@ export default function Tickets() {
           activeForm.negotiatorId,
         ) || undefined,
         finalDate: isReschedStatus ? '' : finalDateKey,
+        scheduledDate: isReschedStatus ? '' : schedulePlacementDate,
         scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
         schedulePhase: statusAcMeta.schedulePhase ?? '',
         ...(leavingResched
@@ -5207,6 +5206,8 @@ export default function Tickets() {
       }
 
       let hasFinalDate = Boolean(getFinalDateKey(t))
+      const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(stat)
+      if (!hasFinalDate && !isScheduledOrActive) return false
 
       const scheduleValue = getScheduleStatusValue(t)
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
@@ -5359,20 +5360,22 @@ export default function Tickets() {
       .map((ticket, index) => {
         const live = optimisticTicketsRef.current.get(ticket.id) || ticket
         return {
-        id: getTicketNumberDisplay(live) || String(live.id ?? index),
-        index: index + 1,
-        name: getF(live, 'customerName', 'customer_name') || live.title || '',
-        destination: formatAddress(live.location),
-        district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
-        contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-        brand: parseBrand(live),
-        dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
-        status: getScheduleStatusLabel(getScheduleStatusValue(live)),
-        commit: getF(live, 'commitType', 'commitTerms', 'description'),
-        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
-        update: getScheduleUpdateDisplay(live),
-        payment: getSchedulePaymentDisplay(live),
-      }})
+          id: String(live.id ?? index),
+          index: index + 1,
+          ticketNumber: getTicketNumberDisplay(live) || '',
+          name: getF(live, 'customerName', 'customer_name') || live.title || '',
+          destination: formatAddress(live.location),
+          district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
+          contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+          brand: parseBrand(live),
+          dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
+          status: getScheduleStatusLabel(getScheduleStatusValue(live)),
+          commit: getF(live, 'commitType', 'commitTerms', 'description'),
+          installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+          update: getScheduleUpdateDisplay(live),
+          payment: getSchedulePaymentDisplay(live),
+        }
+      })
   }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId, tickets])
 
   const showcasePaymentByRowId = useMemo(() => {
@@ -5569,7 +5572,9 @@ export default function Tickets() {
   const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
     const normalized = normalizeRelayScheduleTicket(nextTicket)
     locallyEditedTicketIdsRef.current.add(ticketId)
-    const prevTicket = tickets.find(t => t.id === ticketId) || optimisticTicketsRef.current.get(ticketId)
+    const prevTicket = tickets.find(t => t.id === ticketId)
+      || optimisticTicketsRef.current.get(ticketId)
+      || overviewResults.find(t => t.id === ticketId)
     optimisticTicketsRef.current.set(ticketId, normalized)
 
     const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
@@ -5584,18 +5589,30 @@ export default function Tickets() {
       writeSchedulesTabCache(cacheKey, nextList, 'local')
     }
 
-    if (!isMyTickets) {
-      if (nextDate && nextDate !== prevDate) {
+    if (!isMyTickets && activeTab === 'schedules') {
+      if (nextDate && nextDate !== prevDate && nextDate !== dateFilter) {
         handleDateFilterChange(nextDate)
       }
     }
 
     setTickets(prev => {
       const exists = prev.some(t => t.id === ticketId)
-      const next = exists
-        ? prev.map(t => (t.id === ticketId ? normalized : t))
-        : [normalized, ...prev]
-      writeSchedulesTabCache(schedulesCacheKeyForTab(nextDate || dateFilter), next, 'local')
+      const showOnCurrentFilter = !dateFilter
+        || ticketMatchesDateKey(normalized, dateFilter)
+        || isScheduleGhostOnDate(normalized, dateFilter)
+
+      let next: Ticket[]
+      if (showOnCurrentFilter) {
+        next = exists
+          ? prev.map(t => (t.id === ticketId ? normalized : t))
+          : [normalized, ...prev]
+      } else {
+        next = prev.filter(t => t.id !== ticketId)
+      }
+
+      if (!isMyTickets && dateFilter) {
+        writeSchedulesTabCache(schedulesCacheKeyForTab(dateFilter), next, 'local')
+      }
       return next
     })
 
@@ -5614,7 +5631,7 @@ export default function Tickets() {
     setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...normalized } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
-  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange, dateFilter])
+  }, [tickets, overviewResults, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange, dateFilter, activeTab])
 
   const resolveLiveScheduleTicket = useCallback((ticket: Ticket): Ticket => {
     return findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
@@ -5729,19 +5746,14 @@ export default function Tickets() {
           const savedTicket = parseCreatedTicketResponse(savedPayload) as Ticket | null
           const base = optimisticTicketsRef.current.get(saveId)
             || tickets.find(t => t.id === saveId)
+            || overviewResults.find(t => t.id === saveId)
           if (base) {
             const mergedSaved = savedTicket?.id
               ? preserveLocalScheduleFields(base, savedTicket)
               : base
             optimisticTicketsRef.current.delete(saveId)
             locallyEditedTicketIdsRef.current.add(saveId)
-            setTickets(prev => {
-              const next = prev.map(t => (t.id === saveId ? mergedSaved : t))
-              writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
-              return next
-            })
-            setOverviewResults(prev => prev.map(t => (t.id === saveId ? { ...t, ...mergedSaved } : t)))
-            syncTicketAcrossTabCaches(mergedSaved)
+            applyTicketLocally(saveId, mergedSaved)
           }
           console.log('[Schedules] Saved to database', {
             ticketId: saveId,
@@ -5779,7 +5791,7 @@ export default function Tickets() {
         void flushTicketSave(ticketId)
       }
     }
-  }, [restoreTicketLocally, token, fetchTickets, tickets, remapScheduleTicketId, purgeStaleScheduleTicket])
+  }, [restoreTicketLocally, token, fetchTickets, tickets, overviewResults, remapScheduleTicketId, purgeStaleScheduleTicket, applyTicketLocally])
   flushTicketSaveRef.current = (ticketId: string) => { void flushTicketSave(ticketId) }
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
@@ -6469,8 +6481,7 @@ export default function Tickets() {
     }
 
     if (label === 'TICKET NO') {
-      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
-      const displayVal = val ? `${prefix}${val}` : `${prefix}—`
+      const displayVal = val || '—'
       return withEditPencil(
         <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
           {displayVal}

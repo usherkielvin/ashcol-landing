@@ -186,7 +186,7 @@ export function applyRelayScheduleSyncToPatch(
     const acBase = typeof next.acDetails === 'string'
       ? next.acDetails
       : String(ticket?.acDetails || ticket?.ac_details || '')
-    next.acDetails = mergeAcJson(acBase, { finalDate: scheduleDate })
+    next.acDetails = mergeAcJson(acBase, { finalDate: scheduleDate, scheduledDate: scheduleDate })
 
     const stat = String(next.status || ticket?.status || '').toUpperCase()
     if (!next.status && ['PENDING', 'ASSIGNED'].includes(stat)) {
@@ -212,6 +212,24 @@ export function mergeRelayScheduleTicketPatch(
 
 export function normalizeRelayScheduleTicketList(list: any[]): any[] {
   return list.map(t => normalizeRelayScheduleTicket(t))
+}
+
+/** Primary schedule date for cache placement (final → scheduled → preferred). */
+export function resolveRelayScheduleDateKey(ticket: any): string {
+  const normalized = normalizeRelayScheduleTicket(ticket)
+  const final = String(normalized.finalDate || normalized.final_date || '').trim().split('T')[0].split(' ')[0]
+  if (final) return final
+  try {
+    const acRaw = normalized.acDetails || normalized.ac_details
+    const ac = typeof acRaw === 'string' ? JSON.parse(acRaw) : acRaw
+    const meta = Array.isArray(ac) ? ac[0] : ac
+    const scheduled = String(meta?.scheduledDate || '').trim().split('T')[0].split(' ')[0]
+    if (scheduled) return scheduled
+  } catch {
+    /* ignore malformed acDetails */
+  }
+  const preferred = String(normalized.preferredDate || normalized.preferred_date || '').trim().split('T')[0].split(' ')[0]
+  return preferred
 }
 
 export function shouldExcludeRelayFromTab(ticket: RelayScheduleTicket): boolean {

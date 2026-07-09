@@ -1,6 +1,10 @@
 import { getActivePortalBranchId, isPortalAdmin } from './api'
 import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
-import { normalizeRelayScheduleTicket, shouldExcludeRelayFromTab } from './relayScheduleSync'
+import {
+  normalizeRelayScheduleTicket,
+  resolveRelayScheduleDateKey,
+  shouldExcludeRelayFromTab,
+} from './relayScheduleSync'
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
 /** Fired before logout — schedules page should flush rows into local cache. */
@@ -76,10 +80,6 @@ export function storedPortalUser(): { role?: string | null; branchId?: string | 
 
 function schedulesDateKeyLocal(): string {
   const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  const dow = d.getDay()
-  const offset = dow === 0 ? -6 : 1 - dow
-  d.setDate(d.getDate() + offset)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
@@ -176,6 +176,11 @@ export function schedulesCacheKey(
   const ep = isMyTickets ? 'assigned' : isCustomer ? 'my' : isAdmin ? 'all' : 'branch'
   const datePart = !isMyTickets && dateFilter?.trim() ? `:${dateFilter.trim()}` : ''
   return `schedules:v${VERSION}:${ep}:${branchCachePart(user, globalBranchId)}${datePart}`
+}
+
+function schedulesCacheDateFromKey(logicalKey: string): string | null {
+  const match = logicalKey.match(/:(\d{4}-\d{2}-\d{2})$/)
+  return match ? match[1] : null
 }
 
 export type RelaysTabCache = {
@@ -340,6 +345,9 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
     const touchKey = (logicalKey: string, cached: { tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }) => {
       if (!Array.isArray(cached?.tickets)) return
 
+      const ticketDate = resolveRelayScheduleDateKey(normalized)
+      const cacheDate = logicalKey.startsWith('schedules:') ? schedulesCacheDateFromKey(logicalKey) : null
+
       const hadRow = cached.tickets.some((t: unknown) => String((t as { id?: string })?.id) === id)
       let tickets = cached.tickets.map((t: unknown) => {
         if (String((t as { id?: string })?.id) !== id) return t
@@ -348,8 +356,14 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
 
       if (logicalKey.startsWith('relays:')) {
         tickets = tickets.filter((t: unknown) => !shouldExcludeRelayFromTab(t as Record<string, unknown>))
-      } else if (logicalKey.startsWith('schedules:') && !hadRow && !shouldExcludeRelayFromTab(normalized)) {
-        tickets = [normalized, ...tickets]
+      } else if (logicalKey.startsWith('schedules:')) {
+        if (hadRow && cacheDate && ticketDate && cacheDate !== ticketDate) {
+          tickets = tickets.filter((t: unknown) => String((t as { id?: string })?.id) !== id)
+        } else if (!hadRow && !shouldExcludeRelayFromTab(normalized)) {
+          if (cacheDate && ticketDate && cacheDate === ticketDate) {
+            tickets = [normalized, ...tickets]
+          }
+        }
       }
 
       const next = { ...cached, tickets, lastSyncAt: Date.now() }
