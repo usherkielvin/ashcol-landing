@@ -2122,10 +2122,10 @@ export default function Tickets() {
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const theadBg     = isLight ? '#e8edf3' : '#060C18'
-  const myTicketsTheadBg = isLight ? 'rgba(22,163,74,0.14)' : 'rgba(16,185,129,0.16)'
+  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0B2C30'
   const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
   const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
-  const schedTheadBg     = isLight ? 'rgba(22,163,74,0.12)' : 'rgba(16,185,129,0.13)'
+  const schedTheadBg     = isLight ? '#E3F4E9' : '#0B272D'
   const schedTheadText   = isLight ? '#166534' : '#86EFAC'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
@@ -4293,6 +4293,7 @@ export default function Tickets() {
           email: u.email as string | undefined,
           role: (u.role as string | undefined),
           jobTitle: (u.jobTitle || u.job_title) as string | undefined,
+          phone: u.phone as string | undefined,
         })).filter((u) => u.id && u.name)
         setBranchEmployees(mapped)
       })
@@ -5267,14 +5268,20 @@ export default function Tickets() {
             type="button"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); startCellEdit(ticket, label) }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9.5px] font-bold uppercase tracking-wide transition-colors hover:bg-emerald-500/10"
+            className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[9.5px] font-bold uppercase tracking-wide transition-colors"
             style={{
-              color: isLight ? '#16A34A' : '#4ADE80',
-              borderColor: isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.3)',
-              backgroundColor: isLight ? 'rgba(22,163,74,0.06)' : 'rgba(16,185,129,0.08)',
+              color: isLight ? '#15803D' : '#6EE7B7',
+              borderColor: isLight ? 'rgba(22,163,74,0.32)' : 'rgba(110,231,183,0.35)',
+              backgroundColor: 'transparent',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isLight ? 'rgba(22,163,74,0.07)' : 'rgba(16,185,129,0.12)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent'
             }}
           >
-            <CalendarDays className="w-3 h-3 shrink-0" />
+            <CalendarDays className="w-3 h-3 shrink-0 opacity-90" />
             Add Date
           </button>
         )
@@ -5454,10 +5461,25 @@ export default function Tickets() {
 
     if (label === 'NEGOTIATOR') {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || '—'
+      const negId = ticket.negotiatorId || ticket.negotiator_id || ''
+      const negEmp = branchEmployees.find(e => {
+        if (negId && e.id === negId) return true
+        const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees)
+        if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
+        return false
+      })
+      const negPhone = negEmp?.phone || ''
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
-          {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
-        </span>,
+        <div className="flex flex-col items-center justify-center text-center">
+          <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
+            {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
+          </span>
+          {negPhone && (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium select-all" title={negPhone}>
+              {fmtPhone(negPhone) || negPhone}
+            </span>
+          )}
+        </div>,
         ticket, label, rowGhost,
       )
     }
@@ -5878,16 +5900,27 @@ export default function Tickets() {
                 {visible.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
-                      <div className="flex flex-col items-center justify-center gap-3">
-                        <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                          {isMyTickets
-                            ? (searchQuery
-                              ? 'No pending or assigned tickets match your search'
-                              : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
-                            : 'No records'}
-                        </p>
-                        {searchQuery && (
-                          <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
+                      <div className="flex flex-col items-center justify-center gap-3 py-6">
+                        {loading ? (
+                          <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
+                            <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
+                            <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
+                              Synching to the database...
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                              {isMyTickets
+                                ? (searchQuery
+                                  ? 'No pending or assigned tickets match your search'
+                                  : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
+                                : 'No records'}
+                            </p>
+                            {searchQuery && (
+                              <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -5930,7 +5963,7 @@ export default function Tickets() {
                         const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                         const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
-                        const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO'])
+                        const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
                         const cellVal = getCellDisplay(ticket, col.label)
                         const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
                         const emptyCellBg = isCellEmpty
@@ -5993,8 +6026,13 @@ export default function Tickets() {
                             {isEditingCell ? (
                               renderCell(ticket, col, idx, isGhost, ghostKind, false)
                             ) : (
-                              <div className="relative w-full h-full flex items-center" style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
-                                <div className="w-full min-w-0 overflow-hidden">
+                              <div
+                                className={`relative w-full h-full flex items-center ${
+                                  col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''
+                                }`}
+                                style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
+                              >
+                                <div className={`min-w-0 overflow-hidden ${col.align === 'center' ? 'w-auto max-w-full' : 'w-full'}`}>
                                   {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                 </div>
                                 {isExpandedCell && (
@@ -6297,6 +6335,13 @@ export default function Tickets() {
         const negotiatorName = getTicketNegotiatorName(t, branchEmployees)
           || branchEmployees.find(e => e.id === negotiatorId)?.name
           || ''
+        const negotiatorEmp = branchEmployees.find(e => {
+          if (negotiatorId && e.id === negotiatorId) return true
+          const resolvedFull = resolveNegotiatorDisplayName(t, branchEmployees)
+          if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
+          return false
+        })
+        const negotiatorPhone = negotiatorEmp?.phone || ''
         const preferredDate = t.preferredDate || t.preferred_date
         const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
@@ -6411,11 +6456,15 @@ export default function Tickets() {
                    </div>
                    <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                    <div>
-                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
-                     <span className="font-semibold text-xs" style={{ color: textMuted }}>
-                       —
-                     </span>
-                   </div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
+                      <span className="font-semibold text-xs animate-in fade-in duration-200" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
+                        {negotiatorPhone ? (
+                          <a href={`tel:${negotiatorPhone.replace(/\D/g,'').replace(/^0/,'+63')}`} className="hover:underline">
+                            {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                          </a>
+                        ) : '—'}
+                      </span>
+                    </div>
                  </div>
                </div>
 
@@ -6445,7 +6494,18 @@ export default function Tickets() {
                        <DField label="Brand / Unit" value={brand || '—'} />
                        <DField label="Service / Driver" value={serviceDriver || '—'} />
                        <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || '—'} />
-                       <DField label="Negotiator" value={negotiatorName || '—'} />
+                       <DField label="Negotiator" value={
+                          negotiatorName ? (
+                            <div className="flex flex-col gap-0.5 animate-in fade-in duration-200">
+                              <span>{negotiatorName}</span>
+                              {negotiatorPhone && (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                  {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                                </span>
+                              )}
+                            </div>
+                          ) : '—'
+                        } />
                        <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || '—'} />
                        <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || '—'} />
                        <DField label="Control No. / SI" value={t.controlNumber || t.control_number || '—'} />

@@ -415,6 +415,7 @@ export type BranchStaffOption = {
   email?: string | null
   role?: string | null
   jobTitle?: string | null
+  phone?: string | null
 }
 
 /** Staff who may appear as negotiator (office roles incl. OIC; excludes field crew). */
