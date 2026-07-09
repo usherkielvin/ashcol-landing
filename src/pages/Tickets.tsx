@@ -129,7 +129,7 @@ type ImportUnmatchedRow = {
 
 
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED']
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED', 'CONTINUATION']
 const TABLE_ROW_HEIGHT = 38
 
 /** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
@@ -148,6 +148,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'INSTALLATION', label: 'INSTALLATION', group: 'pending' },
   { value: 'SERVICES', label: 'SERVICE', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
+  { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR APPROVAL', group: 'pending' },
   // Closing
   { value: 'DONE_INSTALLED', label: 'DONE INSTALL', group: 'closing' },
@@ -778,6 +779,13 @@ function resolveTicketDistrict(ticket: Ticket): string {
 function getPreviousScheduleDates(ticket: Ticket): string[] {
   const meta = parseAcMeta(ticket)
   const raw = meta.previousScheduleDates
+  if (!Array.isArray(raw)) return []
+  return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+}
+
+function getContinuationDates(ticket: Ticket): string[] {
+  const meta = parseAcMeta(ticket)
+  const raw = meta.continuationDates
   if (!Array.isArray(raw)) return []
   return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
 }
@@ -2116,7 +2124,7 @@ export default function Tickets() {
   // ── Color tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const border      = isLight ? '#cbd5e1' : '#334155'
-  const tableBorder = isLight ? '#94a3b8' : '#3d4f66'
+  const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
@@ -2129,8 +2137,8 @@ export default function Tickets() {
   const schedTheadText   = isLight ? '#166534' : '#86EFAC'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
-  const rowOdd      = isLight ? '#f4f6f8' : '#0d1626'
-  const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
+  const rowOdd      = isLight ? '#f7fbf8' : '#0b1620'
+  const rowHover    = isLight ? '#edf7f1' : '#0e242d'
   const green       = '#16A34A'
 
   // ── Data state ────────────────────────────────────────────────────────────
@@ -2479,6 +2487,10 @@ export default function Tickets() {
   const [reschedToDate, setReschedToDate] = useState('')
   const [reschedPending, setReschedPending] = useState(false)
   const [reschedCalMonth, setReschedCalMonth] = useState<{ year: number; month: number } | null>(null)
+
+  const [continuationDialog, setContinuationDialog] = useState<{ ticket: Ticket } | null>(null)
+  const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
+  const [continuationCalMonth, setContinuationCalMonth] = useState<{ year: number; month: number } | null>(null)
 
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -4049,6 +4061,14 @@ export default function Tickets() {
     x: number
     y: number
   } | null>(null)
+  const [finalDatePicker, setFinalDatePicker] = useState<{
+    ticket: Ticket
+    x: number
+    y: number
+    value: string
+    preferredDate: string
+  } | null>(null)
+  const [finalDateCalMonth, setFinalDateCalMonth] = useState<{ year: number; month: number } | null>(null)
   const [savingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cellEditDraftRef = useRef<{ ticketId: string; colLabel: string; value: string } | null>(null)
@@ -4368,7 +4388,11 @@ export default function Tickets() {
       }
     }
     if (dateFilter) {
-      list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
+      list = list.filter(t =>
+        ticketMatchesDateKey(t, dateFilter) ||
+        isScheduleGhostOnDate(t, dateFilter) ||
+        ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(dateFilter))
+      )
       list = [...list].sort((a, b) => {
         const aGhost = isScheduleGhostOnDate(a, dateFilter)
         const bGhost = isScheduleGhostOnDate(b, dateFilter)
@@ -4554,11 +4578,52 @@ export default function Tickets() {
     setStatusPicker({ ticket, mode, x: left, y: top })
   }, [])
 
-  const startCellEdit = (ticket: Ticket, colLabel: string) => {
+  const closeFinalDatePicker = useCallback(() => {
+    setFinalDatePicker(null)
+    setFinalDateCalMonth(null)
+  }, [])
+
+  const openFinalDatePicker = useCallback((
+    ticket: Ticket,
+    anchorEl?: HTMLElement | null,
+  ) => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cancelEdit()
+    setExpandedCell(null)
+
+    const preferredDate = getPreferredDateKey(ticket)
+    const existingFinal = getFinalDateKey(ticket)
+    const initDate = existingFinal || preferredDate || ''
+
+    const popupW = 288
+    const popupH = 400
+    const el = anchorEl
+      || (document.querySelector(`[data-cell-key="${ticket.id}:FINAL DATE"]`) as HTMLElement | null)
+    const rect = el?.getBoundingClientRect()
+    const left = rect
+      ? Math.min(Math.max(8, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 8)
+      : Math.max(8, (window.innerWidth - popupW) / 2)
+    const below = rect ? rect.bottom + 6 : 80
+    const above = rect ? rect.top - popupH - 6 : 80
+    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.75) <= window.innerHeight - 8
+    const top = fitsBelow
+      ? Math.min(below, window.innerHeight - 120)
+      : Math.max(8, above)
+
+    const calSeed = initDate ? new Date(`${initDate}T00:00:00`) : new Date()
+    setFinalDateCalMonth({ year: calSeed.getFullYear(), month: calSeed.getMonth() })
+    setFinalDatePicker({ ticket, x: left, y: top, value: initDate, preferredDate })
+  }, [])
+
+  const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
       openStatusPicker(ticket)
+      return
+    }
+    if (colLabel === 'FINAL DATE') {
+      openFinalDatePicker(ticket, anchorEl)
       return
     }
     const value = getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees, activeBranchId)
@@ -4708,6 +4773,7 @@ export default function Tickets() {
     if (Object.keys(body).length === 0) {
       cancelEdit()
       setStatusPicker(null)
+      closeFinalDatePicker()
       return
     }
 
@@ -4733,6 +4799,8 @@ export default function Tickets() {
 
     cancelEdit()
     setStatusPicker(null)
+    setFinalDatePicker(null)
+    setFinalDateCalMonth(null)
 
     // After marking DONE INSTALL, put the caret in REMARKS so the user types there.
     const focusRemarksAfterStatus = colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED'
@@ -4833,6 +4901,41 @@ export default function Tickets() {
     }
 
     closeReschedDialog()
+    queueTicketPatch(ticket, body)
+  }
+
+  const openContinuationDialog = (ticket: Ticket) => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cancelEdit()
+    const existingDates = getContinuationDates(ticket)
+    setContinuationDialog({ ticket })
+    setContinuationSelectedDates(existingDates)
+    
+    const todayKey = todayDateKey()
+    const startKey = existingDates[0] || todayKey
+    const startDate = new Date(`${startKey}T00:00:00`)
+    const todayDate = new Date(`${todayKey}T00:00:00`)
+    const calViewDate = startDate >= todayDate ? startDate : todayDate
+    setContinuationCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
+  }
+
+  const closeContinuationDialog = () => {
+    setContinuationDialog(null)
+    setContinuationSelectedDates([])
+    setContinuationCalMonth(null)
+  }
+
+  const commitInlineContinuation = async () => {
+    if (!continuationDialog) return
+    const { ticket } = continuationDialog
+
+    const body: Record<string, unknown> = { status: 'CONTINUATION' }
+    const acUpdates: Record<string, unknown> = {
+      continuationDates: continuationSelectedDates
+    }
+    body.acDetails = mergeAcMeta(ticket, acUpdates)
+
+    closeContinuationDialog()
     queueTicketPatch(ticket, body)
   }
 
@@ -5030,22 +5133,8 @@ export default function Tickets() {
     }
 
     if (colLabel === 'FINAL DATE') {
-      return wrapEditingCell(
-        <input
-          autoFocus
-          disabled={isSaving}
-          type="date"
-          value={editingCell.value}
-          onChange={e => syncDraftValue(e.target.value)}
-          onBlur={onBlur}
-          onClick={e => e.stopPropagation()}
-          onMouseDown={e => e.stopPropagation()}
-          onKeyDown={onKeyDown}
-          className="w-full rounded-md outline-none"
-          style={{ ...inputStyle, minWidth: '10rem', colorScheme: isLight ? 'light' : 'dark' }}
-        />,
-        colLabel,
-      )
+      // FINAL DATE uses the floating calendar popup.
+      return null
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
@@ -5112,7 +5201,11 @@ export default function Tickets() {
         <button
           type="button"
           onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-          onClick={e => { e.stopPropagation(); startCellEdit(ticket, colLabel) }}
+          onClick={e => {
+            e.stopPropagation()
+            const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+            startCellEdit(ticket, colLabel, cell)
+          }}
           title="Edit in cell"
           className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15"
           style={{ color: textMuted, lineHeight: 1 }}
@@ -5267,7 +5360,7 @@ export default function Tickets() {
           <button
             type="button"
             onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); startCellEdit(ticket, label) }}
+            onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement) }}
             className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[9.5px] font-bold uppercase tracking-wide transition-colors"
             style={{
               color: isLight ? '#15803D' : '#6EE7B7',
@@ -5428,16 +5521,9 @@ export default function Tickets() {
 
       if (isEmpty) {
         return withEditPencil(
-          <div
-            className="w-full flex items-center justify-center rounded px-2 py-0.5 font-black text-[9px] border"
-            style={{
-              backgroundColor: isLight ? '#fef2f2' : 'rgba(239, 68, 68, 0.15)',
-              color: isLight ? '#b91c1c' : '#fca5a5',
-              borderColor: isLight ? '#fca5a5' : 'rgba(239, 68, 68, 0.3)',
-            }}
-          >
-            EMPTY
-          </div>,
+          <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
+            —
+          </span>,
           ticket, label, rowGhost
         )
       }
@@ -5461,24 +5547,11 @@ export default function Tickets() {
 
     if (label === 'NEGOTIATOR') {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || '—'
-      const negId = ticket.negotiatorId || ticket.negotiator_id || ''
-      const negEmp = branchEmployees.find(e => {
-        if (negId && e.id === negId) return true
-        const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees)
-        if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
-        return false
-      })
-      const negPhone = negEmp?.phone || ''
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
           <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
             {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
           </span>
-          {negPhone && (
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium select-all" title={negPhone}>
-              {fmtPhone(negPhone) || negPhone}
-            </span>
-          )}
         </div>,
         ticket, label, rowGhost,
       )
@@ -6494,18 +6567,7 @@ export default function Tickets() {
                        <DField label="Brand / Unit" value={brand || '—'} />
                        <DField label="Service / Driver" value={serviceDriver || '—'} />
                        <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || '—'} />
-                       <DField label="Negotiator" value={
-                          negotiatorName ? (
-                            <div className="flex flex-col gap-0.5 animate-in fade-in duration-200">
-                              <span>{negotiatorName}</span>
-                              {negotiatorPhone && (
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                                  {fmtPhone(negotiatorPhone) || negotiatorPhone}
-                                </span>
-                              )}
-                            </div>
-                          ) : '—'
-                        } />
+                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : '—'} />
                        <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || '—'} />
                        <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || '—'} />
                        <DField label="Control No. / SI" value={t.controlNumber || t.control_number || '—'} />
@@ -6717,6 +6779,10 @@ export default function Tickets() {
             openReschedDialog(pickerTicket)
             return
           }
+          if (value === 'CONTINUATION') {
+            openContinuationDialog(pickerTicket)
+            return
+          }
           if (value === 'DONE_INSTALLED') {
             if (!ticketHasPaymentInfo(pickerTicket)) {
               setPaymentPrompt({ ticket: pickerTicket, nextStatus: value })
@@ -6827,6 +6893,229 @@ export default function Tickets() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      })()}
+
+      {/* ── Final Date Picker Popup (My Tickets) ── */}
+      {finalDatePicker && (() => {
+        const { ticket, x, y, value, preferredDate } = finalDatePicker
+        const todayKey = todayDateKey()
+        const todayParts = todayKey.split('-').map(Number)
+        const fallback = new Date(`${todayKey}T00:00:00`)
+        const calYear = finalDateCalMonth?.year ?? fallback.getFullYear()
+        const calMonth = finalDateCalMonth?.month ?? fallback.getMonth()
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+        const firstDow = new Date(calYear, calMonth, 1).getDay()
+        const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+        const selLabel = value
+          ? new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })
+          : ''
+        const preferredLabel = preferredDate ? formatDateKeyLabel(preferredDate) : ''
+        const isPast = (yr: number, mo: number, d: number) => {
+          if (yr < todayParts[0]) return true
+          if (yr === todayParts[0] && mo < todayParts[1]) return true
+          if (yr === todayParts[0] && mo === todayParts[1] && d < todayParts[2]) return true
+          return false
+        }
+        const goMonth = (delta: number) => {
+          const cur = new Date(calYear, calMonth, 1)
+          cur.setMonth(cur.getMonth() + delta)
+          setFinalDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+        }
+        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
+        const pickDate = (dateKey: string) => {
+          setFinalDatePicker(prev => (prev ? { ...prev, value: dateKey } : null))
+        }
+        const commitFinalDate = () => {
+          if (!value.trim()) return
+          const pickerTicket = ticket
+          closeFinalDatePicker()
+          void saveCellEdit(pickerTicket, 'FINAL DATE', value)
+        }
+
+        return ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[12000]" onClick={closeFinalDatePicker}>
+            <div
+              className="fixed w-[min(18rem,calc(100vw-1rem))] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+              style={{
+                left: x,
+                top: y,
+                backgroundColor: cardBg,
+                border: `1px solid ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.3)'}`,
+                maxHeight: 'min(420px, 75vh)',
+                boxShadow: isLight
+                  ? '0 12px 28px -6px rgba(15,23,42,0.18), 0 8px 12px -8px rgba(15,23,42,0.12)'
+                  : '0 12px 28px -6px rgba(0,0,0,0.55)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div
+                className="px-3 py-2.5 flex items-start justify-between gap-2 shrink-0"
+                style={{
+                  borderBottom: `1px solid ${isLight ? 'rgba(22,163,74,0.2)' : 'rgba(74,222,128,0.2)'}`,
+                  backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(16,185,129,0.1)',
+                }}
+              >
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: isLight ? '#166534' : '#6EE7B7' }}>
+                    Final schedule date
+                  </p>
+                  <p className="text-[11px] font-bold truncate mt-0.5" style={{ color: textPrimary }}>
+                    {getCustomerDisplayName(ticket)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeFinalDatePicker}
+                  className="p-1 rounded-md hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}
+                  aria-label="Close"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {preferredLabel && (
+                <div
+                  className="px-3 py-2 shrink-0"
+                  style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                >
+                  <p className="text-[9px] font-black uppercase tracking-[0.12em] mb-1.5" style={{ color: textMuted }}>
+                    Customer preferred date
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pickDate(preferredDate)
+                      const d = new Date(`${preferredDate}T00:00:00`)
+                      setFinalDateCalMonth({ year: d.getFullYear(), month: d.getMonth() })
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-left transition-colors"
+                    style={{
+                      borderColor: value === preferredDate
+                        ? (isLight ? 'rgba(22,163,74,0.45)' : 'rgba(110,231,183,0.45)')
+                        : inputBorder,
+                      backgroundColor: value === preferredDate
+                        ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(16,185,129,0.14)')
+                        : (isLight ? '#ffffff' : inputBg),
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
+                      <span className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>
+                        {preferredLabel}
+                      </span>
+                    </span>
+                    {value === preferredDate && (
+                      <span className="text-[9px] font-black uppercase shrink-0" style={{ color: green }}>Selected</span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              <div className="px-3 pt-2.5 pb-1 flex-1 overflow-y-auto">
+                <div className="mb-2 text-center">
+                  <span className="text-[11px] font-extrabold tracking-tight" style={{ color: value ? green : textMuted }}>
+                    {value ? selLabel : 'Pick a date below'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between mb-1.5 px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => !atTodayMonth && goMonth(-1)}
+                    disabled={atTodayMonth}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold"
+                    style={{
+                      color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted,
+                      cursor: atTodayMonth ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    ‹
+                  </button>
+                  <span className="text-[11px] font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => goMonth(1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700"
+                    style={{ color: textMuted }}
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-7 mb-1">
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                    <div key={d} className="text-center text-[9px] font-bold py-0.5" style={{ color: textMuted }}>{d}</div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-y-0.5">
+                  {Array.from({ length: firstDow }).map((_, i) => <div key={`fd-empty-${i}`} />)}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1
+                    const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                    const past = isPast(calYear, calMonth + 1, day)
+                    const isToday = dKey === todayKey
+                    const isSel = dKey === value
+                    const isPreferred = Boolean(preferredDate && dKey === preferredDate)
+                    return (
+                      <button
+                        key={dKey}
+                        type="button"
+                        disabled={past}
+                        onClick={() => pickDate(dKey)}
+                        className="relative w-full aspect-square flex items-center justify-center text-[11px] font-semibold rounded-full transition-all"
+                        style={{
+                          color: isSel ? '#fff' : past ? (isLight ? '#cbd5e1' : '#2d3f5a') : isToday ? green : textPrimary,
+                          backgroundColor: isSel ? green : isPreferred && !isSel ? (isLight ? 'rgba(22,163,74,0.12)' : 'rgba(16,185,129,0.16)') : 'transparent',
+                          border: isPreferred && !isSel ? `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(110,231,183,0.35)'}` : '1px solid transparent',
+                          cursor: past ? 'not-allowed' : 'pointer',
+                          fontWeight: isToday && !isSel ? 800 : 600,
+                        }}
+                      >
+                        {day}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div
+                className="px-3 py-2 flex items-center justify-between gap-2 border-t shrink-0"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => pickDate(todayKey)}
+                  className="text-[10px] font-bold transition-colors"
+                  style={{ color: green }}
+                >
+                  Today
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={closeFinalDatePicker}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold border"
+                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={commitFinalDate}
+                    disabled={!value.trim()}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40"
+                    style={{ backgroundColor: green }}
+                  >
+                    Set Date
+                  </button>
+                </div>
               </div>
             </div>
           </div>,
@@ -7851,6 +8140,182 @@ export default function Tickets() {
                   style={{ backgroundColor: green }}
                 >
                   {reschedPending ? 'Mark Pending' : 'Reschedule'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {continuationDialog && (() => {
+        const todayKey = todayDateKey()
+        const todayParts = todayKey.split('-').map(Number)
+        const fallback = new Date(`${todayKey}T00:00:00`)
+        const calYear = continuationCalMonth?.year ?? fallback.getFullYear()
+        const calMonth = continuationCalMonth?.month ?? fallback.getMonth()
+        const calKey = `continuation-cal-${continuationDialog.ticket.id}`
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+        const firstDow = new Date(calYear, calMonth, 1).getDay()
+        const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+
+        const isPast = (y: number, m: number, d: number) => {
+          if (y < todayParts[0]) return true
+          if (y === todayParts[0] && m < todayParts[1]) return true
+          if (y === todayParts[0] && m === todayParts[1] && d < todayParts[2]) return true
+          return false
+        }
+        const goMonth = (delta: number) => {
+          const cur = new Date(calYear, calMonth, 1)
+          cur.setMonth(cur.getMonth() + delta)
+          setContinuationCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+        }
+        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
+
+        const toggleDate = (dKey: string) => {
+          setContinuationSelectedDates(prev => {
+            if (prev.includes(dKey)) {
+              return prev.filter(d => d !== dKey)
+            } else {
+              return [...prev, dKey].sort()
+            }
+          })
+        }
+
+        return (
+          <div
+            key={calKey}
+            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(6px)' }}
+            onClick={closeContinuationDialog}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
+                <h3 className="text-sm font-black" style={{ color: textPrimary }}>Set Continuation Dates</h3>
+                <p className="text-xs mt-1" style={{ color: textMuted }}>
+                  {getCustomerDisplayName(continuationDialog.ticket)}
+                </p>
+              </div>
+
+              {/* Selected Dates Badges */}
+              <div className="px-4 py-2 bg-slate-500/5 border-b flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto" style={{ borderColor: border }}>
+                {continuationSelectedDates.length === 0 ? (
+                  <span className="text-[11px] text-slate-400 font-medium py-0.5">No continuation dates selected. Click on the calendar below to toggle dates.</span>
+                ) : (
+                  continuationSelectedDates.map(d => {
+                    const label = new Date(`${d}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+                    return (
+                      <span
+                        key={d}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase transition-colors"
+                        style={{
+                          color: isLight ? '#4f46e5' : '#a5b4fc',
+                          backgroundColor: isLight ? '#e0e7ff' : 'rgba(79,70,229,0.18)',
+                          border: `1px solid ${isLight ? '#c7d2fe' : 'rgba(79,70,229,0.35)'}`,
+                        }}
+                      >
+                        {label}
+                        <button
+                          type="button"
+                          onClick={() => toggleDate(d)}
+                          className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-indigo-500/20 text-[9px] font-extrabold"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* Calendar */}
+              <div className="px-4 pt-4 pb-4">
+                {/* Month nav */}
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <button
+                    type="button"
+                    onClick={() => !atTodayMonth && goMonth(-1)}
+                    disabled={atTodayMonth}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
+                    style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
+                  >
+                    ‹
+                  </button>
+                  <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => goMonth(1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
+                    style={{ color: textMuted, backgroundColor: 'transparent' }}
+                  >
+                    ›
+                  </button>
+                </div>
+
+                {/* Day-of-week header */}
+                <div className="grid grid-cols-7 mb-1">
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                    <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
+                  ))}
+                </div>
+
+                {/* Days grid */}
+                <div className="grid grid-cols-7 gap-y-0.5 mb-1">
+                  {Array.from({ length: firstDow }).map((_, i) => <div key={`empty-${i}`} />)}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1
+                    const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                    const past = isPast(calYear, calMonth + 1, day)
+                    const isToday = dKey === todayKey
+                    const isSel = continuationSelectedDates.includes(dKey)
+                    return (
+                      <button
+                        key={dKey}
+                        type="button"
+                        disabled={past}
+                        onClick={() => toggleDate(dKey)}
+                        className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all"
+                        style={{
+                          color: isSel ? '#fff' : past ? (isLight ? '#cbd5e1' : '#2d3f5a') : isToday ? green : textPrimary,
+                          backgroundColor: isSel ? '#4f46e5' : 'transparent',
+                          cursor: past ? 'not-allowed' : 'pointer',
+                          fontWeight: isToday && !isSel ? 800 : 600,
+                        }}
+                      >
+                        {day}
+                        {isToday && !isSel && (
+                          <span
+                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                            style={{ backgroundColor: green }}
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
+                <button
+                  type="button"
+                  onClick={closeContinuationDialog}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void commitInlineContinuation()}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+                  style={{ backgroundColor: '#4f46e5' }}
+                >
+                  Save Continuation
                 </button>
               </div>
             </div>

@@ -25,13 +25,11 @@ export type RelayEditTicketModalProps = {
   inputBorder: string
   compactInput: string
   branches: Branch[]
-  employees: Employee[]
   relayCustomStores: string[]
   onPersistCustomStores: (stores: string[]) => void
   parseStoreVendor: (sourceVendor?: string) => ParsedStore
   resolveBranch: (branchId?: string) => Branch | null
   negotiatorsForBranch: (branchId?: string) => Employee[]
-  renderNegotiatorPhone: (phone: string) => ReactNode
   mergeCandidates: TicketLike[]
   mergeTargetId: string
   merging: boolean
@@ -72,13 +70,11 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     inputBorder,
     compactInput,
     branches,
-    employees,
     relayCustomStores,
     onPersistCustomStores,
     parseStoreVendor,
     resolveBranch,
     negotiatorsForBranch,
-    renderNegotiatorPhone,
     mergeCandidates,
     mergeTargetId,
     merging,
@@ -124,13 +120,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     }
     return options
   }, [draft.storeVendor, relayCustomStores])
-
-  const negotiatorPhone = useMemo(() => {
-    const uid = draft.assignTechId
-    if (!uid) return ''
-    const emp = employees.find((e) => String(e.id) === uid)
-    return String(emp?.phone || '').trim()
-  }, [draft.assignTechId, employees])
 
   const addCustomStore = () => {
     const name = storeDraft.trim()
@@ -286,11 +275,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     return <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
                   })}
                 </select>
-              </EField>
-              <EField label="Negotiator Number">
-                <div className={`${relayInput} flex items-center min-h-[30px] normal-case`} style={{ ...inputStyle, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-                  {negotiatorPhone ? renderNegotiatorPhone(negotiatorPhone) : <span className="text-[11px] font-medium" style={{ color: textMuted }}>No number on negotiator account</span>}
-                </div>
               </EField>
               <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>

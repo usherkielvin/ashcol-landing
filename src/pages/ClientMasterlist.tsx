@@ -3376,13 +3376,11 @@ export default function ClientMasterlist() {
           inputBorder={inputBorder}
           compactInput={compactInput}
           branches={branches}
-          employees={employees}
           relayCustomStores={relayCustomStores}
           onPersistCustomStores={persistRelayCustomStores}
           parseStoreVendor={parseStoreVendor}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
-          renderNegotiatorPhone={(phone) => <FormatPhone raw={phone} />}
           mergeCandidates={mergeCandidates}
           mergeTargetId={mergeTargetId}
           merging={merging}
