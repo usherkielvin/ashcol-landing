@@ -558,14 +558,36 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   return normalizeRelayScheduleTicket(next)
 }
 
-function mergeServerListWithLocalEdits(serverList: Ticket[], localList: Ticket[], editedIds: Set<string>): Ticket[] {
-  if (editedIds.size === 0 || localList.length === 0) return serverList
-  const localById = new Map(localList.map(t => [t.id, t]))
-  return serverList.map(serverTicket => {
+function mergeServerListWithLocalEdits(
+  serverList: Ticket[],
+  localList: Ticket[],
+  editedIds: Set<string>,
+  options?: { dateFilter?: string; extraLocal?: Ticket[] },
+): Ticket[] {
+  if (editedIds.size === 0) return serverList
+
+  const localById = new Map<string, Ticket>()
+  for (const t of localList) localById.set(t.id, t)
+  for (const t of options?.extraLocal || []) {
+    if (!localById.has(t.id)) localById.set(t.id, t)
+  }
+  if (localById.size === 0) return serverList
+
+  const serverIds = new Set(serverList.map(t => t.id))
+  const merged = serverList.map(serverTicket => {
     const local = localById.get(serverTicket.id)
     if (!local || !editedIds.has(serverTicket.id)) return serverTicket
     return preserveLocalScheduleFields(local, serverTicket)
   })
+
+  const dateKey = options?.dateFilter
+  for (const local of localById.values()) {
+    if (!editedIds.has(local.id) || serverIds.has(local.id)) continue
+    if (dateKey && !ticketMatchesDateKey(local, dateKey) && !isScheduleGhostOnDate(local, dateKey)) continue
+    merged.unshift(normalizeRelayScheduleTicket(local) as Ticket)
+  }
+
+  return merged
 }
 
 function resolveTicketScheduleDateKey(ticket: Ticket): string {
@@ -2531,6 +2553,9 @@ export default function Tickets() {
       setActiveTab('overview')
     } else if (location.pathname === '/schedules') {
       setActiveTab('schedules')
+      setDateFilter(resolveInitialScheduleDate('/schedules'))
+    } else if (location.pathname === '/my-tickets') {
+      setDateFilter('')
     }
   }, [location.pathname])
 
@@ -5044,11 +5069,16 @@ export default function Tickets() {
         ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
       })
       if (seq !== fetchSeqRef.current) return
-      const cachedList = hasCache ? (cached!.tickets as Ticket[]) : []
+      const freshCached = readSchedulesTabCache(cacheKey)
+      const cachedList = Array.isArray(freshCached?.tickets) ? (freshCached.tickets as Ticket[]) : []
       const withLocalEdits = mergeServerListWithLocalEdits(
         list as Ticket[],
         cachedList,
         locallyEditedTicketIdsRef.current,
+        {
+          dateFilter: isMyTickets ? undefined : dateFilter,
+          extraLocal: ticketsRef.current,
+        },
       )
       const merged = applyOptimisticOverlay(withLocalEdits)
       setTickets(merged)
@@ -5096,6 +5126,11 @@ export default function Tickets() {
     window.addEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
     return () => window.removeEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
   }, [hydrateFromTabCache])
+
+  useEffect(() => {
+    if (isMyTickets || activeTab !== 'schedules') return
+    hydrateFromTabCache()
+  }, [activeTab, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
     if (!canEdit) return
@@ -6481,7 +6516,8 @@ export default function Tickets() {
     }
 
     if (label === 'TICKET NO') {
-      const displayVal = val || '—'
+      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
+      const displayVal = val ? `${prefix}${val}` : `${prefix}—`
       return withEditPencil(
         <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
           {displayVal}

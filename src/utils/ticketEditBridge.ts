@@ -61,7 +61,7 @@ export function mapRelayDraftToScheduleEditForm(
     controlNumber: draft.controlNumber || base.controlNumber,
     ticketCategory: (draft.ticketCategory || base.ticketCategory || 'INSTALLATION') as TicketCategoryValue,
     status: draft.scheduleStatus || draft.updateStatus || base.status,
-    preferredDate: draft.preferredDate || draft.finalDate || base.preferredDate,
+    preferredDate: draft.finalDate || draft.preferredDate || base.preferredDate,
     finalDate: draft.finalDate || base.finalDate,
     installationCharges: draft.installationCharges ?? base.installationCharges,
     modeOfPayment: draft.modeOfPayment || base.modeOfPayment,
