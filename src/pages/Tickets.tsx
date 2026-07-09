@@ -4770,9 +4770,12 @@ export default function Tickets() {
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       markSchedulesSessionLoaded(cacheKey)
-    } catch {
+      if (merged.length === 0 && !isMyTickets) {
+        setFetchError(null)
+      }
+    } catch (err) {
       if (seq !== fetchSeqRef.current) return
-      if (!hasCache) setFetchError('Failed to load tickets. Check your connection.')
+      setFetchError(`Failed to load schedules: ${formatFetchError(err)}`)
     } finally {
       if (seq === fetchSeqRef.current) {
         setLoading(false)
@@ -4802,7 +4805,7 @@ export default function Tickets() {
     }
     const hydrated = hydrateFromTabCache()
     if (hydrated) setSyncing(false)
-    void fetchTickets({ soft: true, quiet: true, force: true })
+    void fetchTickets({ soft: true, quiet: false, force: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -4916,6 +4919,8 @@ export default function Tickets() {
         const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
+            || resolveScopedBranchId(t.branchId || t.branch_id)
+            || resolveScopedBranchId(user?.branchId)
           if (!b) return false
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
@@ -4951,6 +4956,8 @@ export default function Tickets() {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
         list = list.filter(t => {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
+            || resolveScopedBranchId(t.branchId || t.branch_id)
+            || resolveScopedBranchId(user?.branchId)
           if (!b) return false
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
@@ -6706,7 +6713,7 @@ export default function Tickets() {
         <div className="flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold shrink-0"
              style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
-          <button onClick={() => void fetchTickets({ soft: false })} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
+          <button onClick={() => void fetchTickets({ soft: false, force: true })} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
         </div>
       )}
 
@@ -6771,7 +6778,7 @@ export default function Tickets() {
           </div>
         ) : (
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {syncing && !backgroundSyncing && !searchQuery && visible.length > 0 && (
+            {(syncing || backgroundSyncing) && !searchQuery && (
               <div
                 className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
                 style={{
@@ -6877,7 +6884,7 @@ export default function Tickets() {
                   <tr>
                     <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
                       <div className="flex flex-col items-center justify-center gap-3 py-6">
-                        {syncing && !backgroundSyncing && !searchQuery ? (
+                        {(syncing || backgroundSyncing) && !searchQuery ? (
                           <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
                             <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
                             <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
@@ -6891,7 +6898,11 @@ export default function Tickets() {
                                 ? (searchQuery
                                   ? 'No pending or assigned tickets match your search'
                                   : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
-                                : 'No records'}
+                                : tickets.length > 0
+                                  ? 'No tickets match this date or branch view'
+                                  : fetchError
+                                    ? 'Could not load schedules — use Retry above'
+                                    : 'No records'}
                             </p>
                             {searchQuery && (
                               <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
