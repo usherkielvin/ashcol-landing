@@ -5240,9 +5240,13 @@ export default function Tickets() {
         return Boolean(dateFilter && isCompletedGhostOnDate(t, dateFilter))
       }
 
-      let hasFinalDate = Boolean(getFinalDateKey(t))
+      const hasFinalDate = Boolean(getFinalDateKey(t))
+      const hasScheduleDate = hasFinalDate
+        || Boolean(getPreferredDateKey(t))
+        || Boolean(String(parseAcMeta(t).scheduledDate || '').trim())
       const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(stat)
-      if (!hasFinalDate && !isScheduledOrActive) return false
+      // Tickets with a final/preferred schedule date belong on Schedules even if still ASSIGNED/PENDING.
+      if (!hasScheduleDate && !isScheduledOrActive) return false
 
       const scheduleValue = getScheduleStatusValue(t)
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
@@ -5250,7 +5254,7 @@ export default function Tickets() {
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP'
-      const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasFinalDate
+      const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
       return isInstallation || isCleaning || isResched || isForApproval || isSurvey || isActiveSchedule
     })
@@ -5406,6 +5410,8 @@ export default function Tickets() {
         installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live),
+        driver: getTicketDriverName(live) || formatServiceDriver(live) || '',
+        service: formatRelayTicketTypeShort(live) || getF(live, 'serviceType', 'service_type') || '',
       }
     })
   }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets])

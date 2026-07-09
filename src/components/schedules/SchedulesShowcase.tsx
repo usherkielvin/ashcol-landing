@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
 
 export type ScheduleShowcaseRow = {
@@ -16,6 +16,10 @@ export type ScheduleShowcaseRow = {
   installer: string
   update: string
   payment: string
+  /** Driver / vehicle for driver list sheet */
+  driver: string
+  /** Service type (S/I, Survey, etc.) for driver list sheet */
+  service: string
 }
 
 type SchedulesShowcaseProps = {
@@ -38,11 +42,13 @@ const TABLE_BORDER = '#000000'
 const INK = '#000000'
 const PAPER = '#ffffff'
 
-/** Philippines Long Bond — landscape 13" × 8.5" */
-const PDF_PAGE = { orientation: 'landscape' as const, unit: 'in' as const, format: [8.5, 13] as [number, number] }
-const PDF_MARGIN_X = 0.28
-/** Max data rows per showcase / PDF page — row 16+ continues on the next page. */
-const ROWS_PER_PAGE = 15
+/** A4 landscape for installer + driver sheets */
+const PDF_PAGE = { orientation: 'landscape' as const, unit: 'mm' as const, format: 'a4' as const }
+const PDF_MARGIN_X = 8
+/** Installer schedule sheet — max rows per A4 page */
+const INSTALLER_ROWS_PER_PAGE = 15
+/** Driver list sheet — max rows per A4 page */
+const DRIVER_ROWS_PER_PAGE = 13
 
 function chunkRows<T>(rows: T[], size: number): T[][] {
   if (rows.length === 0) return [[]]
@@ -86,7 +92,6 @@ function pdfPaymentText(payment: string): string {
     return `${mode} ${amount}`
   }
 
-  // Amount only — format with commas
   if (/^[\d,]+(?:\.\d+)?$/.test(trimmed)) {
     const cleanAmount = trimmed.replace(/,/g, '')
     const num = parseFloat(cleanAmount)
@@ -129,7 +134,7 @@ function parseDateMeta(dateKey: string, dateLabel: string) {
   return { scheduleDate, dayName }
 }
 
-function buildHeaders(isTaguigServices: boolean) {
+function buildInstallerHeaders(isTaguigServices: boolean) {
   const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
   const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
   return [
@@ -147,7 +152,20 @@ function buildHeaders(isTaguigServices: boolean) {
   ]
 }
 
-function rowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
+function buildDriverHeaders() {
+  return [
+    'NO.',
+    'TICKET NO',
+    'NAME',
+    'DESTINATION',
+    'DISTRICT',
+    'STATUS',
+    'DRIVER',
+    'SERVICE',
+  ]
+}
+
+function installerRowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
   return [
     String(row.index),
@@ -164,7 +182,7 @@ function rowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, st
   ]
 }
 
-function rowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
+function installerRowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
   return [
     String(row.index),
@@ -181,19 +199,41 @@ function rowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string,
   ]
 }
 
-function buildBody(rows: ScheduleShowcaseRow[], paymentByRowId?: Record<string, string>) {
-  return rows.map(row => rowToPdfCells(row, paymentByRowId))
+function driverRowToCells(row: ScheduleShowcaseRow) {
+  return [
+    String(row.index),
+    showcaseCellText(row.ticketNumber),
+    showcaseCellText(row.name),
+    showcaseCellText(row.destination),
+    showcaseCellText(row.district).toUpperCase(),
+    showcaseCellText(row.status),
+    showcaseCellText(row.driver),
+    showcaseCellText(row.service),
+  ]
+}
+
+function driverRowToPdfCells(row: ScheduleShowcaseRow) {
+  return [
+    String(row.index),
+    pdfCellText(row.ticketNumber),
+    pdfCellText(row.name),
+    pdfCellText(row.destination),
+    pdfCellText(row.district),
+    pdfCellText(row.status),
+    pdfCellText(row.driver),
+    pdfCellText(row.service),
+  ]
 }
 
 const PDF_BW_TABLE = {
   theme: 'grid' as const,
   styles: {
     font: 'helvetica',
-    fontSize: 7,
-    cellPadding: 0.09,
-    minCellHeight: 0.32,
+    fontSize: 6.5,
+    cellPadding: 1.1,
+    minCellHeight: 6.2,
     lineColor: [0, 0, 0] as [number, number, number],
-    lineWidth: 0.012,
+    lineWidth: 0.2,
     textColor: [0, 0, 0] as [number, number, number],
     fillColor: [255, 255, 255] as [number, number, number],
     valign: 'top' as const,
@@ -204,11 +244,43 @@ const PDF_BW_TABLE = {
     textColor: [0, 0, 0] as [number, number, number],
     fontStyle: 'bold' as const,
     halign: 'center' as const,
-    fontSize: 6.5,
-    cellPadding: 0.08,
-    minCellHeight: 0.26,
+    fontSize: 6,
+    cellPadding: 1,
+    minCellHeight: 5.5,
     lineColor: [0, 0, 0] as [number, number, number],
   },
+}
+
+/** A4 landscape usable width ≈ 297 − 16mm margins */
+const INSTALLER_COLUMN_STYLES = {
+  0: { halign: 'center' as const, cellWidth: 8 },
+  1: { halign: 'center' as const, cellWidth: 18 },
+  2: { cellWidth: 32 },
+  3: { cellWidth: 20 },
+  4: { cellWidth: 22 },
+  5: { cellWidth: 20 },
+  6: { halign: 'center' as const, cellWidth: 22 },
+  7: { cellWidth: 24 },
+  8: { halign: 'center' as const, cellWidth: 20 },
+  9: { cellWidth: 48 },
+  10: {
+    halign: 'right' as const,
+    cellWidth: 27,
+    fontStyle: 'bold' as const,
+    fontSize: 6.5,
+    overflow: 'linebreak' as const,
+  },
+}
+
+const DRIVER_COLUMN_STYLES = {
+  0: { halign: 'center' as const, cellWidth: 10 },
+  1: { halign: 'center' as const, cellWidth: 22 },
+  2: { cellWidth: 40 },
+  3: { cellWidth: 55 },
+  4: { cellWidth: 28 },
+  5: { halign: 'center' as const, cellWidth: 28 },
+  6: { halign: 'center' as const, cellWidth: 32 },
+  7: { halign: 'center' as const, cellWidth: 26 },
 }
 
 function drawPdfDateTable(
@@ -216,20 +288,26 @@ function drawPdfDateTable(
   autoTable: typeof import('jspdf-autotable').default,
   dateKey: string,
   dateLabel: string,
+  sheetTitle?: string,
 ) {
   const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
+  const body: string[][] = [
+    ['DATE', scheduleDate],
+    ['DAY', dayName],
+  ]
+  if (sheetTitle) {
+    body.push(['SHEET', sheetTitle])
+  }
   autoTable(pdf, {
-    startY: 0.2,
+    startY: 6,
     margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X },
-    tableWidth: 2.45,
-    body: [
-      ['DATE', scheduleDate],
-      ['DAY', dayName],
-    ],
+    tableWidth: 62,
+    body,
     ...PDF_BW_TABLE,
+    styles: { ...PDF_BW_TABLE.styles, fontSize: 6.5, cellPadding: 1, minCellHeight: 5 },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 0.52 },
-      1: { cellWidth: 1.93 },
+      0: { fontStyle: 'bold', cellWidth: 14 },
+      1: { cellWidth: 48 },
     },
     didParseCell: (data) => {
       if (data.section === 'body' && data.column.index === 1) {
@@ -239,27 +317,7 @@ function drawPdfDateTable(
     },
   })
   const doc = pdf as import('jspdf').jsPDF & { lastAutoTable?: { finalY: number } }
-  return doc.lastAutoTable?.finalY ?? 0.58
-}
-
-const PDF_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 0.35 },
-  1: { halign: 'center' as const, cellWidth: 0.85 },
-  2: { cellWidth: 1.35 },
-  3: { cellWidth: 0.82 },
-  4: { cellWidth: 0.95 },
-  5: { cellWidth: 0.82 },
-  6: { halign: 'center' as const, cellWidth: 1.05 },
-  7: { cellWidth: 1.05 },
-  8: { halign: 'center' as const, cellWidth: 0.82 },
-  9: { cellWidth: 2.30 },
-  10: {
-    halign: 'right' as const,
-    cellWidth: 2.08,
-    fontStyle: 'bold' as const,
-    fontSize: 7.5,
-    overflow: 'linebreak' as const,
-  },
+  return doc.lastAutoTable?.finalY ?? 18
 }
 
 async function exportShowcasePdfDocument(options: {
@@ -277,42 +335,68 @@ async function exportShowcasePdfDocument(options: {
   const pdf = new jsPDF(PDF_PAGE)
   const pageWidth = pdf.internal.pageSize.getWidth()
   const tableWidth = pageWidth - PDF_MARGIN_X * 2
-  const headers = buildHeaders(isTaguigServices)
-  const pages = chunkRows(rows, ROWS_PER_PAGE)
+  const installerHeaders = buildInstallerHeaders(isTaguigServices)
+  const driverHeaders = buildDriverHeaders()
+  const installerPages = chunkRows(rows, INSTALLER_ROWS_PER_PAGE)
+  const driverPages = chunkRows(rows, DRIVER_ROWS_PER_PAGE)
 
-  const drawDateHeader = () => drawPdfDateTable(pdf, autoTable, dateKey, dateLabel)
+  let globalPage = 0
 
-  pages.forEach((pageRows, pageIdx) => {
-    if (pageIdx > 0) pdf.addPage([8.5, 13], 'landscape')
-    const tableStartY = drawDateHeader() + 0.14
+  const drawFooter = (pageNo: number) => {
+    const footerY = pdf.internal.pageSize.getHeight() - 5
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(6)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text(`Page ${pageNo}`, pageWidth / 2, footerY, { align: 'center' })
+  }
+
+  installerPages.forEach((pageRows) => {
+    if (globalPage > 0) pdf.addPage('a4', 'landscape')
+    globalPage += 1
+    const tableStartY = drawPdfDateTable(pdf, autoTable, dateKey, dateLabel, 'INSTALLER LIST') + 3
     const body = pageRows.length > 0
-      ? buildBody(pageRows, paymentByRowId)
+      ? pageRows.map(r => installerRowToPdfCells(r, paymentByRowId))
       : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']]
 
     autoTable(pdf, {
       startY: tableStartY,
-      margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 0.72, bottom: 0.35 },
+      margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 20, bottom: 10 },
       tableWidth,
-      head: [headers],
+      head: [installerHeaders],
       body,
       showHead: 'everyPage',
       ...PDF_BW_TABLE,
-      columnStyles: PDF_COLUMN_STYLES,
-      didDrawPage: (data) => {
-        if (data.pageNumber > 1) {
-          drawDateHeader()
-        }
-        const footerY = pdf.internal.pageSize.getHeight() - 0.2
-        pdf.setFont('helvetica', 'normal')
-        pdf.setFontSize(6.5)
-        pdf.setTextColor(0, 0, 0)
-        pdf.text(`Page ${data.pageNumber}`, pageWidth / 2, footerY, { align: 'center' })
-      },
+      columnStyles: INSTALLER_COLUMN_STYLES,
+      didDrawPage: () => drawFooter(globalPage),
     })
   })
 
+  if (rows.length > 0) {
+    driverPages.forEach((pageRows) => {
+      pdf.addPage('a4', 'landscape')
+      globalPage += 1
+      const tableStartY = drawPdfDateTable(pdf, autoTable, dateKey, dateLabel, 'DRIVER LIST') + 3
+      const body = pageRows.map(r => driverRowToPdfCells(r))
+
+      autoTable(pdf, {
+        startY: tableStartY,
+        margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 20, bottom: 10 },
+        tableWidth,
+        head: [driverHeaders],
+        body,
+        showHead: 'everyPage',
+        ...PDF_BW_TABLE,
+        styles: { ...PDF_BW_TABLE.styles, fontSize: 7, minCellHeight: 7 },
+        columnStyles: DRIVER_COLUMN_STYLES,
+        didDrawPage: () => drawFooter(globalPage),
+      })
+    })
+  }
+
   pdf.save(filename)
 }
+
+type SheetKind = 'installer' | 'driver'
 
 export function SchedulesShowcase({
   open,
@@ -327,6 +411,10 @@ export function SchedulesShowcase({
 }: SchedulesShowcaseProps) {
   const [exportingPdf, setExportingPdf] = useState(false)
   const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
+
+  const installerPages = useMemo(() => chunkRows(rows, INSTALLER_ROWS_PER_PAGE), [rows])
+  const driverPages = useMemo(() => chunkRows(rows, DRIVER_ROWS_PER_PAGE), [rows])
+  const totalSheets = installerPages.length + (rows.length > 0 ? driverPages.length : 0)
 
   useEffect(() => {
     if (!open) return
@@ -370,165 +458,83 @@ export function SchedulesShowcase({
 
   if (!open) return null
 
-  const headers = buildHeaders(isTaguigServices)
-  const rowPages = chunkRows(rows, ROWS_PER_PAGE)
-  const pageCount = rowPages.length
+  const installerHeaders = buildInstallerHeaders(isTaguigServices)
+  const driverHeaders = buildDriverHeaders()
 
-  const renderDateTable = () => (
-    <div className="p-3 md:p-4" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
+  const renderDateTable = (sheetTitle: string) => (
+    <div className="p-2 md:p-3" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
       <table
         className="schedules-showcase-date-table"
-        style={{ borderCollapse: 'collapse', width: '220px', maxWidth: '100%' }}
+        style={{ borderCollapse: 'collapse', width: '240px', maxWidth: '100%' }}
       >
         <tbody>
           <tr>
-            <td
-              style={{
-                border: `1px solid ${TABLE_BORDER}`,
-                padding: '6px 10px',
-                fontWeight: 800,
-                fontSize: '10px',
-                textTransform: 'uppercase',
-                backgroundColor: PAPER,
-                color: INK,
-                width: 56,
-              }}
-            >
-              Date
-            </td>
-            <td
-              style={{
-                border: `1px solid ${TABLE_BORDER}`,
-                padding: '6px 10px',
-                fontWeight: 700,
-                fontSize: '11px',
-                backgroundColor: PAPER,
-                color: INK,
-              }}
-            >
-              {scheduleDate}
-            </td>
+            <td style={dateLabelCell}>Date</td>
+            <td style={dateValueCell}>{scheduleDate}</td>
           </tr>
           <tr>
-            <td
-              style={{
-                border: `1px solid ${TABLE_BORDER}`,
-                padding: '6px 10px',
-                fontWeight: 800,
-                fontSize: '10px',
-                textTransform: 'uppercase',
-                backgroundColor: PAPER,
-                color: INK,
-              }}
-            >
-              Day
-            </td>
-            <td
-              style={{
-                border: `1px solid ${TABLE_BORDER}`,
-                padding: '6px 10px',
-                fontWeight: 700,
-                fontSize: '11px',
-                backgroundColor: PAPER,
-                color: INK,
-              }}
-            >
-              {dayName}
-            </td>
+            <td style={dateLabelCell}>Day</td>
+            <td style={dateValueCell}>{dayName}</td>
+          </tr>
+          <tr>
+            <td style={dateLabelCell}>Sheet</td>
+            <td style={dateValueCell}>{sheetTitle}</td>
           </tr>
         </tbody>
       </table>
     </div>
   )
 
-  const renderDataTable = (pageRows: ScheduleShowcaseRow[]) => (
+  const renderInstallerTable = (pageRows: ScheduleShowcaseRow[]) => (
     <div className="overflow-x-auto">
       <table
-        className="schedules-showcase-table"
-        style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER }}
+        className="schedules-showcase-table schedules-showcase-installer"
+        style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER, tableLayout: 'fixed' }}
       >
+        <colgroup>
+          <col style={{ width: '3%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '12%' }} />
+        </colgroup>
         <thead>
           <tr>
-            {headers.map((label, headerIdx) => {
-              const isStatus = headerIdx === 6
-              const isPayment = headerIdx === 10
-              return (
-                <th
-                  key={label}
-                  style={{
-                    backgroundColor: PAPER,
-                    color: INK,
-                    border: `1px solid ${TABLE_BORDER}`,
-                    padding: '7px 5px',
-                    fontSize: isPayment ? '9px' : '9.5px',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.03em',
-                    verticalAlign: 'middle',
-                    textAlign: 'center',
-                    whiteSpace: 'nowrap',
-                    minWidth: isStatus ? 100 : isPayment ? 130 : undefined,
-                  }}
-                >
-                  {label}
-                </th>
-              )
-            })}
+            {installerHeaders.map((label) => (
+              <th key={label} style={thStyle}>{label}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {pageRows.length === 0 ? (
             <tr>
-              <td
-                colSpan={headers.length}
-                style={{
-                  padding: '32px 16px',
-                  textAlign: 'center',
-                  color: INK,
-                  fontWeight: 600,
-                  border: `1px solid ${TABLE_BORDER}`,
-                  backgroundColor: PAPER,
-                }}
-              >
+              <td colSpan={installerHeaders.length} style={emptyCellStyle}>
                 No schedule tickets for this date.
               </td>
             </tr>
           ) : pageRows.map(row => {
-            const cells = rowToCells(row, paymentByRowId)
+            const cells = installerRowToCells(row, paymentByRowId)
             return (
-              <tr key={`${row.index}-${row.id}`}>
-                {cells.map((value, cellIdx) => {
-                  const isUpdate = cellIdx === 9
-                  const isName = cellIdx === 2
-                  const isCommit = cellIdx === 7
-                  const isStatus = cellIdx === 6
-                  const isPayment = cellIdx === 10
-                  const isBrand = cellIdx === 4
-                  const isTicketNo = cellIdx === 1
-                  const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus || isTicketNo
-                  const center = [0, 1, 6, 8].includes(cellIdx)
-                  return (
-                    <td
-                      key={cellIdx}
-                      style={{
-                        border: `1px solid ${TABLE_BORDER}`,
-                        padding: '8px 7px',
-                        fontSize: isPayment ? '9px' : isUpdate ? '10px' : '9.5px',
-                        fontWeight: isPayment ? 700 : isStatus ? 600 : 500,
-                        color: INK,
-                        backgroundColor: PAPER,
-                        verticalAlign: 'top',
-                        textAlign: isPayment ? 'right' : center ? 'center' : 'left',
-                        whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
-                        wordBreak: wrap ? 'break-word' : 'normal',
-                        minWidth: isUpdate ? 220 : isPayment ? 130 : isStatus ? 100 : undefined,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {value}
-                    </td>
-                  )
-                })}
+              <tr key={`inst-${row.index}-${row.id}`}>
+                {cells.map((value, cellIdx) => (
+                  <td
+                    key={cellIdx}
+                    style={{
+                      ...tdStyle,
+                      textAlign: cellIdx === 10 ? 'right' : [0, 1, 6, 8].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 10 ? 700 : cellIdx === 6 ? 600 : 500,
+                      fontSize: cellIdx === 9 || cellIdx === 10 ? '8px' : '8.5px',
+                    }}
+                  >
+                    {value}
+                  </td>
+                ))}
               </tr>
             )
           })}
@@ -536,6 +542,115 @@ export function SchedulesShowcase({
       </table>
     </div>
   )
+
+  const renderDriverTable = (pageRows: ScheduleShowcaseRow[]) => (
+    <div className="overflow-x-auto">
+      <table
+        className="schedules-showcase-table schedules-showcase-driver"
+        style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER, tableLayout: 'fixed' }}
+      >
+        <colgroup>
+          <col style={{ width: '4%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '10%' }} />
+        </colgroup>
+        <thead>
+          <tr>
+            {driverHeaders.map((label) => (
+              <th key={label} style={thStyle}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {pageRows.length === 0 ? (
+            <tr>
+              <td colSpan={driverHeaders.length} style={emptyCellStyle}>
+                No schedule tickets for this date.
+              </td>
+            </tr>
+          ) : pageRows.map(row => {
+            const cells = driverRowToCells(row)
+            return (
+              <tr key={`drv-${row.index}-${row.id}`}>
+                {cells.map((value, cellIdx) => (
+                  <td
+                    key={cellIdx}
+                    style={{
+                      ...tdStyle,
+                      textAlign: [0, 1, 5, 6, 7].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 5 ? 600 : 500,
+                      fontSize: '9px',
+                    }}
+                  >
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+
+  const renderSheet = (
+    kind: SheetKind,
+    pageRows: ScheduleShowcaseRow[],
+    pageIdx: number,
+    pageCount: number,
+    isLast: boolean,
+  ) => {
+    const title = kind === 'installer' ? 'INSTALLER LIST' : 'DRIVER LIST'
+    return (
+      <div
+        key={`${kind}-page-${pageIdx}`}
+        className={`schedules-showcase-sheet mx-auto ${!isLast ? 'showcase-page-break' : ''}`}
+        style={{
+          maxWidth: '1123px',
+          width: '100%',
+          backgroundColor: PAPER,
+          border: '1px solid #dbe5ef',
+          boxShadow: '0 12px 40px rgba(15,23,42,0.08)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: !isLast ? 24 : 0,
+        }}
+      >
+        {renderDateTable(title)}
+        {kind === 'installer' ? renderInstallerTable(pageRows) : renderDriverTable(pageRows)}
+        {pageCount > 1 && (
+          <div
+            className="no-print px-3 py-1.5 text-right text-[10px] font-semibold text-slate-500"
+            style={{ borderTop: `1px solid ${TABLE_BORDER}` }}
+          >
+            {title} · Page {pageIdx + 1} of {pageCount}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const sheets: React.ReactNode[] = []
+  installerPages.forEach((pageRows, pageIdx) => {
+    const isLastInstaller = pageIdx === installerPages.length - 1
+    const isLastOverall = isLastInstaller && rows.length === 0
+    sheets.push(
+      renderSheet('installer', pageRows, pageIdx, installerPages.length, isLastOverall),
+    )
+  })
+  if (rows.length > 0) {
+    driverPages.forEach((pageRows, pageIdx) => {
+      const isLast = pageIdx === driverPages.length - 1
+      sheets.push(
+        renderSheet('driver', pageRows, pageIdx, driverPages.length, isLast),
+      )
+    })
+  }
 
   return (
     <>
@@ -560,8 +675,8 @@ export function SchedulesShowcase({
                 {branchLabel || 'Branch'} · {scheduleDate} · {dayName}
               </div>
               <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                PDF / Print: Landscape Long 8.5″ × 13″ · black &amp; white · {ROWS_PER_PAGE} rows/page
-                {pageCount > 1 ? ` · ${pageCount} pages` : ''}
+                PDF / Print: A4 Landscape · Installer ({INSTALLER_ROWS_PER_PAGE}/page) + Driver ({DRIVER_ROWS_PER_PAGE}/page)
+                {totalSheets > 1 ? ` · ${totalSheets} sheets` : ''}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -604,41 +719,15 @@ export function SchedulesShowcase({
           </div>
 
           <div className="flex-1 px-4 py-6 md:px-8 md:py-10 print-area">
-            {rowPages.map((pageRows, pageIdx) => (
-              <div
-                key={`showcase-page-${pageIdx}`}
-                className={`schedules-showcase-sheet mx-auto ${pageIdx < rowPages.length - 1 ? 'showcase-page-break' : ''}`}
-                style={{
-                  maxWidth: '1800px',
-                  width: '100%',
-                  backgroundColor: PAPER,
-                  border: '1px solid #dbe5ef',
-                  boxShadow: pageIdx === 0 ? '0 24px 80px rgba(15,23,42,0.12)' : '0 12px 40px rgba(15,23,42,0.08)',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  marginBottom: pageIdx < rowPages.length - 1 ? 24 : 0,
-                }}
-              >
-                {renderDateTable()}
-                {renderDataTable(pageRows)}
-                {pageCount > 1 && (
-                  <div
-                    className="no-print px-4 py-2 text-right text-[10px] font-semibold text-slate-500"
-                    style={{ borderTop: `1px solid ${TABLE_BORDER}` }}
-                  >
-                    Page {pageIdx + 1} of {pageCount}
-                  </div>
-                )}
-              </div>
-            ))}
+            {sheets}
           </div>
         </div>
       </div>
 
       <style>{`
         @page {
-          size: 13in 8.5in landscape;
-          margin: 0.28in;
+          size: A4 landscape;
+          margin: 8mm;
         }
         @media print {
           body * { visibility: hidden !important; }
@@ -660,6 +749,8 @@ export function SchedulesShowcase({
             box-shadow: none !important;
             border-radius: 0 !important;
             margin-bottom: 0 !important;
+            max-width: none !important;
+            border: none !important;
           }
           .print-area * {
             background: #ffffff !important;
@@ -701,4 +792,59 @@ export function SchedulesShowcase({
       `}</style>
     </>
   )
+}
+
+const dateLabelCell: React.CSSProperties = {
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '4px 8px',
+  fontWeight: 800,
+  fontSize: '9px',
+  textTransform: 'uppercase',
+  backgroundColor: PAPER,
+  color: INK,
+  width: 52,
+}
+
+const dateValueCell: React.CSSProperties = {
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '4px 8px',
+  fontWeight: 700,
+  fontSize: '10px',
+  backgroundColor: PAPER,
+  color: INK,
+}
+
+const thStyle: React.CSSProperties = {
+  backgroundColor: PAPER,
+  color: INK,
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '4px 3px',
+  fontSize: '8px',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.02em',
+  verticalAlign: 'middle',
+  textAlign: 'center',
+  whiteSpace: 'nowrap',
+}
+
+const tdStyle: React.CSSProperties = {
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '4px 4px',
+  color: INK,
+  backgroundColor: PAPER,
+  verticalAlign: 'top',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  lineHeight: 1.3,
+}
+
+const emptyCellStyle: React.CSSProperties = {
+  padding: '24px 12px',
+  textAlign: 'center',
+  color: INK,
+  fontWeight: 600,
+  border: `1px solid ${TABLE_BORDER}`,
+  backgroundColor: PAPER,
+  fontSize: '10px',
 }
