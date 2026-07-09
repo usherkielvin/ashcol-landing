@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { API_BASE_URL, formatPersonName, resolveImageUrl } from '../utils/api'
 import { prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
+import { clearSchedulesSessionMarkers, SCHEDULES_PERSIST_LOCAL } from '../utils/ticketTabCache'
 
 export interface AuthUser {
   id?: string
@@ -92,6 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // logout only clears storage and state — navigation is handled by callers
   // via React Router navigate('/login', { replace: true }) for instant SPA navigation
   const logout = () => {
+    window.dispatchEvent(new CustomEvent(SCHEDULES_PERSIST_LOCAL))
+    clearSchedulesSessionMarkers()
     setUser(null)
     sessionStorage.removeItem(SESSION_KEY)
     sessionStorage.removeItem('ashcol-token')
@@ -152,11 +155,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) refreshProfile()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Warm schedules cache (yesterday / today / tomorrow) as soon as the user is signed in.
+  // Warm schedules cache once per login session (yesterday / today / tomorrow).
   useEffect(() => {
     if (!user) return
     const globalBranchId = localStorage.getItem('ashcol-global-branch-id')
-    void prefetchSchedulesDateWindow(user, globalBranchId, { force: true })
+    void prefetchSchedulesDateWindow(user, globalBranchId)
   }, [user?.id, user?.role, user?.branchId])
 
   // Periodic token expiration check

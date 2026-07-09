@@ -3,6 +3,8 @@ import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './local
 import { normalizeRelayScheduleTicket, shouldExcludeRelayFromTab } from './relayScheduleSync'
 
 export const TAB_CACHE_UPDATED = 'ashcol-tab-cache-updated'
+/** Fired before logout — schedules page should flush rows into local cache. */
+export const SCHEDULES_PERSIST_LOCAL = 'ashcol-schedules-persist-local'
 export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
 /** Background re-fetch interval; cached rows are always shown instantly regardless of age. */
 export const SCHEDULES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
@@ -89,6 +91,20 @@ export function markSchedulesSessionLoaded(cacheKey: string): void {
   }
 }
 
+/** Clears per-session sync markers so the next login fetches once from the server. Keeps localStorage cache. */
+export function clearSchedulesSessionMarkers(): void {
+  try {
+    const sessionKeys: string[] = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key && key.startsWith('ashcol-schedules-loaded:')) sessionKeys.push(key)
+    }
+    sessionKeys.forEach(k => sessionStorage.removeItem(k))
+  } catch {
+    // ignore
+  }
+}
+
 export function isSchedulesSessionLoaded(cacheKey: string): boolean {
   try {
     return sessionStorage.getItem(schedulesSessionLoadedKey(cacheKey)) != null
@@ -134,7 +150,15 @@ export function writeSchedulesTabCache(key: string, tickets: unknown[], source: 
   }
   schedulesMemory.set(key, next)
   writeTabCache(key, next)
-  markSchedulesSessionLoaded(key)
+  if (source === 'server') markSchedulesSessionLoaded(key)
+}
+
+/** Flush in-memory schedule caches to localStorage (e.g. before logout / PDF). */
+export function persistSchedulesMemoryToDisk(): void {
+  for (const [key, val] of schedulesMemory.entries()) {
+    if (!Array.isArray(val?.tickets)) continue
+    writeTabCache(key, val)
+  }
 }
 
 export function schedulesCacheKey(
@@ -327,7 +351,6 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
       const next = { ...cached, tickets, lastSyncAt: Date.now() }
       if (logicalKey.startsWith('schedules:')) {
         schedulesMemory.set(logicalKey, { tickets, lastSyncAt: next.lastSyncAt })
-        markSchedulesSessionLoaded(logicalKey)
       }
       writeTabCache(logicalKey, next)
     }

@@ -397,7 +397,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   <input
                     type="date"
                     value={draft.finalDate}
-                    onChange={(e) => patch({ finalDate: e.target.value, preferredDate: e.target.value })}
+                    onChange={(e) => patch({ finalDate: e.target.value })}
                     className={relayInput}
                     style={{
                       ...inputStyle,

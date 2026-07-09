@@ -1,7 +1,7 @@
 import { fetchTicketsPage, isPortalAdmin } from './api'
 import { normalizeRelayScheduleTicketList } from './relayScheduleSync'
 import {
-  markSchedulesSessionLoaded,
+  isSchedulesSessionLoaded,
   readSchedulesTabCache,
   schedulesCacheKey,
   writeSchedulesTabCache,
@@ -79,11 +79,11 @@ export function prefetchSchedulesDateWindow(
     await Promise.all(
       dates.map(async dateKey => {
         const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)
+        if (!options?.force && isSchedulesSessionLoaded(cacheKey)) return
         try {
           const list = await fetchTicketsPage(endpoint, token, { size: 500, date: dateKey })
           const merged = normalizeRelayScheduleTicketList(list as unknown[])
           writeSchedulesTabCache(cacheKey, merged, 'server')
-          markSchedulesSessionLoaded(cacheKey)
         } catch (err) {
           console.warn('[SchedulesPrefetch] failed for', dateKey, err)
         }

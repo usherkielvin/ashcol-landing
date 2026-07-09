@@ -9,7 +9,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
-import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
 import { hasSchedulesCacheForDate, prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
@@ -494,6 +494,77 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     merged.service_vehicle = merged.serviceVehicle
   }
   return merged
+}
+
+function hasLocalScheduleValue(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'number') return value > 0
+  if (typeof value === 'string') return value.trim().length > 0
+  return true
+}
+
+/** Keep installer / driver / payment / remarks from the user's local row when server sync returns stale data. */
+function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
+  const normalizedServer = normalizeRelayScheduleTicket(server)
+  let next = mergeTicketPatch(local, normalizedServer as unknown as Record<string, unknown>)
+
+  const copyIfLocal = (field: keyof Ticket) => {
+    const localVal = local[field]
+    if (hasLocalScheduleValue(localVal)) {
+      (next as unknown as Record<string, unknown>)[field as string] = localVal
+    }
+  }
+
+  copyIfLocal('installerName')
+  copyIfLocal('serviceVehicle')
+  copyIfLocal('modeOfPayment')
+  copyIfLocal('installationCharges')
+  copyIfLocal('remarksUpdate')
+  copyIfLocal('remarks')
+  copyIfLocal('status')
+  copyIfLocal('serviceType')
+  copyIfLocal('commitType')
+
+  if (hasLocalScheduleValue(local.mode_of_payment)) next.mode_of_payment = local.mode_of_payment
+  if (hasLocalScheduleValue(local.installation_charges)) next.installation_charges = local.installation_charges
+  if (hasLocalScheduleValue(local.service_vehicle)) next.service_vehicle = local.service_vehicle
+  const localRemarksUpdate = (local as Ticket & { remarks_update?: string }).remarks_update
+  if (hasLocalScheduleValue(localRemarksUpdate)) {
+    (next as Ticket & { remarks_update?: string }).remarks_update = localRemarksUpdate
+  }
+
+  if (local.acDetails?.trim()) {
+    try {
+      const localMeta = parseAcMeta(local)
+      const serverMeta = parseAcMeta(next)
+      const mergedMeta: Record<string, unknown> = { ...serverMeta }
+      for (const key of [
+        'installerName', 'installer', 'technicianName', 'driverName', 'serviceVehicle', 'driver_name',
+        'modeOfPayment', 'installationCharges', 'installation_charges', 'update', 'remarksUpdate',
+        'scheduleOutcome', 'paymentMode', 'paymentStatus', 'charges', 'amountCharged',
+      ]) {
+        const v = localMeta[key]
+        if (hasLocalScheduleValue(v)) mergedMeta[key] = v
+      }
+      next.acDetails = JSON.stringify(mergedMeta)
+      next.ac_details = next.acDetails
+    } catch {
+      next.acDetails = local.acDetails
+      next.ac_details = local.acDetails
+    }
+  }
+
+  return normalizeRelayScheduleTicket(next)
+}
+
+function mergeServerListWithLocalEdits(serverList: Ticket[], localList: Ticket[], editedIds: Set<string>): Ticket[] {
+  if (editedIds.size === 0 || localList.length === 0) return serverList
+  const localById = new Map(localList.map(t => [t.id, t]))
+  return serverList.map(serverTicket => {
+    const local = localById.get(serverTicket.id)
+    if (!local || !editedIds.has(serverTicket.id)) return serverTicket
+    return preserveLocalScheduleFields(local, serverTicket)
+  })
 }
 
 function resolveTicketScheduleDateKey(ticket: Ticket): string {
@@ -2414,10 +2485,14 @@ export default function Tickets() {
       const customEvent = e as CustomEvent
       const updatedTicket = customEvent.detail?.ticket
       if (!updatedTicket?.id) return
-      
+
       setTickets(prev => {
         if (!prev.some(t => t.id === updatedTicket.id)) return prev
-        return prev.map(t => (t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t))
+        return prev.map(t => (
+          t.id === updatedTicket.id
+            ? preserveLocalScheduleFields(t, updatedTicket as Ticket)
+            : t
+        ))
       })
     }
     window.addEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
@@ -2543,11 +2618,15 @@ export default function Tickets() {
   const fetchSeqRef = useRef(0)
   const hasLoadedOnceRef = useRef(initialSchedulesReady)
 
+  /** Local row edits (installer / driver / payment / remarks) — never let server refresh overwrite these. */
+  const locallyEditedTicketIdsRef = useRef(new Set<string>())
   const [tickets, setTickets] = useState<Ticket[]>(() =>
     initialSchedules.hasCache
       ? normalizeRelayScheduleTicketList(initialSchedules.tickets as Ticket[])
       : [],
   )
+  const ticketsRef = useRef<Ticket[]>(tickets)
+  ticketsRef.current = tickets
   const [loading, setLoading] = useState(() => !initialSchedulesReady)
   const [syncing, setSyncing] = useState(false)
   const [backgroundSyncing, setBackgroundSyncing] = useState(false)
@@ -2607,6 +2686,19 @@ export default function Tickets() {
     [user, globalBranchId, isCustomer, isAdmin, isMyTickets, dateFilter],
   )
 
+  const persistSchedulesSnapshot = useCallback(() => {
+    if (isMyTickets) return
+    const list = normalizeRelayScheduleTicketList(ticketsRef.current)
+    writeSchedulesTabCache(schedulesCacheKeyForTab(), list, 'local')
+    persistSchedulesMemoryToDisk()
+  }, [isMyTickets, schedulesCacheKeyForTab])
+
+  useEffect(() => {
+    const onPersist = () => { persistSchedulesSnapshot() }
+    window.addEventListener(SCHEDULES_PERSIST_LOCAL, onPersist)
+    return () => window.removeEventListener(SCHEDULES_PERSIST_LOCAL, onPersist)
+  }, [persistSchedulesSnapshot])
+
   const hydrateFromTabCache = useCallback((): boolean => {
     const cached = readSchedulesTabCache(schedulesCacheKeyForTab())
     if (!Array.isArray(cached?.tickets)) return false
@@ -2628,9 +2720,7 @@ export default function Tickets() {
     setLoading(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
-    const cacheKey = schedulesCacheKeyForTab()
-    markSchedulesSessionLoaded(cacheKey)
-    writeSchedulesTabCache(cacheKey, normalizeRelayScheduleTicketList(list), 'local')
+    writeSchedulesTabCache(schedulesCacheKeyForTab(), normalizeRelayScheduleTicketList(list), 'local')
     return true
   }, [schedulesCacheKeyForTab])
 
@@ -3483,8 +3573,7 @@ export default function Tickets() {
             || payloadResult?.ticket
             || payloadResult) as Ticket | null
           if (!createdTicket?.id) {
-            // Keep temp row visible; refresh will merge when server has it
-            void fetchTickets({ soft: true, force: true, quiet: true })
+            // Keep temp row visible; list will pick up the server row on next manual refresh
             console.log('[Schedules] Created ticket in database (refreshing list)', { tempId })
             return
           }
@@ -3905,7 +3994,7 @@ export default function Tickets() {
 
       if (finalDateKey && !isReschedStatus) {
         body.finalDate = finalDateKey
-        body.preferredDate = finalDateKey
+        body.preferredDate = activeForm.preferredDate || finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
         if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
           body.status = 'SCHEDULED'
@@ -4054,7 +4143,6 @@ export default function Tickets() {
                 console.warn('Archive service report failed:', err)
                 alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
               }
-              void fetchTickets({ soft: true, force: true, quiet: true })
             }
           : undefined,
       )
@@ -4460,9 +4548,6 @@ export default function Tickets() {
                 console.error('[Schedules] Deferred delete of imported ticket FAILED', realId, err)
               }
             }
-
-            // Confirm list from server (temps already swapped / removed)
-            await fetchTickets({ soft: true, force: true, quiet: true })
           } else {
             failCount += createTemps.length
             importErrors.push(await readApiError(res))
@@ -4766,23 +4851,18 @@ export default function Tickets() {
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKeyForTab()
     const cached = readSchedulesTabCache(cacheKey)
-    const cacheEntry = readTabCacheEntry<SchedulesTabCache>(cacheKey)
-    const cacheAt = cached?.lastSyncAt ?? cacheEntry?.data.lastSyncAt ?? cacheEntry?.savedAt
-    const cacheFresh = cacheAt ? isTabCacheFresh(cacheAt, SCHEDULES_CACHE_TTL_MS) : false
     const hasCache = Array.isArray(cached?.tickets)
-    const cacheHasRows = hasCache && (cached!.tickets as Ticket[]).length > 0
-    const sessionLoaded = isSchedulesSessionLoaded(cacheKey) || hasCache
-    const skipNetwork = Boolean(
-      options?.soft && !options?.force && options?.quiet && cacheFresh && cacheHasRows,
-    )
+    const sessionSynced = isSchedulesSessionLoaded(cacheKey)
+    const manualRefresh = Boolean(options?.force && !options?.quiet)
+    const skipNetwork = sessionSynced && !manualRefresh
     // Soft / quiet refreshes must never show the full-page loading UI.
-    const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
-    if ((options?.soft || options?.quiet || hasCache || sessionLoaded || hasLoadedOnceRef.current) && !skipNetwork) {
+    const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache
+    if ((options?.soft || options?.quiet || hasCache || hasLoadedOnceRef.current) && !skipNetwork) {
       setLoading(false)
       setHasHydratedOnce(true)
     }
     if (!skipNetwork) {
-      if (options?.quiet || hasCache || sessionLoaded) {
+      if (options?.quiet || hasCache || sessionSynced) {
         setBackgroundSyncing(true)
       } else {
         setSyncing(true)
@@ -4823,24 +4903,22 @@ export default function Tickets() {
     }
 
     if (skipNetwork) {
-      setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
-      hasLoadedOnceRef.current = true
-      setHasHydratedOnce(true)
-      setLoading(false)
-      setSyncing(false)
-      setBackgroundSyncing(false)
-      markSchedulesSessionLoaded(cacheKey)
-      return
-    }
-
-    if (hasCache || sessionLoaded) {
       if (hasCache) {
         setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
       }
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       setLoading(false)
-      if (hasCache) markSchedulesSessionLoaded(cacheKey)
+      setSyncing(false)
+      setBackgroundSyncing(false)
+      return
+    }
+
+    if (hasCache) {
+      setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
+      hasLoadedOnceRef.current = true
+      setHasHydratedOnce(true)
+      setLoading(false)
     } else if (showSkeleton) {
       setLoading(true)
     }
@@ -4856,12 +4934,17 @@ export default function Tickets() {
         ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
       })
       if (seq !== fetchSeqRef.current) return
-      const merged = applyOptimisticOverlay(list as Ticket[])
+      const cachedList = hasCache ? (cached!.tickets as Ticket[]) : []
+      const withLocalEdits = mergeServerListWithLocalEdits(
+        list as Ticket[],
+        cachedList,
+        locallyEditedTicketIdsRef.current,
+      )
+      const merged = applyOptimisticOverlay(withLocalEdits)
       setTickets(merged)
       writeSchedulesTabCache(cacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
-      markSchedulesSessionLoaded(cacheKey)
       if (merged.length === 0 && !isMyTickets) {
         setFetchError(null)
       }
@@ -4882,11 +4965,7 @@ export default function Tickets() {
   useEffect(() => {
     hydrateFromTabCache()
     void prefetchSchedulesDateWindow(user, globalBranchId)
-    void fetchTickets({
-      soft: true,
-      force: true,
-      quiet: true,
-    })
+    void fetchTickets({ soft: true, quiet: true })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -4897,31 +4976,16 @@ export default function Tickets() {
     }
     const hydrated = hydrateFromTabCache()
     if (hydrated) setSyncing(false)
-    void fetchTickets({ soft: true, quiet: false, force: true })
+    void fetchTickets({ soft: true, quiet: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' && hasLoadedOnceRef.current) {
-        // Quiet background refresh only — never hard loading UI.
-        void fetchTickets({ soft: true, force: true, quiet: true })
-      }
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [fetchTickets])
-
-  useEffect(() => {
     const onCacheUpdated = () => {
-      const cacheKey = schedulesCacheKeyForTab()
-      const cached = readTabCache<SchedulesTabCache>(cacheKey)
-      if (Array.isArray(cached?.tickets)) {
-        setTickets(normalizeRelayScheduleTicketList(cached.tickets as Ticket[]))
-      }
+      hydrateFromTabCache()
     }
     window.addEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
     return () => window.removeEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
-  }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
+  }, [hydrateFromTabCache])
 
   useEffect(() => {
     if (!canEdit) return
@@ -5181,35 +5245,38 @@ export default function Tickets() {
     // are hidden, but completed/installed rows (which carry payment) are kept.
     return visible
       .filter(t => !dateFilter || !isRescheduledGhostOnDate(t, dateFilter))
-      .map((ticket, index) => ({
-        id: getTicketNumberDisplay(ticket) || String(ticket.id ?? index),
+      .map((ticket, index) => {
+        const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+        return {
+        id: getTicketNumberDisplay(live) || String(live.id ?? index),
         index: index + 1,
-        name: getF(ticket, 'customerName', 'customer_name') || ticket.title || '',
-        destination: formatAddress(ticket.location),
-        district: parseDistrict(ticket.location, ticket.district) || resolveTicketDistrict(ticket),
-        contact: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-        brand: parseBrand(ticket),
-        dealer: getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || '',
-        status: getScheduleStatusLabel(getScheduleStatusValue(ticket)),
-        commit: getF(ticket, 'commitType', 'commitTerms', 'description'),
-        installer: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
-        update: getScheduleUpdateDisplay(ticket),
-        payment: getSchedulePaymentDisplay(ticket),
-      }))
-  }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId])
+        name: getF(live, 'customerName', 'customer_name') || live.title || '',
+        destination: formatAddress(live.location),
+        district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
+        contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+        brand: parseBrand(live),
+        dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
+        status: getScheduleStatusLabel(getScheduleStatusValue(live)),
+        commit: getF(live, 'commitType', 'commitTerms', 'description'),
+        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+        update: getScheduleUpdateDisplay(live),
+        payment: getSchedulePaymentDisplay(live),
+      }})
+  }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId, tickets])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
     for (const ticket of visible) {
       if (dateFilter && isRescheduledGhostOnDate(ticket, dateFilter)) continue
-      const payment = getSchedulePaymentDisplay(ticket)
+      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const payment = getSchedulePaymentDisplay(live)
       if (!payment) continue
-      const ticketNo = getTicketNumberDisplay(ticket)
+      const ticketNo = getTicketNumberDisplay(live)
       if (ticketNo) map[ticketNo] = payment
-      if (ticket.id) map[String(ticket.id)] = payment
+      if (live.id) map[String(live.id)] = payment
     }
     return map
-  }, [visible, dateFilter])
+  }, [visible, dateFilter, tickets])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -5390,6 +5457,7 @@ export default function Tickets() {
 
   const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
     const normalized = normalizeRelayScheduleTicket(nextTicket)
+    locallyEditedTicketIdsRef.current.add(ticketId)
     const prevTicket = tickets.find(t => t.id === ticketId) || optimisticTicketsRef.current.get(ticketId)
     optimisticTicketsRef.current.set(ticketId, normalized)
 
@@ -5403,7 +5471,6 @@ export default function Tickets() {
       const base = Array.isArray(cached?.tickets) ? (cached!.tickets as Ticket[]) : []
       const nextList = normalizeRelayScheduleTicketList(listUpdater(base))
       writeSchedulesTabCache(cacheKey, nextList, 'local')
-      markSchedulesSessionLoaded(cacheKey)
     }
 
     if (!isMyTickets) {
@@ -5549,16 +5616,21 @@ export default function Tickets() {
           }
           const savedPayload = await res.json().catch(() => null)
           const savedTicket = parseCreatedTicketResponse(savedPayload) as Ticket | null
-          if (savedTicket?.id) {
-            const base = optimisticTicketsRef.current.get(saveId)
-              || tickets.find(t => t.id === saveId)
-            if (base) {
-              const mergedSaved = mergeTicketPatch(base, savedTicket as unknown as Record<string, unknown>)
-              optimisticTicketsRef.current.set(saveId, mergedSaved)
-              setTickets(prev => prev.map(t => (t.id === saveId ? mergedSaved : t)))
-              setOverviewResults(prev => prev.map(t => (t.id === saveId ? { ...t, ...mergedSaved } : t)))
-              syncTicketAcrossTabCaches(mergedSaved)
-            }
+          const base = optimisticTicketsRef.current.get(saveId)
+            || tickets.find(t => t.id === saveId)
+          if (base) {
+            const mergedSaved = savedTicket?.id
+              ? preserveLocalScheduleFields(base, savedTicket)
+              : base
+            optimisticTicketsRef.current.delete(saveId)
+            locallyEditedTicketIdsRef.current.add(saveId)
+            setTickets(prev => {
+              const next = prev.map(t => (t.id === saveId ? mergedSaved : t))
+              writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+              return next
+            })
+            setOverviewResults(prev => prev.map(t => (t.id === saveId ? { ...t, ...mergedSaved } : t)))
+            syncTicketAcrossTabCaches(mergedSaved)
           }
           console.log('[Schedules] Saved to database', {
             ticketId: saveId,
@@ -5569,7 +5641,6 @@ export default function Tickets() {
           })
           clearRelaysCache()
           clearWarrantyCache()
-          void fetchTickets({ soft: true, force: true, quiet: true })
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
           console.error('[Schedules] Background save FAILED', saveId, payload, err)
@@ -5714,7 +5785,6 @@ export default function Tickets() {
             } catch (err) {
               alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
             }
-            void fetchTickets({ soft: true, force: true, quiet: true })
           }
         : undefined,
     )
@@ -6731,6 +6801,7 @@ export default function Tickets() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
+                  persistSchedulesSnapshot()
                   setShowcaseOpen(true)
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0"
@@ -9404,6 +9475,7 @@ export default function Tickets() {
           isTaguigServices={isTaguigServices}
           rows={showcaseRows}
           paymentByRowId={showcasePaymentByRowId}
+          onBeforeExport={persistSchedulesSnapshot}
         />
       )}
     </div>

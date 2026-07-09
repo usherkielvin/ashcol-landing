@@ -163,13 +163,25 @@ export function applyRelayScheduleSyncToPatch(
     || (ticket ? resolveRelayFinalDate(ticket) : ''),
   ).trim().split('T')[0]
 
-  const preferred = String(next.preferredDate || next.preferred_date || '').trim().split('T')[0]
+  const preferred = String(
+    next.preferredDate
+    || next.preferred_date
+    || (ticket ? (ticket.preferredDate || ticket.preferred_date) : '')
+    || ''
+  ).trim().split('T')[0]
   const scheduleDate = finalDate || preferred
 
   if (scheduleDate) {
     if (!finalDate) next.finalDate = scheduleDate
-    next.preferredDate = String(next.preferredDate || next.preferred_date || scheduleDate)
-    next.preferred_date = next.preferredDate
+    
+    const currentPreferred = String(next.preferredDate || next.preferred_date || '').trim()
+    if (!preferred) {
+      next.preferredDate = scheduleDate
+      next.preferred_date = scheduleDate
+    } else if (currentPreferred) {
+      next.preferredDate = currentPreferred
+      next.preferred_date = currentPreferred
+    }
 
     const acBase = typeof next.acDetails === 'string'
       ? next.acDetails

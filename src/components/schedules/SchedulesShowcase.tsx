@@ -27,6 +27,8 @@ type SchedulesShowcaseProps = {
   rows: ScheduleShowcaseRow[]
   /** Live payment text keyed by showcase row id — used at PDF export time. */
   paymentByRowId?: Record<string, string>
+  /** Snapshot local schedule rows before PDF export. */
+  onBeforeExport?: () => void
 }
 
 const HEADER_GREEN = '#16a34a'
@@ -51,7 +53,7 @@ function pdfCellText(value: string): string {
   return trimmed.replace(/\s+/g, ' ').toUpperCase()
 }
 
-/** PDF payment: mode on first line, plain amount (no commas) on second line. */
+/** PDF payment: mode and amount on one line, with commas. */
 function pdfPaymentText(payment: string): string {
   const trimmed = (payment || '').trim()
   if (!trimmed || trimmed === '—') return ''
@@ -61,13 +63,26 @@ function pdfPaymentText(payment: string): string {
   const split = trimmed.match(/^(.+?)\s+([\d,]+(?:\.\d+)?)$/i)
   if (split) {
     const mode = split[1].trim().toUpperCase()
-    const amount = split[2].replace(/,/g, '')
-    return `${mode}\n${amount}`
+    const cleanAmount = split[2].replace(/,/g, '')
+    const num = parseFloat(cleanAmount)
+    let amount = split[2]
+    if (!isNaN(num)) {
+      const parts = cleanAmount.split('.')
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      amount = parts.join('.')
+    }
+    return `${mode} ${amount}`
   }
 
-  // Amount only — drop commas so PDF doesn't show a lone "big" formatted number
+  // Amount only — format with commas
   if (/^[\d,]+(?:\.\d+)?$/.test(trimmed)) {
-    return trimmed.replace(/,/g, '')
+    const cleanAmount = trimmed.replace(/,/g, '')
+    const num = parseFloat(cleanAmount)
+    if (!isNaN(num)) {
+      const parts = cleanAmount.split('.')
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      return parts.join('.')
+    }
   }
 
   return upper
@@ -253,7 +268,7 @@ async function exportShowcasePdfDocument(options: {
         halign: 'right',
         cellWidth: 2.45,
         fontStyle: 'bold',
-        fontSize: 6,
+        fontSize: 7.5,
         overflow: 'linebreak' as const,
       },
     },
@@ -281,6 +296,7 @@ export function SchedulesShowcase({
   isTaguigServices,
   rows,
   paymentByRowId,
+  onBeforeExport,
 }: SchedulesShowcaseProps) {
   const [exportingPdf, setExportingPdf] = useState(false)
   const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
@@ -306,6 +322,7 @@ export function SchedulesShowcase({
     if (exportingPdf) return
     setExportingPdf(true)
     try {
+      onBeforeExport?.()
       const safeBranch = (branchLabel || 'schedule').replace(/[^\w\-]+/g, '_')
       const safeDate = (dateLabel || 'all-dates').replace(/[^\w\-]+/g, '_')
       await exportShowcasePdfDocument({
@@ -322,7 +339,7 @@ export function SchedulesShowcase({
     } finally {
       setExportingPdf(false)
     }
-  }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, paymentByRowId, rows])
+  }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, onBeforeExport, paymentByRowId, rows])
 
   if (!open) return null
 
