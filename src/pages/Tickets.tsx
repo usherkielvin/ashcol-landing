@@ -1257,6 +1257,7 @@ type PendingTicketSave = {
   body: Record<string, unknown>
   rollback: Ticket
   afterSave?: () => Promise<void>
+  lookupRetried?: boolean
 }
 
 /**
@@ -1296,6 +1297,54 @@ function promoteTempTicketState(
 
   optimistic.set(realTicket.id, realTicket)
   return { ticket: realTicket, shouldFlush: false, wasDeleted: false }
+}
+
+function normalizeTicketNumberKey(ticketNumber?: string | null): string {
+  return (ticketNumber || '').trim().toUpperCase()
+}
+
+function isTicketNotFoundError(err: unknown): boolean {
+  return /ticket not found/i.test(formatFetchError(err))
+}
+
+async function lookupTicketByNumberOnServer(
+  authToken: string,
+  ticketNumber: string,
+): Promise<Ticket | null> {
+  const tn = ticketNumber.trim()
+  if (!tn || !authToken) return null
+  const upper = normalizeTicketNumberKey(tn)
+  const urls = [
+    `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(tn)}&size=25`,
+    `${API_BASE_URL}/tickets?q=${encodeURIComponent(tn)}&size=25`,
+    `${API_BASE_URL}/tickets/branch?q=${encodeURIComponent(tn)}&size=25`,
+  ]
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${authToken}` } })
+      if (!res.ok) continue
+      const data = await res.json()
+      const list: Ticket[] = data?.data?.tickets || data?.tickets || []
+      const exact = list.find(t => normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === upper)
+      if (exact?.id) return exact
+      if (list.length === 1 && list[0]?.id) return list[0]
+    } catch {
+      /* try next endpoint */
+    }
+  }
+  return null
+}
+
+function findTicketInListByRef(
+  list: Ticket[],
+  ticket: Ticket,
+  optimistic?: Map<string, Ticket>,
+): Ticket | null {
+  const byId = list.find(t => t.id === ticket.id) || optimistic?.get(ticket.id)
+  if (byId) return byId
+  const tn = normalizeTicketNumberKey(ticket.ticketNumber || ticket.ticket_number)
+  if (!tn) return null
+  return list.find(t => normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === tn) || null
 }
 
 function applyImportFieldsFromRow(
@@ -2063,7 +2112,7 @@ export default function Tickets() {
     try {
       const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const headers = { Authorization: `Bearer ${tokenStr}` }
-      const url = `${API_BASE_URL}/tickets?q=${encodeURIComponent(query)}&size=100`
+      const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(query)}&size=100`
       const res = await fetch(url, { headers })
       if (res.ok) {
         const data = await res.json()
@@ -2422,6 +2471,15 @@ export default function Tickets() {
     return found || null
   }, [branches])
 
+  useEffect(() => {
+    if (!editModalOpen || branches.length > 0) return
+    const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    if (!authToken) return
+    fetchCachedBranches(authToken)
+      .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
+      .catch(() => {})
+  }, [editModalOpen, branches.length])
+
   const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
     const resolved = resolveBranch(branchId)
     if (!resolved && !branchId) return '—'
@@ -2435,6 +2493,7 @@ export default function Tickets() {
   }, [resolveBranch])
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
@@ -3298,10 +3357,11 @@ export default function Tickets() {
   }
 
   const commitSaveEditTicket = async () => {
-    if (!editForm.id) return
+    if (!editForm.id || editSaving) return
     const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
     const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
+    setEditSaving(true)
     try {
       const originalTicket = resolveEditOriginalTicket()
       if (!originalTicket?.id) {
@@ -3379,12 +3439,21 @@ export default function Tickets() {
       ) || (editForm.branchId || '').trim()
       if (explicitBranch) {
         body.branchId = explicitBranch
+        body.branch_id = explicitBranch
       } else if (selectedNegotiator) {
         const negoBranchRaw = (selectedNegotiator.branchId || '').trim()
         if (negoBranchRaw) {
           body.branchId = resolvePortalWriteBranchId(negoBranchRaw, selectedNegotiator.email, selectedNegotiator.jobTitle) || negoBranchRaw
+          body.branch_id = body.branchId
         }
       }
+
+      const resolvedNegoName = resolveNegotiatorName(
+        (originalTicket || editForm) as Ticket,
+        branchEmployees,
+        editForm.negotiatorId,
+      )
+      if (resolvedNegoName) body.negotiatorName = resolvedNegoName
 
       const leavingResched = !isReschedStatus && ticketHasRescheduleMeta(originalTicket)
 
@@ -3529,7 +3598,7 @@ export default function Tickets() {
       const needsArchive = shouldComplete && shouldArchiveCompletedSchedule(originalTicket, finalBody)
       const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
 
-      queueTicketPatch(
+      await queueTicketPatch(
         originalTicket,
         finalBody,
         needsArchive
@@ -3579,10 +3648,12 @@ export default function Tickets() {
 
       setEditFormSnapshot(JSON.stringify(editForm))
       setEditModalOpen(false)
-      showToast('Saved — syncing in background')
+      showToast('Saved')
     } catch (err: unknown) {
       console.error(err)
       alert(`Could not update ticket: ${formatFetchError(err)}`)
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -4281,7 +4352,13 @@ export default function Tickets() {
         return mergeTicketPatch(t, local as unknown as Record<string, unknown>)
       })
       for (const [id, local] of pending) {
-        if (!serverIds.has(id) && !deleted.has(id)) merged.unshift(local)
+        if (!serverIds.has(id) && !deleted.has(id)) {
+          if (isTempTicketId(id) || pendingSavesRef.current.has(id) || activeSavesRef.current.has(id)) {
+            merged.unshift(local)
+          } else {
+            optimisticTicketsRef.current.delete(id)
+          }
+        }
       }
       return merged
     }
@@ -4766,9 +4843,62 @@ export default function Tickets() {
       writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
       return next
     })
+    setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...normalized } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
   }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
+
+  const resolveLiveScheduleTicket = useCallback((ticket: Ticket): Ticket => {
+    return findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
+  }, [tickets])
+
+  const remapScheduleTicketId = useCallback((oldId: string, serverTicket: Ticket) => {
+    const normalized = normalizeRelayScheduleTicket(serverTicket)
+    const newId = normalized.id
+    if (!newId || newId === oldId) return newId
+
+    const pending = pendingSavesRef.current.get(oldId)
+    if (pending) {
+      pendingSavesRef.current.delete(oldId)
+      pendingSavesRef.current.set(newId, pending)
+    }
+    const optimistic = optimisticTicketsRef.current.get(oldId)
+    optimisticTicketsRef.current.delete(oldId)
+    const mergedOptimistic = optimistic
+      ? mergeTicketPatch(normalized, optimistic as unknown as Record<string, unknown>)
+      : normalized
+    optimisticTicketsRef.current.set(newId, mergedOptimistic)
+    activeSavesRef.current.delete(oldId)
+
+    setTickets(prev => {
+      let replaced = false
+      const next = prev.map(t => {
+        if (t.id !== oldId) return t
+        replaced = true
+        return mergedOptimistic
+      })
+      const result = replaced ? next : [mergedOptimistic, ...next.filter(t => t.id !== newId)]
+      writeSchedulesTabCache(schedulesCacheKeyForTab(), result, 'local')
+      return result
+    })
+    setOverviewResults(prev => prev.map(t => (t.id === oldId ? { ...t, ...mergedOptimistic, id: newId } : t)))
+    setDetailTicket(prev => (prev?.id === oldId ? { ...prev, ...mergedOptimistic, id: newId } : prev))
+    syncTicketAcrossTabCaches(mergedOptimistic)
+    return newId
+  }, [schedulesCacheKeyForTab])
+
+  const purgeStaleScheduleTicket = useCallback((ticketId: string) => {
+    pendingSavesRef.current.delete(ticketId)
+    optimisticTicketsRef.current.delete(ticketId)
+    activeSavesRef.current.delete(ticketId)
+    deletedTicketsRef.current.add(ticketId)
+    setTickets(prev => {
+      const next = prev.filter(t => t.id !== ticketId)
+      writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+      return next
+    })
+    setOverviewResults(prev => prev.filter(t => t.id !== ticketId))
+  }, [schedulesCacheKeyForTab])
 
   const restoreTicketLocally = useCallback((ticketId: string, rollback: Ticket) => {
     optimisticTicketsRef.current.delete(ticketId)
@@ -4778,6 +4908,7 @@ export default function Tickets() {
       writeSchedulesTabCache(cacheKey, next, 'local')
       return next
     })
+    setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...rollback } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...rollback } : prev))
   }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
@@ -4786,15 +4917,16 @@ export default function Tickets() {
     if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
+    let saveId = ticketId
     try {
-      while (pendingSavesRef.current.has(ticketId)) {
-        const job = pendingSavesRef.current.get(ticketId)!
-        pendingSavesRef.current.delete(ticketId)
+      while (pendingSavesRef.current.has(saveId)) {
+        const job = pendingSavesRef.current.get(saveId)!
+        pendingSavesRef.current.delete(saveId)
         const payload = sanitizeTicketPatchBody(job.body)
         try {
           const auth = token()
           if (!auth) throw new Error('Not signed in — refresh and try again')
-          const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+          const res = await fetch(`${API_BASE_URL}/tickets/${saveId}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -4802,50 +4934,80 @@ export default function Tickets() {
             },
             body: JSON.stringify(payload),
           })
-          if (!res.ok) throw new Error(await readApiError(res))
+          if (!res.ok) {
+            const errText = await readApiError(res)
+            if (res.status === 404 && !job.lookupRetried) {
+              const lookupTicket = job.rollback
+                || optimisticTicketsRef.current.get(saveId)
+                || tickets.find(t => t.id === saveId)
+              const ticketNumber = lookupTicket?.ticketNumber || lookupTicket?.ticket_number || ''
+              const found = ticketNumber
+                ? await lookupTicketByNumberOnServer(auth, ticketNumber)
+                : null
+              if (found?.id && found.id !== saveId) {
+                const remappedId = remapScheduleTicketId(saveId, found)
+                pendingSavesRef.current.set(remappedId, {
+                  ...job,
+                  rollback: found,
+                  lookupRetried: true,
+                })
+                saveId = remappedId
+                continue
+              }
+            }
+            throw new Error(errText)
+          }
           const savedPayload = await res.json().catch(() => null)
           const savedTicket = parseCreatedTicketResponse(savedPayload) as Ticket | null
           if (savedTicket?.id) {
-            const base = optimisticTicketsRef.current.get(ticketId)
-              || tickets.find(t => t.id === ticketId)
+            const base = optimisticTicketsRef.current.get(saveId)
+              || tickets.find(t => t.id === saveId)
             if (base) {
               const mergedSaved = mergeTicketPatch(base, savedTicket as unknown as Record<string, unknown>)
-              optimisticTicketsRef.current.set(ticketId, mergedSaved)
-              setTickets(prev => prev.map(t => (t.id === ticketId ? mergedSaved : t)))
+              optimisticTicketsRef.current.set(saveId, mergedSaved)
+              setTickets(prev => prev.map(t => (t.id === saveId ? mergedSaved : t)))
+              setOverviewResults(prev => prev.map(t => (t.id === saveId ? { ...t, ...mergedSaved } : t)))
               syncTicketAcrossTabCaches(mergedSaved)
             }
           }
           console.log('[Schedules] Saved to database', {
-            ticketId,
+            ticketId: saveId,
             status: payload.status,
             scheduleOutcome: payload.scheduleOutcome,
             ticketCategory: payload.ticketCategory,
             serviceType: payload.serviceType,
           })
-          // Keep local ticket in optimisticTicketsRef until a list fetch confirms it on the server
-          // so refreshes (e.g. cache TTL) do not wipe the row from the UI.
           clearRelaysCache()
           clearWarrantyCache()
           void fetchTickets({ soft: true, force: true, quiet: true })
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
-          console.error('[Schedules] Background save FAILED', ticketId, payload, err)
-          // A newer edit may already be queued — retry that without wiping UI
-          if (pendingSavesRef.current.has(ticketId)) {
+          console.error('[Schedules] Background save FAILED', saveId, payload, err)
+          if (pendingSavesRef.current.has(saveId)) {
             continue
           }
-          restoreTicketLocally(ticketId, job.rollback)
-          alert(`Could not save ticket: ${formatFetchError(err)}`)
+          restoreTicketLocally(saveId, job.rollback)
+          if (isTicketNotFoundError(err)) {
+            purgeStaleScheduleTicket(saveId)
+            void fetchTickets({ soft: false, force: true, quiet: false })
+            alert(`Could not save ticket — it may have been removed or replaced. Refreshed the list. (${formatFetchError(err)})`)
+          } else {
+            alert(`Could not save ticket: ${formatFetchError(err)}`)
+          }
           break
         }
       }
     } finally {
       activeSavesRef.current.delete(ticketId)
-      if (pendingSavesRef.current.has(ticketId)) {
+      activeSavesRef.current.delete(saveId)
+      const nextId = saveId !== ticketId ? saveId : ticketId
+      if (pendingSavesRef.current.has(nextId)) {
+        void flushTicketSave(nextId)
+      } else if (pendingSavesRef.current.has(ticketId)) {
         void flushTicketSave(ticketId)
       }
     }
-  }, [restoreTicketLocally, token, fetchTickets, tickets])
+  }, [restoreTicketLocally, token, fetchTickets, tickets, remapScheduleTicketId, purgeStaleScheduleTicket])
   flushTicketSaveRef.current = (ticketId: string) => { void flushTicketSave(ticketId) }
 
   /** Apply UI instantly, merge into per-ticket queue, persist silently in background. */
@@ -4869,8 +5031,9 @@ export default function Tickets() {
     applyTicketLocally(ticketId, nextTicket)
     // Temp rows are not on the server yet — flush after create promotes to a real id.
     if (!isTempTicketId(ticketId)) {
-      void flushTicketSave(ticketId)
+      return flushTicketSave(ticketId)
     }
+    return Promise.resolve()
   }, [applyTicketLocally, flushTicketSave])
 
   const saveCellEdit = (
@@ -4879,11 +5042,12 @@ export default function Tickets() {
     value: string,
     injectedPayment?: { amount: number; modeOfPayment: string }
   ) => {
-    const key = cellEditKey(ticket.id, colLabel)
+    const liveTicket = resolveLiveScheduleTicket(ticket)
+    const key = cellEditKey(liveTicket.id, colLabel)
     if (savingCellKey === key) return
 
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
-    const body = buildCellPatchBody(ticket, colLabel, value, branchEmployees)
+    const body = buildCellPatchBody(liveTicket, colLabel, value, branchEmployees)
     if (Object.keys(body).length === 0) {
       cancelEdit()
       setStatusPicker(null)
@@ -4898,17 +5062,17 @@ export default function Tickets() {
 
     // Remarks always save in-cell — never open a payment popup.
     let finalBody: Record<string, unknown> = body
-    const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
+    const schedKey = resolveScheduleCompletionDateKey(liveTicket, dateFilter)
     const remarkText = colLabel === 'UPDATE'
       ? stripArchivedRemarkSuffix(value.trim())
       : ''
     if (colLabel === 'UPDATE' && isInstalledRemarks(remarkText)) {
-      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+      finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
     } else if (
       (body.status as string | undefined)?.toUpperCase() === 'COMPLETED'
       || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
     ) {
-      finalBody = enrichCompletePatchBody(body, ticket, schedKey)
+      finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
     }
 
     cancelEdit()
@@ -4919,7 +5083,7 @@ export default function Tickets() {
     // After marking DONE INSTALL, put the caret in REMARKS so the user types there.
     const focusRemarksAfterStatus = colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED'
 
-    const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
+    const shouldArchive = shouldArchiveCompletedSchedule(liveTicket, finalBody)
       || (
         colLabel === 'UPDATE'
         && isInstalledRemarks(stripArchivedRemarkSuffix(value.trim()))
@@ -4928,11 +5092,11 @@ export default function Tickets() {
 
     const archiveBody = finalBody
     queueTicketPatch(
-      ticket,
+      liveTicket,
       finalBody,
       shouldArchive
         ? async () => {
-            const branchId = resolveTicketArchiveBranch(ticket, {
+            const branchId = resolveTicketArchiveBranch(liveTicket, {
               installerName: body.installerName as string | undefined,
               installationCharges: archiveBody.installationCharges as number | undefined,
               modeOfPayment: archiveBody.modeOfPayment as string | undefined,
@@ -4940,14 +5104,14 @@ export default function Tickets() {
               remarksUpdate: archiveBody.remarksUpdate as string | undefined,
             })
             const archivePayload = buildArchiveServiceReportPayload(
-              ticket,
+              liveTicket,
               branchId,
               {
                 installationCharges: archiveBody.installationCharges as number | undefined,
                 modeOfPayment: archiveBody.modeOfPayment as string | undefined,
                 remarks: archiveBody.remarksUpdate as string | undefined,
                 remarksUpdate: archiveBody.remarksUpdate as string | undefined,
-                negotiatorName: resolveNegotiatorName(ticket, branchEmployees),
+                negotiatorName: resolveNegotiatorName(liveTicket, branchEmployees),
               },
               schedKey,
             )
@@ -4966,7 +5130,7 @@ export default function Tickets() {
     )
 
     if (focusRemarksAfterStatus) {
-      const nextTicket = mergeTicketPatch(ticket, finalBody)
+      const nextTicket = mergeTicketPatch(liveTicket, finalBody)
       requestAnimationFrame(() => startCellEdit(nextTicket, 'UPDATE'))
     }
   }
@@ -6981,7 +7145,8 @@ export default function Tickets() {
             }
           }
           if (value === currentStatus) return
-          void saveCellEdit(pickerTicket, 'STATUS', value)
+          const livePickerTicket = findTicketInListByRef(tickets, pickerTicket, optimisticTicketsRef.current) || pickerTicket
+          void saveCellEdit(livePickerTicket, 'STATUS', value)
         }
 
         return ReactDOM.createPortal(
@@ -7959,6 +8124,72 @@ export default function Tickets() {
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+              <div
+                className="rounded-xl p-4"
+                style={{
+                  border: `1px solid ${isLight ? 'rgba(22,163,74,0.28)' : 'rgba(74,222,128,0.25)'}`,
+                  backgroundColor: isLight ? 'rgba(240,253,244,0.85)' : 'rgba(22,163,74,0.08)',
+                }}
+              >
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 text-emerald-600">
+                  Branch & OIC Assignment
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Field label="Assigned Branch" required>
+                    <select
+                      value={editForm.branchId || ''}
+                      onChange={e => {
+                        const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
+                        setEditForm(prev => ({
+                          ...prev,
+                          branchId: nextBranchId,
+                          negotiatorId: '',
+                        }))
+                      }}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">{branches.length ? 'Select branch...' : 'Loading branches...'}</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                    {editForm.branchId ? (
+                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
+                        Currently: {formatAssignedBranchLabel(editForm.branchId)}
+                      </p>
+                    ) : null}
+                  </Field>
+                  <Field label="OIC / Negotiator" required>
+                    <select
+                      value={editForm.negotiatorId || ''}
+                      onChange={e => {
+                        const val = e.target.value
+                        const foundEmp = editModalNegotiators.find(emp => emp.id === val)
+                        const negoBranchId = foundEmp?.branchId
+                          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
+                          : editForm.branchId
+                        setEditForm(prev => ({
+                          ...prev,
+                          negotiatorId: val,
+                          branchId: negoBranchId || prev.branchId,
+                        }))
+                      }}
+                      disabled={!editForm.branchId}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-50"
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">{editForm.branchId ? '-- Select OIC / negotiator --' : 'Select branch first'}</option>
+                      {editModalNegotiators.map(emp => {
+                        const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                        return <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                      })}
+                    </select>
+                  </Field>
+                </div>
+              </div>
+
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
                   Customer Information
@@ -8003,66 +8234,6 @@ export default function Tickets() {
                       rows={1}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] resize-none w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Branch Assignment
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Assigned Branch" required>
-                    <select
-                      value={editForm.branchId || ''}
-                      onChange={e => {
-                        const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
-                        setEditForm(prev => ({
-                          ...prev,
-                          branchId: nextBranchId,
-                          negotiatorId: '',
-                        }))
-                      }}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      <option value="">Select branch...</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                    {editForm.branchId ? (
-                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
-                        Currently: {formatAssignedBranchLabel(editForm.branchId)}
-                      </p>
-                    ) : null}
-                  </Field>
-                  <Field label="Negotiator" required>
-                    <select
-                      value={editForm.negotiatorId || ''}
-                      onChange={e => {
-                        const val = e.target.value
-                        const foundEmp = editModalNegotiators.find(emp => emp.id === val)
-                        const negoBranchId = foundEmp?.branchId
-                          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
-                          : editForm.branchId
-                        setEditForm(prev => ({
-                          ...prev,
-                          negotiatorId: val,
-                          branchId: negoBranchId || prev.branchId,
-                        }))
-                      }}
-                      disabled={!editForm.branchId}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-50"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      <option value="">{editForm.branchId ? '-- Select negotiator --' : 'Select branch first'}</option>
-                      {editModalNegotiators.map(emp => {
-                        const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                        const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
-                        return <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
-                      })}
-                    </select>
                   </Field>
                 </div>
               </div>
@@ -8310,9 +8481,15 @@ export default function Tickets() {
                   Cancel
                 </button>
                 <button onClick={promptSaveEditTicket}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+                  disabled={editSaving}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center gap-2"
                   style={{ backgroundColor: green }}>
-                  Save Changes
+                  {editSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : 'Save Changes'}
                 </button>
               </div>
             </div>
