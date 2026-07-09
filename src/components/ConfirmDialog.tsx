@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Save, Trash2, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import { useTheme } from '../contexts/ThemeContext'
 
 export type ConfirmDialogVariant = 'save' | 'discard' | 'danger' | 'info'
@@ -76,12 +77,11 @@ export default function ConfirmDialog({ dialog, onClose }: ConfirmDialogProps) {
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#94A3B8'
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[11000] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[12000] flex items-center justify-center p-4 safe-area-top safe-area-bottom"
       style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)' }}
       onClick={onClose}
-      onMouseDown={e => e.preventDefault()}
     >
       <div
         className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
@@ -147,6 +147,7 @@ export default function ConfirmDialog({ dialog, onClose }: ConfirmDialogProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

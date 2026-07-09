@@ -960,6 +960,50 @@ function buildReschedulePatchBody(
   return body
 }
 
+/** True when the ticket currently has a schedule date (final or preferred). */
+function ticketHadScheduleDate(ticket: Ticket): boolean {
+  return Boolean(
+    getFinalDateKey(ticket)
+    || getPreferredDateKey(ticket)
+    || String(parseAcMeta(ticket).scheduledDate || '').trim(),
+  )
+}
+
+/** Drop schedule dates and move ticket back to negotiator My Tickets (ASSIGNED, no date). */
+function applyReturnToNegotiatorMyTicketsPatch(
+  ticket: Ticket,
+  body: Record<string, unknown>,
+  acUpdates: Record<string, unknown>,
+): void {
+  body.status = 'ASSIGNED'
+  body.preferredDate = ''
+  body.scheduleOutcome = ''
+
+  acUpdates.finalDate = ''
+  acUpdates.scheduledDate = ''
+  acUpdates.scheduleIntake = false
+  acUpdates.rescheduledTo = ''
+  acUpdates.reschedulePending = false
+  acUpdates.previousScheduleDates = []
+  acUpdates.scheduleOutcome = ''
+
+  const phase = getScheduleStatusValue(ticket)
+  if (['SURVEY', 'CLEANING', 'SERVICES', 'INSTALLATION'].includes(phase)) {
+    acUpdates.schedulePhase = phase
+  }
+
+  const negoId = ticket.negotiatorId || ticket.negotiator_id || ticket.assignedTo
+  if (negoId) body.assignedTo = negoId
+
+  const remarks = String(ticket.remarksUpdate || ticket.remarks || '').trim()
+  if (isMovedToRescheduleRemark(remarks) || /^PENDING$/i.test(remarks)) {
+    body.remarks = ''
+    body.remarksUpdate = ''
+    acUpdates.update = ''
+    acUpdates.remarksUpdate = ''
+  }
+}
+
 function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
   const isResched = (ticket.status || '').toUpperCase() === 'RESCHED'
@@ -2237,7 +2281,14 @@ function buildCellPatchBody(
     }
     case 'FINAL DATE': {
       const dateKey = v.split('T')[0].split(' ')[0].trim()
-      if (!dateKey) break
+      if (!dateKey) {
+        if (ticketHadScheduleDate(ticket)) {
+          const acUpdates: Record<string, unknown> = {}
+          applyReturnToNegotiatorMyTicketsPatch(ticket, body, acUpdates)
+          body.acDetails = mergeAcMeta(acBase, acUpdates)
+        }
+        break
+      }
       body.finalDate = dateKey
       body.preferredDate = dateKey
       body.acDetails = mergeAcMeta(acBase, { finalDate: dateKey })
@@ -2700,6 +2751,7 @@ export default function Tickets() {
   }, [resolveBranch])
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [showEditHistory, setShowEditHistory] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
@@ -2830,6 +2882,7 @@ export default function Tickets() {
   // Drop negotiator if branch filter no longer includes them
   useEffect(() => {
     if (!addModalOpen || !addForm.negotiatorId) return
+    if (addModalNegotiators.length === 0) return
     if (!addModalNegotiators.some(n => n.id === addForm.negotiatorId)) {
       setAddForm(prev => ({ ...prev, negotiatorId: '' }))
     }
@@ -2837,8 +2890,14 @@ export default function Tickets() {
 
   useEffect(() => {
     if (!editModalOpen || !editForm.negotiatorId) return
+    // Wait for negotiator list — clearing while still loading falsely marks the form dirty.
+    if (editModalNegotiators.length === 0) return
     if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
-      setEditForm(prev => ({ ...prev, negotiatorId: '' }))
+      setEditForm(prev => {
+        const next = { ...prev, negotiatorId: '' }
+        setEditFormSnapshot(JSON.stringify(next))
+        return next
+      })
     }
   }, [editModalOpen, editModalNegotiators, editForm.negotiatorId])
 
@@ -3463,10 +3522,15 @@ export default function Tickets() {
     setEditModalOpen(true)
   }
 
-  const isEditFormDirty = () => JSON.stringify(editForm) !== editFormSnapshot
+  const closeEditModal = useCallback(() => {
+    setEditModalOpen(false)
+    setShowEditHistory(false)
+    setConfirmModal(null)
+  }, [])
 
-  const requestCloseEditModal = () => {
-    if (isEditFormDirty()) {
+  const requestCloseEditModal = useCallback(() => {
+    const dirty = JSON.stringify(editForm) !== editFormSnapshot
+    if (dirty) {
       setConfirmModal({
         title: 'Discard changes?',
         message: 'You have unsaved edits on this ticket.',
@@ -3474,12 +3538,12 @@ export default function Tickets() {
         variant: 'discard',
         confirmText: 'Discard',
         cancelText: 'Keep Editing',
-        onConfirm: () => setEditModalOpen(false),
+        onConfirm: closeEditModal,
       })
       return
     }
-    setEditModalOpen(false)
-  }
+    closeEditModal()
+  }, [closeEditModal, editForm, editFormSnapshot])
 
   const openAddModal = () => {
     const form = {
@@ -3645,6 +3709,10 @@ export default function Tickets() {
         ? (editForm.reschedulePending ? '' : editForm.rescheduleToDate?.split('T')[0]?.trim() || '')
         : editForm.preferredDate?.split('T')[0]?.trim() || ''
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
+      const hadScheduleDate = Boolean(
+        oldDateKey
+        || (originalTicket && ticketHadScheduleDate(originalTicket)),
+      )
       
       let remarksVal = editForm.remarks?.trim() || undefined
       if (isDateMove) {
@@ -3770,6 +3838,15 @@ export default function Tickets() {
         }
       }
 
+      const isReturningToMyTickets = !isReschedStatus
+        && !finalDateKey
+        && hadScheduleDate
+        && !CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
+        && scheduleVal !== 'COMPLETED'
+      if (isReturningToMyTickets && originalTicket) {
+        applyReturnToNegotiatorMyTicketsPatch(originalTicket, body, acMetaExtras)
+      }
+
       if (isDateMove && !leavingResched) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -3860,7 +3937,7 @@ export default function Tickets() {
       const needsArchive = shouldComplete && shouldArchiveCompletedSchedule(originalTicket, finalBody)
       const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
 
-      await queueTicketPatch(
+      void queueTicketPatch(
         originalTicket,
         finalBody,
         needsArchive
@@ -3910,7 +3987,7 @@ export default function Tickets() {
 
       setEditFormSnapshot(JSON.stringify(editForm))
       setEditModalOpen(false)
-      showToast('Saved')
+      showToast(isReturningToMyTickets && !isMyTickets ? 'Returned to My Tickets' : 'Saved')
     } catch (err: unknown) {
       console.error(err)
       alert(`Could not update ticket: ${formatFetchError(err)}`)
@@ -7621,7 +7698,14 @@ export default function Tickets() {
             }
           }
           if (value === 'RESCHED') {
-            openReschedDialog(pickerTicket)
+            if (activeTab === 'overview') {
+              openEditModal(pickerTicket)
+              setTimeout(() => {
+                setEditForm(prev => ({ ...prev, status: 'RESCHED' }))
+              }, 0)
+            } else {
+              openReschedDialog(pickerTicket)
+            }
             return
           }
           if (value === 'CONTINUATION') {
@@ -7902,6 +7986,11 @@ export default function Tickets() {
           closeFinalDatePicker()
           void saveCellEdit(pickerTicket, 'FINAL DATE', value)
         }
+        const clearFinalDate = () => {
+          const pickerTicket = ticket
+          closeFinalDatePicker()
+          void saveCellEdit(pickerTicket, 'FINAL DATE', '')
+        }
 
         return ReactDOM.createPortal(
           <div className="fixed inset-0 z-[12000]" onClick={closeFinalDatePicker}>
@@ -8064,6 +8153,16 @@ export default function Tickets() {
                   Today
                 </button>
                 <div className="flex items-center gap-1.5">
+                  {!isMyTickets && value.trim() && (
+                    <button
+                      type="button"
+                      onClick={clearFinalDate}
+                      className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold border"
+                      style={{ borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.35)', color: isLight ? '#b91c1c' : '#fca5a5', backgroundColor: 'transparent' }}
+                    >
+                      Clear
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={closeFinalDatePicker}
@@ -8619,9 +8718,30 @@ export default function Tickets() {
               style={{ borderBottom: `1px solid ${border}` }}
             >
               <div className="min-w-0 flex-1">
-                <h3 className={`font-black uppercase tracking-wide truncate ${isOverviewEdit ? 'text-xs sm:text-sm' : 'text-sm'}`} style={{ color: textPrimary }}>
-                  Edit Ticket
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className={`font-black uppercase tracking-wide truncate ${isOverviewEdit ? 'text-xs sm:text-sm' : 'text-sm'}`} style={{ color: textPrimary }}>
+                    Edit Ticket
+                  </h3>
+                  {isOverviewEdit && (() => {
+                    const meta = parseAcMeta(editForm as Ticket)
+                    const hasHistory = !!(meta.remarksUpdate || (meta.previousScheduleDates && meta.previousScheduleDates.length > 0))
+                    if (!hasHistory) return null
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setShowEditHistory(!showEditHistory)}
+                        className="px-2 py-0.5 rounded text-[9px] font-bold border transition-colors shrink-0"
+                        style={{
+                          backgroundColor: showEditHistory ? (isLight ? '#f1f5f9' : '#1e293b') : 'transparent',
+                          borderColor: inputBorder,
+                          color: textMuted
+                        }}
+                      >
+                        {showEditHistory ? 'Hide History' : 'View History'}
+                      </button>
+                    )
+                  })()}
+                </div>
                 <div className={`flex flex-wrap items-center gap-1.5 mt-1 ${isOverviewEdit ? '' : 'flex-col items-start gap-0.5'}`}>
                   {editForm.id && (
                     <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}>
@@ -8642,9 +8762,12 @@ export default function Tickets() {
               </div>
               <button
                 type="button"
-                onClick={requestCloseEditModal}
-                className="p-1.5 shrink-0 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30"
-                style={{ color: textMuted }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  requestCloseEditModal()
+                }}
+                className="p-1.5 shrink-0 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30 relative z-10"
+                style={{ color: textMuted, touchAction: 'manipulation' }}
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -8652,6 +8775,17 @@ export default function Tickets() {
             </div>
             
             <div className={`edit-sheet-scroll flex flex-col ${isOverviewEdit ? 'px-3 py-3 gap-3 sm:px-6 sm:py-5 sm:gap-5' : 'px-4 sm:px-6 py-4 sm:py-6 gap-5 sm:gap-6 overflow-y-auto flex-1 min-h-0'}`}>
+              {showEditHistory && isOverviewEdit && (() => {
+                const meta = parseAcMeta(editForm as Ticket)
+                return (
+                  <div className="rounded-xl p-3 sm:p-4 mb-1 sm:mb-2 animate-in slide-in-from-top-2 duration-200" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
+                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Update History</h4>
+                    <div className="text-xs space-y-2 whitespace-pre-wrap" style={{ color: textPrimary, lineHeight: 1.6 }}>
+                      {meta.remarksUpdate || 'No remarks history.'}
+                    </div>
+                  </div>
+                )
+              })()}
               <div
                 className={isOverviewEdit ? 'pb-1' : 'rounded-xl p-4'}
                 style={isOverviewEdit ? undefined : {
@@ -8834,29 +8968,49 @@ export default function Tickets() {
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
                   </Field>
                   <Field label="Final Schedule Date" full={isMyTickets || Boolean(editForm.finalDate || editOriginalDate)}>
-                    <input
-                      type="date"
-                      value={editForm.finalDate || ''}
-                      onChange={e => setEditForm({ ...editForm, finalDate: e.target.value, preferredDate: e.target.value })}
-                      className={inp}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        backgroundColor: (isMyTickets || editForm.finalDate || editOriginalDate)
-                          ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)')
-                          : inputBg,
-                        border: `1px solid ${(isMyTickets || editForm.finalDate || editOriginalDate)
-                          ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)')
-                          : inputBorder}`,
-                        color: textPrimary,
-                        colorScheme: isLight ? 'light' : 'dark',
-                      }}
-                    />
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="date"
+                        value={editForm.finalDate || ''}
+                        onChange={e => setEditForm({ ...editForm, finalDate: e.target.value, preferredDate: e.target.value })}
+                        className={inp}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          width: '100%',
+                          maxWidth: '100%',
+                          backgroundColor: (isMyTickets || editForm.finalDate || editOriginalDate)
+                            ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)')
+                            : inputBg,
+                          border: `1px solid ${(isMyTickets || editForm.finalDate || editOriginalDate)
+                            ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)')
+                            : inputBorder}`,
+                          color: textPrimary,
+                          colorScheme: isLight ? 'light' : 'dark',
+                        }}
+                      />
+                      {!isOverviewEdit && !isMyTickets && (editForm.finalDate || editOriginalDate) && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm({ ...editForm, finalDate: '', preferredDate: '' })}
+                          className="shrink-0 px-2.5 py-2 rounded-lg text-[10px] font-bold border whitespace-nowrap"
+                          style={{
+                            borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.35)',
+                            color: isLight ? '#b91c1c' : '#fca5a5',
+                            backgroundColor: 'transparent',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
                     {!isOverviewEdit && (isMyTickets || editForm.finalDate || editOriginalDate) && (
                       <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
                         {isMyTickets
                           ? 'Set the install date here — once saved, this ticket moves to the Schedules tab.'
-                          : 'Change the date or branch — the ticket appears on Schedules for that branch and date.'}
+                          : editForm.finalDate || editOriginalDate
+                            ? 'Clear the date and save to return this ticket to the negotiator My Tickets tab.'
+                            : 'Change the date or branch — the ticket appears on Schedules for that branch and date.'}
                       </p>
                     )}
                   </Field>
@@ -9021,9 +9175,12 @@ export default function Tickets() {
               <div className={`flex gap-2 min-w-0 ${isOverviewEdit ? 'w-full sm:w-auto' : 'w-full sm:w-auto sm:ml-auto gap-2.5 sm:gap-3'}`}>
                 <button
                   type="button"
-                  onClick={requestCloseEditModal}
-                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold border transition-colors ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    requestCloseEditModal()
+                  }}
+                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold border transition-colors relative z-10 ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
+                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted, touchAction: 'manipulation' }}
                 >
                   Cancel
                 </button>
