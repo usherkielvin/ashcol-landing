@@ -1,21 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
 
 export type ScheduleShowcaseRow = {
+  id: string
   index: number
-  ticketNo: string
-  customer: string
+  name: string
+  destination: string
   district: string
+  contact: string
   brand: string
   dealer: string
-  commit: string
-  negotiator: string
-  installer: string
-  driver: string
   status: string
-  remarks: string
-  paymentMode: string
-  paymentAmount: string
+  commit: string
+  installer: string
+  update: string
+  payment: string
 }
 
 type SchedulesShowcaseProps = {
@@ -23,104 +22,151 @@ type SchedulesShowcaseProps = {
   onClose: () => void
   branchLabel: string
   dateLabel: string
+  dateKey?: string
   isTaguigServices: boolean
   rows: ScheduleShowcaseRow[]
 }
 
 const HEADER_GREEN = '#16a34a'
 const HEADER_GREEN_DARK = '#15803d'
-const TABLE_BORDER = '#cbd5e1'
-const HEADER_BG = '#ecfdf5'
-const HEADER_TEXT = '#14532d'
+const TABLE_BORDER = '#000000'
+const INK = '#000000'
+const PAPER = '#ffffff'
 
 /** Philippines Long Bond — landscape 13" × 8.5" */
 const PDF_PAGE = { orientation: 'landscape' as const, unit: 'in' as const, format: [8.5, 13] as [number, number] }
-const PDF_MARGIN_X = 0.35
-const PDF_HEADER_HEIGHT = 0.72
+const PDF_MARGIN_X = 0.28
 
-function paymentCell(row: ScheduleShowcaseRow) {
-  const mode = row.paymentMode.trim().toUpperCase()
-  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
-  if (mode && row.paymentAmount) return `${mode} — ₱${row.paymentAmount}`
-  if (mode) return mode
-  if (row.paymentAmount) return `₱${row.paymentAmount}`
-  return '—'
+function showcaseCellText(value: string): string {
+  const trimmed = (value || '').trim()
+  if (!trimmed || trimmed === '—') return '—'
+  return trimmed.replace(/\s+/g, ' ')
+}
+
+function parseDateMeta(dateKey: string, dateLabel: string) {
+  const datePart = (dateKey || '').split('T')[0].split(' ')[0].trim()
+  if (!datePart) {
+    return {
+      scheduleDate: (dateLabel || '—').toUpperCase(),
+      dayName: '—',
+    }
+  }
+  const d = new Date(`${datePart}T00:00:00`)
+  if (Number.isNaN(d.getTime())) {
+    return {
+      scheduleDate: (dateLabel || datePart).toUpperCase(),
+      dayName: '—',
+    }
+  }
+  const month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase()
+  const day = String(d.getDate()).padStart(2, '0')
+  const year = d.getFullYear()
+  const scheduleDate = (dateLabel || `${month} ${day} ${year}`).toUpperCase()
+  const dayName = d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
+  return { scheduleDate, dayName }
 }
 
 function buildHeaders(isTaguigServices: boolean) {
   const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
-  const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DEALER'
+  const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
   return [
-    '#',
-    'TICKET NO',
-    'CUSTOMER',
+    'NAME',
+    'DESTINATION',
     'DISTRICT',
+    'CONTACT NO.',
     'BRAND',
     dealerLabel,
-    'COMMIT',
-    'NEGOTIATOR',
-    installerLabel,
-    'DRIVER',
     'STATUS',
-    'REMARKS',
+    'COMMIT',
+    installerLabel,
+    'UPDATE',
     'PAYMENT',
   ]
 }
 
-function buildBody(rows: ScheduleShowcaseRow[]) {
-  return rows.map(row => [
-    String(row.index),
-    row.ticketNo || '—',
-    row.customer || '—',
-    row.district || '—',
-    row.brand || '—',
-    row.dealer || '—',
-    row.commit || '—',
-    row.negotiator || '—',
-    row.installer || '—',
-    row.driver || '—',
-    row.status || '—',
-    row.remarks || '—',
-    paymentCell(row),
-  ])
+function rowToCells(row: ScheduleShowcaseRow) {
+  return [
+    showcaseCellText(row.name),
+    showcaseCellText(row.destination),
+    showcaseCellText(row.district),
+    showcaseCellText(row.contact),
+    showcaseCellText(row.brand),
+    showcaseCellText(row.dealer),
+    showcaseCellText(row.status),
+    showcaseCellText(row.commit),
+    showcaseCellText(row.installer),
+    showcaseCellText(row.update),
+    showcaseCellText(row.payment),
+  ]
 }
 
-function drawPdfTitleBlock(
+function buildBody(rows: ScheduleShowcaseRow[]) {
+  return rows.map(row => rowToCells(row))
+}
+
+const PDF_BW_TABLE = {
+  theme: 'grid' as const,
+  styles: {
+    font: 'helvetica',
+    fontSize: 6.6,
+    cellPadding: 0.055,
+    lineColor: [0, 0, 0] as [number, number, number],
+    lineWidth: 0.012,
+    textColor: [0, 0, 0] as [number, number, number],
+    fillColor: [255, 255, 255] as [number, number, number],
+    valign: 'top' as const,
+    overflow: 'linebreak' as const,
+  },
+  headStyles: {
+    fillColor: [255, 255, 255] as [number, number, number],
+    textColor: [0, 0, 0] as [number, number, number],
+    fontStyle: 'bold' as const,
+    halign: 'center' as const,
+    fontSize: 6,
+    cellPadding: 0.06,
+    lineColor: [0, 0, 0] as [number, number, number],
+  },
+}
+
+function drawPdfDateTable(
   pdf: import('jspdf').jsPDF,
-  branchLabel: string,
+  autoTable: typeof import('jspdf-autotable').default,
+  dateKey: string,
   dateLabel: string,
-  rowCount: number,
 ) {
-  const pageWidth = pdf.internal.pageSize.getWidth()
-  pdf.setFillColor(22, 163, 74)
-  pdf.rect(0, 0, pageWidth, PDF_HEADER_HEIGHT, 'F')
-  pdf.setTextColor(255, 255, 255)
-  pdf.setFont('helvetica', 'bold')
-  pdf.setFontSize(13)
-  pdf.text(
-    `${(branchLabel || 'BRANCH').toUpperCase()} — DAILY SCHEDULE`,
-    pageWidth / 2,
-    0.3,
-    { align: 'center' },
-  )
-  pdf.setFont('helvetica', 'normal')
-  pdf.setFontSize(9)
-  pdf.text(
-    `${dateLabel} · ${rowCount} ticket${rowCount === 1 ? '' : 's'}`,
-    pageWidth / 2,
-    0.52,
-    { align: 'center' },
-  )
+  const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
+  autoTable(pdf, {
+    startY: 0.2,
+    margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X },
+    tableWidth: 2.45,
+    body: [
+      ['DATE', scheduleDate],
+      ['DAY', dayName],
+    ],
+    ...PDF_BW_TABLE,
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 0.52 },
+      1: { cellWidth: 1.93 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 1) {
+        const raw = String(data.cell.raw ?? '').trim()
+        if (raw && raw !== '—') data.cell.text = [raw.toUpperCase()]
+      }
+    },
+  })
+  const doc = pdf as import('jspdf').jsPDF & { lastAutoTable?: { finalY: number } }
+  return doc.lastAutoTable?.finalY ?? 0.58
 }
 
 async function exportShowcasePdfDocument(options: {
   filename: string
-  branchLabel: string
   dateLabel: string
+  dateKey: string
   isTaguigServices: boolean
   rows: ScheduleShowcaseRow[]
 }) {
-  const { filename, branchLabel, dateLabel, isTaguigServices, rows } = options
+  const { filename, dateLabel, dateKey, isTaguigServices, rows } = options
   const { jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
 
@@ -130,66 +176,49 @@ async function exportShowcasePdfDocument(options: {
   const headers = buildHeaders(isTaguigServices)
   const body = buildBody(rows)
 
-  drawPdfTitleBlock(pdf, branchLabel, dateLabel, rows.length)
+  const drawDateHeader = () => drawPdfDateTable(pdf, autoTable, dateKey, dateLabel)
+  let tableStartY = drawDateHeader() + 0.14
 
   autoTable(pdf, {
-    startY: PDF_HEADER_HEIGHT + 0.12,
-    margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: PDF_HEADER_HEIGHT + 0.12, bottom: 0.45 },
+    startY: tableStartY,
+    margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 0.72, bottom: 0.35 },
     tableWidth,
     head: [headers],
-    body: rows.length > 0 ? body : [['—', '—', 'No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']],
-    theme: 'grid',
+    body: rows.length > 0
+      ? body
+      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']],
     showHead: 'everyPage',
-    styles: {
-      font: 'helvetica',
-      fontSize: 7,
-      cellPadding: 0.07,
-      lineColor: [203, 213, 225],
-      lineWidth: 0.012,
-      textColor: [15, 23, 42],
-      valign: 'top',
-      overflow: 'linebreak',
-    },
-    headStyles: {
-      fillColor: [236, 253, 245],
-      textColor: [20, 83, 45],
-      fontStyle: 'bold',
-      halign: 'center',
-      fontSize: 6.5,
-      cellPadding: 0.08,
-    },
-    alternateRowStyles: {
-      fillColor: [255, 255, 255],
-    },
+    ...PDF_BW_TABLE,
     columnStyles: {
-      0: { halign: 'center', cellWidth: 0.28 },
-      1: { halign: 'center', cellWidth: 0.72 },
-      2: { cellWidth: 1.35 },
-      3: { cellWidth: 0.85 },
-      4: { cellWidth: 0.85 },
-      5: { cellWidth: 0.8 },
-      6: { cellWidth: 1.05 },
-      7: { cellWidth: 0.95 },
-      8: { cellWidth: 0.95 },
-      9: { cellWidth: 0.85 },
-      10: { halign: 'center', cellWidth: 0.72 },
-      11: { cellWidth: 2.35 },
-      12: { cellWidth: 1.05 },
+      0: { cellWidth: 1.12 },
+      1: { cellWidth: 2.55 },
+      2: { halign: 'center', cellWidth: 0.68 },
+      3: { halign: 'center', cellWidth: 0.78 },
+      4: { cellWidth: 0.88 },
+      5: { cellWidth: 0.78 },
+      6: { halign: 'center', cellWidth: 0.82 },
+      7: { cellWidth: 0.92 },
+      8: { halign: 'center', cellWidth: 0.75 },
+      9: { cellWidth: 2.55 },
+      10: { halign: 'right', cellWidth: 1.05, fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        const raw = String(data.cell.raw ?? '').trim()
+        if (raw && raw !== '—') {
+          data.cell.text = [raw.toUpperCase()]
+        }
+      }
     },
     didDrawPage: (data) => {
       if (data.pageNumber > 1) {
-        drawPdfTitleBlock(pdf, branchLabel, dateLabel, rows.length)
+        drawDateHeader()
       }
-      const footerY = pdf.internal.pageSize.getHeight() - 0.28
+      const footerY = pdf.internal.pageSize.getHeight() - 0.2
       pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(7)
-      pdf.setTextColor(100, 116, 139)
-      pdf.text(
-        `Ashcol Portal · Page ${data.pageNumber} · ${new Date().toLocaleString('en-PH')}`,
-        pageWidth / 2,
-        footerY,
-        { align: 'center' },
-      )
+      pdf.setFontSize(6.5)
+      pdf.setTextColor(0, 0, 0)
+      pdf.text(`Page ${data.pageNumber}`, pageWidth / 2, footerY, { align: 'center' })
     },
   })
 
@@ -201,11 +230,12 @@ export function SchedulesShowcase({
   onClose,
   branchLabel,
   dateLabel,
+  dateKey = '',
   isTaguigServices,
   rows,
 }: SchedulesShowcaseProps) {
-  const captureAreaRef = useRef<HTMLDivElement>(null)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const { scheduleDate, dayName } = parseDateMeta(dateKey, dateLabel)
 
   useEffect(() => {
     if (!open) return
@@ -232,8 +262,8 @@ export function SchedulesShowcase({
       const safeDate = (dateLabel || 'all-dates').replace(/[^\w\-]+/g, '_')
       await exportShowcasePdfDocument({
         filename: `ashcol-schedules_${safeBranch}_${safeDate}.pdf`,
-        branchLabel,
         dateLabel,
+        dateKey,
         isTaguigServices,
         rows,
       })
@@ -243,7 +273,7 @@ export function SchedulesShowcase({
     } finally {
       setExportingPdf(false)
     }
-  }, [branchLabel, dateLabel, exportingPdf, isTaguigServices, rows])
+  }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, rows])
 
   if (!open) return null
 
@@ -269,10 +299,10 @@ export function SchedulesShowcase({
                 Schedules Showcase
               </div>
               <div className="text-sm font-bold text-slate-900 truncate">
-                {branchLabel || 'Branch'} · {dateLabel}
+                {branchLabel || 'Branch'} · {scheduleDate} · {dayName}
               </div>
               <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                PDF: Landscape Long 8.5″ × 13″
+                PDF / Print: Landscape Long 8.5″ × 13″ · black &amp; white
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -316,54 +346,86 @@ export function SchedulesShowcase({
 
           <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
             <div
-              ref={captureAreaRef}
               className="schedules-showcase-sheet print-area mx-auto"
               style={{
                 maxWidth: '1800px',
                 width: '100%',
-                backgroundColor: '#ffffff',
+                backgroundColor: PAPER,
                 border: '1px solid #dbe5ef',
                 boxShadow: '0 24px 80px rgba(15,23,42,0.12)',
-                borderRadius: 18,
+                borderRadius: 12,
                 overflow: 'hidden',
               }}
             >
-              <div
-                style={{
-                  background: `linear-gradient(135deg, ${HEADER_GREEN}, ${HEADER_GREEN_DARK})`,
-                  padding: '18px 24px 16px',
-                  textAlign: 'center',
-                  borderBottom: `5px solid ${HEADER_GREEN_DARK}`,
-                }}
-              >
-                <div
-                  style={{
-                    color: '#ffffff',
-                    fontWeight: 950,
-                    fontSize: 'clamp(22px, 2.8vw, 38px)',
-                    lineHeight: 1.05,
-                    textTransform: 'uppercase',
-                  }}
+              <div className="p-3 md:p-4" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
+                <table
+                  className="schedules-showcase-date-table"
+                  style={{ borderCollapse: 'collapse', width: '220px', maxWidth: '100%' }}
                 >
-                  {(branchLabel || 'BRANCH').toUpperCase()} — DAILY SCHEDULE
-                </div>
-                <div
-                  style={{
-                    color: 'rgba(255,255,255,0.92)',
-                    fontWeight: 900,
-                    fontSize: 'clamp(13px, 1.3vw, 20px)',
-                    marginTop: 8,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {dateLabel} · {rows.length} ticket{rows.length === 1 ? '' : 's'}
-                </div>
+                  <tbody>
+                    <tr>
+                      <td
+                        style={{
+                          border: `1px solid ${TABLE_BORDER}`,
+                          padding: '6px 10px',
+                          fontWeight: 800,
+                          fontSize: '10px',
+                          textTransform: 'uppercase',
+                          backgroundColor: PAPER,
+                          color: INK,
+                          width: 56,
+                        }}
+                      >
+                        Date
+                      </td>
+                      <td
+                        style={{
+                          border: `1px solid ${TABLE_BORDER}`,
+                          padding: '6px 10px',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          backgroundColor: PAPER,
+                          color: INK,
+                        }}
+                      >
+                        {scheduleDate}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td
+                        style={{
+                          border: `1px solid ${TABLE_BORDER}`,
+                          padding: '6px 10px',
+                          fontWeight: 800,
+                          fontSize: '10px',
+                          textTransform: 'uppercase',
+                          backgroundColor: PAPER,
+                          color: INK,
+                        }}
+                      >
+                        Day
+                      </td>
+                      <td
+                        style={{
+                          border: `1px solid ${TABLE_BORDER}`,
+                          padding: '6px 10px',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          backgroundColor: PAPER,
+                          color: INK,
+                        }}
+                      >
+                        {dayName}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
               <div className="overflow-x-auto">
                 <table
                   className="schedules-showcase-table"
-                  style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}
+                  style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER }}
                 >
                   <thead>
                     <tr>
@@ -371,14 +433,14 @@ export function SchedulesShowcase({
                         <th
                           key={label}
                           style={{
-                            backgroundColor: HEADER_BG,
-                            color: HEADER_TEXT,
+                            backgroundColor: PAPER,
+                            color: INK,
                             border: `1px solid ${TABLE_BORDER}`,
-                            padding: '10px 8px',
-                            fontSize: '11px',
+                            padding: '7px 5px',
+                            fontSize: '9.5px',
                             fontWeight: 800,
                             textTransform: 'uppercase',
-                            letterSpacing: '0.04em',
+                            letterSpacing: '0.03em',
                             verticalAlign: 'middle',
                             textAlign: 'center',
                             whiteSpace: 'nowrap',
@@ -397,78 +459,54 @@ export function SchedulesShowcase({
                           style={{
                             padding: '32px 16px',
                             textAlign: 'center',
-                            color: '#64748b',
+                            color: INK,
                             fontWeight: 600,
                             border: `1px solid ${TABLE_BORDER}`,
-                            backgroundColor: '#ffffff',
+                            backgroundColor: PAPER,
                           }}
                         >
                           No schedule tickets for this date.
                         </td>
                       </tr>
-                    ) : rows.map(row => (
-                      <tr key={`${row.index}-${row.ticketNo}`}>
-                        {[
-                          String(row.index),
-                          row.ticketNo || '—',
-                          row.customer || '—',
-                          row.district || '—',
-                          row.brand || '—',
-                          row.dealer || '—',
-                          row.commit || '—',
-                          row.negotiator || '—',
-                          row.installer || '—',
-                          row.driver || '—',
-                          row.status || '—',
-                          row.remarks || '—',
-                          paymentCell(row),
-                        ].map((value, cellIdx) => {
-                          const isRemarks = cellIdx === 11
-                          const isPayment = cellIdx === 12
-                          const isCustomer = cellIdx === 2
-                          const isCommit = cellIdx === 6
-                          const wrap = isRemarks || isPayment || isCustomer || isCommit
-                          return (
-                            <td
-                              key={cellIdx}
-                              style={{
-                                border: `1px solid ${TABLE_BORDER}`,
-                                padding: '8px 10px',
-                                fontSize: isRemarks ? '11px' : '10.5px',
-                                fontWeight: cellIdx === 0 || cellIdx === 1 ? 700 : 500,
-                                color: '#0f172a',
-                                backgroundColor: '#ffffff',
-                                verticalAlign: 'top',
-                                textAlign: cellIdx <= 1 || cellIdx >= 10 ? 'center' : 'left',
-                                whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
-                                wordBreak: wrap ? 'break-word' : 'normal',
-                                minWidth: isRemarks ? 220 : isPayment ? 120 : undefined,
-                                maxWidth: isRemarks ? 360 : undefined,
-                                lineHeight: 1.45,
-                              }}
-                            >
-                              {value}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
+                    ) : rows.map(row => {
+                      const cells = rowToCells(row)
+                      return (
+                        <tr key={`${row.index}-${row.id}`}>
+                          {cells.map((value, cellIdx) => {
+                            const isUpdate = cellIdx === 9
+                            const isDestination = cellIdx === 1
+                            const isName = cellIdx === 0
+                            const isCommit = cellIdx === 7
+                            const isPayment = cellIdx === 10
+                            const wrap = isUpdate || isDestination || isName || isCommit || isPayment
+                            const center = [2, 3, 6, 8].includes(cellIdx)
+                            return (
+                              <td
+                                key={cellIdx}
+                                style={{
+                                  border: `1px solid ${TABLE_BORDER}`,
+                                  padding: '6px 7px',
+                                  fontSize: isUpdate ? '10px' : '9.5px',
+                                  fontWeight: isPayment ? 700 : 500,
+                                  color: INK,
+                                  backgroundColor: PAPER,
+                                  verticalAlign: 'top',
+                                  textAlign: isPayment ? 'right' : center ? 'center' : 'left',
+                                  whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
+                                  wordBreak: wrap ? 'break-word' : 'normal',
+                                  minWidth: isUpdate ? 200 : isDestination ? 180 : undefined,
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {value}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
-              </div>
-
-              <div
-                style={{
-                  padding: '10px 16px',
-                  borderTop: `1px solid ${TABLE_BORDER}`,
-                  backgroundColor: '#f8fafc',
-                  color: '#64748b',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  textAlign: 'right',
-                }}
-              >
-                Generated from Ashcol Portal · {new Date().toLocaleString('en-PH')}
               </div>
             </div>
           </div>
@@ -478,7 +516,7 @@ export function SchedulesShowcase({
       <style>{`
         @page {
           size: 13in 8.5in landscape;
-          margin: 0.35in;
+          margin: 0.28in;
         }
         @media print {
           body * { visibility: hidden !important; }
@@ -494,6 +532,12 @@ export function SchedulesShowcase({
             max-width: none !important;
             width: 100% !important;
             background: #ffffff !important;
+            color: #000000 !important;
+          }
+          .print-area * {
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: none !important;
           }
           .no-print { display: none !important; }
           .schedules-showcase-overlay {
@@ -502,15 +546,11 @@ export function SchedulesShowcase({
             background: #ffffff !important;
           }
           .schedules-showcase-table td,
-          .schedules-showcase-table th {
+          .schedules-showcase-table th,
+          .schedules-showcase-date-table td {
             color: #000000 !important;
             background: #ffffff !important;
-          }
-          .schedules-showcase-table thead th {
-            background: #ecfdf5 !important;
-            color: #14532d !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            border-color: #000000 !important;
           }
         }
         body.showcase-mode-active aside,

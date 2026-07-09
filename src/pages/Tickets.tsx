@@ -1136,25 +1136,85 @@ function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string, outcome: Sc
   }
 }
 
+function parsePaymentFromModeString(raw: string): { mode: string; amount?: number } {
+  const v = (raw || '').trim()
+  if (!v) return { mode: '' }
+  const amountMatch = v.match(/(\d[\d,]*(?:\.\d+)?)\s*$/u)
+  if (amountMatch) {
+    const amount = parseImportMoney(amountMatch[1])
+    const modePart = v.slice(0, amountMatch.index).trim()
+    const mode = normalizeImportPaymentMode(modePart) || modePart.toUpperCase()
+    return { mode, amount: amount && amount > 0 ? amount : undefined }
+  }
+  return { mode: normalizeImportPaymentMode(v) || v.toUpperCase() }
+}
+
+function resolveTicketPaymentAmount(ticket: Ticket): number | undefined {
+  const meta = parseAcMeta(ticket)
+  const candidates: unknown[] = [
+    ticket.installationCharges,
+    ticket.installation_charges,
+    ticket.amountCharged,
+    meta.installationCharges,
+    meta.installation_charges,
+    meta.amountCharged,
+    meta.charges,
+  ]
+  for (const raw of candidates) {
+    const parsed = parseImportMoney(raw as string | number | null | undefined)
+    if (parsed != null && parsed > 0) return parsed
+  }
+  return undefined
+}
+
+function resolveTicketPaymentModeRaw(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  return (
+    getF(ticket, 'modeOfPayment', 'mode_of_payment')
+    || String(meta.modeOfPayment || meta.paymentStatus || meta.paymentMode || '').trim()
+  )
+}
+
+function resolveTicketPayment(ticket: Ticket): { mode: string; amount?: number } {
+  let mode = resolveTicketPaymentModeRaw(ticket)
+  let amount = resolveTicketPaymentAmount(ticket)
+
+  if ((!amount || amount <= 0) && mode) {
+    const parsed = parsePaymentFromModeString(mode)
+    if (parsed.amount) amount = parsed.amount
+    if (parsed.mode) mode = parsed.mode
+  } else if (mode) {
+    mode = normalizeImportPaymentMode(mode) || mode.toUpperCase()
+  }
+
+  if (mode === 'FREE' || mode === 'FREE INSTALL') {
+    return { mode: 'FREE', amount: undefined }
+  }
+
+  return {
+    mode: (mode || '').trim().toUpperCase(),
+    amount: amount && amount > 0 ? amount : undefined,
+  }
+}
+
 function formatPaymentAmount(ticket: Ticket): string {
-  const amt = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
-  if (amt == null || Number.isNaN(Number(amt))) return ''
-  return Number(amt).toLocaleString('en-PH')
+  const amount = resolveTicketPayment(ticket).amount
+  if (amount == null) return ''
+  return amount.toLocaleString('en-PH')
 }
 
 function formatCombinedPayment(ticket: Ticket): string {
-  const mode = getPaymentMode(ticket).trim().toUpperCase()
-  const amt = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged
+  const { mode, amount } = resolveTicketPayment(ticket)
   if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
-  const amountStr = formatPaymentAmount(ticket)
+  const amountStr = amount != null ? amount.toLocaleString('en-PH') : ''
   if (mode && amountStr) return `${mode} ${amountStr}`
   if (mode) return mode
-  if (amountStr && Number(amt) > 0) return amountStr
+  if (amountStr) return amountStr
   return ''
 }
 
 function getPaymentMode(ticket: Ticket): string {
-  return getF(ticket, 'modeOfPayment', 'mode_of_payment')
+  return resolveTicketPayment(ticket).mode
 }
 
 function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
@@ -5090,20 +5150,19 @@ export default function Tickets() {
     return visible
       .filter(t => !dateFilter || !isScheduleGhostOnDate(t, dateFilter))
       .map((ticket, index) => ({
+        id: getTicketNumberDisplay(ticket) || String(ticket.id ?? index),
         index: index + 1,
-        ticketNo: getTicketNumberDisplay(ticket),
-        customer: getF(ticket, 'customerName', 'customer_name') || ticket.title || '',
-        district: resolveTicketDistrict(ticket),
+        name: getF(ticket, 'customerName', 'customer_name') || ticket.title || '',
+        destination: formatAddress(ticket.location),
+        district: parseDistrict(ticket.location, ticket.district) || resolveTicketDistrict(ticket),
+        contact: getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
         brand: parseBrand(ticket),
         dealer: getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || '',
-        commit: getF(ticket, 'commitType', 'commitTerms', 'description'),
-        negotiator: getTicketNegotiatorName(ticket, branchEmployees),
-        installer: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
-        driver: formatServiceDriver(ticket),
         status: getScheduleStatusLabel(getScheduleStatusValue(ticket)),
-        remarks: getScheduleUpdateDisplay(ticket),
-        paymentMode: getPaymentMode(ticket),
-        paymentAmount: formatPaymentAmount(ticket),
+        commit: getF(ticket, 'commitType', 'commitTerms', 'description'),
+        installer: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
+        update: getScheduleUpdateDisplay(ticket),
+        payment: formatCombinedPayment(ticket),
       }))
   }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId])
 
@@ -9296,6 +9355,7 @@ export default function Tickets() {
           onClose={() => setShowcaseOpen(false)}
           branchLabel={activeBranchLabel}
           dateLabel={showcaseDateLabel}
+          dateKey={dateFilter || ''}
           isTaguigServices={isTaguigServices}
           rows={showcaseRows}
         />

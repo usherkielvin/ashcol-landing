@@ -104,6 +104,8 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
   syncAlias(next, 'ticketNumber', 'ticket_number')
   syncAlias(next, 'remarksUpdate', 'remarks_update')
   syncAlias(next, 'sourceVendor', 'source_vendor')
+  syncAlias(next, 'installationCharges', 'installation_charges')
+  syncAlias(next, 'modeOfPayment', 'mode_of_payment')
 
   const finalDate = resolveRelayFinalDate(next)
   const stat = String(next.status || '').toUpperCase()
