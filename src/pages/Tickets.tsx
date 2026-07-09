@@ -5812,7 +5812,7 @@ export default function Tickets() {
     ticket: Ticket,
     colLabel: string,
     value: string,
-    injectedPayment?: { amount: number; modeOfPayment: string }
+    injectedPayment?: { amount?: number; modeOfPayment: string }
   ) => {
     const liveTicket = resolveLiveScheduleTicket(ticket)
     const key = cellEditKey(liveTicket.id, colLabel)
@@ -8983,7 +8983,9 @@ export default function Tickets() {
                           modeOfPayment: nextMode,
                           installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
                             ? 0
-                            : prev.installationCharges,
+                            : nextMode === 'PENDING'
+                              ? undefined
+                              : prev.installationCharges,
                         }))
                       }}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
@@ -8994,13 +8996,14 @@ export default function Tickets() {
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
+                      <option value="PENDING">PENDING</option>
                     </select>
                   </Field>
                   <Field label="Payment Amount (₱)">
                     <input type="number" step="0.01" min="0"
                       placeholder="0.00"
                       value={addForm.installationCharges ?? ''}
-                      disabled={addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL'}
+                      disabled={addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL' || addForm.modeOfPayment === 'PENDING'}
                       onChange={e => setAddForm({ ...addForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full disabled:opacity-60"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -9511,10 +9514,10 @@ export default function Tickets() {
 
       {paymentPrompt && (() => {
         const { ticket } = paymentPrompt
-        const isFree = promptMode === 'FREE' || promptMode === 'FREE INSTALL'
+        const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
-          const amt = isFree ? 0 : parseFloat(promptAmount) || 0
+          const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
           void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: amt, modeOfPayment: promptMode })
           setPaymentPrompt(null)
         }
@@ -9553,6 +9556,7 @@ export default function Tickets() {
                         const m = e.target.value
                         setPromptMode(m)
                         if (m === 'FREE' || m === 'FREE INSTALL') setPromptAmount('0')
+                        else if (m === 'PENDING') setPromptAmount('')
                       }}
                       required
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
@@ -9563,6 +9567,7 @@ export default function Tickets() {
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
+                      <option value="PENDING">PENDING</option>
                     </select>
                   </div>
 
@@ -9572,8 +9577,8 @@ export default function Tickets() {
                       type="number"
                       step="0.01"
                       min="0"
-                      required={!isFree}
-                      disabled={isFree}
+                      required={!isFreeOrPending}
+                      disabled={isFreeOrPending}
                       placeholder="0.00"
                       value={promptAmount}
                       onChange={e => setPromptAmount(e.target.value)}

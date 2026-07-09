@@ -121,12 +121,25 @@ export function ScheduleEditTicketModal({
   const gridCls = 'grid grid-cols-1 md:grid-cols-2 gap-4'
   const sectionTitleCls = 'text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400'
 
+  const CLOSING_STATUSES = new Set([
+    'DONE_INSTALLED',
+    'DONE_CLEANING',
+    'DONE_SURVEY',
+    'DONE_CHECKUP',
+    'CANCELLED',
+    'COMPLETED',
+    'INSTALLED',
+  ])
+  const isPendingStatus = !form.status || !CLOSING_STATUSES.has((form.status || '').toUpperCase())
+
   const isReschedStatus = (form.status || '').toUpperCase() === 'RESCHED'
   const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
-  const showPaymentSection = ticketHasPaymentInfo(form)
+  const showPaymentSection = !isPendingStatus && (
+    ticketHasPaymentInfo(form)
     || Boolean(form.modeOfPayment || form.installationCharges != null)
     || (form.status || '').toUpperCase() === 'INSTALLED'
     || (form.status || '').toUpperCase() === 'DONE_INSTALLED'
+  )
 
   const reschedFieldStyle = {
     backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)',
@@ -371,70 +384,77 @@ export function ScheduleEditTicketModal({
             </div>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
-              <h4 className={sectionTitleCls}>Payment</h4>
-              {!showPaymentSection ? (
-                <button
-                  type="button"
-                  onClick={() => onChange({ modeOfPayment: form.modeOfPayment || 'CASH' })}
-                  className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80 shrink-0"
-                  style={{ borderColor: inputBorder, color: green }}
-                >
-                  + Add
-                </button>
-              ) : null}
-            </div>
-            {showPaymentSection ? (
-              <div
-                className={`${gridCls} rounded-xl p-4`}
-                style={{
-                  border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
-                  backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)') : inputBg,
-                }}
-              >
-                <Field label="Mode of Payment">
-                  <select
-                    value={form.modeOfPayment || ''}
-                    onChange={e => {
-                      const nextMode = e.target.value
-                      onChange({
-                        modeOfPayment: nextMode,
-                        installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL') ? 0 : form.installationCharges,
-                      })
-                    }}
-                    className={inp}
-                    style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+          {!isPendingStatus && (
+            <div>
+              <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+                <h4 className={sectionTitleCls}>Payment</h4>
+                {!showPaymentSection ? (
+                  <button
+                    type="button"
+                    onClick={() => onChange({ modeOfPayment: form.modeOfPayment || 'CASH' })}
+                    className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80 shrink-0"
+                    style={{ borderColor: inputBorder, color: green }}
                   >
-                    <option value="">-- Select --</option>
-                    <option value="CASH">CASH</option>
-                    <option value="BANK TRANSFER">BANK TRANSFER</option>
-                    <option value="GCASH">GCASH</option>
-                    <option value="CHEQUE">CHEQUE</option>
-                    <option value="FREE INSTALL">FREE INSTALL</option>
-                  </select>
-                </Field>
-                <Field label="Payment Amount (₱)">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={form.installationCharges ?? ''}
-                    disabled={form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL'}
-                    onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                    className={`${inp} disabled:opacity-60`}
-                    style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </Field>
-                {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' ? (
-                  <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
-                    Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
-                  </p>
+                    + Add
+                  </button>
                 ) : null}
               </div>
-            ) : null}
-          </div>
+              {showPaymentSection ? (
+                <div
+                  className={`${gridCls} rounded-xl p-4`}
+                  style={{
+                    border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
+                    backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)') : inputBg,
+                  }}
+                >
+                  <Field label="Mode of Payment">
+                    <select
+                      value={form.modeOfPayment || ''}
+                      onChange={e => {
+                        const nextMode = e.target.value
+                        onChange({
+                          modeOfPayment: nextMode,
+                          installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
+                            ? 0
+                            : nextMode === 'PENDING'
+                              ? undefined
+                              : form.installationCharges,
+                        })
+                      }}
+                      className={inp}
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="CASH">CASH</option>
+                      <option value="BANK TRANSFER">BANK TRANSFER</option>
+                      <option value="GCASH">GCASH</option>
+                      <option value="CHEQUE">CHEQUE</option>
+                      <option value="FREE INSTALL">FREE INSTALL</option>
+                      <option value="PENDING">PENDING</option>
+                    </select>
+                  </Field>
+                  <Field label="Payment Amount (₱)">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={form.installationCharges ?? ''}
+                      disabled={form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING'}
+                      onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
+                      className={`${inp} disabled:opacity-60`}
+                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    />
+                  </Field>
+                  {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' ? (
+                    <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
+                      Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div
