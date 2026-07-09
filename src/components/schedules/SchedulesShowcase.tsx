@@ -51,6 +51,28 @@ function pdfCellText(value: string): string {
   return trimmed.replace(/\s+/g, ' ').toUpperCase()
 }
 
+/** PDF payment: mode on first line, plain amount (no commas) on second line. */
+function pdfPaymentText(payment: string): string {
+  const trimmed = (payment || '').trim()
+  if (!trimmed || trimmed === '—') return ''
+  const upper = trimmed.toUpperCase()
+  if (upper === 'FREE' || upper === 'FREE INSTALL') return 'FREE'
+
+  const split = trimmed.match(/^(.+?)\s+([\d,]+(?:\.\d+)?)$/i)
+  if (split) {
+    const mode = split[1].trim().toUpperCase()
+    const amount = split[2].replace(/,/g, '')
+    return `${mode}\n${amount}`
+  }
+
+  // Amount only — drop commas so PDF doesn't show a lone "big" formatted number
+  if (/^[\d,]+(?:\.\d+)?$/.test(trimmed)) {
+    return trimmed.replace(/,/g, '')
+  }
+
+  return upper
+}
+
 function resolveRowPayment(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>): string {
   const fromMap = paymentByRowId?.[row.id]?.trim()
   if (fromMap) return fromMap
@@ -122,7 +144,7 @@ function rowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string,
     pdfCellText(row.commit),
     pdfCellText(row.installer),
     pdfCellText(row.update),
-    pdfCellText(payment),
+    pdfPaymentText(payment),
   ]
 }
 
@@ -223,11 +245,17 @@ async function exportShowcasePdfDocument(options: {
       1: { halign: 'center', cellWidth: 0.82 },
       2: { cellWidth: 0.95 },
       3: { cellWidth: 0.82 },
-      4: { halign: 'center', cellWidth: 0.82 },
+      4: { halign: 'center', cellWidth: 1.05 },
       5: { cellWidth: 1.05 },
       6: { halign: 'center', cellWidth: 0.82 },
       7: { cellWidth: 2.55 },
-      8: { halign: 'right', cellWidth: 3.26, fontStyle: 'bold', overflow: 'linebreak' as const },
+      8: {
+        halign: 'right',
+        cellWidth: 2.45,
+        fontStyle: 'bold',
+        fontSize: 6,
+        overflow: 'linebreak' as const,
+      },
     },
     didDrawPage: (data) => {
       if (data.pageNumber > 1) {
@@ -450,7 +478,10 @@ export function SchedulesShowcase({
                 >
                   <thead>
                     <tr>
-                      {headers.map(label => (
+                      {headers.map((label, headerIdx) => {
+                        const isStatus = headerIdx === 4
+                        const isPayment = headerIdx === 8
+                        return (
                         <th
                           key={label}
                           style={{
@@ -458,18 +489,20 @@ export function SchedulesShowcase({
                             color: INK,
                             border: `1px solid ${TABLE_BORDER}`,
                             padding: '7px 5px',
-                            fontSize: '9.5px',
+                            fontSize: isPayment ? '9px' : '9.5px',
                             fontWeight: 800,
                             textTransform: 'uppercase',
                             letterSpacing: '0.03em',
                             verticalAlign: 'middle',
                             textAlign: 'center',
                             whiteSpace: 'nowrap',
+                            minWidth: isStatus ? 100 : isPayment ? 130 : undefined,
                           }}
                         >
                           {label}
                         </th>
-                      ))}
+                        )
+                      })}
                     </tr>
                   </thead>
                   <tbody>
@@ -497,9 +530,10 @@ export function SchedulesShowcase({
                             const isUpdate = cellIdx === 7
                             const isName = cellIdx === 0
                             const isCommit = cellIdx === 5
+                            const isStatus = cellIdx === 4
                             const isPayment = cellIdx === 8
                             const isBrand = cellIdx === 2
-                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand
+                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus
                             const center = [1, 4, 6].includes(cellIdx)
                             return (
                               <td
@@ -507,15 +541,15 @@ export function SchedulesShowcase({
                                 style={{
                                   border: `1px solid ${TABLE_BORDER}`,
                                   padding: '8px 7px',
-                                  fontSize: isUpdate || isPayment ? '10px' : '9.5px',
-                                  fontWeight: isPayment ? 700 : 500,
+                                  fontSize: isPayment ? '9px' : isUpdate ? '10px' : '9.5px',
+                                  fontWeight: isPayment ? 700 : isStatus ? 600 : 500,
                                   color: INK,
                                   backgroundColor: PAPER,
                                   verticalAlign: 'top',
                                   textAlign: isPayment ? 'right' : center ? 'center' : 'left',
                                   whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
                                   wordBreak: wrap ? 'break-word' : 'normal',
-                                  minWidth: isUpdate ? 220 : isPayment ? 160 : undefined,
+                                  minWidth: isUpdate ? 220 : isPayment ? 130 : isStatus ? 100 : undefined,
                                   lineHeight: 1.4,
                                 }}
                               >

@@ -1205,24 +1205,32 @@ function formatPaymentAmount(ticket: Ticket): string {
 }
 
 function getSchedulePaymentDisplay(ticket: Ticket): string {
-  const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
-  const modeRaw = (
-    ticket.modeOfPayment
-    ?? ticket.mode_of_payment
-    ?? ext.paymentStatus
-    ?? ext.paymentMode
-    ?? ''
-  ).trim()
-  const mode = normalizeImportPaymentMode(modeRaw) || modeRaw.toUpperCase()
-  const amount = parseImportMoney(
+  const resolved = resolveTicketPayment(ticket)
+  if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE'
+
+  const mode = resolved.mode || (() => {
+    const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
+    const modeRaw = (
+      ticket.modeOfPayment
+      ?? ticket.mode_of_payment
+      ?? ext.paymentStatus
+      ?? ext.paymentMode
+      ?? ''
+    ).trim()
+    return normalizeImportPaymentMode(modeRaw) || modeRaw.toUpperCase()
+  })()
+
+  const amount = resolved.amount ?? parseImportMoney(
     ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged,
   )
-  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
-  const amountStr = amount != null && amount > 0 ? amount.toLocaleString('en-PH') : ''
+  const amountStr = amount != null && amount > 0
+    ? Math.round(amount).toLocaleString('en-PH')
+    : ''
+
   if (mode && amountStr) return `${mode} ${amountStr}`
   if (mode) return mode
   if (amountStr) return amountStr
-  return formatCombinedPayment(ticket)
+  return ''
 }
 
 function formatCombinedPayment(ticket: Ticket): string {
@@ -5169,8 +5177,10 @@ export default function Tickets() {
 
   const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
     if (isMyTickets) return []
+    // Mirror exactly what the grid shows (visible). Rescheduled "moved-away" ghosts
+    // are hidden, but completed/installed rows (which carry payment) are kept.
     return visible
-      .filter(t => !dateFilter || !isScheduleGhostOnDate(t, dateFilter))
+      .filter(t => !dateFilter || !isRescheduledGhostOnDate(t, dateFilter))
       .map((ticket, index) => ({
         id: getTicketNumberDisplay(ticket) || String(ticket.id ?? index),
         index: index + 1,
@@ -5191,7 +5201,7 @@ export default function Tickets() {
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
     for (const ticket of visible) {
-      if (dateFilter && isScheduleGhostOnDate(ticket, dateFilter)) continue
+      if (dateFilter && isRescheduledGhostOnDate(ticket, dateFilter)) continue
       const payment = getSchedulePaymentDisplay(ticket)
       if (!payment) continue
       const ticketNo = getTicketNumberDisplay(ticket)
