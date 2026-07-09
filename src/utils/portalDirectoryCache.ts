@@ -19,14 +19,32 @@ function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` }
 }
 
+export function clearPortalEmployeesCache(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.includes('portal-dir:') && key.includes(':employees:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k))
+  } catch (e) {
+    console.warn('Error clearing portal employees cache:', e)
+  }
+}
+
 export async function fetchCachedEmployees(
   token: string,
   role?: string,
+  options?: { force?: boolean },
 ): Promise<Array<Record<string, unknown>>> {
   const key = employeesKey(role)
-  const cached = readTabCacheEntry<Array<Record<string, unknown>>>(key)
-  if (cached && isTabCacheFresh(cached.savedAt)) {
-    return cached.data
+  if (!options?.force) {
+    const cached = readTabCacheEntry<Array<Record<string, unknown>>>(key)
+    if (cached && isTabCacheFresh(cached.savedAt)) {
+      return cached.data
+    }
   }
 
   const qs = role ? `?role=${encodeURIComponent(role)}` : ''

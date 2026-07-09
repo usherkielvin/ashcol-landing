@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
@@ -1563,6 +1563,36 @@ export default function ClientMasterlist() {
     }
     void fetchData({ soft: hasCache })
   }, [fetchData, ticketScope, user, globalBranchId])
+
+  useEffect(() => {
+    const reloadEmployees = async () => {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      if (!token) return
+      try {
+        const employeeList = await fetchCachedEmployees(token, undefined, { force: true })
+        const eList = employeeList.map((e) => ({
+          ...e,
+          branchId: e.branchId || e.branch_id || '',
+          jobTitle: e.jobTitle || e.job_title || '',
+        }))
+        setEmployees(eList as any[])
+        const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+        const cached = readTabCache<RelaysTabCache>(cacheKey)
+        if (cached) {
+          writeTabCache(cacheKey, { ...cached, employees: eList, lastSyncAt: Date.now() })
+        }
+      } catch {
+        // keep current list on refresh failure
+      }
+    }
+    const onDirectoryUpdated = () => { void reloadEmployees() }
+    window.addEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+    window.addEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    return () => {
+      window.removeEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+      window.removeEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    }
+  }, [ticketScope, user, globalBranchId])
 
   // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
 

@@ -10,7 +10,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -799,6 +799,7 @@ export default function Employees() {
 
       const roleChanged = editForm.role !== editTarget.role
       setEditTarget(null)
+      notifyEmployeesDirectoryUpdated()
       showToast('success', roleChanged
         ? `${refreshed.name} updated — role changed to ${formatRoleLabel(editForm.role)}.`
         : `${refreshed.name} saved successfully.`)
@@ -967,6 +968,7 @@ export default function Employees() {
       }
 
       if (u?.temporaryPassword && u?.email) setNewTechCreds({ email: u.email, password: u.temporaryPassword })
+      notifyEmployeesDirectoryUpdated()
       showToast('success', `${formattedName} created as ${formatRoleLabel(createForm.role)}.`)
       resetCreateFlow()
       fetchEmployees()

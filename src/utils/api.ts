@@ -662,6 +662,27 @@ export function resolveImageUrl(path: string | null | undefined): string {
 }
 
 export const PROFILE_UPDATED_EVENT = 'ashcol-profile-updated'
+export const EMPLOYEES_DIRECTORY_UPDATED_EVENT = 'ashcol-employees-directory-updated'
+
+export function isPortalStaffUser(role?: string | null): boolean {
+  return (role || '').toLowerCase() !== 'customer'
+}
+
+export function notifyEmployeesDirectoryUpdated(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.includes('portal-dir:') && key.includes(':employees:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k))
+  } catch {
+    // ignore cache clear errors
+  }
+  window.dispatchEvent(new Event(EMPLOYEES_DIRECTORY_UPDATED_EVENT))
+}
 export { ARCHIVE_UPDATED_EVENT, notifyArchiveUpdated } from './ticketArchive'
 
 const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])

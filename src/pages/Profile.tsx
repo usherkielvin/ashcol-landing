@@ -8,7 +8,16 @@ import {
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import type { AddressValue } from '../components/PhAddressPicker'
-import { API_BASE_URL, resolveImageUrl, formatRole, formatPersonName, isSystemAdmin, PROFILE_UPDATED_EVENT } from '../utils/api'
+import {
+  API_BASE_URL,
+  resolveImageUrl,
+  formatRole,
+  formatPersonName,
+  isSystemAdmin,
+  isPortalStaffUser,
+  PROFILE_UPDATED_EVENT,
+  notifyEmployeesDirectoryUpdated,
+} from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 
 const apiUrl = API_BASE_URL
@@ -27,6 +36,7 @@ export default function Profile() {
   const navigate = useNavigate()
   const isLight = theme === 'light'
   const isManager = user?.role?.toLowerCase() === 'manager'
+  const isStaffUser = isPortalStaffUser(user?.role)
   const fileRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<Tab>('profile')
 
@@ -151,8 +161,10 @@ export default function Profile() {
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
       const payload: Record<string, string> = { name: formattedName }
-      if (user?.role !== 'admin') {
+      if (isStaffUser) {
         payload.phone = phone.trim()
+      }
+      if (user?.role !== 'admin') {
         payload.region = address.region
         payload.city = address.city
         payload.barangay = address.barangay
@@ -183,6 +195,7 @@ export default function Profile() {
       }
       setUser(updatedUser)
       window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
+      if (isStaffUser) notifyEmployeesDirectoryUpdated()
       setNameMsg('Profile updated!')
       setTimeout(() => setNameMsg(''), 3000)
     } catch (err: any) {
@@ -424,17 +437,26 @@ export default function Profile() {
                       </div>
                     )}
 
-                     {/* Phone row (hidden for admin)
-                     {user?.role !== 'admin' && (
-                       <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
-                         <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0" style={{ color: textMuted }}>Phone Number</label>
-                         <input
-                           type="tel" value={phone}
-                           onChange={e => setPhone(e.target.value.replace(/[^0-9+]/g, ''))}
-                           style={inputStyle} className={`${ic} flex-1`} placeholder="09170000000" maxLength={13}
-                         />
-                       </div>
-                     )} */}
+                    {isStaffUser && (
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-0">
+                        <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0 sm:pt-3" style={{ color: textMuted }}>Contact Number</label>
+                        <div className="flex-1">
+                          <input
+                            type="tel"
+                            value={phone}
+                            onChange={e => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ''))}
+                            style={inputStyle}
+                            className={`${ic} w-full`}
+                            placeholder="09XX XXX XXXX"
+                            maxLength={20}
+                            autoComplete="tel"
+                          />
+                          <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: textMuted }}>
+                            Shown on tickets assigned to you when staff view ticket details.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Role row (read-only) */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">

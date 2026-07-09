@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
@@ -161,6 +161,12 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
 const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP'])
+const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
+const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
+
+function statusShowsScheduleDetails(statusVal: string): boolean {
+  return SCHEDULE_PENDING_STATUS_VALUES.has(statusVal) || SCHEDULE_CLOSING_STATUS_VALUES.has(statusVal)
+}
 
 function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
   const kind = inferCategoryFromTicket(ticket)
@@ -4061,6 +4067,12 @@ export default function Tickets() {
     x: number
     y: number
   } | null>(null)
+  const [scheduleDetailsPopup, setScheduleDetailsPopup] = useState<{
+    ticket: Ticket
+    x: number
+    y: number
+    ghostKind?: 'completed' | 'resched' | null
+  } | null>(null)
   const [finalDatePicker, setFinalDatePicker] = useState<{
     ticket: Ticket
     x: number
@@ -4304,20 +4316,33 @@ export default function Tickets() {
     if (!canEdit) return
     const authToken = token()
     if (!authToken) return
-    fetchCachedEmployees(authToken)
-      .then((list) => {
-        const mapped: BranchStaffOption[] = list.map((u) => ({
-          id: String(u.id || ''),
-          name: String(u.name || ''),
-          branchId: (u.branchId || u.branch_id) as string | undefined,
-          email: u.email as string | undefined,
-          role: (u.role as string | undefined),
-          jobTitle: (u.jobTitle || u.job_title) as string | undefined,
-          phone: u.phone as string | undefined,
-        })).filter((u) => u.id && u.name)
-        setBranchEmployees(mapped)
-      })
-      .catch(err => console.error('Failed to load branch employees:', err))
+
+    const loadEmployees = (force = false) => {
+      fetchCachedEmployees(authToken, undefined, { force })
+        .then((list) => {
+          const mapped: BranchStaffOption[] = list.map((u) => ({
+            id: String(u.id || ''),
+            name: String(u.name || ''),
+            branchId: (u.branchId || u.branch_id) as string | undefined,
+            email: u.email as string | undefined,
+            role: (u.role as string | undefined),
+            jobTitle: (u.jobTitle || u.job_title) as string | undefined,
+            phone: u.phone as string | undefined,
+          })).filter((u) => u.id && u.name)
+          setBranchEmployees(mapped)
+        })
+        .catch(err => console.error('Failed to load branch employees:', err))
+    }
+
+    loadEmployees(false)
+
+    const onDirectoryUpdated = () => loadEmployees(true)
+    window.addEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+    window.addEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    return () => {
+      window.removeEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+      window.removeEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    }
   }, [canEdit, token])
 
   useEffect(() => {
@@ -4576,6 +4601,34 @@ export default function Tickets() {
       : Math.max(8, above)
 
     setStatusPicker({ ticket, mode, x: left, y: top })
+  }, [])
+
+  const openScheduleDetailsPopup = useCallback((
+    ticket: Ticket,
+    anchorEl?: HTMLElement | null,
+    ghostKind?: 'completed' | 'resched' | null,
+  ) => {
+    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    cancelEdit()
+    setExpandedCell(null)
+    setStatusPicker(null)
+
+    const popupW = 360
+    const popupH = 320
+    const el = anchorEl
+      || (document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null)
+    const rect = el?.getBoundingClientRect()
+    const left = rect
+      ? Math.min(Math.max(8, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 8)
+      : Math.max(8, (window.innerWidth - popupW) / 2)
+    const below = rect ? rect.bottom + 6 : 80
+    const above = rect ? rect.top - popupH - 6 : 80
+    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.75) <= window.innerHeight - 8
+    const top = fitsBelow
+      ? Math.min(below, window.innerHeight - 120)
+      : Math.max(8, above)
+
+    setScheduleDetailsPopup({ ticket, x: left, y: top, ghostKind })
   }, [])
 
   const closeFinalDatePicker = useCallback(() => {
@@ -5330,11 +5383,15 @@ export default function Tickets() {
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
       const display = getScheduleStatusDisplay(ticket) || '—'
       const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
+      const showsDetails = statusShowsScheduleDetails(statusVal)
+      const statusTitle = showsDetails
+        ? `${display} — click to view remarks & payment`
+        : (canEdit ? `${display} — click to change` : display)
       return (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
           style={{ color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor, borderColor: badgeStyle.borderColor, maxWidth: '100%' }}
-          title={canEdit ? `${display} — CLICK TO CHANGE` : display}
+          title={statusTitle}
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
           {canEdit && <ChevronDown className="w-2.5 h-2.5 shrink-0 opacity-70" />}
@@ -5436,8 +5493,33 @@ export default function Tickets() {
     }
 
     if (label === 'UPDATE') {
+      const remarksText = rowGhost
+        ? formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
+        : getScheduleUpdateDisplay(ticket)
+      if (cellExpanded) {
+        const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
+        return (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Remarks</div>
+            <div
+              className="whitespace-normal break-words leading-relaxed"
+              style={{
+                color: remarksText
+                  ? (rowGhost
+                    ? (isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'))
+                    : green)
+                  : textMuted,
+                fontWeight: remarksText ? 600 : 400,
+                fontStyle: rowGhost ? 'italic' : undefined,
+              }}
+            >
+              {remarksText || '—'}
+            </div>
+          </>
+        )
+      }
       if (rowGhost) {
-        const ghostRemarks = formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
+        const ghostRemarks = remarksText
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
         return (
           <span
@@ -5466,6 +5548,33 @@ export default function Tickets() {
       const combined = formatCombinedPayment(ticket)
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
+      if (cellExpanded) {
+        return (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
+            {!combined ? (
+              <div style={{ color: textMuted }}>—</div>
+            ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
+              <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {mode ? (
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
+                    <span style={{ fontWeight: 600, color: textPrimary }}>{mode}</span>
+                  </div>
+                ) : null}
+                {amountStr ? (
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>₱{amountStr}</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </>
+        )
+      }
       if (!combined) {
         return <span style={{ ...truncStyle, color: textMuted }}>—</span>
       }
@@ -6052,17 +6161,26 @@ export default function Tickets() {
                               onClick={e => {
                                 e.stopPropagation()
                                 if (isEditingCell) return
+                                if (isStatusCol && !isMyTickets) {
+                                  const statusVal = getScheduleStatusValue(ticket)
+                                  if (isGhost || statusShowsScheduleDetails(statusVal)) {
+                                    openScheduleDetailsPopup(ticket, e.currentTarget as HTMLElement, ghostKind)
+                                    return
+                                  }
+                                  if (canEdit && !isGhost) {
+                                    openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
+                                    return
+                                  }
+                                }
                                 if (isStatusCol && canEdit && !isGhost) {
                                   openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                   return
                                 }
-                                if (col.label !== 'UPDATE') {
-                                  setExpandedCell(prev =>
-                                    prev?.ticketId === ticket.id && prev?.colLabel === col.label
-                                      ? null
-                                      : { ticketId: ticket.id, colLabel: col.label },
-                                  )
-                                }
+                                setExpandedCell(prev =>
+                                  prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                    ? null
+                                    : { ticketId: ticket.id, colLabel: col.label },
+                                )
                               }}
                               onDoubleClick={e => {
                                 e.preventDefault()
@@ -6414,7 +6532,9 @@ export default function Tickets() {
           if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
           return false
         })
-        const negotiatorPhone = negotiatorEmp?.phone || ''
+        const negotiatorPhone = negotiatorEmp?.phone
+          || (negotiatorId && user?.id === negotiatorId ? (user?.phone || '') : '')
+          || ''
         const preferredDate = t.preferredDate || t.preferred_date
         const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
@@ -6894,6 +7014,128 @@ export default function Tickets() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      })()}
+
+      {/* ── Schedule row details (remarks + payment) ── */}
+      {scheduleDetailsPopup && (() => {
+        const detailTicket = scheduleDetailsPopup.ticket
+        const ghostKind = scheduleDetailsPopup.ghostKind
+        const isGhost = Boolean(ghostKind)
+        const statusVal = getScheduleStatusValue(detailTicket)
+        const statusLabel = getScheduleStatusDisplay(detailTicket) || getScheduleStatusLabel(statusVal)
+        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+        const remarksText = isGhost
+          ? formatGhostRemarks(detailTicket, ghostKind ?? null, dateFilter)
+          : getScheduleUpdateDisplay(detailTicket)
+        const paymentCombined = formatCombinedPayment(detailTicket)
+        const paymentMode = getPaymentMode(detailTicket).trim().toUpperCase()
+        const paymentAmount = formatPaymentAmount(detailTicket)
+        const customerName = getCustomerDisplayName(detailTicket)
+
+        return ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[12000]" onClick={() => setScheduleDetailsPopup(null)}>
+            <div
+              className="fixed w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+              style={{
+                left: scheduleDetailsPopup.x,
+                top: scheduleDetailsPopup.y,
+                backgroundColor: cardBg,
+                border: `1px solid ${border}`,
+                maxHeight: 'min(420px, 75vh)',
+                boxShadow: isLight
+                  ? '0 10px 25px -5px rgba(15,23,42,0.12), 0 8px 10px -6px rgba(15,23,42,0.1)'
+                  : '0 10px 25px -5px rgba(0,0,0,0.5)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div
+                className="px-3 py-2.5 flex items-start justify-between gap-2 shrink-0"
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+              >
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>Schedule details</p>
+                  <p className="text-[12px] font-bold truncate mt-0.5" style={{ color: textPrimary }} title={customerName}>
+                    {customerName || '—'}
+                  </p>
+                  <span
+                    className="inline-flex items-center mt-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide border"
+                    style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScheduleDetailsPopup(null)}
+                  className="p-1 rounded-md hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}
+                  aria-label="Close"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Remarks</p>
+                  <p
+                    className="text-[12px] font-semibold whitespace-pre-wrap break-words leading-relaxed"
+                    style={{
+                      color: remarksText ? green : textMuted,
+                      fontStyle: isGhost ? 'italic' : undefined,
+                    }}
+                  >
+                    {remarksText || '—'}
+                  </p>
+                </div>
+                <div style={{ borderTop: `1px solid ${border}` }} className="pt-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Payment</p>
+                  {!paymentCombined ? (
+                    <p className="text-[12px]" style={{ color: textMuted }}>—</p>
+                  ) : paymentMode === 'FREE' || paymentMode === 'FREE INSTALL' ? (
+                    <p className="text-[12px] font-bold" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>FREE</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {paymentMode ? (
+                        <p className="text-[12px]">
+                          <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
+                          <span className="font-semibold" style={{ color: textPrimary }}>{paymentMode}</span>
+                        </p>
+                      ) : null}
+                      {paymentAmount ? (
+                        <p className="text-[12px]">
+                          <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
+                          <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>₱{paymentAmount}</span>
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {canEdit && !isGhost ? (
+                <div
+                  className="px-3 py-2.5 flex items-center justify-end gap-2 shrink-0"
+                  style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = detailTicket
+                      setScheduleDetailsPopup(null)
+                      openStatusPicker(t, 'inline', document.querySelector(`[data-cell-key="${t.id}:STATUS"]`) as HTMLElement)
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors"
+                    style={{ color: green, border: `1px solid ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.3)'}` }}
+                  >
+                    Change status
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>,
           document.body,
