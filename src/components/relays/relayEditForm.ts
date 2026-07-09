@@ -42,6 +42,16 @@ export type RelayEditDraft = {
   modeOfPayment: string
   images: string
   priorityTag: string
+  /** Field schedules / my-tickets / overview */
+  ticketNumber: string
+  ticketCategory: string
+  serviceDriver: string
+  finalDate: string
+  scheduleStatus: string
+  rescheduleToDate: string
+  reschedulePending: boolean
+  remarks: string
+  commitTerms: string
 }
 
 type TicketLike = {
@@ -74,6 +84,17 @@ type TicketLike = {
   warrantyDocsStatus?: string
   warrantyRegistrationCompleted?: boolean
   warrantyRegistrationCompletedBy?: string
+  ticketNumber?: string
+  ticket_number?: string
+  ticketCategory?: string
+  ticket_category?: string
+  serviceDriver?: string
+  service_driver?: string
+  finalDate?: string
+  final_date?: string
+  remarks?: string
+  rescheduleToDate?: string
+  reschedulePending?: boolean
 }
 
 type ParsedStore = { store: string; branch: string; customStore?: string }
@@ -84,6 +105,7 @@ export function buildRelayEditDraft(
   ticket: TicketLike,
   parseStoreVendor: (sourceVendor?: string) => ParsedStore,
   resolveBranch?: (branchId?: string) => BranchRef | null,
+  extensions?: Partial<RelayEditDraft>,
 ): RelayEditDraft {
   let parsedDetails: Record<string, string> = {}
   if (ticket.acDetails) {
@@ -155,5 +177,15 @@ export function buildRelayEditDraft(
     modeOfPayment: ticket.modeOfPayment || '',
     images: ticket.images || '',
     priorityTag: ticket.priorityTag || '',
+    ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
+    ticketCategory: ticket.ticketCategory || ticket.ticket_category || 'INSTALLATION',
+    serviceDriver: ticket.serviceDriver || ticket.service_driver || '',
+    finalDate: parsedDetails.finalDate || ticket.finalDate || ticket.final_date || '',
+    scheduleStatus: ticket.status || 'INSTALLATION',
+    rescheduleToDate: '',
+    reschedulePending: Boolean(parsedDetails.reschedulePending),
+    remarks: ticket.remarks || ticket.remarksUpdate || '',
+    commitTerms: ticket.commitType || ticket.commitTerms || '',
+    ...extensions,
   }
 }

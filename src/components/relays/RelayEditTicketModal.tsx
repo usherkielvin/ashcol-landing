@@ -1,8 +1,10 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom'
 import { AlertTriangle, FileText, X } from 'lucide-react'
 import { API_BASE_URL } from '../../utils/api'
+import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
+import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 
 const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
 
@@ -12,9 +14,12 @@ type TicketLike = Parameters<typeof buildRelayEditDraft>[0] & { id: string; cust
 
 type ParsedStore = { store: string; branch: string; customStore?: string }
 
+export type ScheduleStatusOption = { value: string; label: string; group?: string }
+
 export type RelayEditTicketModalProps = {
   ticket: TicketLike
   ticketNumberLabel: string
+  surface?: TicketEditSurface
   isAdmin: boolean
   isLight: boolean
   cardBg: string
@@ -30,17 +35,25 @@ export type RelayEditTicketModalProps = {
   parseStoreVendor: (sourceVendor?: string) => ParsedStore
   resolveBranch: (branchId?: string) => Branch | null
   negotiatorsForBranch: (branchId?: string) => Employee[]
-  mergeCandidates: TicketLike[]
-  mergeTargetId: string
-  merging: boolean
-  actionSaving: boolean
-  onMergeTargetChange: (id: string) => void
-  onMerge: () => void
+  mergeCandidates?: TicketLike[]
+  mergeTargetId?: string
+  merging?: boolean
+  actionSaving?: boolean
+  saving?: boolean
+  showDelete?: boolean
+  driverRoster?: string[]
+  installerRoster?: string[]
+  isTaguigServices?: boolean
+  scheduleStatusOptions?: ScheduleStatusOption[]
+  editOriginalDate?: string
+  onMergeTargetChange?: (id: string) => void
+  onMerge?: () => void
   onClose: () => void
-  onDelete: () => void
+  onDelete?: () => void
   onSave: (draft: RelayEditDraft) => void
   getTicketNumber: (ticket: any) => string
   parseAcDetails: (ticket: any) => { finalDate?: string }
+  draftExtensions?: Partial<RelayEditDraft>
 }
 
 const EField = ({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) => (
@@ -60,6 +73,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const {
     ticket,
     ticketNumberLabel,
+    surface = 'relay',
     isAdmin,
     isLight,
     cardBg,
@@ -75,10 +89,17 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     parseStoreVendor,
     resolveBranch,
     negotiatorsForBranch,
-    mergeCandidates,
-    mergeTargetId,
-    merging,
-    actionSaving,
+    mergeCandidates = [],
+    mergeTargetId = '',
+    merging = false,
+    actionSaving = false,
+    saving = false,
+    showDelete,
+    driverRoster = [],
+    installerRoster = [],
+    isTaguigServices = false,
+    scheduleStatusOptions = [],
+    editOriginalDate = '',
     onMergeTargetChange,
     onMerge,
     onClose,
@@ -86,17 +107,39 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     onSave,
     getTicketNumber,
     parseAcDetails,
+    draftExtensions,
   } = props
 
-  const [draft, setDraft] = useState<RelayEditDraft>(() => buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch))
+  const isFieldSurface = surface !== 'relay'
+  const isOverview = surface === 'overview'
+  const initialDraftRef = useRef('')
+
+  const [draft, setDraft] = useState<RelayEditDraft>(() =>
+    buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions),
+  )
   const [showAddStoreField, setShowAddStoreField] = useState(false)
   const [storeDraft, setStoreDraft] = useState('')
 
   useEffect(() => {
-    setDraft(buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch))
+    const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
+    setDraft(next)
+    initialDraftRef.current = JSON.stringify(next)
     setShowAddStoreField(false)
     setStoreDraft('')
   }, [ticket.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const requestClose = () => {
+    if (JSON.stringify(draft) !== initialDraftRef.current) {
+      if (!window.confirm('Discard unsaved changes on this ticket?')) return
+    }
+    onClose()
+  }
+
+  const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
+  const pendingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'pending')
+  const closingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'closing')
+  const canDelete = showDelete ?? (isAdmin && surface === 'relay')
+  const isSaving = saving || actionSaving
 
   const patch = (updates: Partial<RelayEditDraft>) => setDraft((prev) => ({ ...prev, ...updates }))
 
@@ -137,29 +180,36 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
   return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+      className={`fixed inset-0 z-[9999] flex flex-col overflow-hidden ${isOverview ? 'bg-white dark:bg-[#0a1120] sm:bg-black/50' : ''} sm:items-center sm:justify-center sm:p-4 sm:p-6`}
+      style={isOverview ? undefined : { backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
     >
       <div
-        className="w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+        className={`w-full flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 min-h-0 ${isOverview ? 'h-full sm:h-auto sm:max-h-[90vh] sm:max-w-5xl sm:rounded-2xl' : 'max-w-5xl rounded-none sm:rounded-2xl sm:max-h-[90vh] h-full sm:h-auto'}`}
+        style={{ backgroundColor: cardBg, border: isOverview ? 'none' : `1px solid ${border}` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0 safe-area-top" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
           <div className="min-w-0 flex-1 mr-4">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>Manage Client Ticket</h2>
+              <h2 className="text-sm sm:text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                {isFieldSurface ? 'Manage Client Ticket' : 'Manage Client Ticket'}
+              </h2>
               <span className="text-[10px] px-2 py-0.5 rounded font-black font-mono tracking-wider" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${border}` }}>
                 TICKET NO: {ticketNumberLabel}
               </span>
+              {editOriginalDate && isFieldSurface && (
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                  Scheduled {editOriginalDate}
+                </span>
+              )}
             </div>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
+          <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <X className="w-5 h-5" style={{ color: textMuted }} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 min-h-0">
           <div>
             <ESHead title="Client & Location Details" border={border} />
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -240,11 +290,40 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           <div>
             <ESHead title="Scheduling & Branch Assignment" border={border} />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <EField label="Status">
-                <select value={draft.updateStatus} onChange={(e) => patch({ updateStatus: e.target.value })} className={`${relayInput} font-bold`} style={inputStyle}>
-                  <option value="PENDING">Pending</option><option value="ASSIGNED">Assigned</option><option value="SCHEDULED">Scheduled</option>
-                </select>
-              </EField>
+              {isFieldSurface ? (
+                <EField label="Status" className="md:col-span-2">
+                  <select
+                    value={draft.scheduleStatus}
+                    onChange={(e) => patch({ scheduleStatus: e.target.value })}
+                    className={`${relayInput} font-bold`}
+                    style={inputStyle}
+                  >
+                    {pendingStatusOpts.length > 0 && (
+                      <optgroup label="Active">
+                        {pendingStatusOpts.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {closingStatusOpts.length > 0 && (
+                      <optgroup label="Closing">
+                        {closingStatusOpts.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {scheduleStatusOptions.length === 0 && (
+                      <option value={draft.scheduleStatus}>{draft.scheduleStatus}</option>
+                    )}
+                  </select>
+                </EField>
+              ) : (
+                <EField label="Status">
+                  <select value={draft.updateStatus} onChange={(e) => patch({ updateStatus: e.target.value })} className={`${relayInput} font-bold`} style={inputStyle}>
+                    <option value="PENDING">Pending</option><option value="ASSIGNED">Assigned</option><option value="SCHEDULED">Scheduled</option>
+                  </select>
+                </EField>
+              )}
               <EField label="Branch Zone">
                 <select
                   value={draft.assignBranchId}
@@ -278,8 +357,118 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               </EField>
               <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              {isFieldSurface && (
+                <EField label="Final Schedule Date" className="md:col-span-2">
+                  <input
+                    type="date"
+                    value={draft.finalDate}
+                    onChange={(e) => patch({ finalDate: e.target.value, preferredDate: e.target.value })}
+                    className={relayInput}
+                    style={{
+                      ...inputStyle,
+                      backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)',
+                      borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)',
+                    }}
+                  />
+                </EField>
+              )}
+              {isFieldSurface && isReschedStatus && (
+                <>
+                  <EField label="Reschedule To">
+                    <input
+                      type="date"
+                      disabled={draft.reschedulePending}
+                      value={draft.rescheduleToDate}
+                      onChange={(e) => patch({ rescheduleToDate: e.target.value, reschedulePending: false })}
+                      className={relayInput}
+                      style={inputStyle}
+                    />
+                  </EField>
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer md:col-span-2" style={{ color: textPrimary }}>
+                    <input
+                      type="checkbox"
+                      checked={draft.reschedulePending}
+                      onChange={(e) => patch({
+                        reschedulePending: e.target.checked,
+                        rescheduleToDate: e.target.checked ? '' : (draft.rescheduleToDate || draft.preferredDate || ''),
+                      })}
+                      className="rounded border-slate-300"
+                    />
+                    Pending — no date slot available yet
+                  </label>
+                </>
+              )}
             </div>
           </div>
+
+          {isFieldSurface && (
+            <div>
+              <ESHead title="Field Operations" border={border} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <EField label="Ticket Type">
+                  <select value={draft.ticketCategory} onChange={(e) => patch({ ticketCategory: e.target.value })} className={relayInput} style={inputStyle}>
+                    {FIELD_TICKET_CATEGORIES.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </EField>
+                <EField label="Ticket No.">
+                  <input type="text" value={draft.ticketNumber} onChange={(e) => patch({ ticketNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="e.g. AS-01" />
+                </EField>
+                <EField label="Control No. / SI (Aircon)">
+                  <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
+                </EField>
+                <EField label="Service / Driver">
+                  <input
+                    type="text"
+                    value={draft.serviceDriver}
+                    list="unified-ticket-driver-roster"
+                    onChange={(e) => patch({ serviceDriver: e.target.value })}
+                    className={relayInput}
+                    style={inputStyle}
+                  />
+                  <datalist id="unified-ticket-driver-roster">
+                    {driverRoster.map((name) => <option key={name} value={name} />)}
+                  </datalist>
+                </EField>
+                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
+                  <input
+                    type="text"
+                    value={draft.installerName}
+                    list="unified-ticket-installer-roster"
+                    onChange={(e) => patch({ installerName: e.target.value })}
+                    className={relayInput}
+                    style={inputStyle}
+                  />
+                  <datalist id="unified-ticket-installer-roster">
+                    {installerRoster.map((name) => <option key={name} value={name} />)}
+                  </datalist>
+                </EField>
+                <EField label="Mode of Payment">
+                  <select value={draft.modeOfPayment} onChange={(e) => patch({ modeOfPayment: e.target.value })} className={relayInput} style={inputStyle}>
+                    <option value="">-- Select --</option>
+                    <option value="CASH">CASH</option>
+                    <option value="BANK TRANSFER">BANK TRANSFER</option>
+                    <option value="GCASH">GCASH</option>
+                    <option value="CHEQUE">CHEQUE</option>
+                    <option value="FREE INSTALL">FREE INSTALL</option>
+                  </select>
+                </EField>
+                <EField label="Payment Amount (₱)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={draft.installationCharges ?? ''}
+                    disabled={draft.modeOfPayment === 'FREE' || draft.modeOfPayment === 'FREE INSTALL'}
+                    onChange={(e) => patch({ installationCharges: e.target.value ? Number(e.target.value) : 0 })}
+                    className={relayInput}
+                    style={inputStyle}
+                  />
+                </EField>
+              </div>
+            </div>
+          )}
 
           <div>
             <ESHead title="Referral Fee" border={border} />
@@ -319,7 +508,18 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           <div>
             <ESHead title="Remarks & Updates" border={border} />
-            <EField label="Add New Remark / Update">
+            {isFieldSurface && (
+              <EField label="Remarks / Update" className="mb-3">
+                <textarea
+                  value={draft.remarks}
+                  onChange={(e) => patch({ remarks: e.target.value })}
+                  rows={2}
+                  className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none normal-case"
+                  style={inputStyle}
+                />
+              </EField>
+            )}
+            <EField label={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}>
               <textarea
                 value={draft.remarksUpdate}
                 onChange={(e) => patch({ remarksUpdate: e.target.value })}
@@ -331,7 +531,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             </EField>
           </div>
 
-          {mergeCandidates.length > 0 && (
+          {mergeCandidates.length > 0 && onMerge && onMergeTargetChange && (
             <div className="border rounded-xl p-3.5 flex flex-col gap-2.5" style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
               <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 uppercase tracking-wider"><AlertTriangle className="w-4 h-4 shrink-0" /> Duplicate Ticket(s) Detected</span>
               <p className="text-[11px] font-semibold leading-relaxed" style={{ color: textMuted }}>
@@ -355,11 +555,17 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           )}
         </div>
 
-        <div className="px-6 py-4 flex items-center justify-between border-t shrink-0" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-          {isAdmin ? <button type="button" onClick={onDelete} disabled={actionSaving} className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">Delete Ticket</button> : <div />}
-          <div className="flex gap-2.5">
-            <button type="button" onClick={onClose} className="px-5 py-2 border rounded-lg text-xs font-bold" style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>Cancel</button>
-            <button type="button" onClick={() => onSave(draft)} className="px-6 py-2 text-white rounded-lg text-xs font-bold shadow-md" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>Save Changes</button>
+        <div className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-t shrink-0 safe-area-bottom" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+          {canDelete && onDelete ? (
+            <button type="button" onClick={onDelete} disabled={isSaving} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
+              Delete Ticket
+            </button>
+          ) : <div className="hidden sm:block" />}
+          <div className="flex gap-2.5 w-full sm:w-auto">
+            <button type="button" onClick={requestClose} className="flex-1 sm:flex-none px-5 py-2.5 sm:py-2 border rounded-lg text-xs font-bold" style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>Cancel</button>
+            <button type="button" onClick={() => onSave(draft)} disabled={isSaving} className="flex-1 sm:flex-none px-6 py-2.5 sm:py-2 text-white rounded-lg text-xs font-bold shadow-md disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
         </div>
       </div>

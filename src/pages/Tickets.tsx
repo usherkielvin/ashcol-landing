@@ -24,6 +24,10 @@ import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
+import { type RelayEditDraft } from '../components/relays/relayEditForm'
+import { parseStoreVendor, readRelayCustomStores, persistRelayCustomStores } from '../utils/parseStoreVendor'
+import { mapRelayDraftToScheduleEditForm } from '../utils/ticketEditBridge'
 import {
   FIELD_TICKET_CATEGORIES,
   categoryDefaultServiceType,
@@ -2751,6 +2755,8 @@ export default function Tickets() {
   }, [resolveBranch])
   // ── Manual Edit Modal State ──────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editTicket, setEditTicket] = useState<Ticket | null>(null)
+  const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
   const [showEditHistory, setShowEditHistory] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
@@ -3489,6 +3495,7 @@ export default function Tickets() {
     const status = getScheduleStatusValue(ticket)
     setEditOriginalDate(preferred)
     setEditInitialStatus(status)
+    setEditTicket(ticket)
     const rawBranch = ticket.branchId || ticket.branch_id || ''
     const resolvedBranch = resolveBranch(rawBranch)
     const form = {
@@ -3524,6 +3531,7 @@ export default function Tickets() {
 
   const closeEditModal = useCallback(() => {
     setEditModalOpen(false)
+    setEditTicket(null)
     setShowEditHistory(false)
     setConfirmModal(null)
   }, [])
@@ -3586,35 +3594,52 @@ export default function Tickets() {
     }
     setAddModalOpen(false)
   }
-  const validateEditForm = (): string | null => {
-    if (!editForm.id) return 'Ticket not found'
-    const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
+  const validateEditFormFor = (form: typeof editForm): string | null => {
+    if (!form.id) return 'Ticket not found'
+    const isReschedStatusEarly = (form.status || '').toUpperCase() === 'RESCHED'
     if (isReschedStatusEarly) {
-      if (!editForm.reschedulePending && !editForm.rescheduleToDate?.trim()) {
+      if (!form.reschedulePending && !form.rescheduleToDate?.trim()) {
         return 'Select a reschedule date or choose Pending if no slot is available yet'
       }
     }
-    if (!editForm.negotiatorId) return 'Negotiator is required'
-    if (!editForm.branchId?.trim()) return 'Assigned branch is required'
-    const selectedNeg = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
-    if (selectedNeg?.branchId && editForm.branchId
-      && !branchScopesMatch(selectedNeg.branchId, editForm.branchId, selectedNeg.email)) {
+    if (!form.negotiatorId) return 'Negotiator is required'
+    if (!form.branchId?.trim()) return 'Assigned branch is required'
+    const selectedNeg = branchEmployees.find(emp => emp.id === form.negotiatorId)
+    if (selectedNeg?.branchId && form.branchId
+      && !branchScopesMatch(selectedNeg.branchId, form.branchId, selectedNeg.email)) {
       return 'Negotiator must belong to the assigned branch'
     }
-    if (!editForm.customerName?.trim()) return 'Customer Name is required'
-    if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
-    if (!editForm.location?.trim()) return 'Destination/Address is required'
-    
-    const targetStatus = (editForm.status || '').toUpperCase().replace(/\s+/g, '_')
+    if (!form.customerName?.trim()) return 'Customer Name is required'
+    if (!form.contactPhone?.trim()) return 'Contact No. is required'
+    if (!form.location?.trim()) return 'Destination/Address is required'
+
+    const targetStatus = (form.status || '').toUpperCase().replace(/\s+/g, '_')
     const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
     if (isClosing) {
-      const missing = getEmptyRequiredColumnsForClose(editForm, branchEmployees, activeBranchId)
+      const missing = getEmptyRequiredColumnsForClose(form, branchEmployees, activeBranchId)
       if (missing.length > 0) {
         return `Cannot close ticket because the following columns are empty:\n• ${missing.join('\n• ')}`
       }
     }
 
     return null
+  }
+
+  const validateEditForm = (): string | null => validateEditFormFor(editForm)
+
+  const handleUnifiedEditSave = (draft: RelayEditDraft) => {
+    const nextForm = mapRelayDraftToScheduleEditForm(draft, {
+      ...editForm,
+      id: editForm.id || editTicket?.id,
+      acDetails: editForm.acDetails || editTicket?.acDetails || editTicket?.ac_details,
+    })
+    const error = validateEditFormFor(nextForm)
+    if (error) {
+      alert(error)
+      return
+    }
+    setEditForm(nextForm)
+    void commitSaveEditTicket(nextForm)
   }
 
   const promptSaveEditTicket = () => {
@@ -3682,39 +3707,39 @@ export default function Tickets() {
     return null
   }
 
-  const commitSaveEditTicket = async () => {
-    if (!editForm.id || editSaving) return
-    const isReschedStatusEarly = (editForm.status || '').toUpperCase() === 'RESCHED'
+  const commitSaveEditTicket = async (formOverride?: typeof editForm) => {
+    const activeForm = formOverride || editForm
+    if (!activeForm.id || editSaving) return
+    const isReschedStatusEarly = (activeForm.status || '').toUpperCase() === 'RESCHED'
     const isReschedStatus = isReschedStatusEarly
-    const scheduleVal = (editForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
+    const scheduleVal = (activeForm.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
     setEditSaving(true)
     try {
-      const originalTicket = resolveEditOriginalTicket()
+      const originalTicket = resolveEditOriginalTicket() || editTicket
       if (!originalTicket?.id) {
         throw new Error('Ticket not found — refresh the page and try again.')
       }
-      // Keep editForm.id aligned if we resolved via ticket number.
-      if (editForm.id !== originalTicket.id) {
-        editForm.id = originalTicket.id
+      if (activeForm.id !== originalTicket.id) {
+        activeForm.id = originalTicket.id
       }
 
       const tokenVal = token()
-      const category = editForm.ticketCategory || 'INSTALLATION'
-      const { serviceType, serviceVehicle } = parseServiceDriverValue(editForm.serviceDriver, category)
+      const category = activeForm.ticketCategory || 'INSTALLATION'
+      const { serviceType, serviceVehicle } = parseServiceDriverValue(activeForm.serviceDriver, category)
       const titleVal = `${categoryDefaultServiceType(category)} service`
-      const descVal = editForm.commitTerms?.trim() || 'No additional details provided.'
+      const descVal = activeForm.commitTerms?.trim() || 'No additional details provided.'
 
       const oldDateKey = editOriginalDate?.split('T')[0]?.trim() || ''
       const newDateKey = isReschedStatus
-        ? (editForm.reschedulePending ? '' : editForm.rescheduleToDate?.split('T')[0]?.trim() || '')
-        : editForm.preferredDate?.split('T')[0]?.trim() || ''
+        ? (activeForm.reschedulePending ? '' : activeForm.rescheduleToDate?.split('T')[0]?.trim() || '')
+        : activeForm.preferredDate?.split('T')[0]?.trim() || ''
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
       const hadScheduleDate = Boolean(
         oldDateKey
         || (originalTicket && ticketHadScheduleDate(originalTicket)),
       )
       
-      let remarksVal = editForm.remarks?.trim() || undefined
+      let remarksVal = activeForm.remarks?.trim() || undefined
       if (isDateMove) {
         const reschedMsg = isReschedStatus && newDateKey
           ? `Moved to ${formatDateKeyLabel(newDateKey)}`
@@ -3722,51 +3747,51 @@ export default function Tickets() {
         remarksVal = isReschedStatus && newDateKey
           ? reschedMsg
           : (remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg)
-        editForm.remarks = remarksVal
+        activeForm.remarks = remarksVal
       }
       
       const acMetaExtras: Record<string, any> = {}
 
       const body: Record<string, any> = {
-        customerName: (editForm.customerName || '').trim(),
+        customerName: (activeForm.customerName || '').trim(),
         title: titleVal,
         description: descVal,
         serviceType,
         ticketCategory: category,
-        location: (editForm.location || '').trim(),
-        contactPhone: (editForm.contactPhone || '').trim(),
-        unitType: editForm.unitType?.trim() || undefined,
-        preferredDate: isReschedStatus && editForm.reschedulePending
-          ? (oldDateKey || editForm.preferredDate?.split('T')[0]?.trim() || undefined)
+        location: (activeForm.location || '').trim(),
+        contactPhone: (activeForm.contactPhone || '').trim(),
+        unitType: activeForm.unitType?.trim() || undefined,
+        preferredDate: isReschedStatus && activeForm.reschedulePending
+          ? (oldDateKey || activeForm.preferredDate?.split('T')[0]?.trim() || undefined)
           : newDateKey,
-        sourceVendor: editForm.sourceVendor?.trim() || 'Direct',
-        district: editForm.district?.trim() || undefined,
-        commitType: editForm.commitTerms?.trim() || undefined,
+        sourceVendor: activeForm.sourceVendor?.trim() || 'Direct',
+        district: activeForm.district?.trim() || undefined,
+        commitType: activeForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
-        installerName: editForm.installerName?.trim() || undefined,
-        negotiatorId: editForm.negotiatorId,
-        assignedTo: editForm.negotiatorId,
-        ticketNumber: editForm.ticketNumber?.trim() || undefined,
-        controlNumber: editForm.controlNumber?.trim() || undefined,
+        installerName: activeForm.installerName?.trim() || undefined,
+        negotiatorId: activeForm.negotiatorId,
+        assignedTo: activeForm.negotiatorId,
+        ticketNumber: activeForm.ticketNumber?.trim() || undefined,
+        controlNumber: activeForm.controlNumber?.trim() || undefined,
         remarks: remarksVal,
         remarksUpdate: remarksVal,
       }
 
-      const selectedNegotiator = branchEmployees.find(emp => emp.id === editForm.negotiatorId)
+      const selectedNegotiator = branchEmployees.find(emp => emp.id === activeForm.negotiatorId)
       if (!selectedNegotiator) {
         alert('Select a negotiator for the assigned branch.')
         return
       }
-      if (selectedNegotiator.branchId && editForm.branchId
-        && !branchScopesMatch(selectedNegotiator.branchId, editForm.branchId, selectedNegotiator.email)) {
+      if (selectedNegotiator.branchId && activeForm.branchId
+        && !branchScopesMatch(selectedNegotiator.branchId, activeForm.branchId, selectedNegotiator.email)) {
         alert('Negotiator must belong to the assigned branch.')
         return
       }
       const explicitBranch = resolvePortalWriteBranchId(
-        editForm.branchId,
+        activeForm.branchId,
         selectedNegotiator?.email || user?.email,
         selectedNegotiator?.jobTitle || user?.jobTitle,
-      ) || (editForm.branchId || '').trim()
+      ) || (activeForm.branchId || '').trim()
       if (explicitBranch) {
         body.branchId = explicitBranch
         body.branch_id = explicitBranch
@@ -3779,9 +3804,9 @@ export default function Tickets() {
       }
 
       const resolvedNegoName = resolveNegotiatorName(
-        (originalTicket || editForm) as Ticket,
+        (originalTicket || activeForm) as Ticket,
         branchEmployees,
-        editForm.negotiatorId,
+        activeForm.negotiatorId,
       )
       if (resolvedNegoName) body.negotiatorName = resolvedNegoName
 
@@ -3789,7 +3814,7 @@ export default function Tickets() {
 
       if (isReschedStatus) {
         body.status = 'RESCHED'
-        if (editForm.reschedulePending) {
+        if (activeForm.reschedulePending) {
           acMetaExtras.reschedulePending = true
           acMetaExtras.rescheduledTo = ''
           if (!remarksVal) {
@@ -3804,7 +3829,7 @@ export default function Tickets() {
       } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
       } else {
-        Object.assign(body, applyScheduleStatusPatch((originalTicket || editForm) as Ticket, scheduleVal))
+        Object.assign(body, applyScheduleStatusPatch((originalTicket || activeForm) as Ticket, scheduleVal))
         // Status patch may clear Moved-to remarks / set preferredDate
         if (typeof body.remarksUpdate === 'string') remarksVal = body.remarksUpdate
         else if (typeof body.remarks === 'string') remarksVal = body.remarks
@@ -3820,10 +3845,10 @@ export default function Tickets() {
         ? parseAcMeta({ acDetails: body.acDetails } as Ticket)
         : {}
 
-      const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
+      const finalDateKey = activeForm.finalDate?.split('T')[0]?.trim() || ''
 
-      const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
-      const paymentMode = editForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
+      const paymentCharges = activeForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
+      const paymentMode = activeForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
       if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
         body.installationCharges = Number(paymentCharges)
       }
@@ -3848,7 +3873,7 @@ export default function Tickets() {
       }
 
       if (isDateMove && !leavingResched) {
-        const existing = parseAcMeta(editForm as Ticket)
+        const existing = parseAcMeta(activeForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
           ? [...existing.previousScheduleDates]
           : []
@@ -3871,26 +3896,26 @@ export default function Tickets() {
       }
 
       const acBaseTicket = (typeof body.acDetails === 'string'
-        ? { ...(originalTicket || editForm), acDetails: body.acDetails }
-        : (originalTicket || editForm)) as Ticket
+        ? { ...(originalTicket || activeForm), acDetails: body.acDetails }
+        : (originalTicket || activeForm)) as Ticket
 
       body.acDetails = mergeAcMeta(acBaseTicket, {
         ...acMetaExtras,
-        destination: editForm.location.trim(),
-        address: editForm.location.trim(),
-        district: editForm.district?.trim() || undefined,
-        brand: editForm.unitType?.trim() || undefined,
-        unitType: editForm.unitType?.trim() || undefined,
-        dealer: editForm.sourceVendor?.trim() || undefined,
-        dlr: editForm.sourceVendor?.trim() || undefined,
+        destination: activeForm.location.trim(),
+        address: activeForm.location.trim(),
+        district: activeForm.district?.trim() || undefined,
+        brand: activeForm.unitType?.trim() || undefined,
+        unitType: activeForm.unitType?.trim() || undefined,
+        dealer: activeForm.sourceVendor?.trim() || undefined,
+        dlr: activeForm.sourceVendor?.trim() || undefined,
         update: remarksVal || '',
         remarksUpdate: remarksVal || '',
-        installerName: editForm.installerName?.trim() || undefined,
-        negotiatorId: editForm.negotiatorId,
+        installerName: activeForm.installerName?.trim() || undefined,
+        negotiatorId: activeForm.negotiatorId,
         negotiatorName: resolveNegotiatorName(
-          (originalTicket || editForm) as Ticket,
+          (originalTicket || activeForm) as Ticket,
           branchEmployees,
-          editForm.negotiatorId,
+          activeForm.negotiatorId,
         ) || undefined,
         finalDate: isReschedStatus ? '' : finalDateKey,
         scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
@@ -3903,7 +3928,7 @@ export default function Tickets() {
       if (String(body.status || '').toUpperCase() === 'COMPLETED') {
         const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || 'DONE_INSTALLED') as ScheduleOutcome
         body.scheduleOutcome = outcome
-        body.acDetails = mergeAcMeta({ ...editForm, acDetails: body.acDetails } as Ticket, {
+        body.acDetails = mergeAcMeta({ ...activeForm, acDetails: body.acDetails } as Ticket, {
           scheduleOutcome: outcome,
           schedulePhase: '',
         })
@@ -3966,7 +3991,7 @@ export default function Tickets() {
                   controlNumber: archiveBody.controlNumber,
                   ticketNumber: archiveBody.ticketNumber,
                   note: archiveOriginal.note,
-                  negotiatorName: resolveNegotiatorName(archiveOriginal, branchEmployees, editForm.negotiatorId),
+                  negotiatorName: resolveNegotiatorName(archiveOriginal, branchEmployees, activeForm.negotiatorId),
                 },
                 schedKey,
               )
@@ -3985,8 +4010,9 @@ export default function Tickets() {
           : undefined,
       )
 
-      setEditFormSnapshot(JSON.stringify(editForm))
-      setEditModalOpen(false)
+      setEditForm(activeForm)
+      setEditFormSnapshot(JSON.stringify(activeForm))
+      closeEditModal()
       showToast(isReturningToMyTickets && !isMyTickets ? 'Returned to My Tickets' : 'Saved')
     } catch (err: unknown) {
       console.error(err)
@@ -8678,532 +8704,55 @@ export default function Tickets() {
         document.body,
       )}
 
-      {editModalOpen && ReactDOM.createPortal((() => {
-        const isReschedStatus = (editForm.status || '').toUpperCase() === 'RESCHED'
-        const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
-        const showPaymentSection = ticketHasPaymentInfo(editForm)
-          || Boolean(editForm.modeOfPayment || editForm.installationCharges != null)
-          || (editForm.status || '').toUpperCase() === 'INSTALLED'
-          || (editForm.status || '').toUpperCase() === 'DONE_INSTALLED'
-        const reschedFieldStyle = {
-          backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)',
-          border: `2px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.55)'}`,
-          boxShadow: isLight ? '0 0 0 3px rgba(251,191,36,0.2)' : '0 0 0 3px rgba(251,191,36,0.15)',
-        }
+      {editModalOpen && editTicket && (
+        <RelayEditTicketModal
+          ticket={editTicket}
+          ticketNumberLabel={editTicket.ticketNumber || editTicket.ticket_number || editTicket.id}
+          surface={activeTab === 'overview' ? 'overview' : isMyTickets ? 'my-tickets' : 'schedules'}
+          isAdmin={isAdmin}
+          isLight={isLight}
+          cardBg={cardBg}
+          border={border}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          compactInput="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case"
+          branches={branches}
+          relayCustomStores={relayCustomStores}
+          onPersistCustomStores={(stores) => { setRelayCustomStores(stores); persistRelayCustomStores(stores) }}
+          parseStoreVendor={parseStoreVendor}
+          resolveBranch={resolveBranch}
+          negotiatorsForBranch={negotiatorsForBranch}
+          saving={editSaving}
+          showDelete={canEdit && activeTab !== 'overview'}
+          driverRoster={editModalRoster.drivers}
+          installerRoster={editModalRoster.installers}
+          isTaguigServices={isTaguigServices}
+          scheduleStatusOptions={SCHEDULE_STATUS_OPTS}
+          editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
+          onClose={closeEditModal}
+          onDelete={() => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } }}
+          onSave={handleUnifiedEditSave}
+          getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
+          parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
+          draftExtensions={{
+            ticketNumber: editForm.ticketNumber || editTicket.ticketNumber || editTicket.ticket_number || '',
+            ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
+            scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
+            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
+            serviceDriver: editForm.serviceDriver || (isMyTickets ? formatRelayTicketTypeShort(editTicket) : formatServiceDriver(editTicket)),
+            installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
+            rescheduleToDate: editForm.rescheduleToDate || '',
+            reschedulePending: Boolean(editForm.reschedulePending),
+            remarks: editForm.remarks || editTicket.remarks || editTicket.remarksUpdate || '',
+            commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
+            assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
+            assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
+          }}
+        />
+      )}
 
-        const isOverviewEdit = activeTab === 'overview'
-        const inp = isOverviewEdit
-          ? 'edit-input font-semibold outline-none focus:ring-2 focus:ring-[#16A34A]'
-          : 'rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full min-w-0 max-w-full box-border'
-        const gridCls = isOverviewEdit
-          ? 'edit-field-grid'
-          : 'grid grid-cols-1 md:grid-cols-2 gap-4'
-        const sectionTitleCls = isOverviewEdit
-          ? 'edit-section-title text-slate-400'
-          : 'text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400'
-
-        return (
-        <div
-          className={`fixed inset-0 z-[9999] flex flex-col overflow-hidden sm:items-center sm:justify-center sm:p-4 backdrop-blur-sm ${isOverviewEdit ? 'bg-white dark:bg-[#0a1120] sm:bg-slate-900/60' : 'bg-slate-900/60'}`}
-          onClick={e => e.stopPropagation()}
-        >
-          <div
-            className={`w-full flex flex-col overflow-hidden shadow-2xl min-h-0 min-w-0 max-w-full ${isOverviewEdit ? 'overview-edit-sheet sm:max-w-3xl sm:rounded-2xl' : 'h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl sm:max-h-[90vh]'}`}
-            style={{ backgroundColor: cardBg, border: isOverviewEdit ? 'none' : `1px solid ${border}` }}
-            onClick={e => e.stopPropagation()}
-            onMouseDown={e => e.stopPropagation()}
-          >
-            <div
-              className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 flex items-start justify-between gap-2 safe-area-top min-w-0"
-              style={{ borderBottom: `1px solid ${border}` }}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-black uppercase tracking-wide truncate ${isOverviewEdit ? 'text-xs sm:text-sm' : 'text-sm'}`} style={{ color: textPrimary }}>
-                    Edit Ticket
-                  </h3>
-                  {isOverviewEdit && (() => {
-                    const meta = parseAcMeta(editForm as Ticket)
-                    const hasHistory = !!(meta.remarksUpdate || (meta.previousScheduleDates && meta.previousScheduleDates.length > 0))
-                    if (!hasHistory) return null
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => setShowEditHistory(!showEditHistory)}
-                        className="px-2 py-0.5 rounded text-[9px] font-bold border transition-colors shrink-0"
-                        style={{
-                          backgroundColor: showEditHistory ? (isLight ? '#f1f5f9' : '#1e293b') : 'transparent',
-                          borderColor: inputBorder,
-                          color: textMuted
-                        }}
-                      >
-                        {showEditHistory ? 'Hide History' : 'View History'}
-                      </button>
-                    )
-                  })()}
-                </div>
-                <div className={`flex flex-wrap items-center gap-1.5 mt-1 ${isOverviewEdit ? '' : 'flex-col items-start gap-0.5'}`}>
-                  {editForm.id && (
-                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}>
-                      {editForm.ticketNumber || 'Auto'}
-                    </span>
-                  )}
-                  {editForm.branchId ? (
-                    <span className="text-[9px] font-bold uppercase tracking-wide truncate max-w-full" style={{ color: textMuted }}>
-                      {formatAssignedBranchLabel(editForm.branchId)}
-                    </span>
-                  ) : null}
-                  {editOriginalDate && !isReschedStatus && (
-                    <span className="text-[9px] font-semibold shrink-0" style={{ color: textMuted }}>
-                      {formatDateKeyLabel(editOriginalDate)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  requestCloseEditModal()
-                }}
-                className="p-1.5 shrink-0 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30 relative z-10"
-                style={{ color: textMuted, touchAction: 'manipulation' }}
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className={`edit-sheet-scroll flex flex-col ${isOverviewEdit ? 'px-3 py-3 gap-3 sm:px-6 sm:py-5 sm:gap-5' : 'px-4 sm:px-6 py-4 sm:py-6 gap-5 sm:gap-6 overflow-y-auto flex-1 min-h-0'}`}>
-              {showEditHistory && isOverviewEdit && (() => {
-                const meta = parseAcMeta(editForm as Ticket)
-                return (
-                  <div className="rounded-xl p-3 sm:p-4 mb-1 sm:mb-2 animate-in slide-in-from-top-2 duration-200" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
-                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Update History</h4>
-                    <div className="text-xs space-y-2 whitespace-pre-wrap" style={{ color: textPrimary, lineHeight: 1.6 }}>
-                      {meta.remarksUpdate || 'No remarks history.'}
-                    </div>
-                  </div>
-                )
-              })()}
-              <div
-                className={isOverviewEdit ? 'pb-1' : 'rounded-xl p-4'}
-                style={isOverviewEdit ? undefined : {
-                  border: `1px solid ${isLight ? 'rgba(22,163,74,0.28)' : 'rgba(74,222,128,0.25)'}`,
-                  backgroundColor: isLight ? 'rgba(240,253,244,0.85)' : 'rgba(22,163,74,0.08)',
-                }}
-              >
-                <h4 className={isOverviewEdit ? 'edit-section-title text-emerald-600' : 'text-[10px] font-black uppercase tracking-wider mb-3 text-emerald-600'}>
-                  Branch & OIC
-                </h4>
-                <div className={gridCls}>
-                  <Field label="Assigned Branch" required>
-                    <select
-                      value={editForm.branchId || ''}
-                      onChange={e => {
-                        const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
-                        setEditForm(prev => ({
-                          ...prev,
-                          branchId: nextBranchId,
-                          negotiatorId: '',
-                        }))
-                      }}
-                      className={inp}
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
-                    >
-                      <option value="">{branches.length ? 'Select branch...' : 'Loading branches...'}</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                    {!isOverviewEdit && editForm.branchId ? (
-                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
-                        Currently: {formatAssignedBranchLabel(editForm.branchId)}
-                      </p>
-                    ) : null}
-                  </Field>
-                  <Field label="OIC / Negotiator" required>
-                    <select
-                      value={editForm.negotiatorId || ''}
-                      onChange={e => {
-                        const val = e.target.value
-                        const foundEmp = editModalNegotiators.find(emp => emp.id === val)
-                        const negoBranchId = foundEmp?.branchId
-                          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
-                          : editForm.branchId
-                        setEditForm(prev => ({
-                          ...prev,
-                          negotiatorId: val,
-                          branchId: negoBranchId || prev.branchId,
-                        }))
-                      }}
-                      disabled={!editForm.branchId}
-                      className={`${inp} disabled:opacity-50`}
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
-                    >
-                      <option value="">{editForm.branchId ? 'Select negotiator' : 'Select branch first'}</option>
-                      {editModalNegotiators.map(emp => (
-                        <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-              </div>
-
-              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
-                <h4 className={sectionTitleCls}>
-                  Customer
-                </h4>
-                <div className={gridCls}>
-                  {!(editForm.status === 'SCHEDULED' || editForm.status === 'INSTALLATION' || editForm.status === 'RESCHED' || editOriginalDate) && (
-                    <Field label="Preferred Date" required>
-                      <input type="date" value={editForm.preferredDate || ''}
-                        onChange={e => setEditForm({ ...editForm, preferredDate: e.target.value })}
-                        className={inp}
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                    </Field>
-                  )}
-                  <Field label="Customer Name" required>
-                    <input type="text" value={editForm.customerName || ''} 
-                      onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Contact No." required>
-                    <input type="text" value={editForm.contactPhone || ''} 
-                      onChange={e => setEditForm({ ...editForm, contactPhone: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Destination/Address" required full>
-                    <textarea value={editForm.location || ''} 
-                      onChange={e => setEditForm({ ...editForm, location: e.target.value })}
-                      rows={isOverviewEdit ? 2 : 2}
-                      className={`${inp} resize-none`}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="District">
-                    <input type="text" value={editForm.district || ''} 
-                      onChange={e => setEditForm({ ...editForm, district: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Commit Terms">
-                    <textarea value={editForm.commitTerms || ''} 
-                      onChange={e => setEditForm({ ...editForm, commitTerms: e.target.value })}
-                      rows={1}
-                      className={`${inp} resize-none`}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                </div>
-              </div>
-
-              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
-                <h4 className={sectionTitleCls}>
-                  Service & Unit
-                </h4>
-                <div className={gridCls}>
-                  <Field label="Ticket Type" required>
-                    <select
-                      value={editForm.ticketCategory || 'INSTALLATION'}
-                      onChange={e => setEditForm({ ...editForm, ticketCategory: e.target.value as TicketCategoryValue })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}
-                    >
-                      {FIELD_TICKET_CATEGORIES.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Brand / Unit Type">
-                    <input type="text" value={editForm.unitType || ''} 
-                      onChange={e => setEditForm({ ...editForm, unitType: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Dealer (DLR)">
-                    <input type="text" value={editForm.sourceVendor || ''} 
-                      onChange={e => setEditForm({ ...editForm, sourceVendor: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Service / Driver">
-                    <input type="text" value={editForm.serviceDriver || ''}
-                      list="edit-ticket-driver-roster"
-                      placeholder={editModalRoster.drivers.length ? 'Select or type driver…' : 'e.g. T3 (DOMINIC) - 1'}
-                      onChange={e => setEditForm({ ...editForm, serviceDriver: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                    <datalist id="edit-ticket-driver-roster">
-                      {editModalRoster.drivers.map(name => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </Field>
-                  <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                    <input type="text" value={editForm.installerName || ''}
-                      list="edit-ticket-installer-roster"
-                      placeholder={editModalRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
-                      onChange={e => setEditForm({ ...editForm, installerName: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                    <datalist id="edit-ticket-installer-roster">
-                      {editModalRoster.installers.map(name => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </Field>
-                  <Field label="Ticket No.">
-                    <input type="text" value={editForm.ticketNumber || ''}
-                      placeholder="e.g. AS-01"
-                      onChange={e => setEditForm({ ...editForm, ticketNumber: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Control No. / SI (Aircon)">
-                    <input type="text" value={editForm.controlNumber || ''}
-                      placeholder={isOverviewEdit ? 'Optional' : 'Aircon papers / SI — leave empty if N/A'}
-                      onChange={e => setEditForm({ ...editForm, controlNumber: e.target.value })}
-                      className={inp}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                  <Field label="Final Schedule Date" full={isMyTickets || Boolean(editForm.finalDate || editOriginalDate)}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <input
-                        type="date"
-                        value={editForm.finalDate || ''}
-                        onChange={e => setEditForm({ ...editForm, finalDate: e.target.value, preferredDate: e.target.value })}
-                        className={inp}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          width: '100%',
-                          maxWidth: '100%',
-                          backgroundColor: (isMyTickets || editForm.finalDate || editOriginalDate)
-                            ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)')
-                            : inputBg,
-                          border: `1px solid ${(isMyTickets || editForm.finalDate || editOriginalDate)
-                            ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)')
-                            : inputBorder}`,
-                          color: textPrimary,
-                          colorScheme: isLight ? 'light' : 'dark',
-                        }}
-                      />
-                      {!isOverviewEdit && !isMyTickets && (editForm.finalDate || editOriginalDate) && (
-                        <button
-                          type="button"
-                          onClick={() => setEditForm({ ...editForm, finalDate: '', preferredDate: '' })}
-                          className="shrink-0 px-2.5 py-2 rounded-lg text-[10px] font-bold border whitespace-nowrap"
-                          style={{
-                            borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.35)',
-                            color: isLight ? '#b91c1c' : '#fca5a5',
-                            backgroundColor: 'transparent',
-                          }}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    {!isOverviewEdit && (isMyTickets || editForm.finalDate || editOriginalDate) && (
-                      <p className="text-[10px] font-semibold mt-1.5 leading-relaxed" style={{ color: textMuted }}>
-                        {isMyTickets
-                          ? 'Set the install date here — once saved, this ticket moves to the Schedules tab.'
-                          : editForm.finalDate || editOriginalDate
-                            ? 'Clear the date and save to return this ticket to the negotiator My Tickets tab.'
-                            : 'Change the date or branch — the ticket appears on Schedules for that branch and date.'}
-                      </p>
-                    )}
-                  </Field>
-                  <div className={`${isOverviewEdit ? 'edit-field-grid' : `grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}`}>
-                    <Field label="Status" required>
-                      {(() => {
-                        const statusVal = String(editForm.status || 'INSTALLATION').toUpperCase().replace(/\s+/g, '_')
-                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
-                        const formTicket = (tickets.find(t => t.id === editForm.id) || { id: editForm.id || '', title: editForm.customerName || '' }) as Ticket
-                        return (
-                          <button
-                            type="button"
-                            onClick={e => openStatusPicker(formTicket, 'edit-form', e.currentTarget)}
-                            className={`w-full max-w-full flex items-center justify-between gap-2 rounded-lg text-left transition-all hover:opacity-95 ${isOverviewEdit ? 'edit-status-btn' : 'rounded-xl px-3.5 py-3'}`}
-                            style={{
-                              backgroundColor: statusStyle.backgroundColor,
-                              border: `2px solid ${statusStyle.borderColor}`,
-                              minHeight: isOverviewEdit ? 40 : 48,
-                            }}
-                          >
-                            <span
-                              className={`inline-flex items-center rounded-full font-black uppercase tracking-wide border truncate ${isOverviewEdit ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'}`}
-                              style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
-                            >
-                              {getScheduleStatusLabel(statusVal)}
-                            </span>
-                            <ChevronDown className="w-4 h-4 shrink-0" style={{ color: statusStyle.color }} />
-                          </button>
-                        )
-                      })()}
-                    </Field>
-                    {isReschedStatus && (
-                      <div className="flex flex-col gap-2 min-w-0">
-                        <Field label="Reschedule To" required={!editForm.reschedulePending}>
-                          <input
-                            type="date"
-                            autoFocus={justChangedToResched && !editForm.reschedulePending}
-                            disabled={editForm.reschedulePending}
-                            value={editForm.rescheduleToDate || ''}
-                            onChange={e => setEditForm({
-                              ...editForm,
-                              rescheduleToDate: e.target.value,
-                              reschedulePending: false,
-                            })}
-                            className={`${inp} disabled:opacity-50`}
-                            style={{ ...reschedFieldStyle, width: '100%', maxWidth: '100%' }}
-                          />
-                        </Field>
-                        <label className="flex items-center gap-2 text-[11px] font-semibold cursor-pointer" style={{ color: textPrimary }}>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(editForm.reschedulePending)}
-                            onChange={e => setEditForm({
-                              ...editForm,
-                              reschedulePending: e.target.checked,
-                              rescheduleToDate: e.target.checked ? '' : (editForm.rescheduleToDate || editOriginalDate || ''),
-                            })}
-                            className="rounded border-slate-300"
-                          />
-                          Pending — no date yet
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                  {isReschedStatus && editOriginalDate && !isOverviewEdit && (
-                    <p className="text-[11px] font-semibold leading-relaxed md:col-span-2" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
-                      {editForm.reschedulePending
-                        ? `Stays on ${formatDateKeyLabel(editOriginalDate)} as rescheduled (pending new date).`
-                        : editForm.rescheduleToDate && editForm.rescheduleToDate !== editOriginalDate
-                          ? `Row will gray out on ${formatDateKeyLabel(editOriginalDate)} and appear on ${formatDateKeyLabel(editForm.rescheduleToDate)}.`
-                          : `Currently on ${formatDateKeyLabel(editOriginalDate)} — pick a new date or mark as pending.`}
-                    </p>
-                  )}
-                  <Field label="Remarks / Update" full>
-                    <textarea value={editForm.remarks || ''} 
-                      onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
-                      rows={isOverviewEdit ? 2 : 2}
-                      className={`${inp} resize-none`}
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                  </Field>
-                </div>
-              </div>
-
-              <div className={isOverviewEdit ? 'border-t pt-3' : ''} style={isOverviewEdit ? { borderColor: border } : undefined}>
-                <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
-                  <h4 className={sectionTitleCls}>
-                    Payment
-                  </h4>
-                  {!showPaymentSection && (
-                    <button
-                      type="button"
-                      onClick={() => setEditForm(prev => ({ ...prev, modeOfPayment: prev.modeOfPayment || 'CASH' }))}
-                      className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80 shrink-0"
-                      style={{ borderColor: inputBorder, color: green }}>
-                      + Add
-                    </button>
-                  )}
-                </div>
-                {showPaymentSection && (
-                  <div className={`${gridCls} ${isOverviewEdit ? '' : 'rounded-xl p-4'}`}
-                       style={isOverviewEdit ? undefined : {
-                         border: `1px solid ${ticketHasPaymentInfo(editForm) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
-                         backgroundColor: ticketHasPaymentInfo(editForm)
-                           ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)')
-                           : inputBg,
-                       }}>
-                    <Field label="Mode of Payment">
-                      <select value={editForm.modeOfPayment || ''}
-                        onChange={e => {
-                          const nextMode = e.target.value
-                          setEditForm(prev => ({
-                            ...prev,
-                            modeOfPayment: nextMode,
-                            installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
-                              ? 0
-                              : prev.installationCharges,
-                          }))
-                        }}
-                        className={inp}
-                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit', width: '100%' }}>
-                        <option value="">-- Select --</option>
-                        <option value="CASH">CASH</option>
-                        <option value="BANK TRANSFER">BANK TRANSFER</option>
-                        <option value="GCASH">GCASH</option>
-                        <option value="CHEQUE">CHEQUE</option>
-                        <option value="FREE INSTALL">FREE INSTALL</option>
-                      </select>
-                    </Field>
-                    <Field label="Payment Amount (₱)">
-                      <input type="number" step="0.01" min="0"
-                        placeholder="0.00"
-                        value={editForm.installationCharges ?? ''}
-                        disabled={editForm.modeOfPayment === 'FREE' || editForm.modeOfPayment === 'FREE INSTALL'}
-                        onChange={e => setEditForm({ ...editForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                        className={`${inp} disabled:opacity-60`}
-                        style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, width: '100%' }} />
-                    </Field>
-                    {qualifiesForInstallComplete(editForm, { remarksUpdate: editForm.remarks, remarks: editForm.remarks, installationCharges: editForm.installationCharges, modeOfPayment: editForm.modeOfPayment }) && (editForm.status || '').toUpperCase() !== 'COMPLETED' && !isOverviewEdit && (
-                      <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
-                        Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div
-              className={`shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 flex gap-2 border-t safe-area-bottom min-w-0 ${isOverviewEdit ? 'flex-row sm:justify-end' : 'flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3'}`}
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
-            >
-              {!isOverviewEdit && canEdit ? (
-                <button
-                  type="button"
-                  onClick={() => { handleDelete(editForm.id!); setEditModalOpen(false) }}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 sm:py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm"
-                >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  Delete Ticket
-                </button>
-              ) : !isOverviewEdit ? <div className="hidden sm:block" /> : null}
-              <div className={`flex gap-2 min-w-0 ${isOverviewEdit ? 'w-full sm:w-auto' : 'w-full sm:w-auto sm:ml-auto gap-2.5 sm:gap-3'}`}>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    requestCloseEditModal()
-                  }}
-                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold border transition-colors relative z-10 ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted, touchAction: 'manipulation' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={promptSaveEditTicket}
-                  disabled={editSaving}
-                  className={`flex-1 sm:flex-none rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center justify-center gap-2 ${isOverviewEdit ? 'py-2.5' : 'px-4 py-2.5 sm:py-2'}`}
-                  style={{ backgroundColor: green }}
-                >
-                  {editSaving ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        )
-      })(), document.body)}
 
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
 

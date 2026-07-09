@@ -3394,6 +3394,7 @@ export default function ClientMasterlist() {
       {/* Centered Manage/Edit Ticket Modal */}
       {isActionDrawerOpen && selectedTicket && (
         <RelayEditTicketModal
+          surface="relay"
           ticket={selectedTicket}
           ticketNumberLabel={getTicketNumber(selectedTicket)}
           isAdmin={isAdmin}
