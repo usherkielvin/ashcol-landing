@@ -1629,6 +1629,20 @@ function todayDateKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const SCHEDULES_ACTIVE_DATE_KEY = 'ashcol-schedules-active-date'
+
+function resolveInitialScheduleDate(pathname: string): string {
+  if (pathname === '/my-tickets') return ''
+  try {
+    const persisted = sessionStorage.getItem(SCHEDULES_ACTIVE_DATE_KEY)
+    if (persisted && /^\d{4}-\d{2}-\d{2}$/.test(persisted)) return persisted
+  } catch {
+    // ignore
+  }
+  return todayDateKey()
+}
+
+
 function formatDateToKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -2229,7 +2243,7 @@ export default function Tickets() {
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
   if (!initialSchedulesRef.current) {
     const pathname = window.location.pathname
-    const dateKey = pathname === '/my-tickets' ? '' : todayDateKey()
+    const dateKey = resolveInitialScheduleDate(pathname)
     initialSchedulesRef.current = getInitialSchedulesFromCache(pathname, dateKey || undefined)
   }
   const initialSchedules = initialSchedulesRef.current
@@ -2244,11 +2258,7 @@ export default function Tickets() {
       : [],
   )
   const [loading, setLoading] = useState(() => !initialSchedulesReady)
-  const [syncing, setSyncing] = useState(() => {
-    if (!initialSchedulesReady) return true
-    const init = initialSchedulesRef.current
-    return !(init?.hasCache && Array.isArray(init.tickets) && init.tickets.length > 0)
-  })
+  const [syncing, setSyncing] = useState(() => !initialSchedulesReady || initialSchedules.hasCache)
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress]       = useState(0)
 
@@ -2278,7 +2288,7 @@ export default function Tickets() {
   useEffect(() => {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
-  const [dateFilter, setDateFilter]   = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
+  const [dateFilter, setDateFilter]   = useState(() => resolveInitialScheduleDate(location.pathname))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
@@ -2324,7 +2334,6 @@ export default function Tickets() {
 
     setTickets(normalizeRelayScheduleTicketList(list))
     setLoading(false)
-    setSyncing(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     const cacheKey = schedulesCacheKeyForTab()
@@ -2359,7 +2368,9 @@ export default function Tickets() {
   }, [dateFilter, weeklyTabs])
 
   const handleDateFilterChange = useCallback((next: string) => {
+    if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
     setDateFilter(next)
+    setSyncing(true)
     resetTicketTableScroll()
   }, [])
 
@@ -2379,6 +2390,12 @@ export default function Tickets() {
       return
     }
     if (isTaguig) {
+      try {
+        const persisted = sessionStorage.getItem(SCHEDULES_ACTIVE_DATE_KEY)
+        if (persisted && /^\d{4}-\d{2}-\d{2}$/.test(persisted)) return
+      } catch {
+        // ignore
+      }
       setDateFilter(todayDateKey())
     }
   }, [isMyTickets, isTaguig])
@@ -3091,7 +3108,7 @@ export default function Tickets() {
         updatedAt: new Date().toISOString(),
       } as Ticket
 
-      setDateFilter(scheduledDate)
+      handleDateFilterChange(scheduledDate)
       optimisticTicketsRef.current.set(tempId, optimisticTicket)
       setTickets(prev => {
         const next = [optimisticTicket, ...prev.filter(t => t.id !== tempId)]
@@ -4391,7 +4408,9 @@ export default function Tickets() {
     const hasCache = Array.isArray(cached?.tickets)
     const cacheHasRows = hasCache && (cached!.tickets as Ticket[]).length > 0
     const sessionLoaded = isSchedulesSessionLoaded(cacheKey) || hasCache
-    const skipNetwork = Boolean(options?.soft && !options?.force && cacheFresh && cacheHasRows)
+    const skipNetwork = Boolean(
+      options?.soft && !options?.force && options?.quiet && cacheFresh && cacheHasRows,
+    )
     // Soft / quiet refreshes must never show the full-page loading UI.
     const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache && !sessionLoaded
     if ((options?.soft || options?.quiet || hasCache || sessionLoaded || hasLoadedOnceRef.current) && !skipNetwork) {
@@ -4485,20 +4504,26 @@ export default function Tickets() {
     }
   }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
 
+  const schedulesDateFetchMountedRef = useRef(false)
+
   useEffect(() => {
-    const hadCache = hydrateFromTabCache()
-    // Always soft after first paint / cache hit so remounts never flash the full loading screen.
+    hydrateFromTabCache()
+    // Always refresh from server on mount / branch change — cache is paint-only.
     void fetchTickets({
       soft: true,
-      force: !hadCache && !hasLoadedOnceRef.current,
+      force: true,
       quiet: true,
     })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
     if (isMyTickets) return
-    const hadCache = hydrateFromTabCache()
-    void fetchTickets({ soft: true, quiet: true, force: !hadCache })
+    if (!schedulesDateFetchMountedRef.current) {
+      schedulesDateFetchMountedRef.current = true
+      return
+    }
+    hydrateFromTabCache()
+    void fetchTickets({ soft: true, quiet: true, force: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -4905,7 +4930,7 @@ export default function Tickets() {
       const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
       const nextDate = resolveTicketScheduleDateKey(normalized)
       if (nextDate && nextDate !== prevDate) {
-        setDateFilter(nextDate)
+        handleDateFilterChange(nextDate)
       }
     }
 
@@ -4920,7 +4945,7 @@ export default function Tickets() {
     setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...normalized } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
-  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
+  }, [tickets, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange])
 
   const resolveLiveScheduleTicket = useCallback((ticket: Ticket): Ticket => {
     return findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
@@ -5760,6 +5785,27 @@ export default function Tickets() {
     }
 
     if (label === 'SERVICE') {
+      if (!val && canEdit && !isMyTickets && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#16a34a' : '#4ade80',
+              backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)',
+              border: `1px dashed ${isLight ? '#86efac' : 'rgba(74,222,128,0.35)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
@@ -5928,6 +5974,27 @@ export default function Tickets() {
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
 
       if (isEmpty) {
+        if (canEdit && !isMyTickets && !rowGhost) {
+          return (
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+              onClick={e => {
+                e.stopPropagation()
+                const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+                startCellEdit(ticket, label, cell)
+              }}
+              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+              style={{
+                color: isLight ? '#16a34a' : '#4ade80',
+                backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)',
+                border: `1px dashed ${isLight ? '#86efac' : 'rgba(74,222,128,0.35)'}`,
+              }}
+            >
+              + Add
+            </button>
+          )
+        }
         return withEditPencil(
           <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
             —
@@ -6289,6 +6356,20 @@ export default function Tickets() {
             </div>
           </div>
         ) : (
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {(syncing || loading) && !searchQuery && visible.length > 0 && (
+              <div
+                className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
+                style={{
+                  backgroundColor: isLight ? 'rgba(236,253,245,0.96)' : 'rgba(11,39,45,0.96)',
+                  borderColor: isMyTickets ? myTicketsTheadBorder : schedTheadBorder,
+                  color: green,
+                }}
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span className="text-[11px] font-bold tracking-wide">Syncing with portal database...</span>
+              </div>
+            )}
           <div
             ref={tableScrollRef}
             className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
@@ -6535,6 +6616,7 @@ export default function Tickets() {
                 }))}
               </tbody>
             </table>
+          </div>
           </div>
         )) : (
           /* Render Overview Search Panel */
