@@ -2126,6 +2126,9 @@ export default function Tickets() {
   const myTicketsTheadBg = isLight ? 'rgba(22,163,74,0.14)' : 'rgba(16,185,129,0.16)'
   const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
   const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
+  const schedTheadBg     = isLight ? 'rgba(22,163,74,0.12)' : 'rgba(16,185,129,0.13)'
+  const schedTheadText   = isLight ? '#166534' : '#86EFAC'
+  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
   const rowEven     = isLight ? '#ffffff' : '#0A1120'
   const rowOdd      = isLight ? '#f4f6f8' : '#0d1626'
   const rowHover    = isLight ? '#f1f5f9' : '#0f1e36'
@@ -4123,11 +4126,11 @@ export default function Tickets() {
       { label: 'BRAND',           display: 'BRAND',                                     weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR',             display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT',          display: 'COMMIT',                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'FINAL DATE',      display: 'FINAL DATE',                                weight: 10, expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE',         display: 'TYPE',                                      weight: 8,  editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: 'STATUS',                                    weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: 'REMARKS',                                   weight: 13, expMul: 1.5,  sticky: false, freeze: false, align: 'right' as const },
+      { label: 'FINAL DATE',      display: 'FINAL DATE',                                weight: 10, expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
     ]
     const raw = isMyTickets ? myTicketsCols : scheduleCols
     const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
@@ -5259,6 +5262,24 @@ export default function Tickets() {
 
     if (label === 'FINAL DATE') {
       const hasDate = Boolean(val)
+      if (!hasDate && canEdit && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); startCellEdit(ticket, label) }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9.5px] font-bold uppercase tracking-wide transition-colors hover:bg-emerald-500/10"
+            style={{
+              color: isLight ? '#16A34A' : '#4ADE80',
+              borderColor: isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.3)',
+              backgroundColor: isLight ? 'rgba(22,163,74,0.06)' : 'rgba(16,185,129,0.08)',
+            }}
+          >
+            <CalendarDays className="w-3 h-3 shrink-0" />
+            Add Date
+          </button>
+        )
+      }
       return withEditPencil(
         <span
           style={{
@@ -5783,8 +5804,8 @@ export default function Tickets() {
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr
                   style={{
-                    backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
-                    borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
+                    backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
+                    borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                   }}
                 >
                   {columns.map(rawCol => {
@@ -5811,19 +5832,19 @@ export default function Tickets() {
                           padding: '11px 12px',
                           color: (col.isExpanded || isSorted)
                             ? (isLight ? '#16A34A' : '#4ADE80')
-                            : (isMyTickets ? myTicketsTheadText : (isLight ? '#475569' : '#94a3b8')),
+                            : (isMyTickets ? myTicketsTheadText : schedTheadText),
                           fontWeight: 700, whiteSpace: 'nowrap',
-                          borderRight: `1px solid ${tableBorder}`,
-                          borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
+                          borderRight: `1px solid ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}`,
+                          borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                           fontSize: '10px', letterSpacing: '0.08em',
                           width: col.w, minWidth: 0, maxWidth: col.w,
                           overflow: 'hidden', textOverflow: 'ellipsis',
-                          backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
+                          backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
                           cursor: 'pointer',
                           userSelect: 'none',
                           transition: 'color 0.15s ease',
                           textAlign: col.align || 'left',
-                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${tableBorder}` } : {}),
+                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
                         }}>
                       <div className={`flex items-center gap-1 w-full ${
                         col.align === 'center' ? 'justify-center text-center' :
@@ -5844,7 +5865,7 @@ export default function Tickets() {
                           >
                             <SortIcon
                               className="w-3 h-3 shrink-0 opacity-70"
-                              style={{ color: isSorted ? green : textMuted }}
+                              style={{ color: isSorted ? green : (isMyTickets ? myTicketsTheadText : schedTheadText) }}
                             />
                           </button>
                         )}

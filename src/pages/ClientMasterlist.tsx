@@ -2123,21 +2123,38 @@ export default function ClientMasterlist() {
     }
 
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
-    if (isAssignedOrScheduled && !draft.assignTechId) {
-      alert('Negotiator is required')
-      return
-    }
+    const isUnassignedPending = finalStatus === 'PENDING' && !keepPendingAssignment
 
     const payload: Record<string, any> = {}
     let branchId = ''
     let assignedTo = ''
-    if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
+
+    if (finalStatus === 'CANCELLED') {
       payload.branchId = ''
       payload.assignedTo = ''
       payload.status = finalStatus
     } else {
-      branchId = draft.assignBranchId || ''
-      assignedTo = draft.assignTechId || ''
+      const selectedNeg = employees.find((e: { id: string; branchId?: string; email?: string; jobTitle?: string }) => e.id === draft.assignTechId)
+      branchId = draft.assignBranchId
+        ? (resolvePortalWriteBranchId(draft.assignBranchId, selectedNeg?.email, selectedNeg?.jobTitle) || draft.assignBranchId)
+        : ''
+
+      if (isAssignedOrScheduled) {
+        if (!draft.assignTechId) {
+          alert('Negotiator is required')
+          return
+        }
+        assignedTo = draft.assignTechId
+      } else if (!isUnassignedPending) {
+        assignedTo = draft.assignTechId || ''
+      }
+
+      if (assignedTo && branchId && selectedNeg?.branchId
+        && !branchScopesMatch(selectedNeg.branchId, branchId, selectedNeg.email)) {
+        alert('Selected negotiator does not belong to the chosen branch zone. Pick a negotiator from that branch.')
+        return
+      }
+
       payload.branchId = branchId
       payload.assignedTo = assignedTo
       payload.status = finalStatus

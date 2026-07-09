@@ -257,13 +257,28 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </select>
               </EField>
               <EField label="Branch Zone">
-                <select value={draft.assignBranchId} onChange={(e) => patch({ assignBranchId: e.target.value })} className={relayInput} style={inputStyle}>
+                <select
+                  value={draft.assignBranchId}
+                  onChange={(e) => {
+                    const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
+                    const hadNegotiator = !!draft.assignTechId
+                    patch({
+                      assignBranchId: nextBranchId,
+                      assignTechId: '',
+                      updateStatus: hadNegotiator && (draft.updateStatus === 'ASSIGNED' || draft.updateStatus === 'SCHEDULED')
+                        ? 'PENDING'
+                        : draft.updateStatus,
+                    })
+                  }}
+                  className={relayInput}
+                  style={inputStyle}
+                >
                   <option value="">Select Branch...</option>
                   {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </EField>
               <EField label="Negotiator">
-                <select value={draft.assignTechId} onChange={(e) => { const val = e.target.value; const foundEmp = negotiatorsForBranch(draft.assignBranchId || undefined).find((emp) => emp.id === val); patch({ assignTechId: val, assignBranchId: foundEmp?.branchId || draft.assignBranchId, updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus }) }} className={relayInput} style={inputStyle}>
+                <select value={draft.assignTechId} onChange={(e) => { const val = e.target.value; const foundEmp = negotiatorsForBranch(draft.assignBranchId || undefined).find((emp) => emp.id === val); const negoBranchId = foundEmp?.branchId ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId) : draft.assignBranchId; patch({ assignTechId: val, assignBranchId: negoBranchId, updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus }) }} className={relayInput} style={inputStyle}>
                   <option value="">Select Negotiator...</option>
                   {negotiatorsForBranch(draft.assignBranchId || undefined).map((emp) => {
                     const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
