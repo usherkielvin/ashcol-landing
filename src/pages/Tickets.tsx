@@ -2249,11 +2249,7 @@ export default function Tickets() {
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
-  const pendingSavesRef = useRef(new Map<string, {
-    body: Record<string, unknown>
-    rollback: Ticket
-    afterSave?: () => Promise<void>
-  }>())
+  const pendingSavesRef = useRef(new Map<string, PendingTicketSave>())
   const activeSavesRef = useRef(new Set<string>())
   /** Local optimistic tickets that must survive in-flight list refreshes until PATCH/POST settles. */
   const optimisticTicketsRef = useRef(new Map<string, Ticket>())
@@ -2471,15 +2467,6 @@ export default function Tickets() {
     return found || null
   }, [branches])
 
-  useEffect(() => {
-    if (!editModalOpen || branches.length > 0) return
-    const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-    if (!authToken) return
-    fetchCachedBranches(authToken)
-      .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
-      .catch(() => {})
-  }, [editModalOpen, branches.length])
-
   const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
     const resolved = resolveBranch(branchId)
     if (!resolved && !branchId) return '—'
@@ -2498,6 +2485,15 @@ export default function Tickets() {
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editInitialStatus, setEditInitialStatus] = useState('')
+
+  useEffect(() => {
+    if (!editModalOpen || branches.length > 0) return
+    const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+    if (!authToken) return
+    fetchCachedBranches(authToken)
+      .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
+      .catch(() => {})
+  }, [editModalOpen, branches.length])
 
   const resolveSchedulesNegotiatorBranch = useCallback((overrideBranchId?: string | null): string | null => {
     const scoped = (overrideBranchId || '').trim()
