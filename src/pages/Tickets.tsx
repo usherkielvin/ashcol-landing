@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -35,6 +35,7 @@ import {
   isFieldCategory,
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
+import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -2903,6 +2904,7 @@ export default function Tickets() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [showcaseOpen, setShowcaseOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
@@ -5078,6 +5080,33 @@ export default function Tickets() {
     }
   }, [visible, dateFilter])
 
+  const showcaseDateLabel = useMemo(
+    () => (dateFilter ? formatDateKeyLabel(dateFilter) : 'All Dates'),
+    [dateFilter],
+  )
+
+  const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
+    if (isMyTickets) return []
+    return visible
+      .filter(t => !dateFilter || !isScheduleGhostOnDate(t, dateFilter))
+      .map((ticket, index) => ({
+        index: index + 1,
+        ticketNo: getTicketNumberDisplay(ticket),
+        customer: getF(ticket, 'customerName', 'customer_name') || ticket.title || '',
+        district: resolveTicketDistrict(ticket),
+        brand: parseBrand(ticket),
+        dealer: getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || '',
+        commit: getF(ticket, 'commitType', 'commitTerms', 'description'),
+        negotiator: getTicketNegotiatorName(ticket, branchEmployees),
+        installer: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
+        driver: formatServiceDriver(ticket),
+        status: getScheduleStatusLabel(getScheduleStatusValue(ticket)),
+        remarks: getScheduleUpdateDisplay(ticket),
+        paymentMode: getPaymentMode(ticket),
+        paymentAmount: formatPaymentAmount(ticket),
+      }))
+  }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId])
+
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
@@ -6593,6 +6622,27 @@ export default function Tickets() {
               </div>
             )}
 
+            {activeTab === 'schedules' && !isMyTickets && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowcaseOpen(true)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0"
+                style={{
+                  backgroundColor: showcaseOpen ? 'transparent' : green,
+                  border: `2px solid ${green}`,
+                  color: showcaseOpen ? green : '#ffffff',
+                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
+                }}
+                title="Open fullscreen schedule showcase for print / PDF"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                {showcaseOpen ? 'In Showcase' : 'Showcase'}
+              </button>
+            )}
+
             {/* Action Button: Add Schedule */}
             {activeTab === 'schedules' && canEdit && !isMyTickets && (
               <div className="relative shrink-0 ml-auto">
@@ -6670,6 +6720,28 @@ export default function Tickets() {
               </div>
             )}
           </div>
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
+
+      {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
+        <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+            <strong>Showcase Mode:</strong> Full-screen print view — use Print or Export PDF, then Exit Showcase.
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowcaseOpen(false)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-sm"
+            style={{
+              backgroundColor: 'transparent',
+              border: `2px solid ${green}`,
+              color: green,
+            }}
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Exit Showcase
+          </button>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -9217,6 +9289,17 @@ export default function Tickets() {
           document.body
         )
       })()}
+
+      {!isMyTickets && (
+        <SchedulesShowcase
+          open={showcaseOpen}
+          onClose={() => setShowcaseOpen(false)}
+          branchLabel={activeBranchLabel}
+          dateLabel={showcaseDateLabel}
+          isTaguigServices={isTaguigServices}
+          rows={showcaseRows}
+        />
+      )}
     </div>
   )
 }
