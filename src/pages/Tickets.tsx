@@ -2117,7 +2117,6 @@ export default function Tickets() {
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const border      = isLight ? '#cbd5e1' : '#334155'
   const tableBorder = isLight ? '#94a3b8' : '#3d4f66'
-  const tableBorderStrong = isLight ? '#64748b' : '#526480'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
