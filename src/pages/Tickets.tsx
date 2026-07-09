@@ -1426,17 +1426,6 @@ function getInstallerSortKey(
   return ''
 }
 
-function resolveInstallerFieldForCarry(
-  ticket: Ticket,
-  employees?: BranchStaffOption[],
-  branchId?: string | null,
-): string {
-  const raw = resolveInstallerFieldRaw(ticket)
-  if (raw && !isNegotiatorInstallerName(ticket, raw, employees, branchId)) return raw
-  return ''
-}
-
-
 function formatRelayTicketTypeShort(ticket: Ticket): string {
   const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
   if (/collect/.test(raw)) return 'COLLECTION'
@@ -2757,12 +2746,9 @@ export default function Tickets() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
-  const [showEditHistory, setShowEditHistory] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
-  const [editFormSnapshot, setEditFormSnapshot] = useState('')
   const [editOriginalDate, setEditOriginalDate] = useState('')
-  const [editInitialStatus, setEditInitialStatus] = useState('')
 
   useEffect(() => {
     if (!editModalOpen || branches.length > 0) return
@@ -2899,11 +2885,7 @@ export default function Tickets() {
     // Wait for negotiator list — clearing while still loading falsely marks the form dirty.
     if (editModalNegotiators.length === 0) return
     if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
-      setEditForm(prev => {
-        const next = { ...prev, negotiatorId: '' }
-        setEditFormSnapshot(JSON.stringify(next))
-        return next
-      })
+      setEditForm(prev => ({ ...prev, negotiatorId: '' }))
     }
   }, [editModalOpen, editModalNegotiators, editForm.negotiatorId])
 
@@ -3494,7 +3476,6 @@ export default function Tickets() {
     const preferred = getPreferredDateKey(ticket)
     const status = getScheduleStatusValue(ticket)
     setEditOriginalDate(preferred)
-    setEditInitialStatus(status)
     setEditTicket(ticket)
     const rawBranch = ticket.branchId || ticket.branch_id || ''
     const resolvedBranch = resolveBranch(rawBranch)
@@ -3525,33 +3506,16 @@ export default function Tickets() {
       reschedulePending: isReschedulePending(ticket),
     }
     setEditForm(form)
-    setEditFormSnapshot(JSON.stringify(form))
     setEditModalOpen(true)
   }
 
   const closeEditModal = useCallback(() => {
     setEditModalOpen(false)
     setEditTicket(null)
-    setShowEditHistory(false)
     setConfirmModal(null)
   }, [])
 
-  const requestCloseEditModal = useCallback(() => {
-    const dirty = JSON.stringify(editForm) !== editFormSnapshot
-    if (dirty) {
-      setConfirmModal({
-        title: 'Discard changes?',
-        message: 'You have unsaved edits on this ticket.',
-        detail: editForm.customerName?.trim() || undefined,
-        variant: 'discard',
-        confirmText: 'Discard',
-        cancelText: 'Keep Editing',
-        onConfirm: closeEditModal,
-      })
-      return
-    }
-    closeEditModal()
-  }, [closeEditModal, editForm, editFormSnapshot])
+
 
   const openAddModal = () => {
     const form = {
@@ -3625,7 +3589,7 @@ export default function Tickets() {
     return null
   }
 
-  const validateEditForm = (): string | null => validateEditFormFor(editForm)
+
 
   const handleUnifiedEditSave = (draft: RelayEditDraft) => {
     const nextForm = mapRelayDraftToScheduleEditForm(draft, {
@@ -3642,14 +3606,7 @@ export default function Tickets() {
     void commitSaveEditTicket(nextForm)
   }
 
-  const promptSaveEditTicket = () => {
-    const error = validateEditForm()
-    if (error) {
-      alert(error)
-      return
-    }
-    void commitSaveEditTicket()
-  }
+
   /** Resolve the ticket being edited even if a list refresh dropped it from `tickets`. */
   const resolveEditOriginalTicket = (): Ticket | null => {
     const formId = (editForm.id || '').trim()
@@ -4011,7 +3968,6 @@ export default function Tickets() {
       )
 
       setEditForm(activeForm)
-      setEditFormSnapshot(JSON.stringify(activeForm))
       closeEditModal()
       showToast(isReturningToMyTickets && !isMyTickets ? 'Returned to My Tickets' : 'Saved')
     } catch (err: unknown) {
@@ -4557,7 +4513,7 @@ export default function Tickets() {
 
   // ── Cell edit / expand ────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
-  const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
+  const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
     ticket: Ticket
     mode: 'inline' | 'edit-form'
@@ -4580,7 +4536,7 @@ export default function Tickets() {
   const [finalDateCalMonth, setFinalDateCalMonth] = useState<{ year: number; month: number } | null>(null)
   const [savingCellKey] = useState<string | null>(null)
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const cellEditDraftRef = useRef<{ ticketId: string; colLabel: string; value: string } | null>(null)
+  const cellEditDraftRef = useRef<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => {})
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
@@ -5154,7 +5110,14 @@ export default function Tickets() {
       cellEditBlurTimer.current = null
     }
     const draft = cellEditDraftRef.current
-      || (editingCell ? { ticketId: editingCell.ticketId, colLabel: editingCell.colLabel, value: editingCell.value } : null)
+      || (editingCell
+        ? {
+          ticketId: editingCell.ticketId,
+          rowIndex: editingCell.rowIndex,
+          colLabel: editingCell.colLabel,
+          value: editingCell.value,
+        }
+        : null)
     if (!draft) return
     cellEditDraftRef.current = null
     setEditingCell(null)
@@ -5262,7 +5225,7 @@ export default function Tickets() {
     setFinalDatePicker({ ticket, x: left, y: top, value: initDate, preferredDate })
   }, [])
 
-  const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null) => {
+  const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null, rowIndex?: number) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
@@ -5273,9 +5236,16 @@ export default function Tickets() {
       openFinalDatePicker(ticket, anchorEl)
       return
     }
+    const resolvedRowIndex = rowIndex ?? visible.findIndex(t => t.id === ticket.id)
     const value = getCellRawValue(ticket, colLabel, isMyTickets, branchEmployees, activeBranchId)
-    cellEditDraftRef.current = { ticketId: ticket.id, colLabel, value }
-    setEditingCell({ ticketId: ticket.id, colLabel, value })
+    const draft = {
+      ticketId: ticket.id,
+      rowIndex: resolvedRowIndex >= 0 ? resolvedRowIndex : 0,
+      colLabel,
+      value,
+    }
+    cellEditDraftRef.current = draft
+    setEditingCell(draft)
   }
 
   const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
@@ -5611,7 +5581,10 @@ export default function Tickets() {
 
     if (focusRemarksAfterStatus) {
       const nextTicket = mergeTicketPatch(liveTicket, finalBody)
-      requestAnimationFrame(() => startCellEdit(nextTicket, 'UPDATE'))
+      requestAnimationFrame(() => {
+        const rowIndex = visible.findIndex(t => t.id === nextTicket.id)
+        startCellEdit(nextTicket, 'UPDATE', undefined, rowIndex >= 0 ? rowIndex : undefined)
+      })
     }
   }
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
@@ -5844,8 +5817,9 @@ export default function Tickets() {
     )
   }
 
-  function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowGhost?: boolean) {
+  function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowIndex: number | undefined, rowGhost?: boolean) {
     if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
+    if (rowIndex != null && editingCell.rowIndex !== rowIndex) return null
 
     const key = cellEditKey(ticket.id, colLabel)
     const isSaving = savingCellKey === key
@@ -5871,7 +5845,12 @@ export default function Tickets() {
     }
 
     const syncDraftValue = (value: string) => {
-      cellEditDraftRef.current = { ticketId: ticket.id, colLabel, value }
+      cellEditDraftRef.current = {
+        ticketId: ticket.id,
+        rowIndex: editingCell.rowIndex,
+        colLabel,
+        value,
+      }
       setEditingCell(prev => (prev ? { ...prev, value } : null))
     }
 
@@ -6007,9 +5986,12 @@ export default function Tickets() {
     ticket: Ticket,
     colLabel: string,
     rowGhost?: boolean,
+    rowIndex?: number,
   ) {
     if (!canEdit || rowGhost) return content
-    const isEditing = editingCell?.ticketId === ticket.id && editingCell?.colLabel === colLabel
+    const isEditing = editingCell?.ticketId === ticket.id
+      && editingCell?.colLabel === colLabel
+      && (rowIndex === undefined || editingCell.rowIndex === rowIndex)
     if (isEditing) return content
     const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === colLabel
     if (!isHovered) return content
@@ -6022,7 +6004,7 @@ export default function Tickets() {
           onClick={e => {
             e.stopPropagation()
             const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-            startCellEdit(ticket, colLabel, cell)
+            startCellEdit(ticket, colLabel, cell, rowIndex)
           }}
           title="Edit in cell"
           className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 rounded hover:bg-emerald-500/15"
@@ -6054,8 +6036,9 @@ export default function Tickets() {
 
   function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null, cellExpanded = false) {
     const { label } = col
+    const rowIndex = idx ?? visible.findIndex(t => t.id === ticket.id)
 
-    const inlineEditor = renderInlineCellEditor(ticket, label, rowGhost)
+    const inlineEditor = renderInlineCellEditor(ticket, label, rowIndex >= 0 ? rowIndex : undefined, rowGhost)
     if (inlineEditor) return inlineEditor
 
     // ── DISPLAY STATE ──
@@ -6103,7 +6086,7 @@ export default function Tickets() {
         <span style={truncStyle} title={fullAddress}>
           {district || '—'}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6171,7 +6154,7 @@ export default function Tickets() {
         <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
           {displayVal}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6182,7 +6165,7 @@ export default function Tickets() {
           <button
             type="button"
             onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement) }}
+            onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement, rowIndex) }}
             className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[9.5px] font-bold uppercase tracking-wide transition-colors"
             style={{
               color: isLight ? '#15803D' : '#6EE7B7',
@@ -6212,7 +6195,7 @@ export default function Tickets() {
         >
           {val || '—'}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6221,7 +6204,7 @@ export default function Tickets() {
         <span style={{ ...truncStyle, fontWeight: 700, letterSpacing: '0.04em' }} title={val}>
           {val || 'SURVEY & INSTALL'}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6234,7 +6217,7 @@ export default function Tickets() {
             onClick={e => {
               e.stopPropagation()
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-              startCellEdit(ticket, label, cell)
+              startCellEdit(ticket, label, cell, rowIndex)
             }}
             className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
             style={{
@@ -6251,7 +6234,7 @@ export default function Tickets() {
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6264,7 +6247,7 @@ export default function Tickets() {
            title={val}>
           {formatted}
         </a>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6274,7 +6257,7 @@ export default function Tickets() {
               title={val}>
           {val || ''}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6326,7 +6309,7 @@ export default function Tickets() {
               title={val}>
           {val || ''}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6389,28 +6372,18 @@ export default function Tickets() {
     if (label === "CUSTOMER'S NAME") {
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>{val}</span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
     if (label === 'INSTALLER') {
       const rawInstaller = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
-      let curInstaller = rawInstaller
-      if (!curInstaller && idx != null && idx > 0) {
-        for (let i = idx - 1; i >= 0; i--) {
-          const prev = resolveInstallerFieldForCarry(visible[i], branchEmployees, activeBranchId)
-          if (prev) {
-            curInstaller = prev
-            break
-          }
-        }
-      }
-      const isEmpty = !curInstaller
+      const isEmpty = !rawInstaller
 
       const prevInstaller = idx != null && idx > 0
-        ? resolveInstallerFieldForCarry(visible[idx - 1], branchEmployees, activeBranchId)
+        ? getInstallerDisplay(visible[idx - 1], branchEmployees, activeBranchId)
         : ''
-      const curToken = parseNameSiteToken(curInstaller)
+      const curToken = parseNameSiteToken(rawInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
 
@@ -6423,7 +6396,7 @@ export default function Tickets() {
               onClick={e => {
                 e.stopPropagation()
                 const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-                startCellEdit(ticket, label, cell)
+                startCellEdit(ticket, label, cell, rowIndex)
               }}
               className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
               style={{
@@ -6440,7 +6413,7 @@ export default function Tickets() {
           <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
             —
           </span>,
-          ticket, label, rowGhost
+          ticket, label, rowGhost, rowIndex,
         )
       }
 
@@ -6453,11 +6426,11 @@ export default function Tickets() {
             paddingTop: isNewInstallerGroup ? 8 : 0,
             marginTop: isNewInstallerGroup ? 4 : 0,
           }}
-          title={curInstaller}
+          title={rawInstaller}
         >
-          {curInstaller}
+          {rawInstaller}
         </span>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6469,7 +6442,7 @@ export default function Tickets() {
             {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
           </span>
         </div>,
-        ticket, label, rowGhost,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -6939,11 +6912,11 @@ export default function Tickets() {
                     const bg       = isHovered && !isGhost ? rowHover : baseBg
                     const ghostAccent = rowColors.accent
                     const rowIsActive = columns.some(col =>
-                      (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
+                      (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
                       || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
                     )
                   return (
-                    <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                    <tr key={`${ticket.id}-${idx}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                         style={{
                           borderBottom: `1px solid ${tableBorder}`,
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
@@ -6963,7 +6936,9 @@ export default function Tickets() {
 
                       {/* Data cells */}
                       {columns.map((col) => {
-                        const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
+                        const isEditingCell = editingCell?.ticketId === ticket.id
+                          && editingCell?.rowIndex === idx
+                          && editingCell?.colLabel === col.label
                         const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                         const isStatusCol = col.label === 'STATUS'
                         const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
@@ -7008,7 +6983,7 @@ export default function Tickets() {
                                 e.stopPropagation()
                                 if (!canEdit || isGhost || isEditingCell) return
                                 if (INLINE_EDIT_COLUMNS.has(col.label)) {
-                                  startCellEdit(ticket, col.label)
+                                  startCellEdit(ticket, col.label, undefined, idx)
                                 }
                               }}
                               style={{

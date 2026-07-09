@@ -95,6 +95,7 @@ type TicketLike = {
   remarks?: string
   rescheduleToDate?: string
   reschedulePending?: boolean
+  commitTerms?: string
 }
 
 type ParsedStore = { store: string; branch: string; customStore?: string }

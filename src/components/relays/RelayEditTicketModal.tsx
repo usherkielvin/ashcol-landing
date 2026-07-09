@@ -9,7 +9,7 @@ import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
 
 type Branch = { id: string; name: string }
-type Employee = { id: string; name?: string; branchId?: string; phone?: string }
+type Employee = { id: string; name?: string; branchId?: string | null; phone?: string | null }
 type TicketLike = Parameters<typeof buildRelayEditDraft>[0] & { id: string; customerName?: string }
 
 type ParsedStore = { store: string; branch: string; customStore?: string }
@@ -34,7 +34,7 @@ export type RelayEditTicketModalProps = {
   onPersistCustomStores: (stores: string[]) => void
   parseStoreVendor: (sourceVendor?: string) => ParsedStore
   resolveBranch: (branchId?: string) => Branch | null
-  negotiatorsForBranch: (branchId?: string) => Employee[]
+  negotiatorsForBranch: (branchId?: string | null) => Employee[]
   mergeCandidates?: TicketLike[]
   mergeTargetId?: string
   merging?: boolean
@@ -119,6 +119,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   )
   const [showAddStoreField, setShowAddStoreField] = useState(false)
   const [storeDraft, setStoreDraft] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
@@ -202,12 +203,46 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   Scheduled {editOriginalDate}
                 </span>
               )}
+              {isOverview && (() => {
+                const parsed = parseAcDetails ? parseAcDetails(ticket) : {}
+                const hasHistory = !!(ticket.remarksUpdate || (parsed as any).remarksUpdate || ((parsed as any).previousScheduleDates && (parsed as any).previousScheduleDates.length > 0))
+                if (!hasHistory) return null
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="px-2 py-0.5 rounded text-[9px] font-bold border transition-colors shrink-0"
+                    style={{
+                      backgroundColor: showHistory ? (isLight ? '#f1f5f9' : '#1e293b') : 'transparent',
+                      borderColor: inputBorder,
+                      color: textMuted
+                    }}
+                  >
+                    {showHistory ? 'Hide History' : 'View History'}
+                  </button>
+                )
+              })()}
             </div>
           </div>
           <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <X className="w-5 h-5" style={{ color: textMuted }} />
           </button>
         </div>
+
+        {showHistory && isOverview && (() => {
+          const parsed = parseAcDetails ? parseAcDetails(ticket) : {}
+          const historyText = ticket.remarksUpdate || (parsed as any).remarksUpdate || 'No remarks history.'
+          return (
+            <div className="px-4 sm:px-6 py-3 border-b shrink-0" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="rounded-xl p-3 sm:p-4 animate-in slide-in-from-top-2 duration-200" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0f172a', border: `1px solid ${border}` }}>
+                <h4 className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Update History</h4>
+                <div className="text-xs space-y-2 whitespace-pre-wrap" style={{ color: textPrimary, lineHeight: 1.6 }}>
+                  {historyText}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 min-h-0">
           <div>

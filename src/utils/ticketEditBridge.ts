@@ -34,8 +34,8 @@ export type ScheduleEditFormShape = {
 /** Map unified relay+field draft back into Tickets.tsx edit form for PATCH pipeline. */
 export function mapRelayDraftToScheduleEditForm(
   draft: RelayEditDraft,
-  base: TicketEditFormShape,
-): TicketEditFormShape {
+  base: ScheduleEditFormShape,
+): ScheduleEditFormShape {
   const isBuiltInStore = draft.storeVendor === 'Robinsons' || draft.storeVendor === 'Abenson' || draft.storeVendor === 'Direct'
   const resolvedStore = isBuiltInStore
     ? combineStoreVendor(draft.storeVendor as 'Robinsons' | 'Abenson' | 'Direct', draft.storeBranch)
