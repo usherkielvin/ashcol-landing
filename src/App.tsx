@@ -23,6 +23,7 @@ import LineUp from './pages/LineUp'
 import Hris from './pages/Hris'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
+import OperationsForms from './pages/OperationsForms'
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/warranty-registration" element={<WarrantyRegistration />} />
 
           <Route path="/admin-hris" element={<Hris />} />
+          <Route path="/operations-forms" element={<OperationsForms />} />
           <Route path="/admin-bills" element={<Bills />} />
           <Route path="/admin-telecom" element={<Telecom />} />
         </Route>

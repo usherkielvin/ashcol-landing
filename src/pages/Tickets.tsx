@@ -12,6 +12,12 @@ import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCr
 import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
+import {
+  BRANCH_ROSTER_UPDATED_EVENT,
+  buildBranchRoster,
+  fetchAllBranchRosters,
+  type BranchRoster,
+} from '../utils/branchRoster'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
@@ -262,6 +268,82 @@ function getScheduleStatusLabel(value: string): string {
   if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'INSTALLATION'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
+}
+
+/** Rank overview search hits — exact / prefix name matches float to the top. */
+function getOverviewSearchRelevanceScore(ticket: Ticket, rawQuery: string): number {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return 0
+
+  const scoredFields: { value: string; weight: number; exactBonus: number; prefixBonus: number }[] = [
+    {
+      value: ticket.customerName || ticket.customer_name || ticket.title || '',
+      weight: 100,
+      exactBonus: 250,
+      prefixBonus: 120,
+    },
+    {
+      value: ticket.ticketNumber || ticket.ticket_number || ticket.id || '',
+      weight: 90,
+      exactBonus: 200,
+      prefixBonus: 100,
+    },
+    {
+      value: ticket.controlNumber || ticket.control_number || '',
+      weight: 75,
+      exactBonus: 150,
+      prefixBonus: 70,
+    },
+    {
+      value: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
+      weight: 65,
+      exactBonus: 120,
+      prefixBonus: 50,
+    },
+    {
+      value: formatAddress(ticket.location),
+      weight: 45,
+      exactBonus: 0,
+      prefixBonus: 25,
+    },
+    {
+      value: ticket.assignedEmployeeName || ticket.assigned_employee_name || '',
+      weight: 40,
+      exactBonus: 80,
+      prefixBonus: 30,
+    },
+    {
+      value: ticket.remarks || ticket.remarksUpdate || ticket.note || '',
+      weight: 25,
+      exactBonus: 0,
+      prefixBonus: 10,
+    },
+  ]
+
+  let score = 0
+  for (const { value, weight, exactBonus, prefixBonus } of scoredFields) {
+    const v = value.toLowerCase().trim()
+    if (!v) continue
+    if (v === q) score += weight + exactBonus
+    else if (v.startsWith(q)) score += weight + prefixBonus
+    else if (v.includes(q)) score += weight
+    else if (q.length >= 2 && v.split(/\s+/).some(word => word.startsWith(q))) {
+      score += Math.round(weight * 0.75)
+    }
+  }
+  return score
+}
+
+function sortOverviewSearchResults(tickets: Ticket[], query: string): Ticket[] {
+  const q = query.trim()
+  if (!q) return tickets
+  return [...tickets].sort((a, b) => {
+    const diff = getOverviewSearchRelevanceScore(b, q) - getOverviewSearchRelevanceScore(a, q)
+    if (diff !== 0) return diff
+    const aDate = a.updatedAt || a.updated_at || a.createdAt || a.created_at || ''
+    const bDate = b.updatedAt || b.updated_at || b.createdAt || b.created_at || ''
+    return bDate.localeCompare(aDate)
+  })
 }
 
 /** Overview search cards: one badge — workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
@@ -1031,11 +1113,85 @@ function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
   return Boolean(mode || (charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0))
 }
 
+function getEmptyRequiredColumnsForClose(
+  ticketOrForm: Partial<Ticket> & { serviceDriver?: string; ticketCategory?: any },
+  employees: any[],
+  branchId: string | null
+): string[] {
+  const missing: string[] = []
+
+  // 1. Ticket No
+  const ticketNo = (ticketOrForm.ticketNumber || (ticketOrForm as any).ticket_number || '').trim()
+  if (!ticketNo) missing.push('Ticket No')
+
+  // 2. Customer
+  const customer = (ticketOrForm.customerName || (ticketOrForm as any).customer_name || ticketOrForm.title || '').trim()
+  if (!customer) missing.push('Customer')
+
+  // 3. District
+  const district = (ticketOrForm.district || ticketOrForm.location || '').trim()
+  if (!district) missing.push('District')
+
+  // 4. Brand
+  const brand = (
+    ticketOrForm.id
+      ? parseBrand(ticketOrForm as Ticket)
+      : (ticketOrForm.unitType || (ticketOrForm as any).unit_type || '')
+  ).trim()
+  if (!brand) missing.push('Brand')
+
+  // 5. Dealer
+  const dealer = (ticketOrForm.sourceVendor || (ticketOrForm as any).source_vendor || (ticketOrForm as any).dealerName || (ticketOrForm as any).dealer_name || (ticketOrForm as any).dealer || '').trim()
+  if (!dealer) missing.push('Dealer')
+
+  // 6. Commit
+  const commit = (
+    ticketOrForm.id
+      ? getF(ticketOrForm as Ticket, 'commitType', 'commitTerms', 'description')
+      : (ticketOrForm.commitTerms || ticketOrForm.commitType || ticketOrForm.description || '')
+  ).trim()
+  if (!commit) missing.push('Commit')
+
+  // 7. Negotiator
+  const negotiator = (ticketOrForm.negotiatorId || (ticketOrForm as any).negotiator_id || (ticketOrForm as any).assignedTo || '').trim()
+  if (!negotiator) missing.push('Negotiator')
+
+  // 8. Installer
+  const installer = (
+    ticketOrForm.id
+      ? getInstallerDisplay(ticketOrForm as Ticket, employees, branchId)
+      : (ticketOrForm.installerName || '')
+  ).trim()
+  if (!installer) missing.push('Installer')
+
+  // 9. Driver
+  const driver = (
+    ticketOrForm.id
+      ? formatServiceDriver(ticketOrForm as Ticket)
+      : (ticketOrForm.serviceDriver || '')
+  ).trim()
+  if (!driver) missing.push('Driver')
+
+  return missing
+}
+
 function formatDateKeyLabel(key: string) {
   if (!key) return ''
-  const d = new Date(`${key}T00:00:00`)
+  const datePart = key.split('T')[0].split(' ')[0].trim()
+  if (!datePart) return ''
+  const d = new Date(`${datePart}T00:00:00`)
   if (isNaN(d.getTime())) return key
-  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+  const month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase()
+  const day = String(d.getDate()).padStart(2, '0')
+  const year = d.getFullYear()
+  return `${month} ${day} ${year}`
+}
+
+function formatDisplayDate(key?: string | null, fallback = '—'): string {
+  const normalized = (key || '').split('T')[0].split(' ')[0].trim()
+  if (!normalized) return fallback
+  const label = formatDateKeyLabel(normalized)
+  return label || fallback
 }
 
 function getCustomerDisplayName(ticket: Ticket): string {
@@ -1648,8 +1804,7 @@ function formatDateToKey(d: Date) {
 }
 
 function formatDateTriggerLabel(value: string) {
-  const [year, month, day] = value.split('-')
-  return year && month && day ? `${month}/${day}/${year}` : value || 'Select date'
+  return value ? formatDateKeyLabel(value) : 'Select date'
 }
 
 function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
@@ -2160,7 +2315,7 @@ export default function Tickets() {
       if (res.ok) {
         const data = await res.json()
         const list = data?.data?.tickets || data?.tickets || []
-        setOverviewResults(list)
+        setOverviewResults(sortOverviewSearchResults(list, query))
       } else {
         console.error('Failed to search tickets:', res.statusText)
       }
@@ -2459,6 +2614,7 @@ export default function Tickets() {
     ticketCategory: 'INSTALLATION',
   })
   const [branchEmployees, setBranchEmployees] = useState<BranchStaffOption[]>([])
+  const [branchRosters, setBranchRosters] = useState<Record<string, BranchRoster>>({})
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
@@ -2622,6 +2778,33 @@ export default function Tickets() {
   const activeBranchLabel = useMemo(
     () => getBranchDisplayName(resolveSchedulesNegotiatorBranch(activeBranchId) || activeBranchId),
     [activeBranchId, resolveSchedulesNegotiatorBranch],
+  )
+
+  const rosterForBranch = useCallback((branchId?: string | null): BranchRoster => {
+    const key = (branchId || '').trim()
+    if (!key) return { drivers: [], installers: [] }
+    if (branchRosters[key]) return branchRosters[key]
+    const scoped = resolveScopedBranchId(key)
+    if (branchRosters[scoped]) return branchRosters[scoped]
+    return buildBranchRoster(branchEmployees, key)
+  }, [branchRosters, branchEmployees])
+
+  const rosterForTicket = useCallback((ticket: Ticket): BranchRoster => {
+    const branchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames)
+      || activeBranchId
+      || user?.branchId
+      || null
+    return rosterForBranch(branchId)
+  }, [rosterForBranch, installerLineupIndex, driverOnlyNames, activeBranchId, user?.branchId])
+
+  const activeBranchRoster = useMemo(
+    () => rosterForBranch(activeBranchId || user?.branchId),
+    [rosterForBranch, activeBranchId, user?.branchId],
+  )
+
+  const editModalRoster = useMemo(
+    () => rosterForBranch(editForm.branchId || activeBranchId),
+    [rosterForBranch, editForm.branchId, activeBranchId],
   )
 
   // Drop negotiator if branch filter no longer includes them
@@ -3337,6 +3520,16 @@ export default function Tickets() {
     if (!editForm.customerName?.trim()) return 'Customer Name is required'
     if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
     if (!editForm.location?.trim()) return 'Destination/Address is required'
+    
+    const targetStatus = (editForm.status || '').toUpperCase().replace(/\s+/g, '_')
+    const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
+    if (isClosing) {
+      const missing = getEmptyRequiredColumnsForClose(editForm, branchEmployees, activeBranchId)
+      if (missing.length > 0) {
+        return `Cannot close ticket because the following columns are empty:\n• ${missing.join('\n• ')}`
+      }
+    }
+
     return null
   }
 
@@ -4583,6 +4776,40 @@ export default function Tickets() {
   }, [canEdit, token])
 
   useEffect(() => {
+    if (!canEdit) return
+    const authToken = token()
+    if (!authToken) return
+
+    const loadRosters = (force = false) => {
+      if (branchEmployees.length === 0 && !force) return
+      void fetchCachedBranches(authToken)
+        .then(async (branches) => {
+          const ids = branches
+            .map((b) => String(b.id || ''))
+            .filter(Boolean)
+            .flatMap((id) => [id, `${id}-sales`, `${id}-services`])
+          const allIds = [
+            ...new Set(
+              [...ids, activeBranchId, user?.branchId, globalBranchId].filter(Boolean) as string[],
+            ),
+          ]
+          const map = await fetchAllBranchRosters(authToken, allIds, branchEmployees)
+          setBranchRosters(map)
+        })
+        .catch((err) => console.error('Failed to load branch rosters:', err))
+    }
+
+    loadRosters(false)
+    const onRosterUpdated = () => loadRosters(true)
+    window.addEventListener(BRANCH_ROSTER_UPDATED_EVENT, onRosterUpdated)
+    window.addEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onRosterUpdated)
+    return () => {
+      window.removeEventListener(BRANCH_ROSTER_UPDATED_EVENT, onRosterUpdated)
+      window.removeEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onRosterUpdated)
+    }
+  }, [canEdit, token, branchEmployees, activeBranchId, user?.branchId, globalBranchId])
+
+  useEffect(() => {
     const authToken = token()
     if (!authToken) return
     fetchCachedLineupInstallerIndex(authToken)
@@ -5512,6 +5739,66 @@ export default function Tickets() {
     if (colLabel === 'FINAL DATE') {
       // FINAL DATE uses the floating calendar popup.
       return null
+    }
+
+    if (colLabel === 'NEGOTIATOR') {
+      const ticketBranchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames) || activeBranchId
+      const options = negotiatorsForBranch(ticketBranchId)
+      const current = editingCell.value
+      return wrapEditingCell(
+        <select
+          autoFocus
+          disabled={isSaving}
+          value={current}
+          onChange={e => syncDraftValue(e.target.value)}
+          onBlur={onBlur}
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+          className="w-full rounded-md outline-none cursor-pointer"
+          style={{ ...inputStyle, paddingRight: 4 }}
+        >
+          <option value="">— Select negotiator —</option>
+          {options.map(emp => (
+            <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
+          ))}
+          {current && !options.some(emp => emp.name === current) && (
+            <option value={current}>{current}</option>
+          )}
+        </select>,
+        colLabel,
+      )
+    }
+
+    if (colLabel === 'INSTALLER' || (colLabel === 'SERVICE' && !isMyTickets)) {
+      const roster = rosterForTicket(ticket)
+      const options = colLabel === 'INSTALLER' ? roster.installers : roster.drivers
+      const listId = `ticket-roster-${ticket.id}-${colLabel}`
+      return wrapEditingCell(
+        <>
+          <input
+            autoFocus
+            disabled={isSaving}
+            type="text"
+            list={listId}
+            value={editingCell.value}
+            onChange={e => syncDraftValue(e.target.value)}
+            onBlur={onBlur}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onKeyDown={onKeyDown}
+            className="w-full rounded-md outline-none"
+            style={inputStyle}
+            placeholder={colLabel === 'INSTALLER' ? 'Select or type installer…' : 'Select or type driver…'}
+          />
+          <datalist id={listId}>
+            {options.map(name => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </>,
+        colLabel,
+      )
     }
 
     if (colLabel === 'DESTINATION' || colLabel === 'COMMIT' || colLabel === 'UPDATE') {
@@ -6622,7 +6909,7 @@ export default function Tickets() {
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#0a1120]">
             {/* Mobile Top Header (< md) */}
-            <header className="flex md:hidden items-center justify-between w-full p-4 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0">
+            <header className="flex md:hidden items-center justify-between w-full px-3 py-3 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0 safe-area-top">
               <button
                 onClick={() => setSidebarOpen?.(true)}
                 className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
@@ -6643,28 +6930,31 @@ export default function Tickets() {
               </button>
             </header>
 
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 md:px-8 bg-transparent">
-              <div className="max-w-4xl w-full mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 py-4 md:px-8 md:py-6 bg-transparent">
+              <div className="max-w-4xl w-full mx-auto flex flex-col gap-4 md:gap-6 animate-in fade-in duration-200">
               
               {/* Header Section */}
-              <div className="text-center">
-                <h2 className="text-xl font-black tracking-tight" style={{ color: textPrimary }}>
+              <div className="text-center md:text-center">
+                <h2 className="text-lg md:text-xl font-black tracking-tight" style={{ color: textPrimary }}>
                   Portal Overview Search
                 </h2>
-                <p className="text-xs mt-1" style={{ color: textMuted }}>
-                  Search across all tickets in the portal by customer name, ticket number, control number, contact phone, or location.
+                <p className="text-[11px] md:text-xs mt-1 leading-relaxed" style={{ color: textMuted }}>
+                  Search by customer name, ticket #, control #, contact, or location — best matches appear first.
                 </p>
               </div>
 
               {/* Search Input Box */}
               <div 
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-sm border-2 transition-all duration-200"
-                style={{
-                  backgroundColor: cardBg,
-                  borderColor: overviewSearchFocused ? green : border,
-                  boxShadow: overviewSearchFocused ? `0 0 0 3px ${green}15` : 'none'
-                }}
+                className="sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-1 pb-3 md:pb-0 md:pt-0"
               >
+                <div
+                  className="flex items-center gap-2.5 md:gap-3 px-3.5 md:px-4 py-3 rounded-xl md:rounded-2xl shadow-sm border-2 transition-all duration-200"
+                  style={{
+                    backgroundColor: cardBg,
+                    borderColor: overviewSearchFocused ? green : border,
+                    boxShadow: overviewSearchFocused ? `0 0 0 3px ${green}15` : 'none'
+                  }}
+                >
                 <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
                 <input
                   type="text"
@@ -6673,7 +6963,9 @@ export default function Tickets() {
                   onChange={e => setOverviewSearchInput(e.target.value)}
                   onFocus={() => setOverviewSearchFocused(true)}
                   onBlur={() => setOverviewSearchFocused(false)}
-                  className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium"
+                  enterKeyHint="search"
+                  autoComplete="off"
+                  className="bg-transparent outline-none text-sm flex-1 min-w-0 font-medium"
                   style={{ color: textPrimary }}
                 />
                 {overviewSearchInput && (
@@ -6686,6 +6978,7 @@ export default function Tickets() {
                     <X className="w-4 h-4" />
                   </button>
                 )}
+              </div>
               </div>
 
               {/* Results Section */}
@@ -6703,7 +6996,7 @@ export default function Tickets() {
                   </div>
                   
                   {/* Results Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                     {overviewResults.map(ticket => {
                       const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
                       const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
@@ -6714,11 +7007,12 @@ export default function Tickets() {
                         resolveScopedBranchId(rawBranch) || rawBranch,
                       );
                       const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || '—';
+                      const scheduleDateLabel = formatDisplayDate(getEffectiveScheduleDateKey(ticket), 'No Date');
                       
                       return (
                         <div 
                           key={ticket.id}
-                          className="rounded-2xl p-4 border shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between"
+                          className="rounded-xl md:rounded-2xl p-3.5 md:p-4 border shadow-sm transition-all duration-300 md:hover:shadow-md md:hover:-translate-y-0.5 flex flex-col justify-between active:scale-[0.99]"
                           style={{ backgroundColor: cardBg, borderColor: border }}
                         >
                           <div>
@@ -6771,14 +7065,14 @@ export default function Tickets() {
                           </div>
 
                           {/* Card Footer */}
-                          <div className="flex justify-between items-center pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
-                            <span className="text-[10px]" style={{ color: textMuted }}>
-                              Date: {ticket.preferredDate || 'No Date'}
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
+                              {scheduleDateLabel}
                             </span>
                             <button
                               type="button"
                               onClick={() => openEditModal(ticket)}
-                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90"
+                              className="w-full sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
                               style={{ backgroundColor: green }}
                             >
                               View Details
@@ -7070,8 +7364,8 @@ export default function Tickets() {
                      <SHead title="Scheduling Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                        <DField label="Assigned Branch" value={branchName} />
-                       <DField label="Preferred Date" value={preferredDate ? new Date(preferredDate).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '—'} />
-                       <DField label="Final Schedule" value={finalScheduleDate ? formatDateKeyLabel(finalScheduleDate) : '—'} green />
+                       <DField label="Preferred Date" value={formatDisplayDate(preferredDate)} />
+                       <DField label="Final Schedule" value={formatDisplayDate(finalScheduleDate)} green />
                        {isCompleted && archivedSched && (
                          <DField label="Scheduled Date" value={archivedSched} />
                        )}
@@ -7195,7 +7489,7 @@ export default function Tickets() {
                                    )}
                                    {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
                                      <p className="text-[10px]">
-                                       Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
+                                       Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
                                      </p>
                                    )}
                                    {h.newAssignedToName && (
@@ -7266,6 +7560,14 @@ export default function Tickets() {
                 : '',
             }))
             return
+          }
+          const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
+          if (isClosing) {
+            const missing = getEmptyRequiredColumnsForClose(pickerTicket, branchEmployees, activeBranchId)
+            if (missing.length > 0) {
+              alert(`Cannot close ticket because the following columns are empty:\n• ${missing.join('\n• ')}`)
+              return
+            }
           }
           if (value === 'RESCHED') {
             openReschedDialog(pickerTicket)
@@ -7526,9 +7828,7 @@ export default function Tickets() {
         const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
         const firstDow = new Date(calYear, calMonth, 1).getDay()
         const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
-        const selLabel = value
-          ? new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })
-          : ''
+        const selLabel = value ? formatDateKeyLabel(value) : ''
         const preferredLabel = preferredDate ? formatDateKeyLabel(preferredDate) : ''
         const isPast = (yr: number, mo: number, d: number) => {
           if (yr < todayParts[0]) return true
@@ -8100,17 +8400,29 @@ export default function Tickets() {
                   </Field>
                   <Field label="Service / Driver">
                     <input type="text" value={addForm.serviceDriver || ''}
-                      placeholder="e.g. T3 (DOMINIC) - 1"
+                      list="add-ticket-driver-roster"
+                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driver…' : 'e.g. T3 (DOMINIC) - 1'}
                       onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    <datalist id="add-ticket-driver-roster">
+                      {activeBranchRoster.drivers.map(name => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
                   </Field>
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                     <input type="text" value={addForm.installerName || ''}
-                      placeholder="e.g. RYAN - 1"
+                      list="add-ticket-installer-roster"
+                      placeholder={activeBranchRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
                       onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    <datalist id="add-ticket-installer-roster">
+                      {activeBranchRoster.installers.map(name => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
                   </Field>
                   <Field label="Negotiator" required>
                     <select
@@ -8229,14 +8541,16 @@ export default function Tickets() {
           boxShadow: isLight ? '0 0 0 3px rgba(251,191,36,0.2)' : '0 0 0 3px rgba(251,191,36,0.15)',
         }
 
+        const isOverviewEdit = activeTab === 'overview'
+
         return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+        <div className={`fixed inset-0 z-[9999] flex flex-col sm:items-center sm:justify-center sm:p-4 backdrop-blur-sm ${isOverviewEdit ? 'bg-white dark:bg-[#0a1120] sm:bg-slate-900/60' : 'bg-slate-900/60'}`}
              onClick={e => e.stopPropagation()}>
-          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+          <div className="w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col sm:max-h-[90vh]"
+               style={{ backgroundColor: cardBg, border: isOverviewEdit ? 'none' : `1px solid ${border}` }}
                onClick={e => e.stopPropagation()}
                onMouseDown={e => e.stopPropagation()}>
-            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="shrink-0 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between safe-area-top" style={{ borderBottom: `1px solid ${border}` }}>
               <div>
                 <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
                   Edit Ticket Details
@@ -8257,12 +8571,12 @@ export default function Tickets() {
                   </p>
                 ) : null}
               </div>
-              <button onClick={requestCloseEditModal} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
+              <button onClick={requestCloseEditModal} className="p-2 -mr-1 rounded-lg hover:bg-slate-200/20 active:bg-slate-200/30" style={{ color: textMuted }}>
+                <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+            <div className="px-4 sm:px-6 py-4 sm:py-6 overflow-y-auto flex-1 flex flex-col gap-5 sm:gap-6 min-h-0">
               <div
                 className="rounded-xl p-4"
                 style={{
@@ -8407,17 +8721,29 @@ export default function Tickets() {
                   </Field>
                   <Field label="Service / Driver">
                     <input type="text" value={editForm.serviceDriver || ''}
-                      placeholder="e.g. T3 (DOMINIC) - 1"
+                      list="edit-ticket-driver-roster"
+                      placeholder={editModalRoster.drivers.length ? 'Select or type driver…' : 'e.g. T3 (DOMINIC) - 1'}
                       onChange={e => setEditForm({ ...editForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    <datalist id="edit-ticket-driver-roster">
+                      {editModalRoster.drivers.map(name => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
                   </Field>
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                     <input type="text" value={editForm.installerName || ''}
-                      placeholder="e.g. RYAN - 1"
+                      list="edit-ticket-installer-roster"
+                      placeholder={editModalRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
                       onChange={e => setEditForm({ ...editForm, installerName: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    <datalist id="edit-ticket-installer-roster">
+                      {editModalRoster.installers.map(name => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={editForm.ticketNumber || ''}
@@ -8603,24 +8929,36 @@ export default function Tickets() {
               </div>
             </div>
 
-            <div className="px-6 py-4 flex items-center justify-between border-t" style={{ borderColor: border }}>
-              {canEdit ? (
-                <button onClick={() => { handleDelete(editForm.id!); setEditModalOpen(false) }}
-                        className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm">
+            <div
+              className={`shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex gap-2.5 sm:gap-3 border-t safe-area-bottom ${isOverviewEdit ? 'flex-col-reverse sm:flex-row sm:items-center sm:justify-end' : 'flex-col-reverse sm:flex-row sm:items-center sm:justify-between'}`}
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+            >
+              {!isOverviewEdit && canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => { handleDelete(editForm.id!); setEditModalOpen(false) }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 sm:py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm"
+                >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   Delete Ticket
                 </button>
-              ) : <div />}
-              <div className="flex gap-3">
-                <button onClick={requestCloseEditModal}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
-                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
+              ) : !isOverviewEdit ? <div className="hidden sm:block" /> : null}
+              <div className={`flex gap-2.5 sm:gap-3 ${isOverviewEdit ? 'w-full sm:w-auto' : 'w-full sm:w-auto sm:ml-auto'}`}>
+                <button
+                  type="button"
+                  onClick={requestCloseEditModal}
+                  className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold border transition-colors"
+                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}
+                >
                   Cancel
                 </button>
-                <button onClick={promptSaveEditTicket}
+                <button
+                  type="button"
+                  onClick={promptSaveEditTicket}
                   disabled={editSaving}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center gap-2"
-                  style={{ backgroundColor: green }}>
+                  className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                  style={{ backgroundColor: green }}
+                >
                   {editSaving ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -8684,9 +9022,7 @@ export default function Tickets() {
         const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
         const firstDow = new Date(calYear, calMonth, 1).getDay()
         const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
-        const selLabel = reschedToDate
-          ? new Date(`${reschedToDate}T00:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-          : ''
+        const selLabel = reschedToDate ? formatDateKeyLabel(reschedToDate) : ''
         const isPast = (y: number, m: number, d: number) => {
           if (y < todayParts[0]) return true
           if (y === todayParts[0] && m < todayParts[1]) return true
