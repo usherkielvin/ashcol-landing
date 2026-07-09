@@ -41,6 +41,17 @@ const PAPER = '#ffffff'
 /** Philippines Long Bond — landscape 13" × 8.5" */
 const PDF_PAGE = { orientation: 'landscape' as const, unit: 'in' as const, format: [8.5, 13] as [number, number] }
 const PDF_MARGIN_X = 0.28
+/** Max data rows per showcase / PDF page — row 16+ continues on the next page. */
+const ROWS_PER_PAGE = 15
+
+function chunkRows<T>(rows: T[], size: number): T[][] {
+  if (rows.length === 0) return [[]]
+  const chunks: T[][] = []
+  for (let i = 0; i < rows.length; i += size) {
+    chunks.push(rows.slice(i, i + size))
+  }
+  return chunks
+}
 
 function showcaseCellText(value: string): string {
   const trimmed = (value || '').trim()
@@ -231,6 +242,26 @@ function drawPdfDateTable(
   return doc.lastAutoTable?.finalY ?? 0.58
 }
 
+const PDF_COLUMN_STYLES = {
+  0: { halign: 'center' as const, cellWidth: 0.35 },
+  1: { halign: 'center' as const, cellWidth: 0.85 },
+  2: { cellWidth: 1.35 },
+  3: { cellWidth: 0.82 },
+  4: { cellWidth: 0.95 },
+  5: { cellWidth: 0.82 },
+  6: { halign: 'center' as const, cellWidth: 1.05 },
+  7: { cellWidth: 1.05 },
+  8: { halign: 'center' as const, cellWidth: 0.82 },
+  9: { cellWidth: 2.30 },
+  10: {
+    halign: 'right' as const,
+    cellWidth: 2.08,
+    fontStyle: 'bold' as const,
+    fontSize: 7.5,
+    overflow: 'linebreak' as const,
+  },
+}
+
 async function exportShowcasePdfDocument(options: {
   filename: string
   dateLabel: string
@@ -247,50 +278,37 @@ async function exportShowcasePdfDocument(options: {
   const pageWidth = pdf.internal.pageSize.getWidth()
   const tableWidth = pageWidth - PDF_MARGIN_X * 2
   const headers = buildHeaders(isTaguigServices)
-  const body = buildBody(rows, paymentByRowId)
+  const pages = chunkRows(rows, ROWS_PER_PAGE)
 
   const drawDateHeader = () => drawPdfDateTable(pdf, autoTable, dateKey, dateLabel)
-  let tableStartY = drawDateHeader() + 0.14
 
-  autoTable(pdf, {
-    startY: tableStartY,
-    margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 0.72, bottom: 0.35 },
-    tableWidth,
-    head: [headers],
-    body: rows.length > 0
-      ? body
-      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']],
-    showHead: 'everyPage',
-    ...PDF_BW_TABLE,
-    columnStyles: {
-      0: { halign: 'center', cellWidth: 0.35 },
-      1: { halign: 'center', cellWidth: 0.85 },
-      2: { cellWidth: 1.35 },
-      3: { cellWidth: 0.82 },
-      4: { cellWidth: 0.95 },
-      5: { cellWidth: 0.82 },
-      6: { halign: 'center', cellWidth: 1.05 },
-      7: { cellWidth: 1.05 },
-      8: { halign: 'center', cellWidth: 0.82 },
-      9: { cellWidth: 2.30 },
-      10: {
-        halign: 'right',
-        cellWidth: 2.08,
-        fontStyle: 'bold',
-        fontSize: 7.5,
-        overflow: 'linebreak' as const,
+  pages.forEach((pageRows, pageIdx) => {
+    if (pageIdx > 0) pdf.addPage([8.5, 13], 'landscape')
+    const tableStartY = drawDateHeader() + 0.14
+    const body = pageRows.length > 0
+      ? buildBody(pageRows, paymentByRowId)
+      : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']]
+
+    autoTable(pdf, {
+      startY: tableStartY,
+      margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 0.72, bottom: 0.35 },
+      tableWidth,
+      head: [headers],
+      body,
+      showHead: 'everyPage',
+      ...PDF_BW_TABLE,
+      columnStyles: PDF_COLUMN_STYLES,
+      didDrawPage: (data) => {
+        if (data.pageNumber > 1) {
+          drawDateHeader()
+        }
+        const footerY = pdf.internal.pageSize.getHeight() - 0.2
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(6.5)
+        pdf.setTextColor(0, 0, 0)
+        pdf.text(`Page ${data.pageNumber}`, pageWidth / 2, footerY, { align: 'center' })
       },
-    },
-    didDrawPage: (data) => {
-      if (data.pageNumber > 1) {
-        drawDateHeader()
-      }
-      const footerY = pdf.internal.pageSize.getHeight() - 0.2
-      pdf.setFont('helvetica', 'normal')
-      pdf.setFontSize(6.5)
-      pdf.setTextColor(0, 0, 0)
-      pdf.text(`Page ${data.pageNumber}`, pageWidth / 2, footerY, { align: 'center' })
-    },
+    })
   })
 
   pdf.save(filename)
@@ -353,6 +371,171 @@ export function SchedulesShowcase({
   if (!open) return null
 
   const headers = buildHeaders(isTaguigServices)
+  const rowPages = chunkRows(rows, ROWS_PER_PAGE)
+  const pageCount = rowPages.length
+
+  const renderDateTable = () => (
+    <div className="p-3 md:p-4" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
+      <table
+        className="schedules-showcase-date-table"
+        style={{ borderCollapse: 'collapse', width: '220px', maxWidth: '100%' }}
+      >
+        <tbody>
+          <tr>
+            <td
+              style={{
+                border: `1px solid ${TABLE_BORDER}`,
+                padding: '6px 10px',
+                fontWeight: 800,
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                backgroundColor: PAPER,
+                color: INK,
+                width: 56,
+              }}
+            >
+              Date
+            </td>
+            <td
+              style={{
+                border: `1px solid ${TABLE_BORDER}`,
+                padding: '6px 10px',
+                fontWeight: 700,
+                fontSize: '11px',
+                backgroundColor: PAPER,
+                color: INK,
+              }}
+            >
+              {scheduleDate}
+            </td>
+          </tr>
+          <tr>
+            <td
+              style={{
+                border: `1px solid ${TABLE_BORDER}`,
+                padding: '6px 10px',
+                fontWeight: 800,
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                backgroundColor: PAPER,
+                color: INK,
+              }}
+            >
+              Day
+            </td>
+            <td
+              style={{
+                border: `1px solid ${TABLE_BORDER}`,
+                padding: '6px 10px',
+                fontWeight: 700,
+                fontSize: '11px',
+                backgroundColor: PAPER,
+                color: INK,
+              }}
+            >
+              {dayName}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+
+  const renderDataTable = (pageRows: ScheduleShowcaseRow[]) => (
+    <div className="overflow-x-auto">
+      <table
+        className="schedules-showcase-table"
+        style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER }}
+      >
+        <thead>
+          <tr>
+            {headers.map((label, headerIdx) => {
+              const isStatus = headerIdx === 6
+              const isPayment = headerIdx === 10
+              return (
+                <th
+                  key={label}
+                  style={{
+                    backgroundColor: PAPER,
+                    color: INK,
+                    border: `1px solid ${TABLE_BORDER}`,
+                    padding: '7px 5px',
+                    fontSize: isPayment ? '9px' : '9.5px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.03em',
+                    verticalAlign: 'middle',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    minWidth: isStatus ? 100 : isPayment ? 130 : undefined,
+                  }}
+                >
+                  {label}
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {pageRows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={headers.length}
+                style={{
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: INK,
+                  fontWeight: 600,
+                  border: `1px solid ${TABLE_BORDER}`,
+                  backgroundColor: PAPER,
+                }}
+              >
+                No schedule tickets for this date.
+              </td>
+            </tr>
+          ) : pageRows.map(row => {
+            const cells = rowToCells(row, paymentByRowId)
+            return (
+              <tr key={`${row.index}-${row.id}`}>
+                {cells.map((value, cellIdx) => {
+                  const isUpdate = cellIdx === 9
+                  const isName = cellIdx === 2
+                  const isCommit = cellIdx === 7
+                  const isStatus = cellIdx === 6
+                  const isPayment = cellIdx === 10
+                  const isBrand = cellIdx === 4
+                  const isTicketNo = cellIdx === 1
+                  const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus || isTicketNo
+                  const center = [0, 1, 6, 8].includes(cellIdx)
+                  return (
+                    <td
+                      key={cellIdx}
+                      style={{
+                        border: `1px solid ${TABLE_BORDER}`,
+                        padding: '8px 7px',
+                        fontSize: isPayment ? '9px' : isUpdate ? '10px' : '9.5px',
+                        fontWeight: isPayment ? 700 : isStatus ? 600 : 500,
+                        color: INK,
+                        backgroundColor: PAPER,
+                        verticalAlign: 'top',
+                        textAlign: isPayment ? 'right' : center ? 'center' : 'left',
+                        whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
+                        wordBreak: wrap ? 'break-word' : 'normal',
+                        minWidth: isUpdate ? 220 : isPayment ? 130 : isStatus ? 100 : undefined,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {value}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <>
@@ -377,7 +560,8 @@ export function SchedulesShowcase({
                 {branchLabel || 'Branch'} · {scheduleDate} · {dayName}
               </div>
               <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                PDF / Print: Landscape Long 8.5″ × 13″ · black &amp; white
+                PDF / Print: Landscape Long 8.5″ × 13″ · black &amp; white · {ROWS_PER_PAGE} rows/page
+                {pageCount > 1 ? ` · ${pageCount} pages` : ''}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -419,178 +603,34 @@ export function SchedulesShowcase({
             </div>
           </div>
 
-          <div className="flex-1 px-4 py-6 md:px-8 md:py-10">
-            <div
-              className="schedules-showcase-sheet print-area mx-auto"
-              style={{
-                maxWidth: '1800px',
-                width: '100%',
-                backgroundColor: PAPER,
-                border: '1px solid #dbe5ef',
-                boxShadow: '0 24px 80px rgba(15,23,42,0.12)',
-                borderRadius: 12,
-                overflow: 'hidden',
-              }}
-            >
-              <div className="p-3 md:p-4" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
-                <table
-                  className="schedules-showcase-date-table"
-                  style={{ borderCollapse: 'collapse', width: '220px', maxWidth: '100%' }}
-                >
-                  <tbody>
-                    <tr>
-                      <td
-                        style={{
-                          border: `1px solid ${TABLE_BORDER}`,
-                          padding: '6px 10px',
-                          fontWeight: 800,
-                          fontSize: '10px',
-                          textTransform: 'uppercase',
-                          backgroundColor: PAPER,
-                          color: INK,
-                          width: 56,
-                        }}
-                      >
-                        Date
-                      </td>
-                      <td
-                        style={{
-                          border: `1px solid ${TABLE_BORDER}`,
-                          padding: '6px 10px',
-                          fontWeight: 700,
-                          fontSize: '11px',
-                          backgroundColor: PAPER,
-                          color: INK,
-                        }}
-                      >
-                        {scheduleDate}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          border: `1px solid ${TABLE_BORDER}`,
-                          padding: '6px 10px',
-                          fontWeight: 800,
-                          fontSize: '10px',
-                          textTransform: 'uppercase',
-                          backgroundColor: PAPER,
-                          color: INK,
-                        }}
-                      >
-                        Day
-                      </td>
-                      <td
-                        style={{
-                          border: `1px solid ${TABLE_BORDER}`,
-                          padding: '6px 10px',
-                          fontWeight: 700,
-                          fontSize: '11px',
-                          backgroundColor: PAPER,
-                          color: INK,
-                        }}
-                      >
-                        {dayName}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+          <div className="flex-1 px-4 py-6 md:px-8 md:py-10 print-area">
+            {rowPages.map((pageRows, pageIdx) => (
+              <div
+                key={`showcase-page-${pageIdx}`}
+                className={`schedules-showcase-sheet mx-auto ${pageIdx < rowPages.length - 1 ? 'showcase-page-break' : ''}`}
+                style={{
+                  maxWidth: '1800px',
+                  width: '100%',
+                  backgroundColor: PAPER,
+                  border: '1px solid #dbe5ef',
+                  boxShadow: pageIdx === 0 ? '0 24px 80px rgba(15,23,42,0.12)' : '0 12px 40px rgba(15,23,42,0.08)',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  marginBottom: pageIdx < rowPages.length - 1 ? 24 : 0,
+                }}
+              >
+                {renderDateTable()}
+                {renderDataTable(pageRows)}
+                {pageCount > 1 && (
+                  <div
+                    className="no-print px-4 py-2 text-right text-[10px] font-semibold text-slate-500"
+                    style={{ borderTop: `1px solid ${TABLE_BORDER}` }}
+                  >
+                    Page {pageIdx + 1} of {pageCount}
+                  </div>
+                )}
               </div>
-
-              <div className="overflow-x-auto">
-                <table
-                  className="schedules-showcase-table"
-                  style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER }}
-                >
-                  <thead>
-                    <tr>
-                      {headers.map((label, headerIdx) => {
-                        const isStatus = headerIdx === 6
-                        const isPayment = headerIdx === 10
-                        return (
-                        <th
-                          key={label}
-                          style={{
-                            backgroundColor: PAPER,
-                            color: INK,
-                            border: `1px solid ${TABLE_BORDER}`,
-                            padding: '7px 5px',
-                            fontSize: isPayment ? '9px' : '9.5px',
-                            fontWeight: 800,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.03em',
-                            verticalAlign: 'middle',
-                            textAlign: 'center',
-                            whiteSpace: 'nowrap',
-                            minWidth: isStatus ? 100 : isPayment ? 130 : undefined,
-                          }}
-                        >
-                          {label}
-                        </th>
-                        )
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={headers.length}
-                          style={{
-                            padding: '32px 16px',
-                            textAlign: 'center',
-                            color: INK,
-                            fontWeight: 600,
-                            border: `1px solid ${TABLE_BORDER}`,
-                            backgroundColor: PAPER,
-                          }}
-                        >
-                          No schedule tickets for this date.
-                        </td>
-                      </tr>
-                    ) : rows.map(row => {
-                      const cells = rowToCells(row, paymentByRowId)
-                      return (
-                        <tr key={`${row.index}-${row.id}`}>
-                           {cells.map((value, cellIdx) => {
-                            const isUpdate = cellIdx === 9
-                            const isName = cellIdx === 2
-                            const isCommit = cellIdx === 7
-                            const isStatus = cellIdx === 6
-                            const isPayment = cellIdx === 10
-                            const isBrand = cellIdx === 4
-                            const isTicketNo = cellIdx === 1
-                            const wrap = isUpdate || isName || isCommit || isPayment || isBrand || isStatus || isTicketNo
-                            const center = [0, 1, 6, 8].includes(cellIdx)
-                            return (
-                              <td
-                                key={cellIdx}
-                                style={{
-                                  border: `1px solid ${TABLE_BORDER}`,
-                                  padding: '8px 7px',
-                                  fontSize: isPayment ? '9px' : isUpdate ? '10px' : '9.5px',
-                                  fontWeight: isPayment ? 700 : isStatus ? 600 : 500,
-                                  color: INK,
-                                  backgroundColor: PAPER,
-                                  verticalAlign: 'top',
-                                  textAlign: isPayment ? 'right' : center ? 'center' : 'left',
-                                  whiteSpace: wrap ? 'pre-wrap' : 'nowrap',
-                                  wordBreak: wrap ? 'break-word' : 'normal',
-                                  minWidth: isUpdate ? 220 : isPayment ? 130 : isStatus ? 100 : undefined,
-                                  lineHeight: 1.4,
-                                }}
-                              >
-                                {value}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -604,8 +644,8 @@ export function SchedulesShowcase({
           body * { visibility: hidden !important; }
           .print-area, .print-area * { visibility: visible !important; }
           .print-area {
-            position: fixed !important;
-            inset: 0 !important;
+            position: static !important;
+            inset: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             border: none !important;
@@ -616,12 +656,21 @@ export function SchedulesShowcase({
             background: #ffffff !important;
             color: #000000 !important;
           }
+          .schedules-showcase-sheet {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            margin-bottom: 0 !important;
+          }
           .print-area * {
             background: #ffffff !important;
             color: #000000 !important;
             box-shadow: none !important;
           }
           .no-print { display: none !important; }
+          .showcase-page-break {
+            page-break-after: always !important;
+            break-after: page !important;
+          }
           .schedules-showcase-overlay {
             position: static !important;
             overflow: visible !important;

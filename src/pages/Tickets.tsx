@@ -5388,35 +5388,31 @@ export default function Tickets() {
 
   const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
     if (isMyTickets) return []
-    // Mirror exactly what the grid shows (visible). Rescheduled "moved-away" ghosts
-    // are hidden, but completed/installed rows (which carry payment) are kept.
-    return visible
-      .filter(t => !dateFilter || !isRescheduledGhostOnDate(t, dateFilter))
-      .map((ticket, index) => {
-        const live = optimisticTicketsRef.current.get(ticket.id) || ticket
-        return {
-          id: String(live.id ?? index),
-          index: index + 1,
-          ticketNumber: getTicketNumberDisplay(live) || '',
-          name: getF(live, 'customerName', 'customer_name') || live.title || '',
-          destination: formatAddress(live.location),
-          district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
-          contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
-          brand: parseBrand(live),
-          dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
-          status: getScheduleStatusLabel(getScheduleStatusValue(live)),
-          commit: getF(live, 'commitType', 'commitTerms', 'description'),
-          installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
-          update: getScheduleUpdateDisplay(live),
-          payment: getSchedulePaymentDisplay(live),
-        }
-      })
-  }, [visible, isMyTickets, dateFilter, branchEmployees, activeBranchId, tickets])
+    // Mirror exactly what the schedules grid shows (all visible rows, including ghosts).
+    return visible.map((ticket, index) => {
+      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      return {
+        id: String(live.id ?? index),
+        index: index + 1,
+        ticketNumber: getTicketNumberDisplay(live) || '',
+        name: getF(live, 'customerName', 'customer_name') || live.title || '',
+        destination: formatAddress(live.location),
+        district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
+        contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+        brand: parseBrand(live),
+        dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
+        status: getScheduleStatusLabel(getScheduleStatusValue(live)),
+        commit: getF(live, 'commitType', 'commitTerms', 'description'),
+        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+        update: getScheduleUpdateDisplay(live),
+        payment: getSchedulePaymentDisplay(live),
+      }
+    })
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
     for (const ticket of visible) {
-      if (dateFilter && isRescheduledGhostOnDate(ticket, dateFilter)) continue
       const live = optimisticTicketsRef.current.get(ticket.id) || ticket
       const payment = getSchedulePaymentDisplay(live)
       if (!payment) continue
@@ -5425,7 +5421,7 @@ export default function Tickets() {
       if (live.id) map[String(live.id)] = payment
     }
     return map
-  }, [visible, dateFilter, tickets])
+  }, [visible, tickets])
 
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
