@@ -5799,7 +5799,8 @@ export default function Tickets() {
         case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
         case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
         case 'NOTE':            return ticket.note || ''
-        case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+        case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
+        case 'VEHICLE':         return isMyTickets ? '' : getTicketVehicleDisplay(ticket)
         case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
         default: return ''
       }
