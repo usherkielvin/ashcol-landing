@@ -1228,19 +1228,16 @@ function ticketBelongsOnScheduleBranch(
   email?: string | null,
 ): boolean {
   if (!effectiveBranch || effectiveBranch === 'ALL_BRANCHES') return true
-  if (isTaguigBranchRef(effectiveBranch)) {
-    const wantServices = isTaguigServicesScope(effectiveBranch, email)
-    const isService = isTaguigServiceTicket(ticket as unknown as Record<string, unknown>)
-    if (wantServices ? !isService : isService) return false
-  }
   const stored = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
-  if (!stored) return false
+  // No branch on the row — trust the server's branch-scoped query rather than dropping it.
+  if (!stored) return true
   if (branchScopesMatch(stored, effectiveBranch, email)) return true
   if (isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(stored)) {
+    // Explicit stored scope wins; only split Sales vs Services when the row says so.
     const wantServices = isTaguigServicesScope(effectiveBranch, email)
     return wantServices
       ? stored === 'BR-TAGUIG-SERVICES'
-      : stored === 'BR-TAGUIG-SALES'
+      : stored !== 'BR-TAGUIG-SERVICES'
   }
   return false
 }
