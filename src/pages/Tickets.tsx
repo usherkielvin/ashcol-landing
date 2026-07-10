@@ -8,15 +8,13 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, fetchTicketsByNumbers, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
   extractTicketNumbers,
   getTicketByNumber,
-  getTicketsByNumbers,
   normalizeTicketNumberKey,
-  readScheduleDateTicketNumbers,
   writeScheduleDateTicketNumbers,
 } from '../utils/ticketNumberStore'
 import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
