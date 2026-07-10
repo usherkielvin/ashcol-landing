@@ -5156,7 +5156,12 @@ export default function Tickets() {
           const cachedTickets = getTicketsByNumbers(indexedNumbers) as unknown as Ticket[]
           const missingNumbers = indexedNumbers.filter(n => !getTicketByNumber(n))
           if (missingNumbers.length === 0 && cachedTickets.length > 0) {
-            list = cachedTickets
+            const dated = cachedTickets.filter(t =>
+              ticketMatchesDateKey(t, requestDate)
+              || isScheduleGhostOnDate(t, requestDate)
+              || ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(requestDate)),
+            )
+            if (dated.length > 0) list = dated
           } else if (cachedTickets.length > 0 || missingNumbers.length > 0) {
             const fetched = missingNumbers.length
               ? await fetchTicketsByNumbers(auth, missingNumbers)
@@ -5170,8 +5175,13 @@ export default function Tickets() {
             const mergedFromIndex = indexedNumbers
               .map(n => byNumber.get(normalizeTicketNumberKey(n)))
               .filter(Boolean) as Ticket[]
-            if (mergedFromIndex.length > 0) {
-              list = mergedFromIndex
+            const dated = mergedFromIndex.filter(t =>
+              ticketMatchesDateKey(t, requestDate)
+              || isScheduleGhostOnDate(t, requestDate)
+              || ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(requestDate)),
+            )
+            if (dated.length > 0) {
+              list = dated
             }
           }
         }
@@ -5236,7 +5246,9 @@ export default function Tickets() {
 
   useEffect(() => {
     hydrateFromTabCache()
-    void fetchTickets({ soft: true, quiet: true })
+    // Always hit the network for the active schedules date — empty/wrong client filters
+    // must not be locked behind a "fresh" cache skip.
+    void fetchTickets({ soft: true, quiet: true, force: true })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -5401,26 +5413,45 @@ export default function Tickets() {
       const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
         list = list.filter(t => {
+          const storedBranch = resolveScopedBranchId(t.branchId || t.branch_id)
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
-            || resolveScopedBranchId(t.branchId || t.branch_id)
+            || storedBranch
           // API date/branch fetch already scoped — don't drop rows missing branch metadata
           if (!b) return true
-          if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
+          if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) {
+            // Still keep when stored branch explicitly matches the selected Taguig line
+            if (!(isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(storedBranch)
+              && branchScopesMatch(storedBranch, effectiveBranch, user?.email))) {
+              return false
+            }
+          }
           if (isTaguigBranchRef(effectiveBranch)) {
             const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
-            const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
-            return wantServices ? isService : !isService
+            // Explicit ticket branch wins. Do NOT use installer-name heuristics here —
+            // those are for Archives and incorrectly hide Sales schedule rows (e.g. MANNY).
+            if (storedBranch === 'BR-TAGUIG-SALES') return !wantServices
+            if (storedBranch === 'BR-TAGUIG-SERVICES') return wantServices
+            return true
           }
           return true
         })
       }
     }
     if (dateFilter) {
-      list = list.filter(t =>
-        ticketMatchesDateKey(t, dateFilter) ||
-        isScheduleGhostOnDate(t, dateFilter) ||
-        ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(dateFilter))
-      )
+      list = list.filter(t => {
+        if (ticketMatchesDateKey(t, dateFilter)) return true
+        if (isScheduleGhostOnDate(t, dateFilter)) return true
+        if ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(dateFilter)) {
+          return true
+        }
+        // Date-scoped API responses can include rows whose preferred_date was blank
+        // but matched via ac_details — keep them when no conflicting date is set.
+        const preferred = getPreferredDateKey(t)
+        const finalDate = getFinalDateKey(t)
+        const scheduled = String(parseAcMeta(t).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+        const hasAnyDate = Boolean(preferred || finalDate || scheduled)
+        return !hasAnyDate
+      })
       list = [...list].sort((a, b) => {
         const aGhost = isScheduleGhostOnDate(a, dateFilter)
         const bGhost = isScheduleGhostOnDate(b, dateFilter)
