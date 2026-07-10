@@ -2031,6 +2031,30 @@ function formatServiceDriver(ticket: Ticket): string {
   return getTicketDriverName(ticket)
 }
 
+/** Split a combined "ANGELO T2" or "ANGELO / T2" serviceVehicle value into driver + vehicle parts. */
+function getServiceVehicleParts(raw: string): { driver: string; vehicle: string } {
+  const v = (raw || '').trim()
+  if (!v) return { driver: '', vehicle: '' }
+  // Pattern: "ANGELO T2", "ANGELO-T2", "ANGELO/T2" where vehicle is short code
+  const match = v.match(/^(.*?)\s*[-\/]?\s*\b(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)\s*$/i)
+  if (match) {
+    const driver = match[1].trim()
+    const vehicle = match[2].trim().toUpperCase()
+    if (driver && vehicle && driver.toUpperCase() !== vehicle) {
+      return { driver: driver.toUpperCase(), vehicle }
+    }
+  }
+  // Fallback: two tokens split by whitespace where last token looks like a vehicle code
+  const parts = v.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1].toUpperCase()
+    if (/^(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)$/.test(last)) {
+      return { driver: parts.slice(0, parts.length - 1).join(' ').toUpperCase(), vehicle: last }
+    }
+  }
+  return { driver: v.toUpperCase(), vehicle: '' }
+}
+
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
 function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
@@ -2079,7 +2103,8 @@ function ticketColumnText(
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
-    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getServiceVehicleParts(formatServiceDriver(ticket)).driver
+    case 'VEHICLE': return myTickets ? '' : getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -2110,7 +2135,7 @@ function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name:
 
 const INLINE_EDIT_COLUMNS = new Set([
   'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
-  'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
+  'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
 const DEFAULT_SCHEDULE_SORT = { column: 'INSTALLER', direction: 'asc' as const }
@@ -2568,7 +2593,8 @@ function getCellRawValue(
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerDisplay(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
-    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getServiceVehicleParts(formatServiceDriver(ticket)).driver
+    case 'VEHICLE': return myTickets ? '' : getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -2620,14 +2646,33 @@ function buildCellPatchBody(
       break
     case 'SERVICE': {
       const category = inferCategoryFromTicket(ticket)
-      const driver = normalizeDriverInput(v)
+      // Preserve existing vehicle when only editing driver name
+      const existingVehicle = getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
+      const driverOnly = normalizeDriverInput(v)
+      const combined = existingVehicle ? `${driverOnly} ${existingVehicle}`.trim() : driverOnly
       const { serviceType } = parseServiceDriverValue('', category)
       body.serviceType = serviceType
-      body.serviceVehicle = driver
+      body.serviceVehicle = combined
       body.acDetails = mergeAcMeta(acBase, {
-        driverName: driver,
-        serviceVehicle: driver,
-        driver_name: driver,
+        driverName: combined,
+        serviceVehicle: combined,
+        driver_name: combined,
+      })
+      break
+    }
+    case 'VEHICLE': {
+      const category = inferCategoryFromTicket(ticket)
+      // Preserve existing driver name when only editing vehicle
+      const existingDriver = getServiceVehicleParts(formatServiceDriver(ticket)).driver
+      const vehicleOnly = normalizeDriverInput(v)
+      const combined = existingDriver ? `${existingDriver} ${vehicleOnly}`.trim() : vehicleOnly
+      const { serviceType } = parseServiceDriverValue('', category)
+      body.serviceType = serviceType
+      body.serviceVehicle = combined
+      body.acDetails = mergeAcMeta(acBase, {
+        driverName: combined,
+        serviceVehicle: combined,
+        driver_name: combined,
       })
       break
     }
@@ -5139,6 +5184,7 @@ export default function Tickets() {
       { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'VEHICLE',          display: "VEHICLE",                                   weight: 7,  expMul: 1.2,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT',         display: "PAYMENT",                                   weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
@@ -6520,7 +6566,7 @@ export default function Tickets() {
       )
     }
 
-    if (colLabel === 'INSTALLER' || (colLabel === 'SERVICE' && !isMyTickets)) {
+    if (colLabel === 'INSTALLER' || (colLabel === 'SERVICE' && !isMyTickets) || (colLabel === 'VEHICLE' && !isMyTickets)) {
       const roster = rosterForTicket(ticket)
       const options = colLabel === 'INSTALLER' ? roster.installers : roster.drivers
       const listId = `ticket-roster-${ticket.id}-${colLabel}`
@@ -6539,7 +6585,11 @@ export default function Tickets() {
             onKeyDown={onKeyDown}
             className="w-full rounded-md outline-none"
             style={inputStyle}
-            placeholder={colLabel === 'INSTALLER' ? 'Select or type installer\u2026' : 'Select or type driver\u2026'}
+            placeholder={
+              colLabel === 'INSTALLER' ? 'Select or type installer\u2026'
+              : colLabel === 'VEHICLE' ? 'Type vehicle code\u2026'
+              : 'Select or type driver\u2026'
+            }
           />
           <datalist id={listId}>
             {options.map(name => (
@@ -6835,7 +6885,9 @@ export default function Tickets() {
     }
 
     if (label === 'SERVICE') {
-      if (!val && canEdit && !isMyTickets && !rowGhost) {
+      // Show driver name only (vehicle is in its own column)
+      const driverName = !isMyTickets ? getServiceVehicleParts(val).driver || val : val
+      if (!driverName && canEdit && !isMyTickets && !rowGhost) {
         return (
           <button
             type="button"
@@ -6856,34 +6908,54 @@ export default function Tickets() {
           </button>
         )
       }
-
-      if (!isMyTickets && val) {
-        const match = val.match(/^(.*?)\s*[-/]?\s*\b(FB\d+|T\d+|STRADA|T2|T3|FB19)\b\s*$/i) || (() => {
-          const spaceParts = val.trim().split(/\s+/)
-          if (spaceParts.length === 2 && (/^[A-Z]*\d+[A-Z]*$/i.test(spaceParts[1]) || /^(STRADA|T2|T3|FB19)$/i.test(spaceParts[1]))) {
-            return [val, spaceParts[0], spaceParts[1]]
-          }
-          return null
-        })()
-
-        if (match) {
-          const driver = match[1].trim()
-          const vehicle = match[2].trim()
-          if (driver && vehicle) {
-            return withEditPencil(
-              <span className="flex flex-col items-center justify-center text-center w-full" style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}>
-                <span className="font-bold text-[10px] tracking-wide leading-tight">{driver}</span>
-                <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider leading-tight mt-0.5">{vehicle}</span>
-              </span>,
-              ticket, label, rowGhost, rowIndex,
-            )
-          }
-        }
-      }
-
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
-          {val || EMPTY_CELL}
+        <span
+          className="block w-full text-center font-bold text-[10px] tracking-wide uppercase leading-tight"
+          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+          title={driverName}
+        >
+          {driverName || EMPTY_CELL}
+        </span>,
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
+    if (label === 'VEHICLE' && !isMyTickets) {
+      const rawDriver = formatServiceDriver(ticket)
+      const vehicleCode = getServiceVehicleParts(rawDriver).vehicle
+      if (!vehicleCode && canEdit && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell, rowIndex)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#2563eb' : '#60a5fa',
+              backgroundColor: isLight ? '#dbeafe' : 'rgba(37,99,235,0.15)',
+              border: `1px dashed ${isLight ? '#93c5fd' : 'rgba(96,165,250,0.35)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
+      return withEditPencil(
+        <span
+          className="inline-flex items-center justify-center px-2 py-0.5 rounded-full font-bold text-[10px] tracking-widest uppercase"
+          style={{
+            color: isLight ? '#1d4ed8' : '#93c5fd',
+            backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.18)',
+            border: `1px solid ${isLight ? '#bfdbfe' : 'rgba(96,165,250,0.3)'}`,
+            opacity: rowGhost ? 0.65 : 1,
+          }}
+          title={vehicleCode}
+        >
+          {vehicleCode || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -9340,6 +9412,7 @@ export default function Tickets() {
           onChange={patchScheduleEditForm}
           editOriginalDate={editOriginalDate}
           editInitialStatus={editInitialStatus}
+          previousScheduleDates={editTicket ? getPreviousScheduleDates(editTicket) : []}
           isLight={isLight}
           isTaguigServices={isTaguigServices}
           canEdit={canEdit}

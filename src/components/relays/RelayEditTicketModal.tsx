@@ -52,7 +52,7 @@ export type RelayEditTicketModalProps = {
   onDelete?: () => void
   onSave: (draft: RelayEditDraft) => void
   getTicketNumber: (ticket: any) => string
-  parseAcDetails: (ticket: any) => { finalDate?: string }
+  parseAcDetails: (ticket: any) => { finalDate?: string; previousScheduleDates?: string[] }
   draftExtensions?: Partial<RelayEditDraft>
 }
 
@@ -134,6 +134,8 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }
 
   const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
+  const previousScheduleDates = parseAcDetails ? (parseAcDetails(ticket).previousScheduleDates || []) : []
+  const lastRescheduledDate = previousScheduleDates[previousScheduleDates.length - 1] || ''
   const pendingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'pending')
   const closingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'closing')
   const isSaving = saving || actionSaving
@@ -389,7 +391,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               {isFieldSurface && (
-                <EField label="Final Schedule Date" className="md:col-span-2">
+                <EField label="Scheduled Date" className={lastRescheduledDate ? '' : 'md:col-span-2'}>
                   <input
                     type="date"
                     value={draft.finalDate}
@@ -399,6 +401,23 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                       ...inputStyle,
                       backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)',
                       borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)',
+                    }}
+                  />
+                </EField>
+              )}
+              {isFieldSurface && lastRescheduledDate && (
+                <EField label="Rescheduled Date">
+                  <input
+                    type="text"
+                    readOnly
+                    disabled
+                    value={lastRescheduledDate}
+                    className={relayInput}
+                    style={{
+                      ...inputStyle,
+                      backgroundColor: isLight ? '#fff7ed' : 'rgba(217,119,6,0.08)',
+                      borderColor: isLight ? '#fed7aa' : 'rgba(217,119,6,0.35)',
+                      color: textMuted,
                     }}
                   />
                 </EField>

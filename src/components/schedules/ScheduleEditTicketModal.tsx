@@ -37,6 +37,7 @@ type ScheduleEditTicketModalProps = {
   onChange: (patch: Partial<ScheduleEditForm>) => void
   editOriginalDate: string
   editInitialStatus: string
+  previousScheduleDates?: string[]
   isLight: boolean
   isTaguigServices: boolean
   canEdit: boolean
@@ -90,6 +91,7 @@ export function ScheduleEditTicketModal({
   onChange,
   editOriginalDate,
   editInitialStatus,
+  previousScheduleDates = [],
   isLight,
   isTaguigServices,
   saving,
@@ -132,6 +134,7 @@ export function ScheduleEditTicketModal({
 
   const isReschedStatus = (form.status || '').toUpperCase() === 'RESCHED'
   const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
+  const lastRescheduledDate = previousScheduleDates[previousScheduleDates.length - 1] || ''
   const showPaymentSection = !isPendingStatus && (
     ticketHasPaymentInfo(form)
     || Boolean(form.modeOfPayment || form.installationCharges != null)
@@ -298,10 +301,10 @@ export function ScheduleEditTicketModal({
                 <input type="text" value={form.controlNumber || ''} placeholder="Aircon papers / SI" onChange={e => onChange({ controlNumber: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
 
-              {/* ── Premium Final Schedule Date Card ── */}
+              {/* ── Premium Scheduled Date Card ── */}
               <div className="md:col-span-2">
                 <span className="block text-[10px] font-black uppercase tracking-wider opacity-70 mb-2">
-                  Final Schedule Date
+                  Scheduled Date
                 </span>
                 <div
                   className="rounded-xl p-0.5"
@@ -331,12 +334,6 @@ export function ScheduleEditTicketModal({
                       <CalendarDays className="w-4.5 h-4.5 text-white" strokeWidth={2.2} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p
-                        className="text-[9px] font-black uppercase tracking-[0.12em] mb-0.5"
-                        style={{ color: isLight ? '#15803d' : '#4ade80' }}
-                      >
-                        Scheduled Date
-                      </p>
                       <input
                         type="date"
                         value={form.finalDate || ''}
@@ -362,6 +359,11 @@ export function ScheduleEditTicketModal({
                     )}
                   </div>
                 </div>
+                {lastRescheduledDate && (
+                  <p className="mt-1.5 text-[10px] font-bold uppercase tracking-wide" style={{ color: isLight ? '#b45309' : '#fbbf24' }}>
+                    Rescheduled Date: {formatDateLabel(lastRescheduledDate)}
+                  </p>
+                )}
               </div>
 
               <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>

@@ -15,7 +15,10 @@ export function readFinalDateFromAc(acDetails?: string | null): string {
   if (!acDetails?.trim()) return ''
   try {
     const parsed = JSON.parse(acDetails)
-    const raw = String(parsed?.finalDate || parsed?.final_date || '').trim()
+    const obj = Array.isArray(parsed)
+      ? parsed.find(item => item && typeof item === 'object' && !Array.isArray(item))
+      : parsed
+    const raw = String(obj?.finalDate || obj?.final_date || '').trim()
     if (!raw) return ''
     return raw.split('T')[0].split(' ')[0].trim()
   } catch {
@@ -44,9 +47,12 @@ export function parseRelayAcDetails(ticket: RelayScheduleTicket) {
   }
   try {
     const parsed = JSON.parse(ac)
+    const obj = Array.isArray(parsed)
+      ? parsed.find(item => item && typeof item === 'object' && !Array.isArray(item))
+      : parsed
     const finalDate = resolveRelayFinalDate(ticket)
-      || String(parsed?.finalDate || parsed?.final_date || '').trim().split('T')[0].split(' ')[0]
-    return { ...fallback, ...parsed, finalDate }
+      || String(obj?.finalDate || obj?.final_date || '').trim().split('T')[0].split(' ')[0]
+    return { ...fallback, ...obj, finalDate }
   } catch {
     return { ...fallback, finalDate: resolveRelayFinalDate(ticket) }
   }
