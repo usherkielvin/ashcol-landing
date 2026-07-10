@@ -3,7 +3,7 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope } from '../utils/api'
 import {
   buildBranchRoster,
   isDriverEmployee,
@@ -252,9 +252,7 @@ export default function Branches() {
     // For Taguig, match the audit line / sub-branch
     const resolvedUserBranch = resolveScopedBranchId(user.branchId)
     if (resolvedUserBranch.toUpperCase().includes('TAGUIG')) {
-      const emailLower = (user.email || '').toLowerCase()
-      const titleLower = (user.jobTitle || '').toLowerCase()
-      const isServiceUser = resolvedUserBranch.toLowerCase().includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const isServiceUser = isTaguigServicesScope(user.branchId, user.email, user.jobTitle)
       const isServiceBranch = (selectedBranch.id || '').toLowerCase().includes('service') || selectedBranch.name.toUpperCase().includes('SERVICE')
       return isServiceUser === isServiceBranch
     }
@@ -448,12 +446,17 @@ export default function Branches() {
         // Roster assignment
         // 1. OIC
         let oicName = ''
-        const branchManagers = managersList.filter((m: any) => m.branchId === api.id)
+        const branchManagers = managersList.filter((m: any) =>
+          m.branchId === api.id ||
+          (suffix ? m.branchId === `${api.id}-${suffix}` : false) ||
+          (suffix === 'sales' && m.branchId === 'BR-TAGUIG-SALES') ||
+          (suffix === 'services' && m.branchId === 'BR-TAGUIG-SERVICES')
+        )
         if (suffix) {
           const matchedMgr = branchManagers.find((m: any) => {
-            const emailLower = (m.email || '').toLowerCase()
             const nameLower = (m.name || '').toLowerCase()
-            const isServiceMgr = emailLower.includes('service') || nameLower.includes('service')
+            const isServiceMgr = isTaguigServicesScope(m.branchId || api.id, m.email, m.jobTitle)
+              || nameLower.includes('service')
             return suffix === 'services' ? isServiceMgr : !isServiceMgr
           })
           if (matchedMgr) oicName = matchedMgr.name
@@ -473,9 +476,7 @@ export default function Branches() {
         )
         if (suffix) {
           branchStaff = branchStaff.filter((e: any) => {
-            const emailLower = (e.email || '').toLowerCase()
-            const titleLower = (e.jobTitle || '').toLowerCase()
-            const isServiceStaff = emailLower.includes('service') || titleLower.includes('service')
+            const isServiceStaff = isTaguigServicesScope(e.branchId || api.id, e.email, e.jobTitle)
             return suffix === 'services' ? isServiceStaff : !isServiceStaff
           })
         }
@@ -617,9 +618,7 @@ export default function Branches() {
           || e.branchId === `${apiId}-services`
         if (!matches) return false
         if (!suffix) return true
-        const emailLower = (e.email || '').toLowerCase()
-        const titleLower = (e.jobTitle || '').toLowerCase()
-        const isServiceStaff = emailLower.includes('service') || titleLower.includes('service')
+        const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
         return suffix === 'services' ? isServiceStaff : !isServiceStaff
       })
       .map((e: any) => ({
@@ -683,10 +682,7 @@ export default function Branches() {
     if (exactBranch) return exactBranch
     const isTaguig = isTaguigBranchId(user.branchId)
     if (isTaguig) {
-      const emailLower = (user.email || '').toLowerCase()
-      const titleLower = (user.jobTitle || '').toLowerCase()
-      const branchIdLower = user.branchId.toLowerCase()
-      const isService = branchIdLower.includes('service') || emailLower.includes('service') || titleLower.includes('service')
+      const isService = isTaguigServicesScope(user.branchId, user.email, user.jobTitle)
       const wanted = isService ? 'services' : 'sales'
       const targetId = `${user.branchId.replace(/-sales$|-services$/, '')}-${wanted}`
       return branches.find(b => b.id === targetId)

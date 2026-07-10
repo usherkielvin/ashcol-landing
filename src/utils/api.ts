@@ -80,7 +80,12 @@ export function branchAuditLineIsService(auditLine?: string | null, name?: strin
 }
 
 /** Normalize admin global branch id or user branch id for list matching. */
-export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?: string | null): {
+/** Taguig Sales vs Services classification precedence: explicit id > job title > email > default Sales (mirrors resolveTaguigAuditLine on the backend). */
+export function parseGlobalBranchScope(
+  globalOrBranchId?: string | null,
+  email?: string | null,
+  jobTitle?: string | null,
+): {
   branchId: string
   auditLine: string | null
   branchName: string
@@ -88,6 +93,7 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
   const raw = (globalOrBranchId || '').trim()
   const lower = raw.toLowerCase()
   const emailLower = (email || '').toLowerCase()
+  const jobTitleLower = (jobTitle || '').toLowerCase()
 
   if (isTaguigBranchRef(raw)) {
     let isServices: boolean
@@ -104,6 +110,8 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
       || lower.includes('sales')
     ) {
       isServices = false
+    } else if (jobTitleLower.includes('service')) {
+      isServices = true
     } else {
       isServices = emailLower.includes('service')
     }
@@ -171,9 +179,9 @@ export function branchEntryMatchesGlobal(
 }
 
 /** True when branch scope is Taguig Services (not Sales). */
-export function isTaguigServicesScope(branchId?: string | null, email?: string | null): boolean {
+export function isTaguigServicesScope(branchId?: string | null, email?: string | null, jobTitle?: string | null): boolean {
   if (!isTaguigBranchRef(branchId)) return false
-  return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
+  return parseGlobalBranchScope(branchId, email, jobTitle).auditLine === 'TAGUIG_SERVICE'
 }
 
 export function getCleanBranchName(name?: string | null): string {

@@ -1283,6 +1283,7 @@ function ticketBelongsOnScheduleBranch(
   ticket: Ticket,
   effectiveBranch: string | null | undefined,
   email?: string | null,
+  jobTitle?: string | null,
 ): boolean {
   if (!effectiveBranch || effectiveBranch === 'ALL_BRANCHES') return true
   const wanted = resolveScopedBranchId(effectiveBranch)
@@ -1293,8 +1294,8 @@ function ticketBelongsOnScheduleBranch(
   if (branchScopesMatch(stored, effectiveBranch, email)) return true
   if (branchScopesMatch(stored, wanted, email)) return true
   if (isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(stored)) {
-    const wantServices = isTaguigServicesScope(effectiveBranch, email)
-      || (wanted ? isTaguigServicesScope(wanted, email) : false)
+    const wantServices = isTaguigServicesScope(effectiveBranch, email, jobTitle)
+      || (wanted ? isTaguigServicesScope(wanted, email, jobTitle) : false)
     return wantServices
       ? stored === 'BR-TAGUIG-SERVICES'
       : stored !== 'BR-TAGUIG-SERVICES'
@@ -2879,7 +2880,7 @@ export default function Tickets() {
     return user?.branchId || ''
   })()
   const isTaguig = isTaguigBranchRef(activeBranchId)
-  const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
+  const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -3020,7 +3021,7 @@ export default function Tickets() {
       list = list.filter(t =>
         (t.status || '').toUpperCase() !== 'CANCELLED'
         && ticketBelongsOnScheduleDate(t, dateFilter)
-        && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
+        && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
       )
     }
 
@@ -5356,7 +5357,7 @@ export default function Tickets() {
         const dateScoped = raw.filter(t => ticketBelongsOnScheduleDate(t, requestDate))
         if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
           const branchScoped = dateScoped.filter(t =>
-            ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
+            ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
           )
           list = branchScoped.length > 0 ? branchScoped : dateScoped
         } else {
@@ -5373,7 +5374,7 @@ export default function Tickets() {
         list = normalizeRelayScheduleTicketList(unscoped as Ticket[]).filter(t =>
           (t.status || '').toUpperCase() !== 'CANCELLED'
           && ticketBelongsOnScheduleDate(t, requestDate)
-          && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
+          && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
         )
       }
       cacheTicketsByNumber(list)
@@ -5556,7 +5557,7 @@ export default function Tickets() {
         if (!isFieldCategory(inferCategoryFromTicket(t))) return false
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
-          && !ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email)) return false
+          && !ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email, user?.jobTitle)) return false
         return true
       })
       list = [...list].sort((a, b) => {
@@ -5589,7 +5590,7 @@ export default function Tickets() {
           if (!b) return false
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
-            const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
+            const wantServices = isTaguigServicesScope(effectiveBranch, user?.email, user?.jobTitle)
             const isService = isTaguigServiceTicket(t as unknown as Record<string, unknown>)
             if (wantServices ? !isService : isService) return false
           }
@@ -5626,7 +5627,7 @@ export default function Tickets() {
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-        list = list.filter(t => ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email))
+        list = list.filter(t => ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email, user?.jobTitle))
       }
     }
     if (dateFilter) {
