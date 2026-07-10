@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -212,6 +212,9 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   }
   if (normalized === 'RESCHED') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
+  }
+  if (normalized === 'CONTINUATION') {
+    return { color: isLight ? '#7c3aed' : '#c084fc', backgroundColor: isLight ? '#f3e8ff' : 'rgba(124,58,237,0.18)', borderColor: isLight ? '#c084fc' : 'rgba(124,58,237,0.35)' }
   }
   if (normalized === 'FOR_APPROVAL') {
     return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
@@ -894,13 +897,16 @@ function parseBrand(ticket: Ticket): string {
   return joined || unit || ''
 }
 
-function parseAcMeta(ticket: Ticket): any {
+function parseAcMeta(ticket: Ticket): Record<string, unknown> {
   const raw = ticket.acDetails || ticket.ac_details
   if (!raw || typeof raw !== 'string') return {}
   try {
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    if (Array.isArray(parsed)) {
+      const first = parsed.find(item => item && typeof item === 'object' && !Array.isArray(item))
+      return (first && typeof first === 'object') ? first as Record<string, unknown> : {}
+    }
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
   } catch {
     return {}
   }
@@ -1028,11 +1034,46 @@ function getPreviousScheduleDates(ticket: Ticket): string[] {
   return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
 }
 
+/** Target day after reschedule (preferred / rescheduledTo). */
+function getRescheduleTargetDateKey(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  const to = String(meta.rescheduledTo || '').split('T')[0].split(' ')[0].trim()
+  if (to) return to
+  return getPreferredDateKey(ticket) || getEffectiveScheduleDateKey(ticket)
+}
+
+function shouldBlankReschedGhostPayment(
+  ticket: Ticket,
+  dateKey?: string,
+  ghostKind?: 'completed' | 'resched' | null,
+): boolean {
+  if (!dateKey) return false
+  if (ghostKind === 'resched') return true
+  return isRescheduledGhostOnDate(ticket, dateKey)
+}
+
 function getContinuationDates(ticket: Ticket): string[] {
   const meta = parseAcMeta(ticket)
   const raw = meta.continuationDates
   if (!Array.isArray(raw)) return []
   return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+}
+
+function formatSimpleDateShort(dateStr: string): string {
+  const dateParts = dateStr.split('-')
+  const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+  return dateParts.length === 3
+    ? `${monthNames[parseInt(dateParts[1], 10) - 1] || ''} ${parseInt(dateParts[2], 10)}`
+    : dateStr
+}
+
+function getNextContinuationDate(ticket: Ticket, currentDateKey: string): string | null {
+  const dates = getContinuationDates(ticket)
+  if (dates.length === 0) return null
+  const sorted = [...dates].sort()
+  const next = sorted.find(d => d > currentDateKey)
+  if (next) return next
+  return sorted[sorted.length - 1]
 }
 
 function isReschedulePending(ticket: Ticket): boolean {
@@ -1073,7 +1114,7 @@ function buildReschedulePatchBody(
   ticket: Ticket,
   options: { newDateKey?: string | null; pending: boolean },
 ): Record<string, unknown> {
-  const oldDateKey = getPreferredDateKey(ticket)
+  const oldDateKey = getEffectiveScheduleDateKey(ticket) || getPreferredDateKey(ticket)
   const body: Record<string, unknown> = { status: 'RESCHED' }
   const acUpdates: Record<string, unknown> = { scheduleOutcome: '' }
 
@@ -1093,7 +1134,9 @@ function buildReschedulePatchBody(
     acUpdates.reschedulePending = false
     acUpdates.rescheduledTo = newDateKey
     acUpdates.finalDate = ''
+    acUpdates.scheduledDate = newDateKey
     body.preferredDate = newDateKey
+    body.finalDate = ''
     body.status = 'RESCHED'
     if (oldDateKey && oldDateKey !== newDateKey) {
       const existing = parseAcMeta(ticket)
@@ -1167,9 +1210,10 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   const scheduledDate = String(meta.scheduledDate || '').split('T')[0].split(' ')[0].trim()
   const archived = String(meta.archivedScheduleDate || '').split('T')[0].split(' ')[0].trim()
   const installed = String(meta.installedDate || '').split('T')[0].split(' ')[0].trim()
+  const rescheduledTo = String(meta.rescheduledTo || '').split('T')[0].split(' ')[0].trim()
   const finalDate = !isResched ? getFinalDateKey(ticket) : ''
   const preferred = getPreferredDateKey(ticket)
-  const dateCandidates = [finalDate, scheduledDate, preferred, archived, installed].filter(Boolean)
+  const dateCandidates = [finalDate, scheduledDate, preferred, rescheduledTo, archived, installed].filter(Boolean)
 
   for (const candidate of dateCandidates) {
     if (candidate === dateKey) return true
@@ -1191,8 +1235,22 @@ function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
   if (isInstalledWorkflowStatus(ticket.status)) return false
-  if (ticketMatchesDateKey(ticket, dateKey)) return false
-  return getPreviousScheduleDates(ticket).includes(dateKey)
+
+  const target = getRescheduleTargetDateKey(ticket)
+  const isResched = (ticket.status || '').toUpperCase() === 'RESCHED'
+    || getScheduleStatusValue(ticket) === 'RESCHED'
+
+  // Active row on the new reschedule target day — not a ghost.
+  if (target === dateKey) return false
+
+  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
+
+  if (isResched && target && target !== dateKey) {
+    if (getFinalDateKey(ticket) === dateKey) return true
+    if (ticketMatchesDateKey(ticket, dateKey)) return true
+  }
+
+  return false
 }
 
 function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | null {
@@ -1222,13 +1280,16 @@ function ticketBelongsOnScheduleBranch(
   email?: string | null,
 ): boolean {
   if (!effectiveBranch || effectiveBranch === 'ALL_BRANCHES') return true
+  const wanted = resolveScopedBranchId(effectiveBranch)
   const stored = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
   // No branch on the row — trust the server's branch-scoped query rather than dropping it.
   if (!stored) return true
+  if (wanted && stored === wanted) return true
   if (branchScopesMatch(stored, effectiveBranch, email)) return true
+  if (branchScopesMatch(stored, wanted, email)) return true
   if (isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(stored)) {
-    // Explicit stored scope wins; only split Sales vs Services when the row says so.
     const wantServices = isTaguigServicesScope(effectiveBranch, email)
+      || (wanted ? isTaguigServicesScope(wanted, email) : false)
     return wantServices
       ? stored === 'BR-TAGUIG-SERVICES'
       : stored !== 'BR-TAGUIG-SERVICES'
@@ -1236,8 +1297,8 @@ function ticketBelongsOnScheduleBranch(
   return false
 }
 
-function isInstalledRemarks(text?: string | null): boolean {
-  return (text || '').toLowerCase().includes('installed')
+function isInstalledRemarks(_text?: string | null): boolean {
+  return false
 }
 
 function ticketRemarksText(ticket: Partial<Ticket>, fields?: Partial<Ticket>): string {
@@ -1293,7 +1354,7 @@ function formatGhostRemarks(
     return base
   }
   if (ghostKind === 'resched') {
-    const movedTo = formatDateKeyLabel(getPreferredDateKey(ticket))
+    const movedTo = formatDateKeyLabel(getRescheduleTargetDateKey(ticket))
     const suffix = movedTo ? `Moved to ${movedTo}` : 'Rescheduled'
     if (!base) return suffix
     const normalizedBase = dedupeMovedToRemark(base)
@@ -1385,7 +1446,12 @@ function formatPaymentAmount(ticket: Ticket): string {
   return amount.toLocaleString('en-PH')
 }
 
-function getSchedulePaymentDisplay(ticket: Ticket): string {
+function getSchedulePaymentDisplay(
+  ticket: Ticket,
+  dateKey?: string,
+  ghostKind?: 'completed' | 'resched' | null,
+): string {
+  if (shouldBlankReschedGhostPayment(ticket, dateKey, ghostKind)) return ''
   const resolved = resolveTicketPayment(ticket)
   if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE'
 
@@ -2080,6 +2146,7 @@ function statusColor(s: string, light: boolean) {
     case 'ON_THE_WAY':  return { text: '#06B6D4', bg: light ? '#ecfeff' : 'rgba(6,182,212,0.13)',   b: 'rgba(6,182,212,0.4)'   }
     case 'IN_PROGRESS': return { text: '#10B981', bg: light ? '#f0fdf4' : 'rgba(16,185,129,0.13)',  b: 'rgba(16,185,129,0.4)'  }
     case 'CANCELLED':   return { text: '#EF4444', bg: light ? '#fef2f2' : 'rgba(239,68,68,0.10)',   b: 'rgba(239,68,68,0.35)'  }
+    case 'CONTINUATION': return { text: '#7C3AED', bg: light ? '#F3E8FF' : 'rgba(124,58,237,0.18)',  b: 'rgba(124,58,237,0.35)' }
     default:            return { text: '#94A3B8', bg: 'transparent',                                b: 'rgba(148,163,184,0.3)' }
   }
 }
@@ -2755,7 +2822,14 @@ export default function Tickets() {
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  const activeBranchId = globalBranchId || user?.branchId || ''
+  const activeBranchId = (() => {
+    if (globalBranchId && globalBranchId !== 'ALL_BRANCHES') return globalBranchId
+    if (isAdmin) {
+      const fromSidebar = getActivePortalBranchId(user)
+      if (fromSidebar && fromSidebar !== 'ALL_BRANCHES') return fromSidebar
+    }
+    return user?.branchId || ''
+  })()
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
 
@@ -2893,21 +2967,21 @@ export default function Tickets() {
     // Drop stale oversized cache rows that don't belong on this date/branch.
     // NB: filter the in-memory list only — never writeSchedulesTabCache here,
     // that dispatches TAB_CACHE_UPDATED which re-triggers hydrate (infinite loop).
+    list = normalizeRelayScheduleTicketList(list)
     if (!isMyTickets && dateFilter) {
-      const branch = isAdmin ? globalBranchId : user?.branchId
       list = list.filter(t =>
         (t.status || '').toUpperCase() !== 'CANCELLED'
         && ticketBelongsOnScheduleDate(t, dateFilter)
-        && ticketBelongsOnScheduleBranch(t, branch, user?.email),
+        && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
       )
     }
 
-    setTickets(normalizeRelayScheduleTicketList(list))
+    setTickets(list)
     setLoading(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     return true
-  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, isAdmin, globalBranchId, user?.branchId, user?.email])
+  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, activeBranchId, user?.email])
 
   // Paint cached rows before first paint when switching branch/date — no loading screen flash.
   useLayoutEffect(() => {
@@ -5210,16 +5284,20 @@ export default function Tickets() {
         ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
-      // Keep only this branch + matching date (API date LIKE can over-fetch other days).
+      list = normalizeRelayScheduleTicketList(list as Ticket[])
+      // Branch is already scoped on the server when branchId is sent (admin active branch).
+      // Client only trims cancelled rows and mismatched schedule dates.
       if (!isMyTickets && requestDate) {
         const raw = (list as Ticket[]).filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
-        const scoped = raw.filter(t =>
-          ticketBelongsOnScheduleDate(t, requestDate)
-          && ticketBelongsOnScheduleBranch(t, scheduleBranchId || activeBranchId, user?.email),
-        )
-        // Safety net: if client heuristics nuked everything the branch-scoped server returned,
-        // trust the server's branch+date scope rather than showing an empty grid.
-        list = scoped.length > 0 || !scheduleBranchId ? scoped : raw
+        const dateScoped = raw.filter(t => ticketBelongsOnScheduleDate(t, requestDate))
+        if (scheduleBranchId) {
+          list = dateScoped.length > 0 ? dateScoped : raw
+        } else {
+          const branchScoped = dateScoped.filter(t =>
+            ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
+          )
+          list = branchScoped.length > 0 ? branchScoped : dateScoped
+        }
       }
       // If still empty, retry date-only then apply the same branch+date filter (with the same net).
       if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
@@ -5228,10 +5306,10 @@ export default function Tickets() {
           paginate: false,
           date: requestDate,
         })
-        list = (unscoped as Ticket[]).filter(t =>
+        list = normalizeRelayScheduleTicketList(unscoped as Ticket[]).filter(t =>
           (t.status || '').toUpperCase() !== 'CANCELLED'
           && ticketBelongsOnScheduleDate(t, requestDate)
-          && ticketBelongsOnScheduleBranch(t, scheduleBranchId, user?.email),
+          && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
         )
       }
       cacheTicketsByNumber(list)
@@ -5401,16 +5479,17 @@ export default function Tickets() {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Filter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const filtered = useMemo(() => {
-    const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
+    const effectiveBranch = activeBranchId
 
-    // Schedules date tab: only this branch + final/preferred date (or ghost on that day).
+    // Schedules date tab: active branch + schedule date (server already scopes branch for admin).
     if (!isMyTickets && dateFilter) {
       let list = tickets.filter(t => {
         const stat = (t.status || '').toUpperCase()
         if (stat === 'CANCELLED') return false
         if (!isFieldCategory(inferCategoryFromTicket(t))) return false
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
-        if (!ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email)) return false
+        if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
+          && !ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email)) return false
         return true
       })
       list = [...list].sort((a, b) => {
@@ -5502,7 +5581,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
   const visible = useMemo(() => {
     let list = filtered
@@ -5611,26 +5690,32 @@ export default function Tickets() {
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
         commit: getF(live, 'commitType', 'commitTerms', 'description'),
         installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
-        update: getScheduleUpdateDisplay(live),
-        payment: getSchedulePaymentDisplay(live),
+        update: dateFilter && isRescheduledGhostOnDate(live, dateFilter)
+          ? formatGhostRemarks(live, 'resched', dateFilter)
+          : getScheduleUpdateDisplay(live),
+        payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
         driver: getTicketDriverName(live) || formatServiceDriver(live) || '',
         service: formatRelayTicketTypeShort(live) || getF(live, 'serviceType', 'service_type') || '',
       }
     })
-  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets])
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
     for (const ticket of visible) {
       const live = optimisticTicketsRef.current.get(ticket.id) || ticket
-      const payment = getSchedulePaymentDisplay(live)
+      const payment = getSchedulePaymentDisplay(
+        live,
+        dateFilter,
+        dateFilter ? getScheduleGhostKind(live, dateFilter) : null,
+      )
       if (!payment) continue
       const ticketNo = getTicketNumberDisplay(live)
       if (ticketNo) map[ticketNo] = payment
       if (live.id) map[String(live.id)] = payment
     }
     return map
-  }, [visible, tickets])
+  }, [visible, tickets, dateFilter])
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Get display value for a column Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
@@ -5647,7 +5732,7 @@ export default function Tickets() {
         case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
         case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
         case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
-        case 'PAYMENT':         return getSchedulePaymentDisplay(ticket)
+        case 'PAYMENT':         return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
         case 'MOP':             return getPaymentMode(ticket)
         case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
         case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
@@ -6670,7 +6755,16 @@ export default function Tickets() {
       const statusVal = getScheduleStatusValue(ticket)
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
       const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
-      const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
+      let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
+      if (display === 'CONTINUATION') {
+        const nextDate = getNextContinuationDate(ticket, dateFilter || todayDateKey())
+        if (nextDate) {
+          const formattedDate = formatSimpleDateShort(nextDate)
+          displayLabel = `CONT · ${formattedDate}`
+        } else {
+          displayLabel = 'CONT'
+        }
+      }
       const showsDetails = statusShowsScheduleDetails(statusVal)
       const statusTitle = showsDetails
         ? `${display} ${EMPTY_CELL} click to view remarks & payment`
@@ -6879,7 +6973,10 @@ export default function Tickets() {
     }
 
     if (label === 'PAYMENT') {
-      const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket))
+      if (shouldBlankReschedGhostPayment(ticket, dateFilter, ghostKind)) {
+        return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
+      }
+      const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket, dateFilter, ghostKind))
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
       if (cellExpanded) {
@@ -9548,11 +9645,7 @@ export default function Tickets() {
                   <span className="text-[11px] text-slate-400 font-medium py-0.5">No continuation dates selected. Click on the calendar below to toggle dates.</span>
                 ) : (
                   continuationSelectedDates.map(d => {
-                    const dateParts = d.split('-')
-                    const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-                    const label = dateParts.length === 3
-                      ? `${monthNames[parseInt(dateParts[1], 10) - 1] || ''} ${parseInt(dateParts[2], 10)}`
-                      : d
+                    const label = formatSimpleDateShort(d)
                     return (
                       <span
                         key={d}
