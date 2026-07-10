@@ -2775,10 +2775,12 @@ export default function Tickets() {
   const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
   const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
   const [overviewLoading, setOverviewLoading] = useState(false)
+  const overviewSearchSeqRef = useRef(0)
 
   const fetchOverviewTickets = useCallback(async (query: string) => {
+    const seq = ++overviewSearchSeqRef.current
     if (!query.trim()) {
-      setOverviewResults([])
+      if (seq === overviewSearchSeqRef.current) setOverviewResults([])
       return
     }
     setOverviewLoading(true)
@@ -2790,10 +2792,11 @@ export default function Tickets() {
       if (looksLikeTicketNumber) {
         const cached = getTicketByNumber(trimmed) as Ticket | null
         if (cached?.id && ticketMatchesOverviewQuery(cached, trimmed)) {
-          setOverviewResults([cached])
+          if (seq === overviewSearchSeqRef.current) setOverviewResults([cached])
           return
         }
         const direct = await fetchTicketByNumber(tokenStr, trimmed)
+        if (seq !== overviewSearchSeqRef.current) return
         if (direct && typeof direct === 'object') {
           const ticket = normalizeRelayScheduleTicket(direct) as Ticket
           if (ticket?.id && ticketMatchesOverviewQuery(ticket, trimmed)) {
@@ -2809,6 +2812,7 @@ export default function Tickets() {
       const headers = { Authorization: `Bearer ${tokenStr}` }
       const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(trimmed)}&size=300`
       const res = await fetch(url, { headers })
+      if (seq !== overviewSearchSeqRef.current) return
       if (res.ok) {
         const data = await res.json()
         const list = data?.data?.tickets || data?.tickets || []
@@ -2820,10 +2824,10 @@ export default function Tickets() {
         console.error('Failed to search tickets:', res.statusText)
       }
     } catch (err) {
-      setOverviewResults([])
+      if (seq === overviewSearchSeqRef.current) setOverviewResults([])
       console.error('Error searching tickets:', err)
     } finally {
-      setOverviewLoading(false)
+      if (seq === overviewSearchSeqRef.current) setOverviewLoading(false)
     }
   }, [])
 
