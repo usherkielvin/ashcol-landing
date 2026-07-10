@@ -440,7 +440,8 @@ function clearRescheduleMetaInto(
 ) {
   if (!ticketHasRescheduleMeta(ticket)) return
 
-  acUpdates.previousScheduleDates = []
+  // previousScheduleDates is kept (not cleared) — it's the permanent ghost-row history for the
+  // old date, and should survive the ticket moving on to an active status on its new date.
   acUpdates.rescheduledTo = ''
   acUpdates.reschedulePending = false
 
@@ -4406,7 +4407,7 @@ export default function Tickets() {
 
       // Leaving RESCHED for Installation/etc. Ã¢â‚¬â€ never re-apply ghost-date metadata
       if (leavingResched) {
-        acMetaExtras.previousScheduleDates = []
+        // previousScheduleDates is kept (not cleared) — permanent ghost-row history for the old date.
         acMetaExtras.rescheduledTo = ''
         acMetaExtras.reschedulePending = false
         if (isMovedToRescheduleRemark(remarksVal || '') || /^PENDING$/i.test((remarksVal || '').trim())) {
@@ -4447,7 +4448,7 @@ export default function Tickets() {
         scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
         schedulePhase: statusAcMeta.schedulePhase ?? '',
         ...(leavingResched
-          ? { previousScheduleDates: [], rescheduledTo: '', reschedulePending: false }
+          ? { rescheduledTo: '', reschedulePending: false }
           : {}),
       })
 
@@ -5347,18 +5348,19 @@ export default function Tickets() {
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
       list = normalizeRelayScheduleTicketList(list as Ticket[])
-      // Branch is already scoped on the server when branchId is sent (admin active branch).
-      // Client only trims cancelled rows and mismatched schedule dates.
+      // The server's branchId param on /tickets/branch does not always scope tightly enough
+      // (e.g. Taguig Sales/Services split, installer-lineup overrides) — always re-apply the
+      // client branch filter as a safety net instead of trusting it outright when scheduleBranchId is set.
       if (!isMyTickets && requestDate) {
         const raw = (list as Ticket[]).filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
         const dateScoped = raw.filter(t => ticketBelongsOnScheduleDate(t, requestDate))
-        if (scheduleBranchId) {
-          list = dateScoped.length > 0 ? dateScoped : raw
-        } else {
+        if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
           const branchScoped = dateScoped.filter(t =>
             ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email),
           )
           list = branchScoped.length > 0 ? branchScoped : dateScoped
+        } else {
+          list = dateScoped
         }
       }
       // If still empty, retry date-only then apply the same branch+date filter (with the same net).

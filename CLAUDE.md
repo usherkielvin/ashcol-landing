@@ -61,6 +61,19 @@ A ticket moves through exactly one primary work queue at a time, driven by field
 
 Full details, gaps, and the field-by-field contract are documented in [docs/relay-ticket-lifecycle-flow.md](docs/relay-ticket-lifecycle-flow.md) — read it before touching relay/schedule/archive filtering logic.
 
+### Scheduled dates, reschedules, and "ghost rows"
+
+`acDetails` carries the date state for a ticket once it's in Schedules:
+- `finalDate` — kept for backward compat; `scheduledDate` mirrors it going forward (additive, both present on newer tickets).
+- `previousScheduleDates` — array of dates a ticket was previously scheduled on. This is what drives the grayed-out **ghost row**: a rescheduled ticket must still show a muted row on its *old* date, not disappear from it, while the active row appears on the new date. **Never reset this array to `[]` on a normal status transition** — the only legitimate place that clears it is `applyReturnToNegotiatorMyTicketsPatch` in [src/pages/Tickets.tsx](src/pages/Tickets.tsx), because that path removes the ticket from scheduling entirely (back to My Tickets, no date at all). Clearing it anywhere else (e.g. in `clearRescheduleMetaInto`, or in `commitSaveEditTicket`'s status-transition merge) silently deletes the ghost row's history.
+- `rescheduledTo` / `reschedulePending` — transient "this ticket has a pending reschedule to X" markers; these *do* get cleared once the reschedule resolves, unlike `previousScheduleDates`.
+
+Backend (`ashcol-service-api`) matches tickets to a schedule date by substring-matching the `ac_details` TEXT column (`LIKE CONCAT('%key%', :value, '%')`, in `TicketRepository`/`TicketService`) since it's not a `jsonb` column — queries need an explicit `previousScheduleDates` OR-clause to surface ghost rows for a given date, not just `finalDate`.
+
+### Driver / vehicle fields
+
+Driver name and vehicle code are separate, independently-saved fields: `driverName` (new `driver_name` DB column) and `serviceVehicle` (holds only the vehicle code, e.g. `T2`, going forward). Legacy tickets stored a combined `"DRIVER VEHICLECODE"` string in `serviceVehicle` — `getServiceVehicleParts` in [src/pages/Tickets.tsx](src/pages/Tickets.tsx) splits that for backward-compat display, and must return an empty driver (not misclassify the vehicle code as a driver name) when the string is just a bare vehicle code. Use `getTicketDriverDisplay`/`getTicketVehicleDisplay` for display and read/write `driverName`/`serviceVehicle` independently when saving — don't recombine them into one string.
+
 ### Auth
 
 [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx) is a custom JWT-based auth (no library) — Google OAuth is one login path, feeding the same JWT session. The token lives in `localStorage`/`sessionStorage` under `ashcol-token`/`ashcol-user`, decoded client-side to check expiry on an interval (no silent refresh — expiry forces a hard redirect to `/login?expired=true`). `role` is always normalized to lowercase on write.
