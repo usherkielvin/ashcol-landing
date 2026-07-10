@@ -12,9 +12,20 @@ type PortalUserLike = { role?: string | null; branchId?: string | null } | null 
 
 const prefetchInFlight = new Map<string, Promise<void>>()
 const prefetchDoneAt = new Map<string, number>()
-const PREFETCH_COOLDOWN_MS = 180_000
-const PREFETCH_PAGE_SIZE = 300
-const PREFETCH_CACHE_FRESH_MS = 5 * 60_000
+const PREFETCH_COOLDOWN_MS = 300_000
+const PREFETCH_PAGE_SIZE = 200
+const PREFETCH_CACHE_FRESH_MS = 10 * 60_000
+
+/** Block adjacent-date prefetch while the active schedules date is loading. */
+let activeScheduleFetchCount = 0
+
+export function beginActiveScheduleFetch(): void {
+  activeScheduleFetchCount += 1
+}
+
+export function endActiveScheduleFetch(): void {
+  activeScheduleFetchCount = Math.max(0, activeScheduleFetchCount - 1)
+}
 
 export function adjacentScheduleDateKeys(center = new Date()): string[] {
   const base = new Date(center)
@@ -75,13 +86,14 @@ function isCacheFreshEnough(cacheKey: string): boolean {
   return at > 0 && Date.now() - at < PREFETCH_CACHE_FRESH_MS
 }
 
-/** Warm schedules cache for adjacent dates — one request per date, no multi-page fan-out. */
+/** Warm schedules cache for adjacent dates — never competes with the active date fetch. */
 export function prefetchSchedulesDateWindow(
   user: PortalUserLike,
   globalBranchId?: string | null,
   options?: { force?: boolean; dateKeys?: string[] },
 ): Promise<void> {
   if (!user) return Promise.resolve()
+  if (activeScheduleFetchCount > 0 && !options?.force) return Promise.resolve()
   const token = readAuthToken()
   if (!token) return Promise.resolve()
 
@@ -107,6 +119,7 @@ export function prefetchSchedulesDateWindow(
 
   const job = (async () => {
     for (const dateKey of dates) {
+      if (activeScheduleFetchCount > 0 && !options?.force) return
       const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)
       if (!options?.force && isCacheFreshEnough(cacheKey)) continue
       try {

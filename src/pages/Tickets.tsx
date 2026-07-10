@@ -21,7 +21,7 @@ import {
 } from '../utils/ticketNumberStore'
 import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
-import { prefetchSchedulesDateWindow, nearScheduleDateKeys } from '../utils/schedulesPrefetch'
+import { prefetchSchedulesDateWindow, nearScheduleDateKeys, beginActiveScheduleFetch, endActiveScheduleFetch } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import {
@@ -1372,7 +1372,7 @@ function getSchedulePaymentDisplay(ticket: Ticket): string {
     ? Math.round(amount).toLocaleString('en-PH')
     : ''
 
-  if (mode && amountStr) return `${mode} ${amountStr}`
+  if (mode && amountStr) return `${amountStr} ${mode}`
   if (mode) return mode
   if (amountStr) return amountStr
   return ''
@@ -2899,7 +2899,7 @@ export default function Tickets() {
       void prefetchSchedulesDateWindow(user, globalBranchId, {
         dateKeys: keys,
       })
-    }, 12000)
+    }, 20000)
     return () => window.clearTimeout(timer)
   }, [isMyTickets, user, globalBranchId, dateFilter])
 
@@ -2910,7 +2910,6 @@ export default function Tickets() {
   const handleDateFilterChange = useCallback((next: string) => {
     if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
     setDateFilter(next)
-    setSyncing(true)
     resetTicketTableScroll()
   }, [])
 
@@ -5146,6 +5145,7 @@ export default function Tickets() {
       setLoading(true)
     }
     setFetchError(null)
+    beginActiveScheduleFetch()
     try {
       const auth = token()
       const scheduleBranchId = !isMyTickets && activeBranchId && activeBranchId !== 'ALL_BRANCHES'
@@ -5184,7 +5184,7 @@ export default function Tickets() {
         const ep = isMyTickets
           ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
           : isCustomer ? '/tickets/my' : '/tickets/branch'
-        const size = isMyTickets ? 200 : 500
+        const size = isMyTickets ? 100 : 200
         list = await fetchTicketsPage(ep, auth, {
           size,
           paginate: false,
@@ -5221,6 +5221,7 @@ export default function Tickets() {
       if (seq !== fetchSeqRef.current) return
       setFetchError(`Failed to load schedules: ${formatFetchError(err)}`)
     } finally {
+      endActiveScheduleFetch()
       if (seq === fetchSeqRef.current) {
         setLoading(false)
         setSyncing(false)
@@ -6698,6 +6699,31 @@ export default function Tickets() {
           </button>
         )
       }
+
+      if (!isMyTickets && val) {
+        const match = val.match(/^(.*?)\s*[-/]?\s*\b(FB\d+|T\d+|STRADA|T2|T3|FB19)\b\s*$/i) || (() => {
+          const spaceParts = val.trim().split(/\s+/)
+          if (spaceParts.length === 2 && (/^[A-Z]*\d+[A-Z]*$/i.test(spaceParts[1]) || /^(STRADA|T2|T3|FB19)$/i.test(spaceParts[1]))) {
+            return [val, spaceParts[0], spaceParts[1]]
+          }
+          return null
+        })()
+
+        if (match) {
+          const driver = match[1].trim()
+          const vehicle = match[2].trim()
+          if (driver && vehicle) {
+            return withEditPencil(
+              <span className="flex flex-col items-center justify-center text-center w-full" style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}>
+                <span className="font-bold text-[10px] tracking-wide leading-tight">{driver}</span>
+                <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider leading-tight mt-0.5">{vehicle}</span>
+              </span>,
+              ticket, label, rowGhost, rowIndex,
+            )
+          }
+        }
+      }
+
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || EMPTY_CELL}
@@ -6824,15 +6850,15 @@ export default function Tickets() {
       }
       return (
         <span style={{ ...truncStyle, fontVariantNumeric: 'tabular-nums' }} title={combined}>
+          {amountStr ? (
+            <span style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#f1f5f9' }}>{amountStr}</span>
+          ) : null}
+          {mode && amountStr ? ' ' : null}
           {mode && (
             <span style={{ fontWeight: 600, color: isLight ? '#475569' : '#94a3b8', letterSpacing: '0.03em' }}>
               {mode}
             </span>
           )}
-          {mode && amountStr ? ' ' : null}
-          {amountStr ? (
-            <span style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#f1f5f9' }}>{amountStr}</span>
-          ) : null}
         </span>
       )
     }

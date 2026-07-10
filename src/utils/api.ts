@@ -871,6 +871,32 @@ export type TicketsPageResult = {
   totalTickets: number
 }
 
+const ticketsPageInFlight = new Map<string, Promise<TicketsPageResult>>()
+
+function ticketsPageCacheKey(
+  endpoint: string,
+  options: {
+    page?: number
+    size?: number
+    categoryGroup?: string
+    status?: string
+    date?: string
+    statusGroup?: string
+    branchId?: string
+  },
+): string {
+  return [
+    endpoint,
+    options.page ?? 0,
+    options.size ?? 200,
+    options.categoryGroup || '',
+    options.status || '',
+    options.date || '',
+    options.statusGroup || '',
+    options.branchId || '',
+  ].join('|')
+}
+
 async function fetchTicketsPageOnce(
   endpoint: string,
   token: string,
@@ -882,10 +908,15 @@ async function fetchTicketsPageOnce(
     date?: string
     statusGroup?: string
     branchId?: string
+    signal?: AbortSignal
   } = {},
 ): Promise<TicketsPageResult> {
   const size = options.size ?? 200
   const page = options.page ?? 0
+  const key = ticketsPageCacheKey(endpoint, { ...options, page, size })
+  const existing = ticketsPageInFlight.get(key)
+  if (existing) return existing
+
   const headers = { Authorization: `Bearer ${token}` }
   const base: Record<string, string> = { page: String(page), size: String(size) }
   if (options.status) base.status = options.status
@@ -897,30 +928,41 @@ async function fetchTicketsPageOnce(
     ? [{ ...base, categoryGroup: options.categoryGroup }, base]
     : [base]
 
-  let lastStatus = 0
-  let lastBody = ''
-  for (const params of attempts) {
-    const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, { headers })
-    if (res.ok) {
-      const data = await res.json()
-      const payload = data?.data ?? data ?? {}
-      const tickets = payload?.tickets || data?.tickets || []
-      const currentPage = Number(payload?.currentPage ?? page)
-      const totalPages = Math.max(1, Number(payload?.totalPages ?? 1))
-      const totalTickets = Number(payload?.totalTickets ?? tickets.length)
-      return { tickets, currentPage, totalPages, totalTickets }
+  const job = (async (): Promise<TicketsPageResult> => {
+    let lastStatus = 0
+    let lastBody = ''
+    for (const params of attempts) {
+      const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, {
+        headers,
+        signal: options.signal,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const payload = data?.data ?? data ?? {}
+        const tickets = payload?.tickets || data?.tickets || []
+        const currentPage = Number(payload?.currentPage ?? page)
+        const totalPages = Math.max(1, Number(payload?.totalPages ?? 1))
+        const totalTickets = Number(payload?.totalTickets ?? tickets.length)
+        return { tickets, currentPage, totalPages, totalTickets }
+      }
+      lastStatus = res.status
+      lastBody = await res.text().catch(() => '')
+      if (params.categoryGroup) {
+        console.warn(
+          `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
+          lastBody.slice(0, 200),
+        )
+      }
     }
-    lastStatus = res.status
-    lastBody = await res.text().catch(() => '')
-    if (params.categoryGroup) {
-      console.warn(
-        `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
-        lastBody.slice(0, 200),
-      )
-    }
-  }
+    throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+  })()
 
-  throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+  ticketsPageInFlight.set(key, job)
+  try {
+    return await job
+  } finally {
+    if (ticketsPageInFlight.get(key) === job) ticketsPageInFlight.delete(key)
+  }
 }
 
 export async function fetchTicketsPage(
