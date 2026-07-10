@@ -8534,7 +8534,7 @@ export default function Tickets() {
                       cursor: atTodayMonth ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    Ã¢â‚¬Â¹
+                    &lt;
                   </button>
                   <span className="text-[11px] font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -8543,7 +8543,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700"
                     style={{ color: textMuted }}
                   >
-                    Ã¢â‚¬Âº
+                    &gt;
                   </button>
                 </div>
 
@@ -9320,7 +9320,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
                     style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
                   >
-                    Ã¢â‚¬Â¹
+                    &lt;
                   </button>
                   <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -9329,7 +9329,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
                     style={{ color: textMuted, backgroundColor: 'transparent' }}
                   >
-                    Ã¢â‚¬Âº
+                    &gt;
                   </button>
                 </div>
 
@@ -9477,7 +9477,11 @@ export default function Tickets() {
                   <span className="text-[11px] text-slate-400 font-medium py-0.5">No continuation dates selected. Click on the calendar below to toggle dates.</span>
                 ) : (
                   continuationSelectedDates.map(d => {
-                    const label = new Date(`${d}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+                    const dateParts = d.split('-')
+                    const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+                    const label = dateParts.length === 3
+                      ? `${monthNames[parseInt(dateParts[1], 10) - 1] || ''} ${parseInt(dateParts[2], 10)}`
+                      : d
                     return (
                       <span
                         key={d}
@@ -9492,9 +9496,9 @@ export default function Tickets() {
                         <button
                           type="button"
                           onClick={() => toggleDate(d)}
-                          className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-indigo-500/20 text-[9px] font-extrabold"
+                          className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-indigo-500/20 text-[9px] font-extrabold ml-1"
                         >
-                          Ãƒâ€”
+                          x
                         </button>
                       </span>
                     )
@@ -9512,7 +9516,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
                     style={{ color: textMuted, backgroundColor: 'transparent', cursor: 'pointer' }}
                   >
-                    Ã¢â‚¬Â¹
+                    &lt;
                   </button>
                   <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -9521,7 +9525,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
                     style={{ color: textMuted, backgroundColor: 'transparent' }}
                   >
-                    Ã¢â‚¬Âº
+                    &gt;
                   </button>
                 </div>
 
