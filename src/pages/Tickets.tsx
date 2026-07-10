@@ -2900,6 +2900,8 @@ export default function Tickets() {
     }
 
     // Drop stale oversized cache rows that don't belong on this date/branch.
+    // NB: filter the in-memory list only — never writeSchedulesTabCache here,
+    // that dispatches TAB_CACHE_UPDATED which re-triggers hydrate (infinite loop).
     if (!isMyTickets && dateFilter) {
       const branch = isAdmin ? globalBranchId : user?.branchId
       list = list.filter(t =>
@@ -2907,7 +2909,6 @@ export default function Tickets() {
         && ticketBelongsOnScheduleDate(t, dateFilter)
         && ticketBelongsOnScheduleBranch(t, branch, user?.email),
       )
-      writeSchedulesTabCache(schedulesCacheKeyForTab(), list, 'local')
     }
 
     setTickets(normalizeRelayScheduleTicketList(list))
