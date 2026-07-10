@@ -79,7 +79,10 @@ function resolvePrefetchBranchId(globalBranchId?: string | null, user?: PortalUs
 }
 
 function isCacheFreshEnough(cacheKey: string): boolean {
-  if (isSchedulesSessionLoaded(cacheKey)) return true
+  if (isSchedulesSessionLoaded(cacheKey)) {
+    const cached = readSchedulesTabCache(cacheKey)
+    return Array.isArray(cached?.tickets) && cached!.tickets!.length > 0
+  }
   const cached = readSchedulesTabCache(cacheKey)
   if (!Array.isArray(cached?.tickets) || !cached.tickets.length) return false
   const at = cached.lastSyncAt ?? 0

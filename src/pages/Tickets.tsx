@@ -2861,11 +2861,18 @@ export default function Tickets() {
     return true
   }, [schedulesCacheKeyForTab])
 
-  // Paint cached rows before first paint when switching branch/date Ã¢â‚¬â€ no loading screen flash.
+  // Paint cached rows before first paint when switching branch/date — no loading screen flash.
   useLayoutEffect(() => {
     if (isMyTickets) return
     const hydrated = hydrateFromTabCache()
-    if (hydrated) setSyncing(false)
+    if (hydrated) {
+      setSyncing(false)
+      return
+    }
+    // No cache for this date/branch — clear stale rows from the previous tab immediately.
+    setTickets([])
+    setHasHydratedOnce(true)
+    setLoading(false)
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Weekly Tabs Calculation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2891,16 +2898,9 @@ export default function Tickets() {
   }, [])
 
   useEffect(() => {
-    if (isMyTickets || !user) return
-    const center = dateFilter ? new Date(`${dateFilter}T00:00:00`) : new Date()
-    const timer = window.setTimeout(() => {
-      const keys = nearScheduleDateKeys(center).filter(k => k !== dateFilter)
-      if (!keys.length) return
-      void prefetchSchedulesDateWindow(user, globalBranchId, {
-        dateKeys: keys,
-      })
-    }, 20000)
-    return () => window.clearTimeout(timer)
+    // Prefetch disabled while schedule loads are unstable over Cloudflare/Supabase.
+    // Re-enable later once preferred_date backfill + light list path are confirmed in prod.
+    return
   }, [isMyTickets, user, globalBranchId, dateFilter])
 
   const isCustomSelected = useMemo(() => {
@@ -5071,10 +5071,11 @@ export default function Tickets() {
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKeyForTab()
     const cached = readSchedulesTabCache(cacheKey)
-    const hasCache = Array.isArray(cached?.tickets)
+    const hasCache = Array.isArray(cached?.tickets) && cached!.tickets!.length > 0
     const sessionSynced = isSchedulesSessionLoaded(cacheKey)
     const cacheAgeMs = cached?.lastSyncAt ? Date.now() - cached.lastSyncAt : Number.POSITIVE_INFINITY
     // Quiet remounts can reuse session cache longer; active soft refresh revalidates after 90s.
+    // Never skip network when the cache is empty — that locks the table on "No tickets".
     const skipTtlMs = options?.quiet ? 5 * 60_000 : 90_000
     const skipNetwork = !options?.force && hasCache && cacheAgeMs < skipTtlMs
     // Soft / quiet refreshes must never show the full-page loading UI.
@@ -5145,6 +5146,8 @@ export default function Tickets() {
       setLoading(true)
     }
     setFetchError(null)
+    const requestDate = isMyTickets ? '' : (dateFilter || '')
+    const requestCacheKey = cacheKey
     beginActiveScheduleFetch()
     try {
       const auth = token()
@@ -5153,8 +5156,8 @@ export default function Tickets() {
         : undefined
       let list: unknown[] = []
 
-      if (!isMyTickets && dateFilter && !options?.force) {
-        const indexedNumbers = readScheduleDateTicketNumbers(dateFilter)
+      if (!isMyTickets && requestDate && !options?.force) {
+        const indexedNumbers = readScheduleDateTicketNumbers(requestDate)
         if (indexedNumbers.length > 0) {
           const cachedTickets = getTicketsByNumbers(indexedNumbers) as unknown as Ticket[]
           const missingNumbers = indexedNumbers.filter(n => !getTicketByNumber(n))
@@ -5190,28 +5193,32 @@ export default function Tickets() {
           paginate: false,
           ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
           ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
-          ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
+          ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
         })
         cacheTicketsByNumber(list)
-        if (!isMyTickets && dateFilter) {
-          writeScheduleDateTicketNumbers(dateFilter, extractTicketNumbers(list))
+        if (!isMyTickets && requestDate) {
+          writeScheduleDateTicketNumbers(requestDate, extractTicketNumbers(list))
         }
       }
+      // Drop stale responses when the user switched date/branch while this request was in flight.
       if (seq !== fetchSeqRef.current) return
-      const freshCached = readSchedulesTabCache(cacheKey)
+      if (!isMyTickets && requestDate !== (dateFilter || '')) return
+      if (requestCacheKey !== schedulesCacheKeyForTab()) return
+
+      const freshCached = readSchedulesTabCache(requestCacheKey)
       const cachedList = Array.isArray(freshCached?.tickets) ? (freshCached.tickets as Ticket[]) : []
       const withLocalEdits = mergeServerListWithLocalEdits(
         list as Ticket[],
         cachedList,
         locallyEditedTicketIdsRef.current,
         {
-          dateFilter: isMyTickets ? undefined : dateFilter,
+          dateFilter: isMyTickets ? undefined : requestDate,
           extraLocal: ticketsRef.current,
         },
       )
       const merged = applyOptimisticOverlay(withLocalEdits)
       setTickets(merged)
-      writeSchedulesTabCache(cacheKey, merged, 'server')
+      writeSchedulesTabCache(requestCacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
       if (merged.length === 0 && !isMyTickets) {
@@ -5219,6 +5226,7 @@ export default function Tickets() {
       }
     } catch (err) {
       if (seq !== fetchSeqRef.current) return
+      if (!isMyTickets && requestDate !== (dateFilter || '')) return
       setFetchError(`Failed to load schedules: ${formatFetchError(err)}`)
     } finally {
       endActiveScheduleFetch()
@@ -5244,9 +5252,14 @@ export default function Tickets() {
       return
     }
     const hydrated = hydrateFromTabCache()
-    if (hydrated) setSyncing(false)
-    // Prefer cache / ticket-number index on date switch; force only when nothing cached.
-    void fetchTickets({ soft: true, quiet: false, force: !hydrated })
+    if (hydrated) {
+      setSyncing(false)
+    } else {
+      setTickets([])
+      setSyncing(true)
+    }
+    // Always refresh the active date from the server after a tab change.
+    void fetchTickets({ soft: true, quiet: false, force: true })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -5396,8 +5409,8 @@ export default function Tickets() {
         list = list.filter(t => {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
             || resolveScopedBranchId(t.branchId || t.branch_id)
-            || resolveScopedBranchId(user?.branchId)
-          if (!b) return false
+          // API date/branch fetch already scoped — don't drop rows missing branch metadata
+          if (!b) return true
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
             const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
