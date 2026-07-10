@@ -2112,9 +2112,7 @@ function formatDateToKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function formatDateTriggerLabel(value: string) {
-  return value ? formatDateKeyLabel(value) : 'Select date'
-}
+
 
 function isUnmatchedImportComplete(item: ImportUnmatchedRow): boolean {
   return Boolean(
@@ -2913,7 +2911,7 @@ export default function Tickets() {
     resetTicketTableScroll()
   }, [dateFilter])
 
-  const [saving, setSaving]           = useState(false)
+  const [saving]                      = useState(false)
   const [toast, setToast]             = useState<string | null>(null)
   const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
