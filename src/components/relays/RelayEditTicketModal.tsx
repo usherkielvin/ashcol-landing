@@ -408,7 +408,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               {isFieldSurface && lastRescheduledDate && (
                 <EField label="Rescheduled Date">
                   <input
-                    type="text"
+                    type="date"
                     readOnly
                     disabled
                     value={lastRescheduledDate}
