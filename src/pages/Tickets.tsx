@@ -2060,7 +2060,11 @@ function getServiceVehicleParts(raw: string): { driver: string; vehicle: string 
   if (match) {
     const driver = match[1].trim()
     const vehicle = match[2].trim().toUpperCase()
-    if (driver && vehicle && driver.toUpperCase() !== vehicle) {
+    // Bare vehicle code with no driver prefix (e.g. just "T2") — not a driver name.
+    if (!driver) {
+      return { driver: '', vehicle }
+    }
+    if (vehicle && driver.toUpperCase() !== vehicle) {
       return { driver: driver.toUpperCase(), vehicle }
     }
   }
