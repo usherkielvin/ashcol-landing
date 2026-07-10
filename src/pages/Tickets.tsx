@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
@@ -19,7 +19,7 @@ import {
   readScheduleDateTicketNumbers,
   writeScheduleDateTicketNumbers,
 } from '../utils/ticketNumberStore'
-import { EMPTY_CELL, displayOrDash, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
+import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
 import { prefetchSchedulesDateWindow, nearScheduleDateKeys } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
