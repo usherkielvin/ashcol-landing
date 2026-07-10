@@ -1180,10 +1180,12 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
 function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
   if (!isInstalledWorkflowStatus(ticket.status)) return false
-  // Only archived / previous schedule days — not preferred/installed field noise.
   const sched = getArchivedScheduleDate(ticket)
   if (sched === dateKey) return true
-  return getPreviousScheduleDates(ticket).includes(dateKey)
+  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
+  if (getInstalledDateKey(ticket) === dateKey) return true
+  if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
+  return ticketMatchesDateKey(ticket, dateKey)
 }
 
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
@@ -1202,24 +1204,16 @@ function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'r
 
 function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
-  const finalDate = getFinalDateKey(ticket)
-  // Prefer final date when set — that is the Schedules day (e.g. July 9 final → only that tab).
-  if (finalDate) {
-    if (finalDate === dateKey) return true
-    if (isScheduleGhostOnDate(ticket, dateKey)) return true
-    if ((ticket.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(ticket).includes(dateKey)) {
-      return true
-    }
-    return false
-  }
-  // No final date yet: preferred / scheduled / continuation / ghost.
-  if (getPreferredDateKey(ticket) === dateKey) return true
-  const scheduled = String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
-  if (scheduled === dateKey) return true
+  // A row is on this day if ANY of its schedule dates match: finalDate, scheduledDate,
+  // preferredDate, archived/installed. The server date query (ac_details LIKE) can return
+  // rows where the day only lives in one of these, so mirror that here — never require finalDate only.
+  if (ticketMatchesDateKey(ticket, dateKey)) return true
+  if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
+  if (isScheduleGhostOnDate(ticket, dateKey)) return true
   if ((ticket.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(ticket).includes(dateKey)) {
     return true
   }
-  return isScheduleGhostOnDate(ticket, dateKey)
+  return false
 }
 
 function ticketBelongsOnScheduleBranch(
@@ -5216,14 +5210,18 @@ export default function Tickets() {
         ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
-      // Keep only this branch + final/preferred date (API LIKE can over-fetch).
+      // Keep only this branch + matching date (API date LIKE can over-fetch other days).
       if (!isMyTickets && requestDate) {
-        list = (list as Ticket[]).filter(t =>
+        const raw = (list as Ticket[]).filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
+        const scoped = raw.filter(t =>
           ticketBelongsOnScheduleDate(t, requestDate)
           && ticketBelongsOnScheduleBranch(t, scheduleBranchId || activeBranchId, user?.email),
         )
+        // Safety net: if client heuristics nuked everything the branch-scoped server returned,
+        // trust the server's branch+date scope rather than showing an empty grid.
+        list = scoped.length > 0 || !scheduleBranchId ? scoped : raw
       }
-      // If still empty, retry date-only then apply the same strict branch+date filter.
+      // If still empty, retry date-only then apply the same branch+date filter (with the same net).
       if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
         const unscoped = await fetchTicketsPage(ep, auth, {
           size,
@@ -5231,7 +5229,8 @@ export default function Tickets() {
           date: requestDate,
         })
         list = (unscoped as Ticket[]).filter(t =>
-          ticketBelongsOnScheduleDate(t, requestDate)
+          (t.status || '').toUpperCase() !== 'CANCELLED'
+          && ticketBelongsOnScheduleDate(t, requestDate)
           && ticketBelongsOnScheduleBranch(t, scheduleBranchId, user?.email),
         )
       }
