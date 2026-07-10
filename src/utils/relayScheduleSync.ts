@@ -7,9 +7,25 @@ export type RelayScheduleTicket = any
 function syncAlias(ticket: RelayScheduleTicket, camel: string, snake: string): void {
   const c = ticket[camel]
   const s = ticket[snake]
-  if (typeof c === 'string' && c.trim() && !s) ticket[snake] = c
-  if (typeof s === 'string' && s.trim() && !c) ticket[camel] = s
+  if (c === s) return
+
+  const cVal = typeof c === 'string' ? c.trim() : c
+  const sVal = typeof s === 'string' ? s.trim() : s
+
+  const hasC = cVal !== undefined && cVal !== null && cVal !== ''
+  const hasS = sVal !== undefined && sVal !== null && sVal !== ''
+
+  if (hasC && !hasS) {
+    ticket[snake] = c
+  } else if (hasS && !hasC) {
+    ticket[camel] = s
+  } else {
+    const val = c !== undefined ? c : s
+    ticket[camel] = val
+    ticket[snake] = val
+  }
 }
+
 
 export function readFinalDateFromAc(acDetails?: string | null): string {
   if (!acDetails?.trim()) return ''
@@ -137,6 +153,8 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
   syncAlias(next, 'sourceVendor', 'source_vendor')
   syncAlias(next, 'installationCharges', 'installation_charges')
   syncAlias(next, 'modeOfPayment', 'mode_of_payment')
+  syncAlias(next, 'driverName', 'driver_name')
+  syncAlias(next, 'serviceVehicle', 'service_vehicle')
 
   const finalDate = resolveRelayFinalDate(next)
   const stat = String(next.status || '').toUpperCase()
@@ -223,6 +241,17 @@ export function applyRelayScheduleSyncToPatch(
     if (!next.status && ['PENDING', 'ASSIGNED'].includes(stat)) {
       next.status = 'SCHEDULED'
     }
+  }
+
+  if ('driverName' in next || 'driver_name' in next) {
+    const val = next.driverName !== undefined ? next.driverName : next.driver_name
+    next.driverName = val
+    next.driver_name = val
+  }
+  if ('serviceVehicle' in next || 'service_vehicle' in next) {
+    const val = next.serviceVehicle !== undefined ? next.serviceVehicle : next.service_vehicle
+    next.serviceVehicle = val
+    next.service_vehicle = val
   }
 
   return next

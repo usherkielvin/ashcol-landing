@@ -570,6 +570,7 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
 
   copyIfLocal('installerName')
   copyIfLocal('serviceVehicle')
+  copyIfLocal('driverName')
   copyIfLocal('modeOfPayment')
   copyIfLocal('installationCharges')
   copyIfLocal('remarksUpdate')
@@ -581,6 +582,7 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   if (hasLocalScheduleValue(local.mode_of_payment)) next.mode_of_payment = local.mode_of_payment
   if (hasLocalScheduleValue(local.installation_charges)) next.installation_charges = local.installation_charges
   if (hasLocalScheduleValue(local.service_vehicle)) next.service_vehicle = local.service_vehicle
+  if (hasLocalScheduleValue(local.driver_name)) next.driver_name = local.driver_name
   const localRemarksUpdate = (local as Ticket & { remarks_update?: string }).remarks_update
   if (hasLocalScheduleValue(localRemarksUpdate)) {
     (next as Ticket & { remarks_update?: string }).remarks_update = localRemarksUpdate
