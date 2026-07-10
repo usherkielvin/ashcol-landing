@@ -3,6 +3,40 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
+// Centralized QuotaExceededError interceptor for Storage
+const originalSetItem = Storage.prototype.setItem
+Storage.prototype.setItem = function (key, value) {
+  try {
+    originalSetItem.call(this, key, value)
+  } catch (err: any) {
+    const isQuotaError =
+      err instanceof DOMException && (
+        err.name === 'QuotaExceededError' ||
+        err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        err.code === 22 ||
+        err.code === 1014
+      )
+    const errStr = String(err).toLowerCase()
+    if (this === localStorage && (isQuotaError || errStr.includes('quota') || errStr.includes('exceeded'))) {
+      console.warn('Storage quota exceeded! Pruning ashcol-cache:* keys from localStorage...')
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i)
+          if (k && k.startsWith('ashcol-cache:')) {
+            localStorage.removeItem(k)
+          }
+        }
+        // Retry
+        originalSetItem.call(this, key, value)
+        return
+      } catch (retryErr) {
+        console.error('Storage pruning failed or space still exceeded:', retryErr)
+      }
+    }
+    throw err
+  }
+}
+
 // Global fetch interceptor to handle session expiration (401/403)
 const originalFetch = window.fetch
 window.fetch = async (...args) => {

@@ -6,7 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The **Web Portal** of a three-workspace capstone project (ServiceHub / Ashcol Airconditioning). It's a Vite + React 19 + TypeScript admin/operator portal. It talks to a separate Spring Boot backend (`ashcol-service-api`, sibling working directory) and shares data with an Expo mobile app (`ashcol-mobile-app`, sibling working directory). This repo has no backend of its own except two small Vercel serverless functions under `api/`.
 
-Local dev requires the Spring API running on `http://localhost:8080` (MySQL-backed) — see `SETUP.md` for full bootstrap (DB reset scripts, Flyway baseline, default admin login `admin@ashcol.com.ph` / `ushpons08`).
+Local dev requires the Spring API running on `http://localhost:8080` (MySQL-backed, `SPRING_PROFILES_ACTIVE=local`) — see `SETUP.md` for full bootstrap (DB reset scripts, Flyway baseline, default admin login `admin@ashcol.com.ph` / `ushpons08`).
+
+### Production topology
+
+```
+portal.ashcol.com.ph (this repo, on Vercel)  ──HTTPS──>  api.ashcol.com.ph (Windows PC, Spring Boot via NSSM, :8080)  ──JDBC──>  Supabase PostgreSQL (session pooler)
+```
+
+Production backend is **not** a managed cloud host — it's a Windows PC running the Spring Boot jar as an NSSM service, reachable via DNS/port-forward at `api.ashcol.com.ph`, using `SPRING_PROFILES_ACTIVE=prod`/`production` against Supabase Postgres over the session pooler (not the MySQL used in local dev). Full details, redeploy scripts, and the DB-connection troubleshooting playbook live in `ashcol-service-api/WINDOWS_BACKEND.md` — check there before assuming a "can't reach API" or "database unavailable" symptom is a portal bug.
 
 ## Commands
 

@@ -2633,17 +2633,9 @@ function buildCellPatchBody(
     }
     case 'UPDATE': {
       const remark = stripArchivedRemarkSuffix(v)
-      body.remarks = remark || undefined
-      body.remarksUpdate = remark || undefined
-      if (isInstalledRemarks(remark)) {
-        body.acDetails = mergeAcMeta(acBase, {
-          update: remark,
-          remarksUpdate: remark,
-          scheduleOutcome: 'DONE_INSTALLED',
-        })
-      } else {
-        body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
-      }
+      body.remarks = remark
+      body.remarksUpdate = remark
+      body.acDetails = mergeAcMeta(acBase, { update: remark, remarksUpdate: remark })
       break
     }
     case 'FINAL DATE': {
@@ -4201,7 +4193,7 @@ export default function Tickets() {
         || (originalTicket && ticketHadScheduleDate(originalTicket)),
       )
       
-      let remarksVal = activeForm.remarks?.trim() || undefined
+      let remarksVal = activeForm.remarks?.trim() ?? ''
       if (isDateMove) {
         const reschedMsg = isReschedStatus && newDateKey
           ? `Moved to ${formatDateKeyLabel(newDateKey)}`
