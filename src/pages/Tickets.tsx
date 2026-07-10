@@ -1180,12 +1180,10 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
 function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
   if (!isInstalledWorkflowStatus(ticket.status)) return false
+  // Only archived / previous schedule days — not preferred/installed field noise.
   const sched = getArchivedScheduleDate(ticket)
   if (sched === dateKey) return true
-  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
-  if (getInstalledDateKey(ticket) === dateKey) return true
-  if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
-  return ticketMatchesDateKey(ticket, dateKey)
+  return getPreviousScheduleDates(ticket).includes(dateKey)
 }
 
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
@@ -1200,6 +1198,51 @@ function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'r
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
   if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
   return null
+}
+
+function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return true
+  const finalDate = getFinalDateKey(ticket)
+  // Prefer final date when set — that is the Schedules day (e.g. July 9 final → only that tab).
+  if (finalDate) {
+    if (finalDate === dateKey) return true
+    if (isScheduleGhostOnDate(ticket, dateKey)) return true
+    if ((ticket.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(ticket).includes(dateKey)) {
+      return true
+    }
+    return false
+  }
+  // No final date yet: preferred / scheduled / continuation / ghost.
+  if (getPreferredDateKey(ticket) === dateKey) return true
+  const scheduled = String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+  if (scheduled === dateKey) return true
+  if ((ticket.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(ticket).includes(dateKey)) {
+    return true
+  }
+  return isScheduleGhostOnDate(ticket, dateKey)
+}
+
+function ticketBelongsOnScheduleBranch(
+  ticket: Ticket,
+  effectiveBranch: string | null | undefined,
+  email?: string | null,
+): boolean {
+  if (!effectiveBranch || effectiveBranch === 'ALL_BRANCHES') return true
+  if (isTaguigBranchRef(effectiveBranch)) {
+    const wantServices = isTaguigServicesScope(effectiveBranch, email)
+    const isService = isTaguigServiceTicket(ticket as unknown as Record<string, unknown>)
+    if (wantServices ? !isService : isService) return false
+  }
+  const stored = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+  if (!stored) return false
+  if (branchScopesMatch(stored, effectiveBranch, email)) return true
+  if (isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(stored)) {
+    const wantServices = isTaguigServicesScope(effectiveBranch, email)
+    return wantServices
+      ? stored === 'BR-TAGUIG-SERVICES'
+      : stored === 'BR-TAGUIG-SALES'
+  }
+  return false
 }
 
 function isInstalledRemarks(text?: string | null): boolean {
@@ -2757,9 +2800,6 @@ export default function Tickets() {
 
   const fetchSeqRef = useRef(0)
   const hasLoadedOnceRef = useRef(initialSchedulesReady)
-  /** Date key of the last successful schedules server fetch — used to trust API date scoping. */
-  const lastFetchedScheduleDateRef = useRef<string>('')
-  const [scheduleTrustKey, setScheduleTrustKey] = useState('')
 
   /** Local row edits (installer / driver / payment / remarks) Ã¢â‚¬â€ never let server refresh overwrite these. */
   const locallyEditedTicketIdsRef = useRef(new Set<string>())
@@ -2859,16 +2899,23 @@ export default function Tickets() {
       }
     }
 
-    if (!isMyTickets && dateFilter && list.length > 0) {
-      lastFetchedScheduleDateRef.current = dateFilter
-      setScheduleTrustKey(dateFilter)
+    // Drop stale oversized cache rows that don't belong on this date/branch.
+    if (!isMyTickets && dateFilter) {
+      const branch = isAdmin ? globalBranchId : user?.branchId
+      list = list.filter(t =>
+        (t.status || '').toUpperCase() !== 'CANCELLED'
+        && ticketBelongsOnScheduleDate(t, dateFilter)
+        && ticketBelongsOnScheduleBranch(t, branch, user?.email),
+      )
+      writeSchedulesTabCache(schedulesCacheKeyForTab(), list, 'local')
     }
+
     setTickets(normalizeRelayScheduleTicketList(list))
     setLoading(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     return true
-  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter])
+  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, isAdmin, globalBranchId, user?.branchId, user?.email])
 
   // Paint cached rows before first paint when switching branch/date — no loading screen flash.
   useLayoutEffect(() => {
@@ -5171,26 +5218,24 @@ export default function Tickets() {
         ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
-      // If branch+date returned nothing, retry date-only and keep rows that match this branch
-      // (API branch_id variants sometimes miss Taguig Sales tickets that Overview can still find).
+      // Keep only this branch + final/preferred date (API LIKE can over-fetch).
+      if (!isMyTickets && requestDate) {
+        list = (list as Ticket[]).filter(t =>
+          ticketBelongsOnScheduleDate(t, requestDate)
+          && ticketBelongsOnScheduleBranch(t, scheduleBranchId || activeBranchId, user?.email),
+        )
+      }
+      // If still empty, retry date-only then apply the same strict branch+date filter.
       if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
         const unscoped = await fetchTicketsPage(ep, auth, {
           size,
           paginate: false,
           date: requestDate,
         })
-        list = (unscoped as Ticket[]).filter(t => {
-          const stored = resolveScopedBranchId(t.branchId || t.branch_id)
-          if (!stored) return true
-          if (branchScopesMatch(stored, scheduleBranchId, user?.email)) return true
-          if (isTaguigBranchRef(scheduleBranchId) && isTaguigBranchRef(stored)) {
-            const wantServices = isTaguigServicesScope(scheduleBranchId, user?.email)
-            return wantServices
-              ? stored === 'BR-TAGUIG-SERVICES'
-              : stored !== 'BR-TAGUIG-SERVICES'
-          }
-          return false
-        })
+        list = (unscoped as Ticket[]).filter(t =>
+          ticketBelongsOnScheduleDate(t, requestDate)
+          && ticketBelongsOnScheduleBranch(t, scheduleBranchId, user?.email),
+        )
       }
       cacheTicketsByNumber(list)
       if (!isMyTickets && requestDate) {
@@ -5219,10 +5264,6 @@ export default function Tickets() {
           },
         )
       const merged = applyOptimisticOverlay(withLocalEdits)
-      if (!isMyTickets && requestDate) {
-        lastFetchedScheduleDateRef.current = requestDate
-        setScheduleTrustKey(requestDate)
-      }
       setTickets(merged)
       writeSchedulesTabCache(requestCacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
@@ -5363,10 +5404,34 @@ export default function Tickets() {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Filter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const filtered = useMemo(() => {
-    // Date-scoped schedules fetch already filtered by branchId + date on the server.
-    // Do not re-filter those rows away (this was hiding all 13 Jul 9 Taguig Sales tickets).
-    if (!isMyTickets && dateFilter && (lastFetchedScheduleDateRef.current === dateFilter || scheduleTrustKey === dateFilter)) {
-      return tickets.filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
+    const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
+
+    // Schedules date tab: only this branch + final/preferred date (or ghost on that day).
+    if (!isMyTickets && dateFilter) {
+      let list = tickets.filter(t => {
+        const stat = (t.status || '').toUpperCase()
+        if (stat === 'CANCELLED') return false
+        if (!isFieldCategory(inferCategoryFromTicket(t))) return false
+        if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
+        if (!ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email)) return false
+        return true
+      })
+      list = [...list].sort((a, b) => {
+        const aGhost = isScheduleGhostOnDate(a, dateFilter)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter)
+        if (aGhost === bGhost) return 0
+        return aGhost ? 1 : -1
+      })
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        list = list.filter(t =>
+          [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
+            t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+            t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+          || formatAddress(t.location).toLowerCase().includes(q)
+        )
+      }
+      return list
     }
 
     let list = tickets.filter(t => {
@@ -5374,7 +5439,6 @@ export default function Tickets() {
       if (stat === 'CANCELLED') return false
 
       if (isMyTickets) {
-        const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
             || resolveScopedBranchId(t.branchId || t.branch_id)
@@ -5394,15 +5458,8 @@ export default function Tickets() {
       if (!isFieldCategory(inferCategoryFromTicket(t))) return false
 
       if (isInstalledWorkflowStatus(stat)) {
-        // Installed rows stay on the schedule date as ghost rows (e.g. AS-50 Jul 9).
         if (!dateFilter) return false
-        return (
-          isCompletedGhostOnDate(t, dateFilter)
-          || getEffectiveScheduleDateKey(t) === dateFilter
-          || getInstalledDateKey(t) === dateFilter
-          || getArchivedScheduleDate(t) === dateFilter
-          || ticketMatchesDateKey(t, dateFilter)
-        )
+        return ticketBelongsOnScheduleDate(t, dateFilter)
       }
 
       const hasFinalDate = Boolean(getFinalDateKey(t))
@@ -5411,7 +5468,6 @@ export default function Tickets() {
         || Boolean(String(parseAcMeta(t).scheduledDate || '').trim())
         || getContinuationDates(t).length > 0
       const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION'].includes(stat)
-      // Tickets with a final/preferred schedule date belong on Schedules even if still ASSIGNED/PENDING.
       if (!hasScheduleDate && !isScheduledOrActive) return false
 
       const scheduleValue = getScheduleStatusValue(t)
@@ -5426,38 +5482,12 @@ export default function Tickets() {
       return isInstallation || isCleaning || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
-      const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-        list = list.filter(t => {
-          const storedBranch = resolveScopedBranchId(t.branchId || t.branch_id)
-          const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
-            || storedBranch
-          if (!b) return true
-          if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) {
-            if (!(isTaguigBranchRef(effectiveBranch) && isTaguigBranchRef(storedBranch)
-              && branchScopesMatch(storedBranch, effectiveBranch, user?.email))) {
-              return false
-            }
-          }
-          if (isTaguigBranchRef(effectiveBranch)) {
-            const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
-            if (storedBranch === 'BR-TAGUIG-SALES') return !wantServices
-            if (storedBranch === 'BR-TAGUIG-SERVICES') return wantServices
-            return true
-          }
-          return true
-        })
+        list = list.filter(t => ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email))
       }
     }
     if (dateFilter) {
-      list = list.filter(t =>
-        ticketMatchesDateKey(t, dateFilter)
-        || isScheduleGhostOnDate(t, dateFilter)
-        || getEffectiveScheduleDateKey(t) === dateFilter
-        || getInstalledDateKey(t) === dateFilter
-        || getArchivedScheduleDate(t) === dateFilter
-        || ((t.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(t).includes(dateFilter)),
-      )
+      list = list.filter(t => ticketBelongsOnScheduleDate(t, dateFilter))
       list = [...list].sort((a, b) => {
         const aGhost = isScheduleGhostOnDate(a, dateFilter)
         const bGhost = isScheduleGhostOnDate(b, dateFilter)
@@ -5475,7 +5505,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames, scheduleTrustKey])
+  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
   const visible = useMemo(() => {
     let list = filtered
