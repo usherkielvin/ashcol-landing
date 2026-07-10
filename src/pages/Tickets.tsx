@@ -111,6 +111,8 @@ interface Ticket {
   modeOfPayment?: string
   mode_of_payment?: string
   createdBy?: string
+  driverName?: string
+  driver_name?: string
 }
 
 type ImportUpdate = {
@@ -2031,6 +2033,22 @@ function formatServiceDriver(ticket: Ticket): string {
   return getTicketDriverName(ticket)
 }
 
+/** Driver name — real driver_name column when present, else guessed from the legacy combined serviceVehicle string. */
+function getTicketDriverDisplay(ticket: Ticket): string {
+  const direct = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+  if (direct && !isDriverPlaceholderToken(direct)) return direct
+  return getServiceVehicleParts(formatServiceDriver(ticket)).driver
+}
+
+/** Vehicle code — once driver_name is set, serviceVehicle already holds only the code; else guess from legacy combined string. */
+function getTicketVehicleDisplay(ticket: Ticket): string {
+  const direct = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+  if (direct && !isDriverPlaceholderToken(direct)) {
+    return sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
+  }
+  return getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
+}
+
 /** Split a combined "ANGELO T2" or "ANGELO / T2" serviceVehicle value into driver + vehicle parts. */
 function getServiceVehicleParts(raw: string): { driver: string; vehicle: string } {
   const v = (raw || '').trim()
@@ -2103,8 +2121,8 @@ function ticketColumnText(
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
-    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getServiceVehicleParts(formatServiceDriver(ticket)).driver
-    case 'VEHICLE': return myTickets ? '' : getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
+    case 'VEHICLE': return myTickets ? '' : getTicketVehicleDisplay(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -2593,8 +2611,8 @@ function getCellRawValue(
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerDisplay(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
-    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getServiceVehicleParts(formatServiceDriver(ticket)).driver
-    case 'VEHICLE': return myTickets ? '' : getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
+    case 'VEHICLE': return myTickets ? '' : getTicketVehicleDisplay(ticket)
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -2646,34 +2664,20 @@ function buildCellPatchBody(
       break
     case 'SERVICE': {
       const category = inferCategoryFromTicket(ticket)
-      // Preserve existing vehicle when only editing driver name
-      const existingVehicle = getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
       const driverOnly = normalizeDriverInput(v)
-      const combined = existingVehicle ? `${driverOnly} ${existingVehicle}`.trim() : driverOnly
       const { serviceType } = parseServiceDriverValue('', category)
       body.serviceType = serviceType
-      body.serviceVehicle = combined
-      body.acDetails = mergeAcMeta(acBase, {
-        driverName: combined,
-        serviceVehicle: combined,
-        driver_name: combined,
-      })
+      body.driverName = driverOnly
+      body.acDetails = mergeAcMeta(acBase, { driverName: driverOnly, driver_name: driverOnly })
       break
     }
     case 'VEHICLE': {
       const category = inferCategoryFromTicket(ticket)
-      // Preserve existing driver name when only editing vehicle
-      const existingDriver = getServiceVehicleParts(formatServiceDriver(ticket)).driver
       const vehicleOnly = normalizeDriverInput(v)
-      const combined = existingDriver ? `${existingDriver} ${vehicleOnly}`.trim() : vehicleOnly
       const { serviceType } = parseServiceDriverValue('', category)
       body.serviceType = serviceType
-      body.serviceVehicle = combined
-      body.acDetails = mergeAcMeta(acBase, {
-        driverName: combined,
-        serviceVehicle: combined,
-        driver_name: combined,
-      })
+      body.serviceVehicle = vehicleOnly
+      body.acDetails = mergeAcMeta(acBase, { serviceVehicle: vehicleOnly })
       break
     }
     case 'UPDATE': {
@@ -2795,7 +2799,7 @@ export default function Tickets() {
       }
 
       const headers = { Authorization: `Bearer ${tokenStr}` }
-      const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(trimmed)}&size=100`
+      const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(trimmed)}&size=300`
       const res = await fetch(url, { headers })
       if (res.ok) {
         const data = await res.json()
@@ -3972,7 +3976,8 @@ export default function Tickets() {
       commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
       unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
-      serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
+      serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketVehicleDisplay(ticket),
+      driverName: isMyTickets ? '' : getTicketDriverDisplay(ticket),
       installerName: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
       negotiatorId: ticket.negotiatorId || ticket.negotiator_id || ticket.assignedTo || (isMyTickets && user?.id ? user.id : ''),
       branchId: resolvedBranch?.id || rawBranch || activeBranchId || '',
@@ -4025,6 +4030,8 @@ export default function Tickets() {
         : normalizeRelayScheduleTicket(mergeTicketPatch(freshTicket, localTicket as unknown as Record<string, unknown>)) as Ticket
 
       setTickets(prev => prev.map(t => (t.id === merged.id ? merged : t)))
+      setOverviewResults(prev => prev.map(t => (t.id === merged.id ? { ...t, ...merged } : t)))
+      setDetailTicket(prev => (prev?.id === merged.id ? { ...prev, ...merged } : prev))
       syncTicketAcrossTabCaches(merged)
 
       const nextForm = buildScheduleEditForm(merged)
@@ -4267,6 +4274,7 @@ export default function Tickets() {
         district: activeForm.district?.trim() || undefined,
         commitType: activeForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
+        driverName: activeForm.driverName?.trim() || undefined,
         installerName: activeForm.installerName?.trim() || undefined,
         negotiatorId: activeForm.negotiatorId,
         assignedTo: activeForm.negotiatorId,
@@ -4277,11 +4285,17 @@ export default function Tickets() {
       }
 
       const selectedNegotiator = branchEmployees.find(emp => emp.id === activeForm.negotiatorId)
-      if (!selectedNegotiator) {
+      if (!selectedNegotiator && activeForm.negotiatorId) {
+        alert('Selected negotiator was not found for this branch — re-select and try again.')
+        return
+      }
+      // Overview edits tickets that may never have gone through relay assignment (completed/imported
+      // rows with no negotiator) — only Schedules/My Tickets saves require picking one.
+      if (!selectedNegotiator && activeTab !== 'overview') {
         alert('Select a negotiator for the assigned branch.')
         return
       }
-      if (selectedNegotiator.branchId && activeForm.branchId
+      if (selectedNegotiator?.branchId && activeForm.branchId
         && !branchScopesMatch(selectedNegotiator.branchId, activeForm.branchId, selectedNegotiator.email)) {
         alert('Negotiator must belong to the assigned branch.')
         return
@@ -4411,6 +4425,10 @@ export default function Tickets() {
         dlr: activeForm.sourceVendor?.trim() || undefined,
         update: remarksVal || '',
         remarksUpdate: remarksVal || '',
+        driverName: activeForm.driverName?.trim() || undefined,
+        driver_name: activeForm.driverName?.trim() || undefined,
+        serviceVehicle: serviceVehicle || undefined,
+        service_vehicle: serviceVehicle || undefined,
         installerName: activeForm.installerName?.trim() || undefined,
         negotiatorId: activeForm.negotiatorId,
         negotiatorName: resolveNegotiatorName(
@@ -5359,13 +5377,16 @@ export default function Tickets() {
       if (!isMyTickets && requestDate !== (dateFilter || '')) return
       if (requestCacheKey !== schedulesCacheKeyForTab()) return
 
-      // Date-scoped server list is authoritative — don't merge stale other-date rows.
+      // Date-scoped server list is authoritative for what's ON this date, but a ticket just
+      // edited elsewhere (e.g. Overview) may not be in the server response yet if its save
+      // (or the backend's previousScheduleDates indexing) hasn't landed — mergeServerListWithLocalEdits
+      // already re-filters extraLocal by dateFilter/ghost match, so this can't leak other-date rows in.
       const withLocalEdits = (!isMyTickets && requestDate)
         ? mergeServerListWithLocalEdits(
           list as Ticket[],
-          [],
+          (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
           locallyEditedTicketIdsRef.current,
-          { dateFilter: requestDate },
+          { dateFilter: requestDate, extraLocal: ticketsRef.current },
         )
         : mergeServerListWithLocalEdits(
           list as Ticket[],
@@ -7817,7 +7838,12 @@ export default function Tickets() {
                         resolveScopedBranchId(rawBranch) || rawBranch,
                       );
                       const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
-                      const scheduleDateLabel = formatDisplayDate(getEffectiveScheduleDateKey(ticket), 'No Date');
+                      const finalDateKey = getFinalDateKey(ticket);
+                      const scheduleDateLabel = finalDateKey
+                        ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
+                        : getPreferredDateKey(ticket)
+                          ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
+                          : 'No Date';
                       
                       return (
                         <div 
@@ -9394,7 +9420,8 @@ export default function Tickets() {
             ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
             scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
             finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
-            serviceDriver: editForm.serviceDriver || (isMyTickets ? formatRelayTicketTypeShort(editTicket) : formatServiceDriver(editTicket)),
+            serviceDriver: editForm.serviceDriver || (isMyTickets ? formatRelayTicketTypeShort(editTicket) : getTicketVehicleDisplay(editTicket)),
+            driverName: editForm.driverName || (isMyTickets ? '' : getTicketDriverDisplay(editTicket)),
             installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
             rescheduleToDate: editForm.rescheduleToDate || '',
             reschedulePending: Boolean(editForm.reschedulePending),

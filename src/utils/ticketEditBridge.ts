@@ -16,6 +16,7 @@ export type ScheduleEditFormShape = {
   unitType?: string
   sourceVendor?: string
   serviceDriver?: string
+  driverName?: string
   installerName?: string
   negotiatorId?: string
   branchId?: string
@@ -54,6 +55,7 @@ export function mapRelayDraftToScheduleEditForm(
     unitType: draft.brandHp || draft.unitType || base.unitType,
     sourceVendor: resolvedStore || base.sourceVendor || 'Direct',
     serviceDriver: draft.serviceDriver || base.serviceDriver,
+    driverName: draft.driverName || base.driverName,
     installerName: draft.installerName || base.installerName,
     negotiatorId: draft.assignTechId || base.negotiatorId,
     branchId: draft.assignBranchId || base.branchId,

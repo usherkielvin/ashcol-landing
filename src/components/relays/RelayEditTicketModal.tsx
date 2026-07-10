@@ -453,7 +453,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           {isFieldSurface && (
             <div>
-              <ESHead title="Field Operations" border={border} />
+              <ESHead title="Ticket Info" border={border} />
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <EField label="Ticket Type">
                   <select value={draft.ticketCategory} onChange={(e) => patch({ ticketCategory: e.target.value })} className={relayInput} style={inputStyle}>
@@ -467,32 +467,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </EField>
                 <EField label="Control No. / SI (Aircon)">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
-                </EField>
-                <EField label="Service / Driver">
-                  <input
-                    type="text"
-                    value={draft.serviceDriver}
-                    list="unified-ticket-driver-roster"
-                    onChange={(e) => patch({ serviceDriver: e.target.value })}
-                    className={relayInput}
-                    style={inputStyle}
-                  />
-                  <datalist id="unified-ticket-driver-roster">
-                    {driverRoster.map((name) => <option key={name} value={name} />)}
-                  </datalist>
-                </EField>
-                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                  <input
-                    type="text"
-                    value={draft.installerName}
-                    list="unified-ticket-installer-roster"
-                    onChange={(e) => patch({ installerName: e.target.value })}
-                    className={relayInput}
-                    style={inputStyle}
-                  />
-                  <datalist id="unified-ticket-installer-roster">
-                    {installerRoster.map((name) => <option key={name} value={name} />)}
-                  </datalist>
                 </EField>
                 <EField label="Mode of Payment">
                   <select value={draft.modeOfPayment} onChange={(e) => patch({ modeOfPayment: e.target.value })} className={relayInput} style={inputStyle}>
@@ -515,6 +489,50 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     className={relayInput}
                     style={inputStyle}
                   />
+                </EField>
+              </div>
+            </div>
+          )}
+
+          {isFieldSurface && (
+            <div>
+              <ESHead title="Dispatch" border={border} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <EField label="Driver">
+                  <input
+                    type="text"
+                    value={draft.driverName}
+                    list="unified-ticket-driver-roster"
+                    onChange={(e) => patch({ driverName: e.target.value })}
+                    className={relayInput}
+                    style={inputStyle}
+                  />
+                  <datalist id="unified-ticket-driver-roster">
+                    {driverRoster.map((name) => <option key={name} value={name} />)}
+                  </datalist>
+                </EField>
+                <EField label="Vehicle">
+                  <input
+                    type="text"
+                    value={draft.serviceDriver}
+                    onChange={(e) => patch({ serviceDriver: e.target.value })}
+                    className={relayInput}
+                    style={inputStyle}
+                    placeholder="e.g. T2"
+                  />
+                </EField>
+                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
+                  <input
+                    type="text"
+                    value={draft.installerName}
+                    list="unified-ticket-installer-roster"
+                    onChange={(e) => patch({ installerName: e.target.value })}
+                    className={relayInput}
+                    style={inputStyle}
+                  />
+                  <datalist id="unified-ticket-installer-roster">
+                    {installerRoster.map((name) => <option key={name} value={name} />)}
+                  </datalist>
                 </EField>
               </div>
             </div>

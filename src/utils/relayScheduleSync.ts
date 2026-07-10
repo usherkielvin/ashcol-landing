@@ -90,14 +90,19 @@ export function hasRelayLeftQueue(ticket: RelayScheduleTicket): boolean {
 }
 
 function mergeAcJson(acDetails: string | undefined, updates: Record<string, unknown>): string {
-  let base: Record<string, unknown> = {}
   if (acDetails?.trim()) {
     try {
       const parsed = JSON.parse(acDetails)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = parsed
+      if (Array.isArray(parsed)) {
+        const next = parsed.length ? [...parsed] : [{}]
+        next[0] = { ...(next[0] || {}), ...updates }
+        return JSON.stringify(next)
+      } else if (parsed && typeof parsed === 'object') {
+        return JSON.stringify({ ...parsed, ...updates })
+      }
     } catch { /* ignore */ }
   }
-  return JSON.stringify({ ...base, ...updates })
+  return JSON.stringify(updates)
 }
 
 /** Align relay + schedules fields on a ticket row (after fetch or save). */

@@ -45,7 +45,9 @@ export type RelayEditDraft = {
   /** Field schedules / my-tickets / overview */
   ticketNumber: string
   ticketCategory: string
+  /** Vehicle code only (e.g. "T2") — driver name is tracked separately in driverName. */
   serviceDriver: string
+  driverName: string
   finalDate: string
   scheduleStatus: string
   rescheduleToDate: string
@@ -90,6 +92,8 @@ type TicketLike = {
   ticket_category?: string
   serviceDriver?: string
   service_driver?: string
+  driverName?: string
+  driver_name?: string
   finalDate?: string
   final_date?: string
   remarks?: string
@@ -180,7 +184,8 @@ export function buildRelayEditDraft(
     priorityTag: ticket.priorityTag || '',
     ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
     ticketCategory: ticket.ticketCategory || ticket.ticket_category || 'INSTALLATION',
-    serviceDriver: ticket.serviceDriver || ticket.service_driver || '',
+    serviceDriver: ticket.serviceVehicle || ticket.serviceDriver || ticket.service_driver || '',
+    driverName: ticket.driverName || ticket.driver_name || parsedDetails.driverName || '',
     finalDate: parsedDetails.finalDate || ticket.finalDate || ticket.final_date || '',
     scheduleStatus: ticket.status || 'INSTALLATION',
     rescheduleToDate: '',

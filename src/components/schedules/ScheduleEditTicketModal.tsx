@@ -15,6 +15,7 @@ export type ScheduleEditForm = {
   unitType?: string
   sourceVendor?: string
   serviceDriver?: string
+  driverName?: string
   installerName?: string
   negotiatorId?: string
   branchId?: string
@@ -269,19 +270,29 @@ export function ScheduleEditTicketModal({
               <Field label="Dealer (DLR)">
                 <input type="text" value={form.sourceVendor || ''} onChange={e => onChange({ sourceVendor: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
-              <Field label="Service / Driver">
+              <Field label="Driver">
                 <input
                   type="text"
-                  value={form.serviceDriver || ''}
+                  value={form.driverName || ''}
                   list="schedule-edit-driver-roster"
-                  placeholder={driverRoster.length ? 'Select or type driver…' : 'e.g. STRADA ROMMEL'}
-                  onChange={e => onChange({ serviceDriver: e.target.value })}
+                  placeholder={driverRoster.length ? 'Select or type driver…' : 'e.g. ROMMEL'}
+                  onChange={e => onChange({ driverName: e.target.value })}
                   className={inp}
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
                 <datalist id="schedule-edit-driver-roster">
                   {driverRoster.map(name => <option key={name} value={name} />)}
                 </datalist>
+              </Field>
+              <Field label="Service Vehicle">
+                <input
+                  type="text"
+                  value={form.serviceDriver || ''}
+                  placeholder="e.g. FB19 or T2"
+                  onChange={e => onChange({ serviceDriver: e.target.value })}
+                  className={inp}
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
               </Field>
               <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                 <input
