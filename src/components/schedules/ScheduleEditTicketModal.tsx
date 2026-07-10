@@ -1,5 +1,5 @@
 import ReactDOM from 'react-dom'
-import { ChevronDown, Loader2, Trash2, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, Loader2, X } from 'lucide-react'
 import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import type { TicketCategoryValue } from '../../constants/ticketCategories'
 
@@ -92,7 +92,6 @@ export function ScheduleEditTicketModal({
   editInitialStatus,
   isLight,
   isTaguigServices,
-  canEdit,
   saving,
   cardBg,
   border,
@@ -114,7 +113,6 @@ export function ScheduleEditTicketModal({
   qualifiesForInstallComplete,
   onOpenStatusPicker,
   onClose,
-  onDelete,
   onSave,
 }: ScheduleEditTicketModalProps) {
   const inp = 'rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full min-w-0 max-w-full box-border'
@@ -166,7 +164,7 @@ export function ScheduleEditTicketModal({
           style={{ borderBottom: `1px solid ${border}` }}
         >
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
+            <h3 className="text-xl font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
               Edit Ticket
             </h3>
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -232,13 +230,13 @@ export function ScheduleEditTicketModal({
             <h4 className={sectionTitleCls}>Customer</h4>
             <div className={gridCls}>
               <Field label="Customer Name" required>
-                <input type="text" value={form.customerName || ''} onChange={e => onChange({ customerName: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.customerName || ''} onChange={e => onChange({ customerName: e.target.value.toUpperCase() })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
               <Field label="Contact No." required>
                 <input type="text" value={form.contactPhone || ''} onChange={e => onChange({ contactPhone: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
               <Field label="Destination / Address" required full>
-                <textarea value={form.location || ''} onChange={e => onChange({ location: e.target.value })} rows={2} className={`${inp} resize-none`} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <textarea value={form.location || ''} onChange={e => onChange({ location: e.target.value.toUpperCase() })} rows={2} className={`${inp} resize-none`} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
               <Field label="District">
                 <input type="text" value={form.district || ''} onChange={e => onChange({ district: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -296,26 +294,75 @@ export function ScheduleEditTicketModal({
                   {installerRoster.map(name => <option key={name} value={name} />)}
                 </datalist>
               </Field>
-              <Field label="Ticket No.">
-                <input type="text" value={form.ticketNumber || ''} placeholder="e.g. AS-805" onChange={e => onChange({ ticketNumber: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
               <Field label="Control No. / SI (Aircon)">
                 <input type="text" value={form.controlNumber || ''} placeholder="Aircon papers / SI" onChange={e => onChange({ controlNumber: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               </Field>
-              <Field label="Final Schedule Date" full>
-                <input
-                  type="date"
-                  value={form.finalDate || ''}
-                  onChange={e => onChange({ finalDate: e.target.value, preferredDate: e.target.value })}
-                  className={inp}
+
+              {/* ── Premium Final Schedule Date Card ── */}
+              <div className="md:col-span-2">
+                <span className="block text-[10px] font-black uppercase tracking-wider opacity-70 mb-2">
+                  Final Schedule Date
+                </span>
+                <div
+                  className="rounded-xl p-0.5"
                   style={{
-                    backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)',
-                    border: `1px solid ${isLight ? '#86efac' : 'rgba(22,163,74,0.35)'}`,
-                    color: textPrimary,
-                    colorScheme: isLight ? 'light' : 'dark',
+                    background: isLight
+                      ? 'linear-gradient(135deg, #16a34a 0%, #15803d 60%, #166534 100%)'
+                      : 'linear-gradient(135deg, #22c55e 0%, #16a34a 60%, #15803d 100%)',
+                    boxShadow: isLight
+                      ? '0 4px 14px -2px rgba(22,163,74,0.35)'
+                      : '0 4px 14px -2px rgba(34,197,94,0.3)',
                   }}
-                />
-              </Field>
+                >
+                  <div
+                    className="rounded-[10px] flex items-center gap-3 px-4 py-3"
+                    style={{
+                      backgroundColor: isLight ? '#f0fdf4' : 'rgba(6,12,24,0.92)',
+                    }}
+                  >
+                    <div
+                      className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{
+                        background: isLight
+                          ? 'linear-gradient(135deg,#16a34a,#15803d)'
+                          : 'linear-gradient(135deg,#22c55e,#16a34a)',
+                      }}
+                    >
+                      <CalendarDays className="w-4.5 h-4.5 text-white" strokeWidth={2.2} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-[9px] font-black uppercase tracking-[0.12em] mb-0.5"
+                        style={{ color: isLight ? '#15803d' : '#4ade80' }}
+                      >
+                        Scheduled Date
+                      </p>
+                      <input
+                        type="date"
+                        value={form.finalDate || ''}
+                        onChange={e => onChange({ finalDate: e.target.value, preferredDate: e.target.value })}
+                        className="w-full bg-transparent outline-none font-black text-base tracking-wide"
+                        style={{
+                          color: form.finalDate ? textPrimary : (isLight ? '#9ca3af' : '#6b7280'),
+                          colorScheme: isLight ? 'light' : 'dark',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    </div>
+                    {form.finalDate && (
+                      <button
+                        type="button"
+                        onClick={() => onChange({ finalDate: '', preferredDate: '' })}
+                        className="shrink-0 p-1 rounded-md opacity-50 hover:opacity-100 transition-opacity"
+                        style={{ color: textMuted }}
+                        aria-label="Clear date"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
                 <Field label="Status" required>
@@ -461,12 +508,7 @@ export function ScheduleEditTicketModal({
           className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 border-t safe-area-bottom"
           style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
         >
-          {canEdit && onDelete ? (
-            <button type="button" onClick={onDelete} disabled={saving} className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
-              <Trash2 className="w-3.5 h-3.5 shrink-0" />
-              Delete Ticket
-            </button>
-          ) : <div className="hidden sm:block" />}
+          <div className="hidden sm:block" />
           <div className="flex gap-2.5 w-full sm:w-auto sm:ml-auto">
             <button type="button" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold border" style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}>
               Cancel

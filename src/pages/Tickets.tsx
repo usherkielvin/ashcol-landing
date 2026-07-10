@@ -2,15 +2,25 @@ import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } fr
 import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
-  Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
+  Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
+  Eye, ChevronDown, Loader2, Pencil, Clock,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, fetchTicketsByNumbers, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import {
+  cacheTicketsByNumber,
+  cacheTicketByNumber,
+  extractTicketNumbers,
+  getTicketByNumber,
+  getTicketsByNumbers,
+  normalizeTicketNumberKey,
+  readScheduleDateTicketNumbers,
+  writeScheduleDateTicketNumbers,
+} from '../utils/ticketNumberStore'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
-import { prefetchSchedulesDateWindow } from '../utils/schedulesPrefetch'
+import { prefetchSchedulesDateWindow, nearScheduleDateKeys } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import {
@@ -39,7 +49,7 @@ import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/sched
 import { ScheduleEditTicketModal } from '../components/schedules/ScheduleEditTicketModal'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 interface Ticket {
   id: string
   title: string
@@ -145,7 +155,7 @@ type ImportUnmatchedRow = {
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED', 'CONTINUATION']
 const TABLE_ROW_HEIGHT = 38
 
-/** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
+/** Schedule install closed Ã¢â‚¬â€ DB uses INSTALLED; legacy rows may still be COMPLETED. */
 function isInstalledWorkflowStatus(status?: string | null): boolean {
   const s = (status || '').toUpperCase()
   return s === 'INSTALLED' || s === 'COMPLETED'
@@ -260,6 +270,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'RESCHED') return 'RESCHED'
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
+  if (stat === 'CONTINUATION') return 'CONTINUATION'
   if (stat === 'CANCELLED') return 'CANCELLED'
   if (stat === 'INSTALLED' || stat === 'COMPLETED') return 'DONE_INSTALLED'
 
@@ -277,7 +288,7 @@ function getScheduleStatusLabel(value: string): string {
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
 }
 
-/** Rank overview search hits — exact / prefix name matches float to the top. */
+/** Rank overview search hits Ã¢â‚¬â€ exact / prefix name matches float to the top. */
 function getOverviewSearchRelevanceScore(ticket: Ticket, rawQuery: string): number {
   const q = rawQuery.trim().toLowerCase()
   if (!q) return 0
@@ -353,7 +364,41 @@ function sortOverviewSearchResults(tickets: Ticket[], query: string): Ticket[] {
   })
 }
 
-/** Overview search cards: one badge — workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
+function ticketMatchesOverviewQuery(ticket: Ticket, rawQuery: string): boolean {
+  const q = rawQuery.trim()
+  if (!q) return false
+
+  const qUpper = q.toUpperCase()
+  const qLower = q.toLowerCase()
+  const qDigits = q.replace(/\D/g, '')
+
+  if (/^AS-\d+/i.test(q) || /^TKT-\d+/i.test(q)) {
+    const tn = normalizeTicketNumberKey(ticket.ticketNumber || ticket.ticket_number)
+    return tn === qUpper || tn.startsWith(qUpper)
+  }
+
+  const ticketNum = normalizeTicketNumberKey(ticket.ticketNumber || ticket.ticket_number)
+  if (ticketNum && (ticketNum === qUpper || ticketNum.startsWith(qUpper))) return true
+
+  const control = (ticket.controlNumber || ticket.control_number || '').trim().toLowerCase()
+  if (control && (control === qLower || control.includes(qLower))) return true
+
+  if (qDigits.length >= 7) {
+    const phone = (ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '')
+      .replace(/\D/g, '')
+    if (phone && phone.includes(qDigits)) return true
+  }
+
+  return getOverviewSearchRelevanceScore(ticket, q) >= 25
+}
+
+function filterOverviewSearchResults(tickets: Ticket[], query: string): Ticket[] {
+  const q = query.trim()
+  if (!q) return []
+  return tickets.filter(ticket => ticketMatchesOverviewQuery(ticket, q))
+}
+
+/** Overview search cards: one badge Ã¢â‚¬â€ workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
 function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string } {
   const workflow = (ticket.status || '').toUpperCase().replace(/\s+/g, '_')
   if (workflow === 'ASSIGNED' && hasFinalScheduleDate(ticket)) {
@@ -371,7 +416,7 @@ function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string 
   return { value: phase, label: getScheduleStatusLabel(phase) }
 }
 
-/** True when ticket still carries reschedule ghost metadata (old date row / Moved to…). */
+/** True when ticket still carries reschedule ghost metadata (old date row / Moved toÃ¢â‚¬Â¦). */
 function ticketHasRescheduleMeta(ticket: Ticket): boolean {
   if ((ticket.status || '').toUpperCase() === 'RESCHED') return true
   if (getScheduleStatusValue(ticket) === 'RESCHED') return true
@@ -467,6 +512,9 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   } else if (val === 'FOR_APPROVAL') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
+  } else if (val === 'CONTINUATION') {
+    body.status = 'CONTINUATION'
+    acUpdates.scheduleOutcome = ''
   } else if (val === 'CANCELLED') {
     body.status = 'CANCELLED'
     acUpdates.scheduleOutcome = ''
@@ -475,7 +523,7 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     acUpdates.scheduleOutcome = ''
   }
 
-  // Leaving RESCHED → active status: drop ghost on old date and "Moved to…" remarks
+  // Leaving RESCHED Ã¢â€ â€™ active status: drop ghost on old date and "Moved toÃ¢â‚¬Â¦" remarks
   if (val !== 'RESCHED') {
     clearRescheduleMetaInto(ticket, body, acUpdates)
   }
@@ -788,7 +836,7 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function formatAddress(loc: any): string {
   if (!loc) return ''
   if (typeof loc === 'string') {
@@ -830,7 +878,7 @@ function isGenericUnitTypeLabel(value?: string | null): boolean {
     || normalized === 'window'
 }
 
-/** Brand / HP for schedules — prefer acDetails brand+capacity over generic unitType like "Split AC". */
+/** Brand / HP for schedules Ã¢â‚¬â€ prefer acDetails brand+capacity over generic unitType like "Split AC". */
 function parseBrand(ticket: Ticket): string {
   const fromAc = parseBrandFromAcDetails(ticket.acDetails || ticket.ac_details)
   if (fromAc) return fromAc
@@ -891,7 +939,7 @@ function resolveScheduleCompletionDateKey(ticket: Ticket, activeDateKey?: string
 function stripArchivedRemarkSuffix(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return trimmed
-  return trimmed.replace(/\s*·\s*Archived(?:\s*·\s*.+)?$/i, '').trim()
+  return trimmed.replace(/\s*Ã‚Â·\s*Archived(?:\s*Ã‚Â·\s*.+)?$/i, '').trim()
 }
 
 function getFinalDateKey(ticket: Ticket): string {
@@ -910,7 +958,7 @@ function hasFinalScheduleDate(ticket: Ticket): boolean {
   return Boolean(getFinalDateKey(ticket))
 }
 
-/** Relay-board stage — mirrors ClientMasterlist getRelayStatusLabel. */
+/** Relay-board stage Ã¢â‚¬â€ mirrors ClientMasterlist getRelayStatusLabel. */
 function getRelayQueueLabel(ticket: Ticket): string {
   const status = (ticket.status || '').toUpperCase()
   if (status === 'CANCELLED') return 'CANCELLED'
@@ -1009,11 +1057,11 @@ function getScheduleUpdateDisplay(ticket: Ticket): string {
   return dedupeMovedToRemark(base)
 }
 
-/** Collapse "Moved to X · Moved to X" from legacy ghost-row display or double saves. */
+/** Collapse "Moved to X Ã‚Â· Moved to X" from legacy ghost-row display or double saves. */
 function dedupeMovedToRemark(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return trimmed
-  const dup = trimmed.match(/^(Moved to .+?)\s*·\s*\1$/i)
+  const dup = trimmed.match(/^(Moved to .+?)\s*Ã‚Â·\s*\1$/i)
   if (dup) return dup[1].trim()
   return trimmed
 }
@@ -1213,7 +1261,7 @@ function formatGhostRemarks(
     if (!base) return suffix
     const normalizedBase = dedupeMovedToRemark(base)
     if (normalizedBase === suffix || isMovedToRescheduleRemark(normalizedBase)) return normalizedBase
-    return `${normalizedBase} · ${suffix}`
+    return `${normalizedBase} Ã‚Â· ${suffix}`
   }
   return base
 }
@@ -1422,7 +1470,7 @@ function formatDateKeyLabel(key: string) {
   return `${month} ${day} ${year}`
 }
 
-function formatDisplayDate(key?: string | null, fallback = '—'): string {
+function formatDisplayDate(key?: string | null, fallback = 'Ã¢â‚¬â€'): string {
   const normalized = (key || '').split('T')[0].split(' ')[0].trim()
   if (!normalized) return fallback
   const label = formatDateKeyLabel(normalized)
@@ -1461,7 +1509,7 @@ function importBrandsMatch(rowBrand: string, ticket: Ticket): boolean {
   return rb === tb || tb.includes(rb) || rb.includes(tb)
 }
 
-/** Match import row to ticket — same customer + phone may have multiple units (different brand). */
+/** Match import row to ticket Ã¢â‚¬â€ same customer + phone may have multiple units (different brand). */
 function importRowMatchesTicket(row: ImportUnmatchedRow, ticket: Ticket): boolean {
   const status = (ticket.status || '').toUpperCase()
   if (status === 'COMPLETED' || status === 'CANCELLED' || status === 'INSTALLED') return false
@@ -1481,7 +1529,7 @@ function parseImportMoney(raw?: string | number | null): number | undefined {
   if (typeof raw === 'number' && !Number.isNaN(raw)) return raw
   const text = String(raw).trim()
   if (!text) return undefined
-  const numeric = parseFloat(text.replace(/[₱phpPHP,\s]/gi, ''))
+  const numeric = parseFloat(text.replace(/[Ã¢â€šÂ±phpPHP,\s]/gi, ''))
   return Number.isNaN(numeric) ? undefined : numeric
 }
 
@@ -1587,7 +1635,7 @@ function resolveInstallerFieldRaw(ticket: Ticket): string {
   return direct || fromMeta
 }
 
-/** Explicit installer/technician field only — never negotiator or assigned sales staff. */
+/** Explicit installer/technician field only Ã¢â‚¬â€ never negotiator or assigned sales staff. */
 function getInstallerDisplay(
   ticket: Ticket,
   employees?: BranchStaffOption[],
@@ -1598,7 +1646,7 @@ function getInstallerDisplay(
   return ''
 }
 
-/** Sort key — may fall back to assigned field tech when installer column is empty. */
+/** Sort key Ã¢â‚¬â€ may fall back to assigned field tech when installer column is empty. */
 function getInstallerSortKey(
   ticket: Ticket,
   employees?: BranchStaffOption[],
@@ -1679,10 +1727,6 @@ function promoteTempTicketState(
   return { ticket: realTicket, shouldFlush: false, wasDeleted: false }
 }
 
-function normalizeTicketNumberKey(ticketNumber?: string | null): string {
-  return (ticketNumber || '').trim().toUpperCase()
-}
-
 function isTicketNotFoundError(err: unknown): boolean {
   return /ticket not found/i.test(formatFetchError(err))
 }
@@ -1710,6 +1754,14 @@ async function lookupTicketByNumberOnServer(
   const tn = ticketNumber.trim()
   if (!tn || !authToken) return null
   const upper = normalizeTicketNumberKey(tn)
+  const direct = await fetchTicketByNumber(authToken, tn)
+  if (direct && typeof direct === 'object') {
+    const ticket = normalizeRelayScheduleTicket(direct) as Ticket
+    if (ticket?.id) {
+      cacheTicketByNumber(ticket as unknown as Record<string, unknown>)
+      return ticket
+    }
+  }
   const urls = [
     `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(tn)}&size=25`,
     `${API_BASE_URL}/tickets?q=${encodeURIComponent(tn)}&size=25`,
@@ -1722,8 +1774,14 @@ async function lookupTicketByNumberOnServer(
       const data = await res.json()
       const list: Ticket[] = data?.data?.tickets || data?.tickets || []
       const exact = list.find(t => normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === upper)
-      if (exact?.id) return exact
-      if (list.length === 1 && list[0]?.id) return list[0]
+      if (exact?.id) {
+        cacheTicketByNumber(exact as unknown as Record<string, unknown>)
+        return exact
+      }
+      if (list.length === 1 && list[0]?.id) {
+        cacheTicketByNumber(list[0] as unknown as Record<string, unknown>)
+        return list[0]
+      }
     } catch {
       /* try next endpoint */
     }
@@ -1740,6 +1798,8 @@ function findTicketInListByRef(
   if (byId) return byId
   const tn = normalizeTicketNumberKey(ticket.ticketNumber || ticket.ticket_number)
   if (!tn) return null
+  const fromStore = getTicketByNumber(tn) as Ticket | null
+  if (fromStore?.id) return fromStore
   return list.find(t => normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === tn) || null
 }
 
@@ -1817,16 +1877,16 @@ function normalizeDriverToken(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, '_').replace(/\//g, '_')
 }
 
-/** Tokens that belong in serviceType / schedule status — not driver names. */
+/** Tokens that belong in serviceType / schedule status Ã¢â‚¬â€ not driver names. */
 function isDriverPlaceholderToken(raw: string): boolean {
   const val = (raw || '').trim()
   if (!val) return true
   const norm = normalizeDriverToken(val)
   const upper = val.toUpperCase()
-  if (/^S[\/_]?I(\s|$|[-·•])/i.test(val)) return true
-  if (/^SURVEY(\s|&|$|[-·•])/i.test(val)) return true
-  if (/^SERVICE(\s|&|$|[-·•])/i.test(val)) return true
-  if (/^INSTALL(\s|&|$|[-·•])/i.test(val)) return true
+  if (/^S[\/_]?I(\s|$|[-Ã‚Â·Ã¢â‚¬Â¢])/i.test(val)) return true
+  if (/^SURVEY(\s|&|$|[-Ã‚Â·Ã¢â‚¬Â¢])/i.test(val)) return true
+  if (/^SERVICE(\s|&|$|[-Ã‚Â·Ã¢â‚¬Â¢])/i.test(val)) return true
+  if (/^INSTALL(\s|&|$|[-Ã‚Â·Ã¢â‚¬Â¢])/i.test(val)) return true
   if (upper.includes('SURVEY') && upper.includes('INSTALL')) return true
   if (/^S[\/_]?I$/i.test(val)) return true
   if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === norm || opt.label.toUpperCase() === upper)) {
@@ -1870,7 +1930,7 @@ function formatServiceDriver(ticket: Ticket): string {
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
 function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
-  if (!v || v === '—') return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
+  if (!v || v === 'Ã¢â‚¬â€') return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
   const m = v.match(/^(.+?)\s*-\s*(\d+)\s*$/i)
   if (m) {
     const label = m[1].trim()
@@ -2424,15 +2484,15 @@ function buildCellPatchBody(
   switch (colLabel) {
     case "CUSTOMER'S NAME":
       if (v) {
-        body.customerName = v
+        body.customerName = v.toUpperCase()
         const st = getF(ticket, 'serviceType', 'service_type') || 'S/I'
         body.title = `${st} service`
       }
       break
     case 'DESTINATION':
       if (v) {
-        body.location = v
-        body.acDetails = mergeAcMeta(acBase, { destination: v, address: v })
+        body.location = v.toUpperCase()
+        body.acDetails = mergeAcMeta(acBase, { destination: v.toUpperCase(), address: v.toUpperCase() })
       }
       break
     case 'BRAND':
@@ -2572,17 +2632,43 @@ export default function Tickets() {
     setOverviewLoading(true)
     try {
       const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const trimmed = query.trim()
+      const looksLikeTicketNumber = /^AS-\d+/i.test(trimmed) || /^TKT-\d+/i.test(trimmed)
+
+      if (looksLikeTicketNumber) {
+        const cached = getTicketByNumber(trimmed) as Ticket | null
+        if (cached?.id && ticketMatchesOverviewQuery(cached, trimmed)) {
+          setOverviewResults([cached])
+          return
+        }
+        const direct = await fetchTicketByNumber(tokenStr, trimmed)
+        if (direct && typeof direct === 'object') {
+          const ticket = normalizeRelayScheduleTicket(direct) as Ticket
+          if (ticket?.id && ticketMatchesOverviewQuery(ticket, trimmed)) {
+            cacheTicketByNumber(ticket as unknown as Record<string, unknown>)
+            setOverviewResults([ticket])
+            return
+          }
+        }
+        setOverviewResults([])
+        return
+      }
+
       const headers = { Authorization: `Bearer ${tokenStr}` }
-      const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(query)}&size=100`
+      const url = `${API_BASE_URL}/tickets/search?q=${encodeURIComponent(trimmed)}&size=100`
       const res = await fetch(url, { headers })
       if (res.ok) {
         const data = await res.json()
         const list = data?.data?.tickets || data?.tickets || []
-        setOverviewResults(sortOverviewSearchResults(list, query))
+        cacheTicketsByNumber(list)
+        const matched = filterOverviewSearchResults(list as Ticket[], trimmed)
+        setOverviewResults(sortOverviewSearchResults(matched, trimmed))
       } else {
+        setOverviewResults([])
         console.error('Failed to search tickets:', res.statusText)
       }
     } catch (err) {
+      setOverviewResults([])
       console.error('Error searching tickets:', err)
     } finally {
       setOverviewLoading(false)
@@ -2623,7 +2709,7 @@ export default function Tickets() {
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
   const canEdit    = isAdmin || isManager || isEmployee
 
-  // ── Global branch ─────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Global branch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
   )
@@ -2637,7 +2723,7 @@ export default function Tickets() {
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
 
-  // ── Color tokens ──────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const border      = isLight ? '#cbd5e1' : '#334155'
   const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
@@ -2657,7 +2743,7 @@ export default function Tickets() {
   const rowHover    = isLight ? '#edf7f1' : '#0e242d'
   const green       = '#16A34A'
 
-  // ── Data state ────────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Data state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
   if (!initialSchedulesRef.current) {
     const pathname = window.location.pathname
@@ -2670,7 +2756,7 @@ export default function Tickets() {
   const fetchSeqRef = useRef(0)
   const hasLoadedOnceRef = useRef(initialSchedulesReady)
 
-  /** Local row edits (installer / driver / payment / remarks) — never let server refresh overwrite these. */
+  /** Local row edits (installer / driver / payment / remarks) Ã¢â‚¬â€ never let server refresh overwrite these. */
   const locallyEditedTicketIdsRef = useRef(new Set<string>())
   const [tickets, setTickets] = useState<Ticket[]>(() =>
     initialSchedules.hasCache
@@ -2723,7 +2809,7 @@ export default function Tickets() {
   const optimisticTicketsRef = useRef(new Map<string, Ticket>())
   /** Ticket ids removed in UI while DELETE runs (or until server list confirms absence). */
   const deletedTicketsRef = useRef(new Set<string>())
-  /** Latest flushTicketSave — used by create/import paths defined earlier in the component. */
+  /** Latest flushTicketSave Ã¢â‚¬â€ used by create/import paths defined earlier in the component. */
   const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => {})
 
   const schedulesCacheKeyForTab = useCallback(
@@ -2775,14 +2861,14 @@ export default function Tickets() {
     return true
   }, [schedulesCacheKeyForTab])
 
-  // Paint cached rows before first paint when switching branch/date — no loading screen flash.
+  // Paint cached rows before first paint when switching branch/date Ã¢â‚¬â€ no loading screen flash.
   useLayoutEffect(() => {
     if (isMyTickets) return
     const hydrated = hydrateFromTabCache()
     if (hydrated) setSyncing(false)
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
-  // ── Weekly Tabs Calculation ───────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Weekly Tabs Calculation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const weeklyTabs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -2806,10 +2892,11 @@ export default function Tickets() {
 
   useEffect(() => {
     if (isMyTickets || !user) return
+    const center = dateFilter ? new Date(`${dateFilter}T00:00:00`) : new Date()
     void prefetchSchedulesDateWindow(user, globalBranchId, {
-      dateKeys: weeklyTabs.map(tab => tab.key),
+      dateKeys: nearScheduleDateKeys(center),
     })
-  }, [isMyTickets, user, globalBranchId, weeklyTabs])
+  }, [isMyTickets, user, globalBranchId, dateFilter])
 
   const isCustomSelected = useMemo(() => {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
@@ -2848,7 +2935,7 @@ export default function Tickets() {
     }
   }, [isMyTickets, isTaguig])
 
-  // ── Context menu ──────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Context menu Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
@@ -2881,11 +2968,11 @@ export default function Tickets() {
     }
   }, [contextMenu])
 
-  // ── History state ─────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ History state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
-  // ── Manual Add Modal State ───────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Manual Add Modal State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addFormSnapshot, setAddFormSnapshot] = useState('')
   const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string; ticketCategory?: TicketCategoryValue }>({
@@ -2971,7 +3058,7 @@ export default function Tickets() {
 
   const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
     const resolved = resolveBranch(branchId)
-    if (!resolved && !branchId) return '—'
+    if (!resolved && !branchId) return 'Ã¢â‚¬â€'
     const id = (resolved?.id || branchId || '').toUpperCase()
     const name = resolved?.name || ''
     if (id === 'BR-TAGUIG-SALES' || id.endsWith('-SALES')) return 'TAGUIG - SALES'
@@ -2980,7 +3067,7 @@ export default function Tickets() {
     }
     return name || getBranchDisplayName(branchId || null)
   }, [resolveBranch])
-  // ── Manual Edit Modal State ──────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Manual Edit Modal State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
@@ -3122,7 +3209,7 @@ export default function Tickets() {
 
   useEffect(() => {
     if (!editModalOpen || !editForm.negotiatorId) return
-    // Wait for negotiator list — clearing while still loading falsely marks the form dirty.
+    // Wait for negotiator list Ã¢â‚¬â€ clearing while still loading falsely marks the form dirty.
     if (editModalNegotiators.length === 0) return
     if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
       setEditForm(prev => ({ ...prev, negotiatorId: '' }))
@@ -3139,13 +3226,12 @@ export default function Tickets() {
   const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
   const [continuationCalMonth, setContinuationCalMonth] = useState<{ year: number; month: number } | null>(null)
 
-  // ── Excel Import State ───────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Excel Import State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [showcaseOpen, setShowcaseOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [_importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
     isOpen: boolean
     fileName: string
@@ -3513,7 +3599,7 @@ export default function Tickets() {
     try {
       const tokenVal = token()
       if (!tokenVal) {
-        throw new Error('Not signed in — refresh the page and try again.')
+        throw new Error('Not signed in Ã¢â‚¬â€ refresh the page and try again.')
       }
       const category = addForm.ticketCategory || 'INSTALLATION'
       const { serviceType, serviceVehicle } = parseServiceDriverValue(addForm.serviceDriver, category)
@@ -3559,14 +3645,14 @@ export default function Tickets() {
         throw new Error('Preferred Date is required.')
       }
       const payload = {
-        customerName: (addForm.customerName || '').trim(),
+        customerName: (addForm.customerName || '').trim().toUpperCase(),
         title: titleVal,
         description: descVal,
         serviceType,
         ticketCategory: category,
         status: 'SCHEDULED',
         source: 'SCHEDULE_MANUAL',
-        location: (addForm.location || '').trim(),
+        location: (addForm.location || '').trim().toUpperCase(),
         contactPhone: (addForm.contactPhone || '').trim(),
         unitType: addForm.unitType?.trim() || undefined,
         preferredDate: scheduledDate,
@@ -3665,7 +3751,7 @@ export default function Tickets() {
             return
           }
 
-          // Swap temp → real id (carry any cell edits made while create was in flight)
+          // Swap temp Ã¢â€ â€™ real id (carry any cell edits made while create was in flight)
           setTickets(prev => {
             const next = [promoted.ticket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
             const cacheKey = schedulesCacheKeyForTab()
@@ -3739,7 +3825,17 @@ export default function Tickets() {
       status,
       installationCharges: ticket.installationCharges ?? ticket.installation_charges ?? payment.amount,
       modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment ?? payment.mode,
-      remarks: ticket.remarks || ticket.remarksUpdate || '',
+      remarks: (() => {
+        const AUTO_STATUS_REMARKS = new Set([
+          'done installed', 'done install', 'done_installed',
+          'done cleaning', 'done_cleaning',
+          'done survey', 'done_survey',
+          'done checkup', 'done_checkup',
+          'installed', 'completed', 'cancelled',
+        ])
+        const raw = (ticket.remarks || ticket.remarksUpdate || '').trim()
+        return AUTO_STATUS_REMARKS.has(raw.toLowerCase()) ? '' : raw
+      })(),
       acDetails: ticket.acDetails || ticket.ac_details,
       rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
       reschedulePending: isReschedulePending(ticket),
@@ -3759,11 +3855,17 @@ export default function Tickets() {
     const auth = token()
     if (!auth || isTempTicketId(localTicket.id)) return
     void (async () => {
-      const fresh = await fetchTicketById(auth, localTicket.id)
-      if (!fresh) return
+      const ticketNumber = localTicket.ticketNumber || localTicket.ticket_number || ''
+      const fresh = ticketNumber
+        ? await fetchTicketByNumber(auth, ticketNumber)
+        : await fetchTicketById(auth, localTicket.id)
+      if (!fresh || typeof fresh !== 'object') return
+      const freshTicket = normalizeRelayScheduleTicket(fresh) as Ticket
+      if (!freshTicket?.id) return
+      cacheTicketByNumber(freshTicket as unknown as Record<string, unknown>)
       const merged = locallyEditedTicketIdsRef.current.has(localTicket.id)
-        ? preserveLocalScheduleFields(localTicket, fresh)
-        : normalizeRelayScheduleTicket(mergeTicketPatch(fresh, localTicket as unknown as Record<string, unknown>)) as Ticket
+        ? preserveLocalScheduleFields(localTicket, freshTicket)
+        : normalizeRelayScheduleTicket(mergeTicketPatch(freshTicket, localTicket as unknown as Record<string, unknown>)) as Ticket
 
       setTickets(prev => prev.map(t => (t.id === merged.id ? merged : t)))
       syncTicketAcrossTabCaches(merged)
@@ -3817,29 +3919,7 @@ export default function Tickets() {
     })
   }, [editModalNegotiators, resolveBranch])
 
-  const openAddModal = () => {
-    const form = {
-      preferredDate: dateFilter || todayDateKey(),
-      customerName: '',
-      contactPhone: '',
-      location: '',
-      district: '',
-      commitTerms: '',
-      unitType: '',
-      sourceVendor: 'Direct',
-      serviceDriver: '',
-      installerName: '',
-      negotiatorId: '',
-      ticketNumber: '',
-      controlNumber: '',
-      modeOfPayment: '',
-      installationCharges: undefined as number | undefined,
-      ticketCategory: 'INSTALLATION' as TicketCategoryValue,
-    }
-    setAddForm(form)
-    setAddFormSnapshot(JSON.stringify(form))
-    setAddModalOpen(true)
-  }
+
 
   const isAddFormDirty = () => JSON.stringify(addForm) !== addFormSnapshot
 
@@ -3882,7 +3962,7 @@ export default function Tickets() {
     if (isClosing) {
       const missing = getEmptyRequiredColumnsForClose(form, branchEmployees, activeBranchId)
       if (missing.length > 0) {
-        return `Cannot close ticket because the following columns are empty:\n• ${missing.join('\n• ')}`
+        return `Cannot close ticket because the following columns are empty:\nÃ¢â‚¬Â¢ ${missing.join('\nÃ¢â‚¬Â¢ ')}`
       }
     }
 
@@ -3932,7 +4012,7 @@ export default function Tickets() {
       }
     }
 
-    // Modal still has the row data — save by id even if the list no longer holds it.
+    // Modal still has the row data Ã¢â‚¬â€ save by id even if the list no longer holds it.
     if (!isTempTicketId(formId)) {
       return {
         id: formId,
@@ -3978,7 +4058,7 @@ export default function Tickets() {
     try {
       const originalTicket = resolveEditOriginalTicket() || editTicket
       if (!originalTicket?.id) {
-        throw new Error('Ticket not found — refresh the page and try again.')
+        throw new Error('Ticket not found Ã¢â‚¬â€ refresh the page and try again.')
       }
       if (activeForm.id !== originalTicket.id) {
         activeForm.id = originalTicket.id
@@ -4015,12 +4095,12 @@ export default function Tickets() {
       const acMetaExtras: Record<string, any> = {}
 
       const body: Record<string, any> = {
-        customerName: (activeForm.customerName || '').trim(),
+        customerName: (activeForm.customerName || '').trim().toUpperCase(),
         title: titleVal,
         description: descVal,
         serviceType,
         ticketCategory: category,
-        location: (activeForm.location || '').trim(),
+        location: (activeForm.location || '').trim().toUpperCase(),
         contactPhone: (activeForm.contactPhone || '').trim(),
         unitType: activeForm.unitType?.trim() || undefined,
         preferredDate: isReschedStatus && activeForm.reschedulePending
@@ -4147,7 +4227,7 @@ export default function Tickets() {
         acMetaExtras.reschedulePending = false
       }
 
-      // Leaving RESCHED for Installation/etc. — never re-apply ghost-date metadata
+      // Leaving RESCHED for Installation/etc. Ã¢â‚¬â€ never re-apply ghost-date metadata
       if (leavingResched) {
         acMetaExtras.previousScheduleDates = []
         acMetaExtras.rescheduledTo = ''
@@ -4261,7 +4341,7 @@ export default function Tickets() {
                 schedKey,
               )
               if (!archivePayload) {
-                alert('Ticket marked completed but not added to Archives — select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
+                alert('Ticket marked completed but not added to Archives Ã¢â‚¬â€ select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
                 return
               }
               try {
@@ -4319,7 +4399,7 @@ export default function Tickets() {
   const handleApplyImport = () => {
     if (!importResults) return
     if (!importTargetDate?.trim()) {
-      alert('Select an import date first — tickets will be saved as SCHEDULED for that date.')
+      alert('Select an import date first Ã¢â‚¬â€ tickets will be saved as SCHEDULED for that date.')
       return
     }
 
@@ -4339,7 +4419,7 @@ export default function Tickets() {
     const completedUpdates = importResults.updates.filter(item => item.updatedFields.status === 'COMPLETED')
 
     if (!targetBranch && (importResults.unmatched.length > 0 || (completedUpdates.length > 0 && !isScheduleImport))) {
-      alert('Select a branch before importing — use the branch selector in the sidebar.')
+      alert('Select a branch before importing Ã¢â‚¬â€ use the branch selector in the sidebar.')
       return
     }
 
@@ -4556,7 +4636,7 @@ export default function Tickets() {
 
     setImportResults(null)
     if (scheduleDate) handleDateFilterChange(scheduleDate)
-    console.log('[Schedules] Import applied on UI — saving to database in background', {
+    console.log('[Schedules] Import applied on UI Ã¢â‚¬â€ saving to database in background', {
       patches: patchJobs.length,
       creates: createTemps.length,
       removals: removeJobs.length,
@@ -4824,7 +4904,7 @@ export default function Tickets() {
       .finally(() => setLoadingHistory(false))
   }, [detailTicket])
 
-  // ── Cell edit / expand ────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Cell edit / expand Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
@@ -4935,7 +5015,7 @@ export default function Tickets() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
 
-  // ── Column config ─────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Column config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const columns = useMemo(() => {
     const scheduleCols = [
       { label: 'TICKET NO',       display: 'TICKET NO',                                 weight: 9,  expMul: 1.2,  sticky: true,  freeze: false, align: 'center' as const },
@@ -4978,7 +5058,7 @@ export default function Tickets() {
     })
   }, [expandedCols, isTaguigServices, isMyTickets])
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
@@ -5059,15 +5139,45 @@ export default function Tickets() {
     }
     setFetchError(null)
     try {
-      const ep = isMyTickets
-        ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
-        : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-      const size = isMyTickets ? 200 : (!isMyTickets && dateFilter ? 500 : isAdmin ? 300 : 200)
-      const list = await fetchTicketsPage(ep, token(), {
-        size,
-        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
-        ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
-      })
+      const auth = token()
+      let list: unknown[] = []
+
+      if (!isMyTickets && dateFilter && !options?.force) {
+        const indexedNumbers = readScheduleDateTicketNumbers(dateFilter)
+        if (indexedNumbers.length > 0) {
+          const cachedTickets = getTicketsByNumbers(indexedNumbers) as unknown as Ticket[]
+          const missingNumbers = indexedNumbers.filter(n => !getTicketByNumber(n))
+          if (missingNumbers.length === 0 && cachedTickets.length > 0) {
+            list = cachedTickets
+          } else if (missingNumbers.length > 0 && missingNumbers.length < indexedNumbers.length) {
+            const fetched = await fetchTicketsByNumbers(auth, missingNumbers)
+            cacheTicketsByNumber(fetched)
+            list = getTicketsByNumbers(indexedNumbers)
+          } else if (missingNumbers.length === indexedNumbers.length) {
+            const fetched = await fetchTicketsByNumbers(auth, indexedNumbers)
+            if (fetched.length > 0) {
+              cacheTicketsByNumber(fetched)
+              list = fetched
+            }
+          }
+        }
+      }
+
+      if (!list.length) {
+        const ep = isMyTickets
+          ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
+          : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
+        const size = isMyTickets ? 200 : (!isMyTickets && dateFilter ? 300 : isAdmin ? 300 : 200)
+        list = await fetchTicketsPage(ep, auth, {
+          size,
+          ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
+          ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
+        })
+        cacheTicketsByNumber(list)
+        if (!isMyTickets && dateFilter) {
+          writeScheduleDateTicketNumbers(dateFilter, extractTicketNumbers(list))
+        }
+      }
       if (seq !== fetchSeqRef.current) return
       const freshCached = readSchedulesTabCache(cacheKey)
       const cachedList = Array.isArray(freshCached?.tickets) ? (freshCached.tickets as Ticket[]) : []
@@ -5104,7 +5214,6 @@ export default function Tickets() {
 
   useEffect(() => {
     hydrateFromTabCache()
-    void prefetchSchedulesDateWindow(user, globalBranchId)
     void fetchTickets({ soft: true, quiet: true })
   }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
@@ -5210,7 +5319,7 @@ export default function Tickets() {
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
-  // ── Filter ────────────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Filter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const filtered = useMemo(() => {
     let list = tickets.filter(t => {
       const stat = (t.status || '').toUpperCase()
@@ -5244,19 +5353,21 @@ export default function Tickets() {
       const hasScheduleDate = hasFinalDate
         || Boolean(getPreferredDateKey(t))
         || Boolean(String(parseAcMeta(t).scheduledDate || '').trim())
-      const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(stat)
+        || getContinuationDates(t).length > 0
+      const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION'].includes(stat)
       // Tickets with a final/preferred schedule date belong on Schedules even if still ASSIGNED/PENDING.
       if (!hasScheduleDate && !isScheduledOrActive) return false
 
       const scheduleValue = getScheduleStatusValue(t)
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
+      const isContinuation = stat === 'CONTINUATION' || scheduleValue === 'CONTINUATION'
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
-      return isInstallation || isCleaning || isResched || isForApproval || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
@@ -5429,7 +5540,7 @@ export default function Tickets() {
     return map
   }, [visible, tickets])
 
-  // ── Get display value for a column ────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Get display value for a column Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
       case 'TICKET NO':       return getTicketNumberDisplay(ticket)
@@ -5608,6 +5719,7 @@ export default function Tickets() {
 
   const applyTicketLocally = useCallback((ticketId: string, nextTicket: Ticket) => {
     const normalized = normalizeRelayScheduleTicket(nextTicket)
+    cacheTicketByNumber(normalized as unknown as Record<string, unknown>)
     locallyEditedTicketIdsRef.current.add(ticketId)
     const prevTicket = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
@@ -5735,7 +5847,7 @@ export default function Tickets() {
   }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
-    // Never PATCH optimistic temp ids — edits stay queued until promoteTempTicketState.
+    // Never PATCH optimistic temp ids Ã¢â‚¬â€ edits stay queued until promoteTempTicketState.
     if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
@@ -5747,7 +5859,7 @@ export default function Tickets() {
         const payload = sanitizeTicketPatchBody(job.body)
         try {
           const auth = token()
-          if (!auth) throw new Error('Not signed in — refresh and try again')
+          if (!auth) throw new Error('Not signed in Ã¢â‚¬â€ refresh and try again')
           const res = await fetch(`${API_BASE_URL}/tickets/${saveId}`, {
             method: 'PATCH',
             headers: {
@@ -5784,23 +5896,35 @@ export default function Tickets() {
           const base = optimisticTicketsRef.current.get(saveId)
             || tickets.find(t => t.id === saveId)
             || overviewResults.find(t => t.id === saveId)
+          let mergedSaved = base
           if (base) {
-            const mergedSaved = savedTicket?.id
+            mergedSaved = savedTicket?.id
               ? preserveLocalScheduleFields(base, savedTicket)
               : base
+            const ticketNumber = mergedSaved.ticketNumber || mergedSaved.ticket_number || payload.ticketNumber
+            if (ticketNumber) {
+              const refreshed = await fetchTicketByNumber(auth, String(ticketNumber))
+              if (refreshed && typeof refreshed === 'object') {
+                const refreshedTicket = preserveLocalScheduleFields(
+                  mergedSaved,
+                  normalizeRelayScheduleTicket(refreshed) as Ticket,
+                )
+                mergedSaved = refreshedTicket
+              }
+            }
             optimisticTicketsRef.current.delete(saveId)
             locallyEditedTicketIdsRef.current.add(saveId)
             applyTicketLocally(saveId, mergedSaved)
+            cacheTicketByNumber(mergedSaved as unknown as Record<string, unknown>)
           }
           console.log('[Schedules] Saved to database', {
             ticketId: saveId,
+            ticketNumber: mergedSaved?.ticketNumber || mergedSaved?.ticket_number,
             status: payload.status,
             scheduleOutcome: payload.scheduleOutcome,
             ticketCategory: payload.ticketCategory,
             serviceType: payload.serviceType,
           })
-          clearRelaysCache()
-          clearWarrantyCache()
           if (job.afterSave) await job.afterSave()
         } catch (err: unknown) {
           console.error('[Schedules] Background save FAILED', saveId, payload, err)
@@ -5811,7 +5935,7 @@ export default function Tickets() {
           if (isTicketNotFoundError(err)) {
             purgeStaleScheduleTicket(saveId)
             void fetchTickets({ soft: false, force: true, quiet: false })
-            alert(`Could not save ticket — it may have been removed or replaced. Refreshed the list. (${formatFetchError(err)})`)
+            alert(`Could not save ticket Ã¢â‚¬â€ it may have been removed or replaced. Refreshed the list. (${formatFetchError(err)})`)
           } else {
             alert(`Could not save ticket: ${formatFetchError(err)}`)
           }
@@ -5850,7 +5974,7 @@ export default function Tickets() {
       afterSave: afterSave ?? existing?.afterSave,
     })
     applyTicketLocally(ticketId, nextTicket)
-    // Temp rows are not on the server yet — flush after create promotes to a real id.
+    // Temp rows are not on the server yet Ã¢â‚¬â€ flush after create promotes to a real id.
     if (!isTempTicketId(ticketId)) {
       return flushTicketSave(ticketId)
     }
@@ -5881,7 +6005,7 @@ export default function Tickets() {
       body.installationCharges = injectedPayment.amount
     }
 
-    // Remarks always save in-cell — never open a payment popup.
+    // Remarks always save in-cell Ã¢â‚¬â€ never open a payment popup.
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(liveTicket, dateFilter)
     const remarkText = colLabel === 'UPDATE'
@@ -5937,7 +6061,7 @@ export default function Tickets() {
               schedKey,
             )
             if (!archivePayload) {
-              alert('Ticket completed but not added to Archives — select a branch in the sidebar.')
+              alert('Ticket completed but not added to Archives â€” select a branch in the sidebar.')
               return
             }
             try {
@@ -6011,13 +6135,11 @@ export default function Tickets() {
     const existingDates = getContinuationDates(ticket)
     setContinuationDialog({ ticket })
     setContinuationSelectedDates(existingDates)
-    
+
     const todayKey = todayDateKey()
     const startKey = existingDates[0] || todayKey
     const startDate = new Date(`${startKey}T00:00:00`)
-    const todayDate = new Date(`${todayKey}T00:00:00`)
-    const calViewDate = startDate >= todayDate ? startDate : todayDate
-    setContinuationCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
+    setContinuationCalMonth({ year: startDate.getFullYear(), month: startDate.getMonth() })
   }
 
   const closeContinuationDialog = () => {
@@ -6040,19 +6162,20 @@ export default function Tickets() {
     queueTicketPatch(ticket, body)
   }
 
-  // ── Delete — remove row instantly, DELETE in background ───────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Delete Ã¢â‚¬â€ remove row instantly, DELETE in background Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const handleDelete = (ticketId: string) => {
     const ticket = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
-    const name = ticket?.customerName || ticket?.customer_name || ticket?.title || 'this ticket'
+      || overviewResults.find(t => t.id === ticketId)
+    const name = ticket?.customerName || ticket?.customer_name || ticket?.title || "this ticket"
     setContextMenu(null)
     setDetailTicket(prev => (prev?.id === ticketId ? null : prev))
     setConfirmModal({
-      title: 'Delete ticket?',
-      message: 'This action cannot be undone.',
+      title: "Delete ticket?",
+      message: "This action cannot be undone.",
       detail: name,
-      variant: 'danger',
-      confirmText: 'Delete',
+      variant: "danger",
+      confirmText: "Delete",
       onConfirm: () => commitDeleteTicket(ticketId),
     })
   }
@@ -6060,8 +6183,9 @@ export default function Tickets() {
   const commitDeleteTicket = (ticketId: string) => {
     const rollback = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
+      || overviewResults.find(t => t.id === ticketId)
     if (!rollback) {
-      alert('Ticket not found.')
+      alert("Ticket not found.")
       return
     }
 
@@ -6072,13 +6196,14 @@ export default function Tickets() {
     setTickets(prev => {
       const next = prev.filter(t => t.id !== ticketId)
       const cacheKey = schedulesCacheKeyForTab()
-              writeSchedulesTabCache(cacheKey, next, 'local')
+              writeSchedulesTabCache(cacheKey, next, "local")
       return next
     })
+    setOverviewResults(prev => prev.filter(t => t.id !== ticketId))
     setEditModalOpen(false)
     setConfirmModal(null)
 
-    // Temp rows are not on the server yet — local remove is enough.
+    // Temp rows are not on the server yet Ã¢â‚¬â€ local remove is enough.
     // If an in-flight Excel import later creates the real ticket, it will DELETE that id.
     if (isTempTicketId(ticketId)) {
       console.log('[Schedules] Removed unsaved ticket locally', { ticketId })
@@ -6088,7 +6213,7 @@ export default function Tickets() {
     void (async () => {
       try {
         const auth = token()
-        if (!auth) throw new Error('Not signed in — refresh and try again.')
+        if (!auth) throw new Error('Not signed in Ã¢â‚¬â€ refresh and try again.')
         const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${auth}` },
@@ -6114,57 +6239,7 @@ export default function Tickets() {
     })()
   }
 
-  const promptClearAllVisible = () => {
-    if (!canEdit || visible.length === 0) return
-    const count = visible.length
-    const scope = [
-      globalBranchId && globalBranchId !== 'ALL_BRANCHES' ? getBranchDisplayName(globalBranchId) : 'all branches',
-      dateFilter ? formatDateTriggerLabel(dateFilter) : 'all dates',
-      searchQuery.trim() ? `search "${searchQuery.trim()}"` : '',
-    ].filter(Boolean).join(' / ')
 
-    setConfirmModal({
-      title: `Clear ${count} ticket${count === 1 ? '' : 's'}?`,
-      message: 'All visible tickets in the current view will be permanently deleted.',
-      detail: scope,
-      variant: 'danger',
-      confirmText: 'Clear All',
-      onConfirm: () => void commitClearAllVisible(),
-    })
-  }
-
-  const commitClearAllVisible = async () => {
-    if (!canEdit || visible.length === 0) return
-    const count = visible.length
-
-    setSaving(true)
-    setContextMenu(null)
-    try {
-      const ids = visible.map(t => t.id)
-      const results = await Promise.allSettled(ids.map(id =>
-        fetch(`${API_BASE_URL}/tickets/${id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token()}` },
-        })
-      ))
-
-      const deletedIds = new Set<string>()
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value.ok) deletedIds.add(ids[index])
-      })
-
-      if (deletedIds.size > 0) {
-        setTickets(prev => prev.filter(t => !deletedIds.has(t.id)))
-      }
-
-      const failed = count - deletedIds.size
-      showToast(failed ? `Cleared ${deletedIds.size}; ${failed} failed` : `Cleared ${deletedIds.size} tickets`)
-    } catch {
-      alert('Could not clear tickets.')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   function wrapEditingCell(editor: React.ReactNode, colLabel: string) {
     const expW = 200
@@ -6261,7 +6336,7 @@ export default function Tickets() {
           className="w-full rounded-md outline-none cursor-pointer"
           style={{ ...inputStyle, paddingRight: 4 }}
         >
-          <option value="">— Select negotiator —</option>
+          <option value="">Ã¢â‚¬â€ Select negotiator Ã¢â‚¬â€</option>
           {options.map(emp => (
             <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
           ))}
@@ -6292,7 +6367,7 @@ export default function Tickets() {
             onKeyDown={onKeyDown}
             className="w-full rounded-md outline-none"
             style={inputStyle}
-            placeholder={colLabel === 'INSTALLER' ? 'Select or type installer…' : 'Select or type driver…'}
+            placeholder={colLabel === 'INSTALLER' ? 'Select or type installerÃ¢â‚¬Â¦' : 'Select or type driverÃ¢â‚¬Â¦'}
           />
           <datalist id={listId}>
             {options.map(name => (
@@ -6327,7 +6402,7 @@ export default function Tickets() {
           }}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
-          placeholder={colLabel === 'UPDATE' ? 'Type remarks…' : undefined}
+          placeholder={colLabel === 'UPDATE' ? 'Type remarksÃ¢â‚¬Â¦' : undefined}
         />,
         colLabel,
       )
@@ -6390,7 +6465,7 @@ export default function Tickets() {
     if (!text.trim()) return
     try {
       await navigator.clipboard.writeText(text)
-      showToast('Address copied ✓')
+      showToast('Address copied Ã¢Å“â€œ')
     } catch {
       const el = document.createElement('textarea')
       el.value = text
@@ -6400,7 +6475,7 @@ export default function Tickets() {
       el.select()
       document.execCommand('copy')
       document.body.removeChild(el)
-      showToast('Address copied ✓')
+      showToast('Address copied Ã¢Å“â€œ')
     }
   }
 
@@ -6411,7 +6486,7 @@ export default function Tickets() {
     const inlineEditor = renderInlineCellEditor(ticket, label, rowIndex >= 0 ? rowIndex : undefined, rowGhost)
     if (inlineEditor) return inlineEditor
 
-    // ── DISPLAY STATE ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ DISPLAY STATE Ã¢â€â‚¬Ã¢â€â‚¬
     const val = getCellDisplay(ticket, label)
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
@@ -6447,14 +6522,14 @@ export default function Tickets() {
               className="whitespace-normal break-words text-left normal-case font-semibold leading-relaxed"
               style={{ color: textPrimary }}
             >
-              {fullAddress || '—'}
+              {fullAddress || 'Ã¢â‚¬â€'}
             </div>
           </>
         )
       }
       return withEditPencil(
         <span style={truncStyle} title={fullAddress}>
-          {district || '—'}
+          {district || 'Ã¢â‚¬â€'}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6486,7 +6561,7 @@ export default function Tickets() {
             )
           }
           return (
-            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
+            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title="Installed Ã¢â‚¬â€ see Archives tab">
               INSTALLED
             </span>
           )
@@ -6499,12 +6574,12 @@ export default function Tickets() {
       }
       const statusVal = getScheduleStatusValue(ticket)
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
-      const display = getScheduleStatusDisplay(ticket) || '—'
+      const display = getScheduleStatusDisplay(ticket) || 'Ã¢â‚¬â€'
       const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
       const showsDetails = statusShowsScheduleDetails(statusVal)
       const statusTitle = showsDetails
-        ? `${display} — click to view remarks & payment`
-        : (canEdit ? `${display} — click to change` : display)
+        ? `${display} Ã¢â‚¬â€ click to view remarks & payment`
+        : (canEdit ? `${display} Ã¢â‚¬â€ click to change` : display)
       return (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
@@ -6519,7 +6594,7 @@ export default function Tickets() {
 
     if (label === 'TICKET NO') {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
-      const displayVal = val ? `${prefix}${val}` : `${prefix}—`
+      const displayVal = val ? `${prefix}${val}` : `${prefix}Ã¢â‚¬â€`
       return withEditPencil(
         <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
           {displayVal}
@@ -6563,7 +6638,7 @@ export default function Tickets() {
           }}
           title={val}
         >
-          {val || '—'}
+          {val || 'Ã¢â‚¬â€'}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6602,7 +6677,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
-          {val || '—'}
+          {val || 'Ã¢â‚¬â€'}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6652,7 +6727,7 @@ export default function Tickets() {
                 fontStyle: rowGhost ? 'italic' : undefined,
               }}
             >
-              {remarksText || '—'}
+              {remarksText || 'Ã¢â‚¬â€'}
             </div>
           </>
         )
@@ -6670,7 +6745,7 @@ export default function Tickets() {
             }}
             title={ghostRemarks}
           >
-            {ghostRemarks || '—'}
+            {ghostRemarks || 'Ã¢â‚¬â€'}
           </span>
         )
       }
@@ -6692,7 +6767,7 @@ export default function Tickets() {
           <>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
             {!combined ? (
-              <div style={{ color: textMuted }}>—</div>
+              <div style={{ color: textMuted }}>Ã¢â‚¬â€</div>
             ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
               <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
             ) : (
@@ -6706,7 +6781,7 @@ export default function Tickets() {
                 {amountStr ? (
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>₱{amountStr}</span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>Ã¢â€šÂ±{amountStr}</span>
                   </div>
                 ) : null}
               </div>
@@ -6715,7 +6790,7 @@ export default function Tickets() {
         )
       }
       if (!combined) {
-        return <span style={{ ...truncStyle, color: textMuted }}>—</span>
+        return <span style={{ ...truncStyle, color: textMuted }}>Ã¢â‚¬â€</span>
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
@@ -6781,7 +6856,7 @@ export default function Tickets() {
         }
         return withEditPencil(
           <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
-            —
+            Ã¢â‚¬â€
           </span>,
           ticket, label, rowGhost, rowIndex,
         )
@@ -6805,11 +6880,11 @@ export default function Tickets() {
     }
 
     if (label === 'NEGOTIATOR') {
-      const negName = getTicketNegotiatorName(ticket, branchEmployees) || '—'
+      const negName = getTicketNegotiatorName(ticket, branchEmployees) || 'Ã¢â‚¬â€'
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
           <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
-            {negName !== '—' ? <EmployeeNameLink nameOrId={negName} /> : negName}
+            {negName !== 'Ã¢â‚¬â€' ? <EmployeeNameLink nameOrId={negName} /> : negName}
           </span>
         </div>,
         ticket, label, rowGhost, rowIndex,
@@ -6822,17 +6897,16 @@ export default function Tickets() {
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Render Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) commitCellEdit()
       setHoveredCell(null)
       setExpandedCell(null)
-      setAddMenuOpen(false)
     }}>
 
-      {/* Toast — success/info only; saves run silently in background */}
+      {/* Toast Ã¢â‚¬â€ success/info only; saves run silently in background */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl transition-all"
              style={{ backgroundColor: green }}>
@@ -6862,7 +6936,7 @@ export default function Tickets() {
         onChange={handleScanFilePicked}
       />
 
-      {/* ── Portal: Toolbar into header slot ────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {!isMyTickets && ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2 w-full">
@@ -6966,82 +7040,7 @@ export default function Tickets() {
               </button>
             )}
 
-            {/* Action Button: Add Schedule */}
-            {activeTab === 'schedules' && canEdit && !isMyTickets && (
-              <div className="relative shrink-0 ml-auto">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setAddMenuOpen(!addMenuOpen)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: green, color: '#ffffff' }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Schedule
-                  <ChevronDown className="w-3 h-3 opacity-80" />
-                </button>
 
-                {addMenuOpen && (
-                  <div
-                    className="absolute right-0 mt-1.5 rounded-xl shadow-xl overflow-hidden z-[100] w-48 border"
-                    style={{ backgroundColor: cardBg, borderColor: border }}
-                    onClick={() => setAddMenuOpen(false)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddMenuOpen(false)
-                        openAddModal()
-                      }}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                      style={{ color: textPrimary }}
-                    >
-                      <Plus className="w-3.5 h-3.5" style={{ color: green }} />
-                      Manual Add
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => scanFileInputRef.current?.click()}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                      style={{ color: textPrimary }}
-                    >
-                      <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                      Scan Schedule Sheet
-                    </button>
-                    <button
-                      type="button"
-                      disabled={importing}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
-                      style={{ color: textPrimary }}
-                    >
-                      <Upload className="w-3.5 h-3.5 text-amber-500" />
-                      Import Excel
-                    </button>
-                    {canEdit && (
-                      <>
-                        <div className="h-px mx-2" style={{ backgroundColor: border }} />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false)
-                            promptClearAllVisible()
-                          }}
-                          disabled={visible.length === 0 || saving}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10 disabled:opacity-40"
-                          style={{ color: '#EF4444' }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Clear All Visible
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
@@ -7050,7 +7049,7 @@ export default function Tickets() {
       {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
         <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
           <span className="text-xs font-semibold text-red-600 dark:text-red-400">
-            <strong>Showcase Mode:</strong> Full-screen print view — use Print or Export PDF, then Exit Showcase.
+            <strong>Showcase Mode:</strong> Full-screen print view Ã¢â‚¬â€ use Print or Export PDF, then Exit Showcase.
           </span>
           <button
             type="button"
@@ -7112,7 +7111,7 @@ export default function Tickets() {
         </div>
       )}
 
-      {/* ── Table card ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
            onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
@@ -7226,7 +7225,7 @@ export default function Tickets() {
                             }, 80)
                           }
                         }}
-                        title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
+                        title={canSort ? 'Click to widen column Ã‚Â· Use arrow to sort' : 'Click to widen column'}
                         style={{
                           padding: '11px 12px',
                           color: (col.isExpanded || isSorted)
@@ -7292,11 +7291,11 @@ export default function Tickets() {
                               {isMyTickets
                                 ? (searchQuery
                                   ? 'No pending or assigned tickets match your search'
-                                  : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
+                                  : 'No pending or assigned tickets Ã¢â‚¬â€ scheduled jobs are on Schedules, installed jobs on Archives')
                                 : tickets.length > 0
                                   ? 'No tickets match this date or branch view'
                                   : fetchError
-                                    ? 'Could not load schedules — use Retry above'
+                                    ? 'Could not load schedules Ã¢â‚¬â€ use Retry above'
                                     : 'No records'}
                             </p>
                             {searchQuery && (
@@ -7451,12 +7450,7 @@ export default function Tickets() {
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <div className="flex flex-col items-center justify-center">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">OVERVIEW</span>
-                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  {isPortalAdmin(user?.role) && localStorage.getItem('ashcol-global-branch-id') ? (localStorage.getItem('ashcol-global-branch-id') === 'BR-TAGUIG-SERVICES' ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES') : 'TAGUIG - SALES'}
-                </span>
-              </div>
+              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Overview</span>
               <button
                 onClick={toggleTheme}
                 className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-colors"
@@ -7474,7 +7468,7 @@ export default function Tickets() {
                   Portal Overview Search
                 </h2>
                 <p className="text-[11px] md:text-xs mt-1 leading-relaxed" style={{ color: textMuted }}>
-                  Search by customer name, ticket #, control #, contact, or location — best matches appear first.
+                  Search by customer name, ticket #, control #, contact, or location Ã¢â‚¬â€ best matches appear first.
                 </p>
               </div>
 
@@ -7541,7 +7535,7 @@ export default function Tickets() {
                       const branchLabel = formatAssignedBranchLabel(
                         resolveScopedBranchId(rawBranch) || rawBranch,
                       );
-                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || '—';
+                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || 'Ã¢â‚¬â€';
                       const scheduleDateLabel = formatDisplayDate(getEffectiveScheduleDateKey(ticket), 'No Date');
                       
                       return (
@@ -7557,7 +7551,7 @@ export default function Tickets() {
                                 {ticketNum}
                               </span>
                               <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                {branchLabel && branchLabel !== '—' && (
+                                {branchLabel && branchLabel !== 'Ã¢â‚¬â€' && (
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
                                     {branchLabel}
                                   </span>
@@ -7584,7 +7578,7 @@ export default function Tickets() {
                                   <span>{ticket.contactPhone}</span>
                                 </div>
                               )}
-                              {negotiatorLabel !== '—' && (
+                              {negotiatorLabel !== 'Ã¢â‚¬â€' && (
                                 <div className="flex items-center gap-1.5">
                                   <span className="font-bold">Negotiator:</span>
                                   <span>{negotiatorLabel}</span>
@@ -7604,14 +7598,25 @@ export default function Tickets() {
                             <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
                               {scheduleDateLabel}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(ticket)}
-                              className="w-full sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
-                              style={{ backgroundColor: green }}
-                            >
-                              View Details
-                            </button>
+                            <div className="flex gap-2 w-full sm:w-auto">
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }}
+                                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white bg-red-600 transition-opacity hover:opacity-90 active:opacity-80"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(ticket)}
+                                className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
+                                style={{ backgroundColor: green }}
+                              >
+                                View Details
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -7642,7 +7647,7 @@ export default function Tickets() {
         )}
       </div>
 
-      {/* ── Right-click context menu ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Right-click context menu Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {contextMenu && (() => {
         const menuW = 220
         const menuH = 180
@@ -7690,23 +7695,13 @@ export default function Tickets() {
                 </button>
               )}
 
-              {/* Delete — accessible by admin and non-admins */}
-              {canEdit && (
-                <button onClick={() => handleDelete(contextMenu.ticket.id)}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                        style={{ color: '#EF4444', borderTop: `1px solid ${border}` }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239,68,68,0.06)'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  Delete
-                </button>
-              )}
+
             </div>
           </div>
         )
       })()}
 
-      {/* ── Full Details Modal ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Full Details Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {detailTicket && ReactDOM.createPortal((() => {
         const t = detailTicket
         const scheduleStatusValue = getScheduleStatusValue(t)
@@ -7757,7 +7752,7 @@ export default function Tickets() {
               style={green ? undefined : { color: textPrimary }}>
               {['TECHNICIAN', 'INSTALLER', 'ASSIGNED', 'BY', 'CREATED BY', 'NEGOTIATOR', 'INSTALLER / TECHNICIAN'].includes(label.toUpperCase()) && typeof value === 'string' ? (
                 <EmployeeNameLink nameOrId={value} />
-              ) : value || '—'}
+              ) : value || 'Ã¢â‚¬â€'}
             </span>
           </div>
         )
@@ -7802,7 +7797,7 @@ export default function Tickets() {
                        }}>
                          {scheduleStatusDisplay}
                        </span>
-                       {branchName && branchName !== '—' && (
+                       {branchName && branchName !== 'Ã¢â‚¬â€' && (
                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
                            backgroundColor: inputBg,
                            color: textMuted,
@@ -7812,7 +7807,7 @@ export default function Tickets() {
                          </span>
                        )}
                        <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
-                         TICKET NO: {t.ticketNumber || t.ticket_number || '—'}
+                         TICKET NO: {t.ticketNumber || t.ticket_number || 'Ã¢â‚¬â€'}
                        </span>
                        {isDuplicateName && (
                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
@@ -7831,7 +7826,7 @@ export default function Tickets() {
                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
                    <div>
                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
-                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || '—'}</span>
+                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || 'Ã¢â‚¬â€'}</span>
                    </div>
                    <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                    <div>
@@ -7844,7 +7839,7 @@ export default function Tickets() {
                    <div>
                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
                      <span className="font-semibold text-xs" style={{ color: textPrimary }}>
-                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : '—'}
+                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : 'Ã¢â‚¬â€'}
                      </span>
                    </div>
                    <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
@@ -7855,7 +7850,7 @@ export default function Tickets() {
                           <a href={`tel:${negotiatorPhone.replace(/\D/g,'').replace(/^0/,'+63')}`} className="hover:underline">
                             {fmtPhone(negotiatorPhone) || negotiatorPhone}
                           </a>
-                        ) : '—'}
+                        ) : 'Ã¢â‚¬â€'}
                       </span>
                     </div>
                  </div>
@@ -7871,11 +7866,11 @@ export default function Tickets() {
                      <SHead title="Client & Location Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                        <DField label="Customer" value={custName} />
-                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : '—'} />
+                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : 'Ã¢â‚¬â€'} />
                        {!isMyTickets && (
                          <DField label="Address" value={addr} className="sm:col-span-2" />
                        )}
-                       <DField label="District" value={district || resolveTicketDistrict(t) || '—'} className={isMyTickets ? "sm:col-span-2" : ""} />
+                       <DField label="District" value={district || resolveTicketDistrict(t) || 'Ã¢â‚¬â€'} className={isMyTickets ? "sm:col-span-2" : ""} />
                      </div>
                    </div>
 
@@ -7883,14 +7878,14 @@ export default function Tickets() {
                    <div>
                      <SHead title="Service & Equipment Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || '—'} />
-                       <DField label="Brand / Unit" value={brand || '—'} />
-                       <DField label="Service / Driver" value={serviceDriver || '—'} />
-                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || '—'} />
-                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : '—'} />
-                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || '—'} />
-                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || '—'} />
-                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || '—'} />
+                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || 'Ã¢â‚¬â€'} />
+                       <DField label="Brand / Unit" value={brand || 'Ã¢â‚¬â€'} />
+                       <DField label="Service / Driver" value={serviceDriver || 'Ã¢â‚¬â€'} />
+                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || 'Ã¢â‚¬â€'} />
+                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : 'Ã¢â‚¬â€'} />
+                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || 'Ã¢â‚¬â€'} />
+                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || 'Ã¢â‚¬â€'} />
+                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || 'Ã¢â‚¬â€'} />
                      </div>
                    </div>
 
@@ -7915,8 +7910,8 @@ export default function Tickets() {
                      <div>
                        <SHead title="Payment Details" />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         <DField label="Mode of Payment" value={paymentMode || '—'} />
-                         <DField label="Payment Amount" value={paymentAmt || '—'} green />
+                         <DField label="Mode of Payment" value={paymentMode || 'Ã¢â‚¬â€'} />
+                         <DField label="Payment Amount" value={paymentAmt || 'Ã¢â‚¬â€'} green />
                        </div>
                      </div>
                    )}
@@ -8019,12 +8014,12 @@ export default function Tickets() {
                                    </p>
                                    {h.newStatus && h.newStatus !== h.previousStatus && (
                                      <p className="text-[10px]">
-                                       Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                       Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> Ã¢Å¾â€ <span className="font-bold text-indigo-500">{h.newStatus}</span>
                                      </p>
                                    )}
                                    {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
                                      <p className="text-[10px]">
-                                       Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
+                                       Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> Ã¢Å¾â€ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
                                      </p>
                                    )}
                                    {h.newAssignedToName && (
@@ -8054,13 +8049,6 @@ export default function Tickets() {
                    {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
                  </button>
                  {canEdit && (
-                   <button onClick={() => { handleDelete(t.id); setDetailTicket(null); setShowHistoryPanel(false) }}
-                           className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm">
-                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                     Delete Ticket
-                   </button>
-                 )}
-                 {canEdit && (
                    <button onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
                            className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
                            style={{ borderColor: inputBorder, color: textPrimary }}>
@@ -8074,7 +8062,7 @@ export default function Tickets() {
         )
       })(), document.body)}
 
-      {/* ── Status Picker Modal ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Status Picker Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {statusPicker && (() => {
         const pickerTicket = statusPicker.ticket
         const pickerMode = statusPicker.mode
@@ -8100,7 +8088,7 @@ export default function Tickets() {
           if (isClosing) {
             const missing = getEmptyRequiredColumnsForClose(pickerTicket, branchEmployees, activeBranchId)
             if (missing.length > 0) {
-              alert(`Cannot close ticket because the following columns are empty:\n• ${missing.join('\n• ')}`)
+              alert(`Cannot close ticket because the following columns are empty:\nÃ¢â‚¬Â¢ ${missing.join('\nÃ¢â‚¬Â¢ ')}`)
               return
             }
           }
@@ -8237,7 +8225,7 @@ export default function Tickets() {
         )
       })()}
 
-      {/* ── Schedule row details (remarks + payment) ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Schedule row details (remarks + payment) Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {scheduleDetailsPopup && (() => {
         const detailTicket = scheduleDetailsPopup.ticket
         const ghostKind = scheduleDetailsPopup.ghostKind
@@ -8276,7 +8264,7 @@ export default function Tickets() {
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>Schedule details</p>
                   <p className="text-[12px] font-bold truncate mt-0.5" style={{ color: textPrimary }} title={customerName}>
-                    {customerName || '—'}
+                    {customerName || 'Ã¢â‚¬â€'}
                   </p>
                   <span
                     className="inline-flex items-center mt-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide border"
@@ -8306,13 +8294,13 @@ export default function Tickets() {
                       fontStyle: isGhost ? 'italic' : undefined,
                     }}
                   >
-                    {remarksText || '—'}
+                    {remarksText || 'Ã¢â‚¬â€'}
                   </p>
                 </div>
                 <div style={{ borderTop: `1px solid ${border}` }} className="pt-3">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Payment</p>
                   {!paymentCombined ? (
-                    <p className="text-[12px]" style={{ color: textMuted }}>—</p>
+                    <p className="text-[12px]" style={{ color: textMuted }}>Ã¢â‚¬â€</p>
                   ) : paymentMode === 'FREE' || paymentMode === 'FREE INSTALL' ? (
                     <p className="text-[12px] font-bold" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>FREE</p>
                   ) : (
@@ -8326,7 +8314,7 @@ export default function Tickets() {
                       {paymentAmount ? (
                         <p className="text-[12px]">
                           <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                          <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>₱{paymentAmount}</span>
+                          <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>Ã¢â€šÂ±{paymentAmount}</span>
                         </p>
                       ) : null}
                     </div>
@@ -8359,7 +8347,7 @@ export default function Tickets() {
         )
       })()}
 
-      {/* ── Final Date Picker Popup (My Tickets) ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Final Date Picker Popup (My Tickets) Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {finalDatePicker && (() => {
         const { ticket, x, y, value, preferredDate } = finalDatePicker
         const todayKey = todayDateKey()
@@ -8497,7 +8485,7 @@ export default function Tickets() {
                       cursor: atTodayMonth ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    ‹
+                    Ã¢â‚¬Â¹
                   </button>
                   <span className="text-[11px] font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -8506,7 +8494,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700"
                     style={{ color: textMuted }}
                   >
-                    ›
+                    Ã¢â‚¬Âº
                   </button>
                 </div>
 
@@ -8595,7 +8583,7 @@ export default function Tickets() {
         )
       })()}
 
-      {/* ── Excel Import Results Modal ── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Excel Import Results Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {importResults && importResults.isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
              style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
@@ -8644,7 +8632,7 @@ export default function Tickets() {
               {importResults.needsConfirmation.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h4 className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: '#F59E0B' }}>
-                    ⚠️ Needs Payment Confirmation ({importResults.needsConfirmation.length})
+                    Ã¢Å¡Â Ã¯Â¸Â Needs Payment Confirmation ({importResults.needsConfirmation.length})
                   </h4>
                   <p className="text-[10px]" style={{ color: textMuted }}>
                     These tickets are marked as installed in the spreadsheet but did not contain valid payment details. Please complete them below:
@@ -8719,7 +8707,7 @@ export default function Tickets() {
               {importResults.updates.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h4 className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: green }}>
-                    ✅ Ready to Update ({importResults.updates.length})
+                    Ã¢Å“â€¦ Ready to Update ({importResults.updates.length})
                   </h4>
                   <div className="max-h-48 overflow-y-auto border rounded-2xl p-3 flex flex-col gap-2"
                        style={{ borderColor: border, backgroundColor: inputBg }}>
@@ -8758,7 +8746,7 @@ export default function Tickets() {
               {importResults.unmatched.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <h4 className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#F59E0B' }}>
-                    ℹ️ Unmatched Rows ({importResults.unmatchedCount})
+                    Ã¢â€žÂ¹Ã¯Â¸Â Unmatched Rows ({importResults.unmatchedCount})
                   </h4>
                   <div className="border rounded-2xl overflow-hidden" style={{ borderColor: border }}>
                     <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
@@ -8788,20 +8776,20 @@ export default function Tickets() {
                             return (
                               <tr key={row.rowIdx} className="hover:bg-slate-500/5" style={{ backgroundColor: rowBg }}>
                                 <td className="px-3 py-2 font-semibold" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.rowIdx}. {row.name}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.location || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.district || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.phone || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.brand || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.dlr || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.status || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.commit || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.installer || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `₱${Number(row.charges).toLocaleString('en-PH')}` : '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || '—'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || '—'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.location || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.district || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.phone || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.brand || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.dlr || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.status || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.commit || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.installer || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `Ã¢â€šÂ±${Number(row.charges).toLocaleString('en-PH')}` : 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || 'Ã¢â‚¬â€'}</td>
                               </tr>
                             )
                           })}
@@ -8865,7 +8853,7 @@ export default function Tickets() {
                   <div className="min-w-0">
                     <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Add Schedule Ticket</h2>
                     <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>
-                      Branch: {activeBranchLabel || 'Select branch'} · Negotiators for this branch only
+                      Branch: {activeBranchLabel || 'Select branch'} Ã‚Â· Negotiators for this branch only
                     </p>
                   </div>
                 </div>
@@ -8894,8 +8882,8 @@ export default function Tickets() {
                   </Field>
                   <Field label="Customer Name" required>
                     <input type="text" value={addForm.customerName || ''}
-                      onChange={e => setAddForm({ ...addForm, customerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
+                      onChange={e => setAddForm({ ...addForm, customerName: e.target.value.toUpperCase() })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Contact No." required>
@@ -8912,9 +8900,9 @@ export default function Tickets() {
                   </Field>
                   <Field label="Destination/Address" required full>
                     <textarea value={addForm.location || ''}
-                      onChange={e => setAddForm({ ...addForm, location: e.target.value })}
+                      onChange={e => setAddForm({ ...addForm, location: e.target.value.toUpperCase() })}
                       rows={2}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none w-full normal-case"
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Commit Terms" full>
@@ -8958,7 +8946,7 @@ export default function Tickets() {
                   <Field label="Service / Driver">
                     <input type="text" value={addForm.serviceDriver || ''}
                       list="add-ticket-driver-roster"
-                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driver…' : 'e.g. T3 (DOMINIC) - 1'}
+                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driverÃ¢â‚¬Â¦' : 'e.g. T3 (DOMINIC) - 1'}
                       onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -8971,7 +8959,7 @@ export default function Tickets() {
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                     <input type="text" value={addForm.installerName || ''}
                       list="add-ticket-installer-roster"
-                      placeholder={activeBranchRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
+                      placeholder={activeBranchRoster.installers.length ? 'Select or type installerÃ¢â‚¬Â¦' : 'e.g. RYAN - 1'}
                       onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -9010,7 +8998,7 @@ export default function Tickets() {
                   </Field>
                   <Field label="Control No. / SI (Aircon)">
                     <input type="text" value={addForm.controlNumber || ''}
-                      placeholder="From import only — aircon papers / SI"
+                      placeholder="From import only Ã¢â‚¬â€ aircon papers / SI"
                       onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -9048,7 +9036,7 @@ export default function Tickets() {
                       <option value="PENDING">PENDING</option>
                     </select>
                   </Field>
-                  <Field label="Payment Amount (₱)">
+                  <Field label="Payment Amount (Ã¢â€šÂ±)">
                     <input type="number" step="0.01" min="0"
                       placeholder="0.00"
                       value={addForm.installationCharges ?? ''}
@@ -9257,7 +9245,7 @@ export default function Tickets() {
                 <p className="text-xs mt-1" style={{ color: textMuted }}>
                   {getCustomerDisplayName(reschedDialog.ticket)}
                   {getPreferredDateKey(reschedDialog.ticket)
-                    ? ` · currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
+                    ? ` Ã‚Â· currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
                     : ''}
                 </p>
               </div>
@@ -9283,7 +9271,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
                     style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
                   >
-                    ‹
+                    Ã¢â‚¬Â¹
                   </button>
                   <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -9292,7 +9280,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
                     style={{ color: textMuted, backgroundColor: 'transparent' }}
                   >
-                    ›
+                    Ã¢â‚¬Âº
                   </button>
                 </div>
 
@@ -9352,7 +9340,7 @@ export default function Tickets() {
                     className="mt-0.5 rounded border-slate-300"
                   />
                   <span>
-                    Pending — no date slot available yet
+                    Pending Ã¢â‚¬â€ no date slot available yet
                     <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
                       Ticket stays on the current schedule date until a new slot is confirmed.
                     </span>
@@ -9387,7 +9375,6 @@ export default function Tickets() {
 
       {continuationDialog && (() => {
         const todayKey = todayDateKey()
-        const todayParts = todayKey.split('-').map(Number)
         const fallback = new Date(`${todayKey}T00:00:00`)
         const calYear = continuationCalMonth?.year ?? fallback.getFullYear()
         const calMonth = continuationCalMonth?.month ?? fallback.getMonth()
@@ -9396,18 +9383,11 @@ export default function Tickets() {
         const firstDow = new Date(calYear, calMonth, 1).getDay()
         const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
 
-        const isPast = (y: number, m: number, d: number) => {
-          if (y < todayParts[0]) return true
-          if (y === todayParts[0] && m < todayParts[1]) return true
-          if (y === todayParts[0] && m === todayParts[1] && d < todayParts[2]) return true
-          return false
-        }
         const goMonth = (delta: number) => {
           const cur = new Date(calYear, calMonth, 1)
           cur.setMonth(cur.getMonth() + delta)
           setContinuationCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
         }
-        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
 
         const toggleDate = (dKey: string) => {
           setContinuationSelectedDates(prev => {
@@ -9437,6 +9417,9 @@ export default function Tickets() {
                 <p className="text-xs mt-1" style={{ color: textMuted }}>
                   {getCustomerDisplayName(continuationDialog.ticket)}
                 </p>
+                <p className="text-[10px] mt-1 font-medium" style={{ color: textMuted }}>
+                  Past and future dates can be selected.
+                </p>
               </div>
 
               {/* Selected Dates Badges */}
@@ -9462,7 +9445,7 @@ export default function Tickets() {
                           onClick={() => toggleDate(d)}
                           className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-indigo-500/20 text-[9px] font-extrabold"
                         >
-                          ×
+                          Ãƒâ€”
                         </button>
                       </span>
                     )
@@ -9476,12 +9459,11 @@ export default function Tickets() {
                 <div className="flex items-center justify-between mb-2 px-1">
                   <button
                     type="button"
-                    onClick={() => !atTodayMonth && goMonth(-1)}
-                    disabled={atTodayMonth}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
-                    style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
+                    onClick={() => goMonth(-1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
+                    style={{ color: textMuted, backgroundColor: 'transparent', cursor: 'pointer' }}
                   >
-                    ‹
+                    Ã¢â‚¬Â¹
                   </button>
                   <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
                   <button
@@ -9490,7 +9472,7 @@ export default function Tickets() {
                     className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
                     style={{ color: textMuted, backgroundColor: 'transparent' }}
                   >
-                    ›
+                    Ã¢â‚¬Âº
                   </button>
                 </div>
 
@@ -9507,20 +9489,18 @@ export default function Tickets() {
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1
                     const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    const past = isPast(calYear, calMonth + 1, day)
                     const isToday = dKey === todayKey
                     const isSel = continuationSelectedDates.includes(dKey)
                     return (
                       <button
                         key={dKey}
                         type="button"
-                        disabled={past}
                         onClick={() => toggleDate(dKey)}
                         className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all"
                         style={{
-                          color: isSel ? '#fff' : past ? (isLight ? '#cbd5e1' : '#2d3f5a') : isToday ? green : textPrimary,
+                          color: isSel ? '#fff' : isToday ? green : textPrimary,
                           backgroundColor: isSel ? '#4f46e5' : 'transparent',
-                          cursor: past ? 'not-allowed' : 'pointer',
+                          cursor: 'pointer',
                           fontWeight: isToday && !isSel ? 800 : 600,
                         }}
                       >
@@ -9621,7 +9601,7 @@ export default function Tickets() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (₱)</label>
+                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (Ã¢â€šÂ±)</label>
                     <input
                       type="number"
                       step="0.01"

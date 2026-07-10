@@ -1493,7 +1493,7 @@ export default function ClientMasterlist() {
 
       const [tListRaw, branchList, employeeList] = await Promise.all([
         fetchTicketsPage(endpoint, token, {
-          size: 200,
+          size: 300,
           categoryGroup: ticketScope === 'ALL' ? 'FIELD' : undefined,
         }).catch(() => [] as unknown[]),
         skipMetaFetch ? Promise.resolve(null) : fetchCachedBranches(token).catch(() => null),

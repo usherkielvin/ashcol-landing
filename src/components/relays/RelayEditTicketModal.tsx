@@ -103,7 +103,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     onMergeTargetChange,
     onMerge,
     onClose,
-    onDelete,
     onSave,
     getTicketNumber,
     parseAcDetails,
@@ -139,7 +138,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
   const pendingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'pending')
   const closingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'closing')
-  const canDelete = showDelete ?? (isAdmin && surface === 'relay')
   const isSaving = saving || actionSaving
 
   const patch = (updates: Partial<RelayEditDraft>) => setDraft((prev) => ({ ...prev, ...updates }))
@@ -249,10 +247,10 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             <ESHead title="Client & Location Details" border={border} />
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <EField label="Customer Name" className="md:col-span-2">
-                <input type="text" value={draft.customerName} onChange={(e) => patch({ customerName: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" spellCheck={false} />
+                <input type="text" value={draft.customerName} onChange={(e) => patch({ customerName: e.target.value.toUpperCase() })} className={relayInput} style={inputStyle} autoComplete="off" spellCheck={false} />
               </EField>
               <EField label="Address" className="md:col-span-2">
-                <input type="text" value={draft.location} onChange={(e) => patch({ location: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" />
+                <input type="text" value={draft.location} onChange={(e) => patch({ location: e.target.value.toUpperCase() })} className={relayInput} style={inputStyle} autoComplete="off" />
               </EField>
               <EField label="Contact Number" className="md:col-span-2">
                 <div className="flex flex-col gap-2">
@@ -591,11 +589,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
         </div>
 
         <div className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-t shrink-0 safe-area-bottom" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-          {canDelete && onDelete ? (
-            <button type="button" onClick={onDelete} disabled={isSaving} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
-              Delete Ticket
-            </button>
-          ) : <div className="hidden sm:block" />}
+          <div className="hidden sm:block" />
           <div className="flex gap-2.5 w-full sm:w-auto">
             <button type="button" onClick={requestClose} className="flex-1 sm:flex-none px-5 py-2.5 sm:py-2 border rounded-lg text-xs font-bold" style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>Cancel</button>
             <button type="button" onClick={() => onSave(draft)} disabled={isSaving} className="flex-1 sm:flex-none px-6 py-2.5 sm:py-2 text-white rounded-lg text-xs font-bold shadow-md disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>

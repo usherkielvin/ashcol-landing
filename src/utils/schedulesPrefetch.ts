@@ -1,5 +1,6 @@
 import { fetchTicketsPage, isPortalAdmin } from './api'
 import { normalizeRelayScheduleTicketList } from './relayScheduleSync'
+import { cacheTicketsByNumber, extractTicketNumbers, writeScheduleDateTicketNumbers } from './ticketNumberStore'
 import {
   isSchedulesSessionLoaded,
   readSchedulesTabCache,
@@ -12,6 +13,8 @@ type PortalUserLike = { role?: string | null; branchId?: string | null } | null 
 const prefetchInFlight = new Map<string, Promise<void>>()
 const prefetchDoneAt = new Map<string, number>()
 const PREFETCH_COOLDOWN_MS = 90_000
+const PREFETCH_PAGE_SIZE = 300
+const PREFETCH_CONCURRENCY = 2
 
 export function adjacentScheduleDateKeys(center = new Date()): string[] {
   const base = new Date(center)
@@ -25,11 +28,26 @@ export function adjacentScheduleDateKeys(center = new Date()): string[] {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
-    keys.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    )
+    keys.push(formatDateKey(d))
   }
   return keys
+}
+
+/** Active date plus the day before and after — used for lightweight warm-cache. */
+export function nearScheduleDateKeys(center = new Date()): string[] {
+  const base = new Date(center)
+  base.setHours(0, 0, 0, 0)
+  const keys = new Set<string>()
+  for (const offset of [-1, 0, 1]) {
+    const d = new Date(base)
+    d.setDate(base.getDate() + offset)
+    keys.add(formatDateKey(d))
+  }
+  return [...keys]
+}
+
+function formatDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function readAuthToken(): string {
@@ -47,10 +65,27 @@ function schedulesEndpoint(user: PortalUserLike): string | null {
   return '/tickets/branch'
 }
 
-function prefetchKey(user: PortalUserLike, globalBranchId?: string | null): string {
+function prefetchKey(user: PortalUserLike, globalBranchId?: string | null, dateKeys?: string[]): string {
   const role = (user?.role || '').toLowerCase()
   const branch = globalBranchId || user?.branchId || 'all'
-  return `${role}:${branch}:${adjacentScheduleDateKeys().join(',')}`
+  const dates = dateKeys?.length ? dateKeys.join(',') : nearScheduleDateKeys().join(',')
+  return `${role}:${branch}:${dates}`
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const current = items[index]
+      index += 1
+      await worker(current)
+    }
+  })
+  await Promise.all(runners)
 }
 
 /** Warm schedules cache for given dates (defaults: yesterday, today, tomorrow). */
@@ -66,7 +101,11 @@ export function prefetchSchedulesDateWindow(
   const endpoint = schedulesEndpoint(user)
   if (!endpoint) return Promise.resolve()
 
-  const key = prefetchKey(user, globalBranchId)
+  const dates = options?.dateKeys?.length
+    ? [...new Set(options.dateKeys.map(d => d.split('T')[0].split(' ')[0].trim()).filter(Boolean))]
+    : nearScheduleDateKeys()
+
+  const key = prefetchKey(user, globalBranchId, dates)
   const lastAt = prefetchDoneAt.get(key) ?? 0
   if (!options?.force && Date.now() - lastAt < PREFETCH_COOLDOWN_MS) {
     return Promise.resolve()
@@ -80,22 +119,19 @@ export function prefetchSchedulesDateWindow(
   const isCustomer = role === 'customer'
 
   const job = (async () => {
-    const dates = options?.dateKeys?.length
-      ? [...new Set(options.dateKeys.map(d => d.split('T')[0].split(' ')[0].trim()).filter(Boolean))]
-      : adjacentScheduleDateKeys()
-    await Promise.all(
-      dates.map(async dateKey => {
-        const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)
-        if (!options?.force && isSchedulesSessionLoaded(cacheKey)) return
-        try {
-          const list = await fetchTicketsPage(endpoint, token, { size: 500, date: dateKey })
+    await runWithConcurrency(dates, PREFETCH_CONCURRENCY, async dateKey => {
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)
+      if (!options?.force && isSchedulesSessionLoaded(cacheKey)) return
+      try {
+        const list = await fetchTicketsPage(endpoint, token, { size: PREFETCH_PAGE_SIZE, date: dateKey })
           const merged = normalizeRelayScheduleTicketList(list as unknown[])
-          writeSchedulesTabCache(cacheKey, merged, 'server')
-        } catch (err) {
-          console.warn('[SchedulesPrefetch] failed for', dateKey, err)
-        }
-      }),
-    )
+          cacheTicketsByNumber(merged)
+          writeScheduleDateTicketNumbers(dateKey, extractTicketNumbers(merged))
+          writeSchedulesTabCache(cacheKey, merged, 'prefetch')
+      } catch (err) {
+        console.warn('[SchedulesPrefetch] failed for', dateKey, err)
+      }
+    })
     prefetchDoneAt.set(key, Date.now())
   })()
 

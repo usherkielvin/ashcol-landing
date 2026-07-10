@@ -864,20 +864,29 @@ export function getPortalHomePath(user?: PortalUserLike | null) {
 }
 
 /** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */
-export async function fetchTicketsPage(
+export type TicketsPageResult = {
+  tickets: unknown[]
+  currentPage: number
+  totalPages: number
+  totalTickets: number
+}
+
+async function fetchTicketsPageOnce(
   endpoint: string,
   token: string,
   options: {
+    page?: number
     size?: number
     categoryGroup?: 'FIELD' | 'OFFICE'
     status?: string
     date?: string
     statusGroup?: string
   } = {},
-): Promise<unknown[]> {
+): Promise<TicketsPageResult> {
   const size = options.size ?? 200
+  const page = options.page ?? 0
   const headers = { Authorization: `Bearer ${token}` }
-  const base: Record<string, string> = { page: '0', size: String(size) }
+  const base: Record<string, string> = { page: String(page), size: String(size) }
   if (options.status) base.status = options.status
   if (options.date) base.date = options.date
   if (options.statusGroup) base.statusGroup = options.statusGroup
@@ -892,7 +901,12 @@ export async function fetchTicketsPage(
     const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, { headers })
     if (res.ok) {
       const data = await res.json()
-      return data?.data?.tickets || data?.tickets || []
+      const payload = data?.data ?? data ?? {}
+      const tickets = payload?.tickets || data?.tickets || []
+      const currentPage = Number(payload?.currentPage ?? page)
+      const totalPages = Math.max(1, Number(payload?.totalPages ?? 1))
+      const totalTickets = Number(payload?.totalTickets ?? tickets.length)
+      return { tickets, currentPage, totalPages, totalTickets }
     }
     lastStatus = res.status
     lastBody = await res.text().catch(() => '')
@@ -905,6 +919,70 @@ export async function fetchTicketsPage(
   }
 
   throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+}
+
+export async function fetchTicketsPage(
+  endpoint: string,
+  token: string,
+  options: {
+    size?: number
+    categoryGroup?: 'FIELD' | 'OFFICE'
+    status?: string
+    date?: string
+    statusGroup?: string
+    /** When false, only the requested page is returned (default: fetch all pages). */
+    paginate?: boolean
+    maxPages?: number
+  } = {},
+): Promise<unknown[]> {
+  const pageSize = options.size ?? 200
+  const paginate = options.paginate !== false
+  const maxPages = options.maxPages ?? 20
+
+  if (!paginate) {
+    const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page: 0, size: pageSize })
+    return result.tickets
+  }
+
+  const all: unknown[] = []
+  let page = 0
+  let totalPages = 1
+  while (page < totalPages && page < maxPages) {
+    const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page, size: pageSize })
+    if (result.tickets.length === 0) break
+    all.push(...result.tickets)
+    totalPages = Math.max(1, result.totalPages)
+    page += 1
+    if (result.tickets.length < pageSize) break
+    if (page >= totalPages) break
+  }
+  return all
+}
+
+export async function fetchTicketByNumber(token: string, ticketNumber: string): Promise<unknown | null> {
+  const tn = ticketNumber.trim()
+  if (!tn || !token) return null
+  const res = await fetch(`${API_BASE_URL}/tickets/by-number/${encodeURIComponent(tn)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  return parseCreatedTicketResponse(data)
+}
+
+export async function fetchTicketsByNumbers(token: string, ticketNumbers: string[]): Promise<unknown[]> {
+  const numbers = [...new Set(ticketNumbers.map(n => n.trim().toUpperCase()).filter(Boolean))]
+  if (!numbers.length || !token) return []
+  const res = await fetch(
+    `${API_BASE_URL}/tickets/by-numbers?numbers=${encodeURIComponent(numbers.join(','))}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) return []
+  const data = await res.json()
+  const payload = data?.data ?? data
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.tickets)) return payload.tickets
+  return []
 }
 
 export function parseCreatedTicketResponse(payload: unknown): any {
