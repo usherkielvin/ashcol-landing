@@ -21,7 +21,7 @@ import {
 } from '../utils/ticketNumberStore'
 import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
-import { prefetchSchedulesDateWindow, nearScheduleDateKeys, beginActiveScheduleFetch, endActiveScheduleFetch } from '../utils/schedulesPrefetch'
+import { beginActiveScheduleFetch, endActiveScheduleFetch } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import {
@@ -2896,12 +2896,6 @@ export default function Tickets() {
       return { key, dayName, dateLabel }
     })
   }, [])
-
-  useEffect(() => {
-    // Prefetch disabled while schedule loads are unstable over Cloudflare/Supabase.
-    // Re-enable later once preferred_date backfill + light list path are confirmed in prod.
-    return
-  }, [isMyTickets, user, globalBranchId, dateFilter])
 
   const isCustomSelected = useMemo(() => {
     return dateFilter !== '' && !weeklyTabs.some(tab => tab.key === dateFilter)
