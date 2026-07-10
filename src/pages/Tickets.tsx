@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
+﻿import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
@@ -19,6 +19,7 @@ import {
   readScheduleDateTicketNumbers,
   writeScheduleDateTicketNumbers,
 } from '../utils/ticketNumberStore'
+import { EMPTY_CELL, displayOrDash, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
 import { prefetchSchedulesDateWindow, nearScheduleDateKeys } from '../utils/schedulesPrefetch'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
@@ -1050,18 +1051,18 @@ function getScheduleStatusDisplay(ticket: Ticket): string {
 }
 
 function getScheduleUpdateDisplay(ticket: Ticket): string {
-  const base = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
+  const base = sanitizeDisplayText(stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()))
   if (getScheduleStatusValue(ticket) === 'RESCHED' && isReschedulePending(ticket)) {
     return base || 'PENDING'
   }
   return dedupeMovedToRemark(base)
 }
 
-/** Collapse "Moved to X Ã‚Â· Moved to X" from legacy ghost-row display or double saves. */
+/** Collapse "Moved to X · Moved to X" from legacy ghost-row display or double saves. */
 function dedupeMovedToRemark(text: string): string {
-  const trimmed = text.trim()
+  const trimmed = sanitizeDisplayText(text).trim()
   if (!trimmed) return trimmed
-  const dup = trimmed.match(/^(Moved to .+?)\s*Ã‚Â·\s*\1$/i)
+  const dup = trimmed.match(/^(Moved to .+?)\s*[·Ã‚Â·]\s*\1$/i)
   if (dup) return dup[1].trim()
   return trimmed
 }
@@ -1251,7 +1252,7 @@ function formatGhostRemarks(
   ghostKind: 'completed' | 'resched' | null,
   dateKey?: string,
 ): string {
-  const base = stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim())
+  const base = sanitizeDisplayText(stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()))
   if (ghostKind === 'completed' || (dateKey && isCompletedGhostOnDate(ticket, dateKey))) {
     return base
   }
@@ -1261,7 +1262,7 @@ function formatGhostRemarks(
     if (!base) return suffix
     const normalizedBase = dedupeMovedToRemark(base)
     if (normalizedBase === suffix || isMovedToRescheduleRemark(normalizedBase)) return normalizedBase
-    return `${normalizedBase} Ã‚Â· ${suffix}`
+    return `${normalizedBase} \u00B7 ${suffix}`
   }
   return base
 }
@@ -1313,10 +1314,11 @@ function resolveTicketPaymentAmount(ticket: Ticket): number | undefined {
 function resolveTicketPaymentModeRaw(ticket: Ticket): string {
   const meta = parseAcMeta(ticket)
   const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
-  return (
+  const raw = (
     getF(ticket, 'modeOfPayment', 'mode_of_payment')
     || String(ext.paymentStatus || ext.paymentMode || meta.modeOfPayment || meta.paymentStatus || meta.paymentMode || '').trim()
   )
+  return sanitizeDisplayText(raw)
 }
 
 function resolveTicketPayment(ticket: Ticket): { mode: string; amount?: number } {
@@ -1470,7 +1472,7 @@ function formatDateKeyLabel(key: string) {
   return `${month} ${day} ${year}`
 }
 
-function formatDisplayDate(key?: string | null, fallback = 'Ã¢â‚¬â€'): string {
+function formatDisplayDate(key?: string | null, fallback = EMPTY_CELL): string {
   const normalized = (key || '').split('T')[0].split(' ')[0].trim()
   if (!normalized) return fallback
   const label = formatDateKeyLabel(normalized)
@@ -1529,7 +1531,7 @@ function parseImportMoney(raw?: string | number | null): number | undefined {
   if (typeof raw === 'number' && !Number.isNaN(raw)) return raw
   const text = String(raw).trim()
   if (!text) return undefined
-  const numeric = parseFloat(text.replace(/[Ã¢â€šÂ±phpPHP,\s]/gi, ''))
+  const numeric = parseFloat(text.replace(/[\u20B1phpPHP,\s]/gi, ''))
   return Number.isNaN(numeric) ? undefined : numeric
 }
 
@@ -1629,9 +1631,9 @@ function isNegotiatorInstallerName(
 }
 
 function resolveInstallerFieldRaw(ticket: Ticket): string {
-  const direct = (ticket.installerName || (ticket as any).installer_name || '').trim()
+  const direct = sanitizeDisplayText(ticket.installerName || (ticket as any).installer_name || '')
   const meta = parseAcMeta(ticket)
-  const fromMeta = String(meta.installerName || meta.installer || meta.technicianName || '').trim()
+  const fromMeta = sanitizeDisplayText(String(meta.installerName || meta.installer || meta.technicianName || ''))
   return direct || fromMeta
 }
 
@@ -1917,7 +1919,7 @@ function getTicketDriverName(ticket: Ticket): string {
     String(meta.driverName || meta.driver || meta.serviceVehicle || meta.driver_name || ''),
   ]
   for (const c of candidates) {
-    const trimmed = c.trim()
+    const trimmed = sanitizeDisplayText(c)
     if (trimmed && !isDriverPlaceholderToken(trimmed)) return trimmed
   }
   return ''
@@ -1930,7 +1932,7 @@ function formatServiceDriver(ticket: Ticket): string {
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
 function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
-  if (!v || v === 'Ã¢â‚¬â€') return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
+  if (!v || v === EMPTY_CELL) return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
   const m = v.match(/^(.+?)\s*-\s*(\d+)\s*$/i)
   if (m) {
     const label = m[1].trim()
@@ -2891,9 +2893,14 @@ export default function Tickets() {
   useEffect(() => {
     if (isMyTickets || !user) return
     const center = dateFilter ? new Date(`${dateFilter}T00:00:00`) : new Date()
-    void prefetchSchedulesDateWindow(user, globalBranchId, {
-      dateKeys: nearScheduleDateKeys(center),
-    })
+    const timer = window.setTimeout(() => {
+      const keys = nearScheduleDateKeys(center).filter(k => k !== dateFilter)
+      if (!keys.length) return
+      void prefetchSchedulesDateWindow(user, globalBranchId, {
+        dateKeys: keys,
+      })
+    }, 12000)
+    return () => window.clearTimeout(timer)
   }, [isMyTickets, user, globalBranchId, dateFilter])
 
   const isCustomSelected = useMemo(() => {
@@ -3056,7 +3063,7 @@ export default function Tickets() {
 
   const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
     const resolved = resolveBranch(branchId)
-    if (!resolved && !branchId) return 'Ã¢â‚¬â€'
+    if (!resolved && !branchId) return EMPTY_CELL
     const id = (resolved?.id || branchId || '').toUpperCase()
     const name = resolved?.name || ''
     if (id === 'BR-TAGUIG-SALES' || id.endsWith('-SALES')) return 'TAGUIG - SALES'
@@ -3960,7 +3967,7 @@ export default function Tickets() {
     if (isClosing) {
       const missing = getEmptyRequiredColumnsForClose(form, branchEmployees, activeBranchId)
       if (missing.length > 0) {
-        return `Cannot close ticket because the following columns are empty:\nÃ¢â‚¬Â¢ ${missing.join('\nÃ¢â‚¬Â¢ ')}`
+        return `Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`
       }
     }
 
@@ -5067,7 +5074,10 @@ export default function Tickets() {
     const cached = readSchedulesTabCache(cacheKey)
     const hasCache = Array.isArray(cached?.tickets)
     const sessionSynced = isSchedulesSessionLoaded(cacheKey)
-    const skipNetwork = false
+    const cacheAgeMs = cached?.lastSyncAt ? Date.now() - cached.lastSyncAt : Number.POSITIVE_INFINITY
+    // Quiet remounts can reuse session cache longer; active soft refresh revalidates after 90s.
+    const skipTtlMs = options?.quiet ? 5 * 60_000 : 90_000
+    const skipNetwork = !options?.force && hasCache && cacheAgeMs < skipTtlMs
     // Soft / quiet refreshes must never show the full-page loading UI.
     const showSkeleton = !options?.soft && !options?.quiet && !hasLoadedOnceRef.current && !hasCache
     if ((options?.soft || options?.quiet || hasCache || hasLoadedOnceRef.current) && !skipNetwork) {
@@ -5138,6 +5148,9 @@ export default function Tickets() {
     setFetchError(null)
     try {
       const auth = token()
+      const scheduleBranchId = !isMyTickets && activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+        ? resolveScopedBranchId(activeBranchId)
+        : undefined
       let list: unknown[] = []
 
       if (!isMyTickets && dateFilter && !options?.force) {
@@ -5147,15 +5160,21 @@ export default function Tickets() {
           const missingNumbers = indexedNumbers.filter(n => !getTicketByNumber(n))
           if (missingNumbers.length === 0 && cachedTickets.length > 0) {
             list = cachedTickets
-          } else if (missingNumbers.length > 0 && missingNumbers.length < indexedNumbers.length) {
-            const fetched = await fetchTicketsByNumbers(auth, missingNumbers)
-            cacheTicketsByNumber(fetched)
-            list = getTicketsByNumbers(indexedNumbers)
-          } else if (missingNumbers.length === indexedNumbers.length) {
-            const fetched = await fetchTicketsByNumbers(auth, indexedNumbers)
-            if (fetched.length > 0) {
-              cacheTicketsByNumber(fetched)
-              list = fetched
+          } else if (cachedTickets.length > 0 || missingNumbers.length > 0) {
+            const fetched = missingNumbers.length
+              ? await fetchTicketsByNumbers(auth, missingNumbers)
+              : []
+            if (fetched.length) cacheTicketsByNumber(fetched)
+            const byNumber = new Map<string, Ticket>()
+            for (const t of [...cachedTickets, ...(fetched as Ticket[])]) {
+              const key = normalizeTicketNumberKey(String((t as Ticket).ticketNumber || (t as any).ticket_number || ''))
+              if (key) byNumber.set(key, t)
+            }
+            const mergedFromIndex = indexedNumbers
+              .map(n => byNumber.get(normalizeTicketNumberKey(n)))
+              .filter(Boolean) as Ticket[]
+            if (mergedFromIndex.length > 0) {
+              list = mergedFromIndex
             }
           }
         }
@@ -5164,10 +5183,12 @@ export default function Tickets() {
       if (!list.length) {
         const ep = isMyTickets
           ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
-          : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
-        const size = isMyTickets ? 200 : (!isMyTickets && dateFilter ? 300 : isAdmin ? 300 : 200)
+          : isCustomer ? '/tickets/my' : '/tickets/branch'
+        const size = isMyTickets ? 200 : 500
         list = await fetchTicketsPage(ep, auth, {
           size,
+          paginate: false,
+          ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
           ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
           ...(!isMyTickets && dateFilter ? { date: dateFilter } : {}),
         })
@@ -5206,7 +5227,7 @@ export default function Tickets() {
         setBackgroundSyncing(false)
       }
     }
-  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, activeBranchId, token, schedulesCacheKeyForTab])
 
   const schedulesDateFetchMountedRef = useRef(false)
 
@@ -5223,7 +5244,8 @@ export default function Tickets() {
     }
     const hydrated = hydrateFromTabCache()
     if (hydrated) setSyncing(false)
-    void fetchTickets({ soft: true, quiet: false, force: true })
+    // Prefer cache / ticket-number index on date switch; force only when nothing cached.
+    void fetchTickets({ soft: true, quiet: false, force: !hydrated })
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
@@ -5540,28 +5562,31 @@ export default function Tickets() {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Get display value for a column Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
-    switch (colLabel) {
-      case 'TICKET NO':       return getTicketNumberDisplay(ticket)
-      case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
-      case 'DESTINATION':     return resolveTicketDistrict(ticket)
-      case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
-      case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-      case 'BRAND':           return parseBrand(ticket)
-      case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
-      case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
-      case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
-      case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
-      case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
-      case 'PAYMENT':         return getSchedulePaymentDisplay(ticket)
-      case 'MOP':             return getPaymentMode(ticket)
-      case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-      case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
-      case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
-      case 'NOTE':            return ticket.note || ''
-      case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
-      case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
-      default: return ''
-    }
+    const raw = (() => {
+      switch (colLabel) {
+        case 'TICKET NO':       return getTicketNumberDisplay(ticket)
+        case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
+        case 'DESTINATION':     return resolveTicketDistrict(ticket)
+        case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
+        case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+        case 'BRAND':           return parseBrand(ticket)
+        case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
+        case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
+        case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
+        case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
+        case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
+        case 'PAYMENT':         return getSchedulePaymentDisplay(ticket)
+        case 'MOP':             return getPaymentMode(ticket)
+        case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
+        case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+        case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
+        case 'NOTE':            return ticket.note || ''
+        case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+        case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
+        default: return ''
+      }
+    })()
+    return sanitizeDisplayText(raw)
   }
 
   const discardCellEdit = () => {
@@ -6334,7 +6359,7 @@ export default function Tickets() {
           className="w-full rounded-md outline-none cursor-pointer"
           style={{ ...inputStyle, paddingRight: 4 }}
         >
-          <option value="">Ã¢â‚¬â€ Select negotiator Ã¢â‚¬â€</option>
+          <option value="">{EMPTY_CELL} Select negotiator {EMPTY_CELL}</option>
           {options.map(emp => (
             <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
           ))}
@@ -6365,7 +6390,7 @@ export default function Tickets() {
             onKeyDown={onKeyDown}
             className="w-full rounded-md outline-none"
             style={inputStyle}
-            placeholder={colLabel === 'INSTALLER' ? 'Select or type installerÃ¢â‚¬Â¦' : 'Select or type driverÃ¢â‚¬Â¦'}
+            placeholder={colLabel === 'INSTALLER' ? 'Select or type installer\u2026' : 'Select or type driver\u2026'}
           />
           <datalist id={listId}>
             {options.map(name => (
@@ -6400,7 +6425,7 @@ export default function Tickets() {
           }}
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
-          placeholder={colLabel === 'UPDATE' ? 'Type remarksÃ¢â‚¬Â¦' : undefined}
+          placeholder={colLabel === 'UPDATE' ? 'Type remarks\u2026' : undefined}
         />,
         colLabel,
       )
@@ -6520,14 +6545,14 @@ export default function Tickets() {
               className="whitespace-normal break-words text-left normal-case font-semibold leading-relaxed"
               style={{ color: textPrimary }}
             >
-              {fullAddress || 'Ã¢â‚¬â€'}
+              {fullAddress || EMPTY_CELL}
             </div>
           </>
         )
       }
       return withEditPencil(
         <span style={truncStyle} title={fullAddress}>
-          {district || 'Ã¢â‚¬â€'}
+          {district || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6559,7 +6584,7 @@ export default function Tickets() {
             )
           }
           return (
-            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title="Installed Ã¢â‚¬â€ see Archives tab">
+            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${EMPTY_CELL} see Archives tab`}>
               INSTALLED
             </span>
           )
@@ -6572,12 +6597,12 @@ export default function Tickets() {
       }
       const statusVal = getScheduleStatusValue(ticket)
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
-      const display = getScheduleStatusDisplay(ticket) || 'Ã¢â‚¬â€'
+      const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
       const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
       const showsDetails = statusShowsScheduleDetails(statusVal)
       const statusTitle = showsDetails
-        ? `${display} Ã¢â‚¬â€ click to view remarks & payment`
-        : (canEdit ? `${display} Ã¢â‚¬â€ click to change` : display)
+        ? `${display} ${EMPTY_CELL} click to view remarks & payment`
+        : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
       return (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
@@ -6592,7 +6617,7 @@ export default function Tickets() {
 
     if (label === 'TICKET NO') {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
-      const displayVal = val ? `${prefix}${val}` : `${prefix}Ã¢â‚¬â€`
+      const displayVal = val ? `${prefix}${val}` : `${prefix}${EMPTY_CELL}`
       return withEditPencil(
         <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
           {displayVal}
@@ -6636,7 +6661,7 @@ export default function Tickets() {
           }}
           title={val}
         >
-          {val || 'Ã¢â‚¬â€'}
+          {val || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6675,7 +6700,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
-          {val || 'Ã¢â‚¬â€'}
+          {val || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -6725,7 +6750,7 @@ export default function Tickets() {
                 fontStyle: rowGhost ? 'italic' : undefined,
               }}
             >
-              {remarksText || 'Ã¢â‚¬â€'}
+              {remarksText || EMPTY_CELL}
             </div>
           </>
         )
@@ -6743,21 +6768,21 @@ export default function Tickets() {
             }}
             title={ghostRemarks}
           >
-            {ghostRemarks || 'Ã¢â‚¬â€'}
+            {ghostRemarks || EMPTY_CELL}
           </span>
         )
       }
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
               title={val}>
-          {val || ''}
+          {val || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
     }
 
     if (label === 'PAYMENT') {
-      const combined = getSchedulePaymentDisplay(ticket)
+      const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket))
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
       if (cellExpanded) {
@@ -6765,7 +6790,7 @@ export default function Tickets() {
           <>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
             {!combined ? (
-              <div style={{ color: textMuted }}>Ã¢â‚¬â€</div>
+              <div style={{ color: textMuted }}>{EMPTY_CELL}</div>
             ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
               <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
             ) : (
@@ -6779,7 +6804,7 @@ export default function Tickets() {
                 {amountStr ? (
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>Ã¢â€šÂ±{amountStr}</span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(amountStr)}</span>
                   </div>
                 ) : null}
               </div>
@@ -6788,7 +6813,7 @@ export default function Tickets() {
         )
       }
       if (!combined) {
-        return <span style={{ ...truncStyle, color: textMuted }}>Ã¢â‚¬â€</span>
+        return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
@@ -6854,7 +6879,7 @@ export default function Tickets() {
         }
         return withEditPencil(
           <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
-            Ã¢â‚¬â€
+            {EMPTY_CELL}
           </span>,
           ticket, label, rowGhost, rowIndex,
         )
@@ -6878,11 +6903,11 @@ export default function Tickets() {
     }
 
     if (label === 'NEGOTIATOR') {
-      const negName = getTicketNegotiatorName(ticket, branchEmployees) || 'Ã¢â‚¬â€'
+      const negName = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
           <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
-            {negName !== 'Ã¢â‚¬â€' ? <EmployeeNameLink nameOrId={negName} /> : negName}
+            {negName !== EMPTY_CELL ? <EmployeeNameLink nameOrId={negName} /> : negName}
           </span>
         </div>,
         ticket, label, rowGhost, rowIndex,
@@ -6890,7 +6915,7 @@ export default function Tickets() {
     }
 
     return withEditPencil(
-      <span style={truncStyle} title={val}>{val}</span>,
+      <span style={truncStyle} title={val}>{val || (label === 'UPDATE' || label === 'SERVICE' ? EMPTY_CELL : '')}</span>,
       ticket, label, rowGhost,
     )
   }
@@ -7533,7 +7558,7 @@ export default function Tickets() {
                       const branchLabel = formatAssignedBranchLabel(
                         resolveScopedBranchId(rawBranch) || rawBranch,
                       );
-                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || 'Ã¢â‚¬â€';
+                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
                       const scheduleDateLabel = formatDisplayDate(getEffectiveScheduleDateKey(ticket), 'No Date');
                       
                       return (
@@ -7549,7 +7574,7 @@ export default function Tickets() {
                                 {ticketNum}
                               </span>
                               <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                {branchLabel && branchLabel !== 'Ã¢â‚¬â€' && (
+                                {branchLabel && branchLabel !== EMPTY_CELL && (
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
                                     {branchLabel}
                                   </span>
@@ -7576,7 +7601,7 @@ export default function Tickets() {
                                   <span>{ticket.contactPhone}</span>
                                 </div>
                               )}
-                              {negotiatorLabel !== 'Ã¢â‚¬â€' && (
+                              {negotiatorLabel !== EMPTY_CELL && (
                                 <div className="flex items-center gap-1.5">
                                   <span className="font-bold">Negotiator:</span>
                                   <span>{negotiatorLabel}</span>
@@ -7750,7 +7775,7 @@ export default function Tickets() {
               style={green ? undefined : { color: textPrimary }}>
               {['TECHNICIAN', 'INSTALLER', 'ASSIGNED', 'BY', 'CREATED BY', 'NEGOTIATOR', 'INSTALLER / TECHNICIAN'].includes(label.toUpperCase()) && typeof value === 'string' ? (
                 <EmployeeNameLink nameOrId={value} />
-              ) : value || 'Ã¢â‚¬â€'}
+              ) : value || EMPTY_CELL}
             </span>
           </div>
         )
@@ -7795,7 +7820,7 @@ export default function Tickets() {
                        }}>
                          {scheduleStatusDisplay}
                        </span>
-                       {branchName && branchName !== 'Ã¢â‚¬â€' && (
+                       {branchName && branchName !== EMPTY_CELL && (
                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
                            backgroundColor: inputBg,
                            color: textMuted,
@@ -7805,7 +7830,7 @@ export default function Tickets() {
                          </span>
                        )}
                        <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
-                         TICKET NO: {t.ticketNumber || t.ticket_number || 'Ã¢â‚¬â€'}
+                         TICKET NO: {t.ticketNumber || t.ticket_number || EMPTY_CELL}
                        </span>
                        {isDuplicateName && (
                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
@@ -7824,7 +7849,7 @@ export default function Tickets() {
                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
                    <div>
                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
-                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || 'Ã¢â‚¬â€'}</span>
+                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
                    </div>
                    <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                    <div>
@@ -7837,7 +7862,7 @@ export default function Tickets() {
                    <div>
                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
                      <span className="font-semibold text-xs" style={{ color: textPrimary }}>
-                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : 'Ã¢â‚¬â€'}
+                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL}
                      </span>
                    </div>
                    <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
@@ -7848,7 +7873,7 @@ export default function Tickets() {
                           <a href={`tel:${negotiatorPhone.replace(/\D/g,'').replace(/^0/,'+63')}`} className="hover:underline">
                             {fmtPhone(negotiatorPhone) || negotiatorPhone}
                           </a>
-                        ) : 'Ã¢â‚¬â€'}
+                        ) : EMPTY_CELL}
                       </span>
                     </div>
                  </div>
@@ -7864,11 +7889,11 @@ export default function Tickets() {
                      <SHead title="Client & Location Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                        <DField label="Customer" value={custName} />
-                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : 'Ã¢â‚¬â€'} />
+                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
                        {!isMyTickets && (
                          <DField label="Address" value={addr} className="sm:col-span-2" />
                        )}
-                       <DField label="District" value={district || resolveTicketDistrict(t) || 'Ã¢â‚¬â€'} className={isMyTickets ? "sm:col-span-2" : ""} />
+                       <DField label="District" value={district || resolveTicketDistrict(t) || EMPTY_CELL} className={isMyTickets ? "sm:col-span-2" : ""} />
                      </div>
                    </div>
 
@@ -7876,14 +7901,14 @@ export default function Tickets() {
                    <div>
                      <SHead title="Service & Equipment Details" />
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || 'Ã¢â‚¬â€'} />
-                       <DField label="Brand / Unit" value={brand || 'Ã¢â‚¬â€'} />
-                       <DField label="Service / Driver" value={serviceDriver || 'Ã¢â‚¬â€'} />
-                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || 'Ã¢â‚¬â€'} />
-                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : 'Ã¢â‚¬â€'} />
-                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || 'Ã¢â‚¬â€'} />
-                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || 'Ã¢â‚¬â€'} />
-                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || 'Ã¢â‚¬â€'} />
+                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || EMPTY_CELL} />
+                       <DField label="Brand / Unit" value={brand || EMPTY_CELL} />
+                       <DField label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
+                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
+                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL} />
+                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
+                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || EMPTY_CELL} />
+                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
                      </div>
                    </div>
 
@@ -7908,8 +7933,8 @@ export default function Tickets() {
                      <div>
                        <SHead title="Payment Details" />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         <DField label="Mode of Payment" value={paymentMode || 'Ã¢â‚¬â€'} />
-                         <DField label="Payment Amount" value={paymentAmt || 'Ã¢â‚¬â€'} green />
+                         <DField label="Mode of Payment" value={paymentMode || EMPTY_CELL} />
+                         <DField label="Payment Amount" value={paymentAmt || EMPTY_CELL} green />
                        </div>
                      </div>
                    )}
@@ -8086,7 +8111,7 @@ export default function Tickets() {
           if (isClosing) {
             const missing = getEmptyRequiredColumnsForClose(pickerTicket, branchEmployees, activeBranchId)
             if (missing.length > 0) {
-              alert(`Cannot close ticket because the following columns are empty:\nÃ¢â‚¬Â¢ ${missing.join('\nÃ¢â‚¬Â¢ ')}`)
+              alert(`Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`)
               return
             }
           }
@@ -8262,7 +8287,7 @@ export default function Tickets() {
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>Schedule details</p>
                   <p className="text-[12px] font-bold truncate mt-0.5" style={{ color: textPrimary }} title={customerName}>
-                    {customerName || 'Ã¢â‚¬â€'}
+                    {customerName || EMPTY_CELL}
                   </p>
                   <span
                     className="inline-flex items-center mt-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide border"
@@ -8292,13 +8317,13 @@ export default function Tickets() {
                       fontStyle: isGhost ? 'italic' : undefined,
                     }}
                   >
-                    {remarksText || 'Ã¢â‚¬â€'}
+                    {remarksText || EMPTY_CELL}
                   </p>
                 </div>
                 <div style={{ borderTop: `1px solid ${border}` }} className="pt-3">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Payment</p>
                   {!paymentCombined ? (
-                    <p className="text-[12px]" style={{ color: textMuted }}>Ã¢â‚¬â€</p>
+                    <p className="text-[12px]" style={{ color: textMuted }}>{EMPTY_CELL}</p>
                   ) : paymentMode === 'FREE' || paymentMode === 'FREE INSTALL' ? (
                     <p className="text-[12px] font-bold" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>FREE</p>
                   ) : (
@@ -8312,7 +8337,7 @@ export default function Tickets() {
                       {paymentAmount ? (
                         <p className="text-[12px]">
                           <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                          <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>Ã¢â€šÂ±{paymentAmount}</span>
+                          <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(paymentAmount)}</span>
                         </p>
                       ) : null}
                     </div>
@@ -8774,20 +8799,20 @@ export default function Tickets() {
                             return (
                               <tr key={row.rowIdx} className="hover:bg-slate-500/5" style={{ backgroundColor: rowBg }}>
                                 <td className="px-3 py-2 font-semibold" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.rowIdx}. {row.name}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.location || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.district || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.phone || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.brand || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.dlr || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.status || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.commit || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.installer || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `Ã¢â€šÂ±${Number(row.charges).toLocaleString('en-PH')}` : 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || 'Ã¢â‚¬â€'}</td>
-                                <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || 'Ã¢â‚¬â€'}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.location || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.district || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.phone || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.brand || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.dlr || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.status || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.commit || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.installer || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.confirmation || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.service || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.update || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.charges !== undefined ? `\u20B1${Number(row.charges).toLocaleString('en-PH')}` : EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, borderRight: `1px solid ${border}`, whiteSpace: 'nowrap' }}>{row.paymentMode || EMPTY_CELL}</td>
+                                <td className="px-3 py-2" style={{ color: textPrimary, whiteSpace: 'nowrap' }}>{row.controlNo || EMPTY_CELL}</td>
                               </tr>
                             )
                           })}
@@ -8944,7 +8969,7 @@ export default function Tickets() {
                   <Field label="Service / Driver">
                     <input type="text" value={addForm.serviceDriver || ''}
                       list="add-ticket-driver-roster"
-                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driverÃ¢â‚¬Â¦' : 'e.g. T3 (DOMINIC) - 1'}
+                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driver\u2026' : 'e.g. T3 (DOMINIC) - 1'}
                       onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -8957,7 +8982,7 @@ export default function Tickets() {
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
                     <input type="text" value={addForm.installerName || ''}
                       list="add-ticket-installer-roster"
-                      placeholder={activeBranchRoster.installers.length ? 'Select or type installerÃ¢â‚¬Â¦' : 'e.g. RYAN - 1'}
+                      placeholder={activeBranchRoster.installers.length ? 'Select or type installer\u2026' : 'e.g. RYAN - 1'}
                       onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -8996,7 +9021,7 @@ export default function Tickets() {
                   </Field>
                   <Field label="Control No. / SI (Aircon)">
                     <input type="text" value={addForm.controlNumber || ''}
-                      placeholder="From import only Ã¢â‚¬â€ aircon papers / SI"
+                      placeholder={`From import only ${EMPTY_CELL} aircon papers / SI`}
                       onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -9034,7 +9059,7 @@ export default function Tickets() {
                       <option value="PENDING">PENDING</option>
                     </select>
                   </Field>
-                  <Field label="Payment Amount (Ã¢â€šÂ±)">
+                  <Field label="Payment Amount (\u20B1)">
                     <input type="number" step="0.01" min="0"
                       placeholder="0.00"
                       value={addForm.installationCharges ?? ''}
@@ -9338,7 +9363,7 @@ export default function Tickets() {
                     className="mt-0.5 rounded border-slate-300"
                   />
                   <span>
-                    Pending Ã¢â‚¬â€ no date slot available yet
+                    Pending {EMPTY_CELL} no date slot available yet
                     <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
                       Ticket stays on the current schedule date until a new slot is confirmed.
                     </span>
@@ -9599,7 +9624,7 @@ export default function Tickets() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (Ã¢â€šÂ±)</label>
+                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (\u20B1)</label>
                     <input
                       type="number"
                       step="0.01"

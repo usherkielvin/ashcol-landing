@@ -1,4 +1,4 @@
-import { fetchTicketsPage, isPortalAdmin } from './api'
+import { fetchTicketsPage, isPortalAdmin, resolveScopedBranchId } from './api'
 import { normalizeRelayScheduleTicketList } from './relayScheduleSync'
 import { cacheTicketsByNumber, extractTicketNumbers, writeScheduleDateTicketNumbers } from './ticketNumberStore'
 import {
@@ -12,9 +12,9 @@ type PortalUserLike = { role?: string | null; branchId?: string | null } | null 
 
 const prefetchInFlight = new Map<string, Promise<void>>()
 const prefetchDoneAt = new Map<string, number>()
-const PREFETCH_COOLDOWN_MS = 90_000
+const PREFETCH_COOLDOWN_MS = 180_000
 const PREFETCH_PAGE_SIZE = 300
-const PREFETCH_CONCURRENCY = 2
+const PREFETCH_CACHE_FRESH_MS = 5 * 60_000
 
 export function adjacentScheduleDateKeys(center = new Date()): string[] {
   const base = new Date(center)
@@ -54,17 +54,6 @@ function readAuthToken(): string {
   return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 }
 
-function schedulesEndpoint(user: PortalUserLike): string | null {
-  const role = (user?.role || '').toLowerCase()
-  if (!role || role === 'customer') return null
-  const isAdmin = isPortalAdmin(role)
-  if (role === 'employee' || role === 'oic' || role === 'staff' || role === 'manager') {
-    return '/tickets/branch'
-  }
-  if (isAdmin) return '/tickets'
-  return '/tickets/branch'
-}
-
 function prefetchKey(user: PortalUserLike, globalBranchId?: string | null, dateKeys?: string[]): string {
   const role = (user?.role || '').toLowerCase()
   const branch = globalBranchId || user?.branchId || 'all'
@@ -72,23 +61,21 @@ function prefetchKey(user: PortalUserLike, globalBranchId?: string | null, dateK
   return `${role}:${branch}:${dates}`
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let index = 0
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (index < items.length) {
-      const current = items[index]
-      index += 1
-      await worker(current)
-    }
-  })
-  await Promise.all(runners)
+function resolvePrefetchBranchId(globalBranchId?: string | null, user?: PortalUserLike): string | undefined {
+  const raw = globalBranchId || user?.branchId
+  if (!raw || raw === 'ALL_BRANCHES') return undefined
+  return resolveScopedBranchId(raw)
 }
 
-/** Warm schedules cache for given dates (defaults: yesterday, today, tomorrow). */
+function isCacheFreshEnough(cacheKey: string): boolean {
+  if (isSchedulesSessionLoaded(cacheKey)) return true
+  const cached = readSchedulesTabCache(cacheKey)
+  if (!Array.isArray(cached?.tickets) || !cached.tickets.length) return false
+  const at = cached.lastSyncAt ?? 0
+  return at > 0 && Date.now() - at < PREFETCH_CACHE_FRESH_MS
+}
+
+/** Warm schedules cache for adjacent dates — one request per date, no multi-page fan-out. */
 export function prefetchSchedulesDateWindow(
   user: PortalUserLike,
   globalBranchId?: string | null,
@@ -98,8 +85,8 @@ export function prefetchSchedulesDateWindow(
   const token = readAuthToken()
   if (!token) return Promise.resolve()
 
-  const endpoint = schedulesEndpoint(user)
-  if (!endpoint) return Promise.resolve()
+  const role = (user.role || '').toLowerCase()
+  if (!role || role === 'customer') return Promise.resolve()
 
   const dates = options?.dateKeys?.length
     ? [...new Set(options.dateKeys.map(d => d.split('T')[0].split(' ')[0].trim()).filter(Boolean))]
@@ -114,24 +101,29 @@ export function prefetchSchedulesDateWindow(
   const existing = prefetchInFlight.get(key)
   if (existing && !options?.force) return existing
 
-  const role = (user.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
   const isCustomer = role === 'customer'
+  const branchId = resolvePrefetchBranchId(globalBranchId, user)
 
   const job = (async () => {
-    await runWithConcurrency(dates, PREFETCH_CONCURRENCY, async dateKey => {
+    for (const dateKey of dates) {
       const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, false, dateKey)
-      if (!options?.force && isSchedulesSessionLoaded(cacheKey)) return
+      if (!options?.force && isCacheFreshEnough(cacheKey)) continue
       try {
-        const list = await fetchTicketsPage(endpoint, token, { size: PREFETCH_PAGE_SIZE, date: dateKey })
-          const merged = normalizeRelayScheduleTicketList(list as unknown[])
-          cacheTicketsByNumber(merged)
-          writeScheduleDateTicketNumbers(dateKey, extractTicketNumbers(merged))
-          writeSchedulesTabCache(cacheKey, merged, 'prefetch')
+        const list = await fetchTicketsPage('/tickets/branch', token, {
+          size: PREFETCH_PAGE_SIZE,
+          date: dateKey,
+          paginate: false,
+          ...(branchId ? { branchId } : {}),
+        })
+        const merged = normalizeRelayScheduleTicketList(list as unknown[])
+        cacheTicketsByNumber(merged)
+        writeScheduleDateTicketNumbers(dateKey, extractTicketNumbers(merged))
+        writeSchedulesTabCache(cacheKey, merged, 'prefetch')
       } catch (err) {
         console.warn('[SchedulesPrefetch] failed for', dateKey, err)
       }
-    })
+    }
     prefetchDoneAt.set(key, Date.now())
   })()
 

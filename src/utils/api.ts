@@ -881,6 +881,7 @@ async function fetchTicketsPageOnce(
     status?: string
     date?: string
     statusGroup?: string
+    branchId?: string
   } = {},
 ): Promise<TicketsPageResult> {
   const size = options.size ?? 200
@@ -890,6 +891,7 @@ async function fetchTicketsPageOnce(
   if (options.status) base.status = options.status
   if (options.date) base.date = options.date
   if (options.statusGroup) base.statusGroup = options.statusGroup
+  if (options.branchId) base.branchId = options.branchId
 
   const attempts: Record<string, string>[] = options.categoryGroup
     ? [{ ...base, categoryGroup: options.categoryGroup }, base]
@@ -930,14 +932,15 @@ export async function fetchTicketsPage(
     status?: string
     date?: string
     statusGroup?: string
-    /** When false, only the requested page is returned (default: fetch all pages). */
+    branchId?: string
+    /** When true, fetches additional pages (max 5). Default: single page only. */
     paginate?: boolean
     maxPages?: number
   } = {},
 ): Promise<unknown[]> {
   const pageSize = options.size ?? 200
-  const paginate = options.paginate !== false
-  const maxPages = options.maxPages ?? 20
+  const paginate = options.paginate === true
+  const maxPages = options.maxPages ?? 5
 
   if (!paginate) {
     const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page: 0, size: pageSize })

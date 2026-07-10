@@ -95,8 +95,28 @@ function mergeAcJson(acDetails: string | undefined, updates: Record<string, unkn
 }
 
 /** Align relay + schedules fields on a ticket row (after fetch or save). */
+import { sanitizeDisplayText } from './textSanitize'
+
+const TICKET_TEXT_FIELDS = [
+  'remarks', 'remarksUpdate', 'remarks_update',
+  'serviceVehicle', 'service_vehicle',
+  'installer', 'installerName', 'installer_name',
+  'assignedEmployeeName', 'assigned_employee_name',
+  'modeOfPayment', 'mode_of_payment', 'note',
+  'commitType', 'commitTerms', 'description',
+  'sourceVendor', 'source_vendor',
+] as const
+
+function sanitizeTicketTextFields(ticket: Record<string, unknown>): void {
+  for (const key of TICKET_TEXT_FIELDS) {
+    const v = ticket[key]
+    if (typeof v === 'string') ticket[key] = sanitizeDisplayText(v)
+  }
+}
+
 export function normalizeRelayScheduleTicket(ticket: any): any {
   const next = { ...ticket }
+  sanitizeTicketTextFields(next)
   syncAlias(next, 'customerName', 'customer_name')
   syncAlias(next, 'preferredDate', 'preferred_date')
   syncAlias(next, 'negotiatorId', 'negotiator_id')
