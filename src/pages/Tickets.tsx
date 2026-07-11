@@ -1230,6 +1230,8 @@ function applyReturnToNegotiatorMyTicketsPatch(
 ): void {
   body.status = 'ASSIGNED'
   body.preferredDate = ''
+  body.preferred_date = ''   // snake_case alias
+  body.finalDate = ''         // explicitly clear the DB column so row disappears from schedule
   body.scheduleOutcome = ''
 
   acUpdates.finalDate = ''

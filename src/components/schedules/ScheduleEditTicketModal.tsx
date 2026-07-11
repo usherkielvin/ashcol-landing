@@ -1,4 +1,4 @@
-﻿import ReactDOM from 'react-dom'
+import ReactDOM from 'react-dom'
 import { CalendarDays, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react'
 import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import type { TicketCategoryValue } from '../../constants/ticketCategories'
@@ -72,8 +72,7 @@ type ScheduleEditTicketModalProps = {
 }
 
 function Row({ children, cols = 2 }: { children: React.ReactNode; cols?: 1 | 2 | 3 }) {
-  const gridClass = cols === 3 ? 'grid grid-cols-3' : cols === 2 ? 'grid grid-cols-2' : 'grid grid-cols-1'
-  return <div className={{gridClass} gap-3} style={{ display: 'grid', gridTemplateColumns: cols === 3 ? '1fr 1fr 1fr' : cols === 2 ? '1fr 1fr' : '1fr', gap: 12 }}>{children}</div>
+  return <div style={{ display: 'grid', gridTemplateColumns: cols === 3 ? '1fr 1fr 1fr' : cols === 2 ? '1fr 1fr' : '1fr', gap: 12 }}>{children}</div>
 }
 
 function Field({ label, required, span, children }: { label: string; required?: boolean; span?: boolean; children: React.ReactNode }) {
@@ -172,7 +171,7 @@ export function ScheduleEditTicketModal({
         {/* Header */}
         <div
           className="shrink-0 px-4 sm:px-5 py-3 flex items-center justify-between gap-3 safe-area-top"
-          style={{ borderBottom: 1px solid  }}
+          style={{ borderBottom: `1px solid ${border}` }}
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -199,7 +198,7 @@ export function ScheduleEditTicketModal({
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Branch & OIC */}
-          <div style={{ borderRadius: 12, padding: 14, border: 1px solid , backgroundColor: isLight ? 'rgba(240,253,244,0.7)' : 'rgba(22,163,74,0.06)' }}>
+          <div style={{ borderRadius: 12, padding: 14, border: `1px solid ${isLight ? 'rgba(22,163,74,0.2)' : 'rgba(74,222,128,0.18)'}`, backgroundColor: isLight ? 'rgba(240,253,244,0.7)' : 'rgba(22,163,74,0.06)' }}>
             <Row>
               <Field label="Assigned Branch" required>
                 <select value={form.branchId || ''} onChange={e => onChange({ branchId: e.target.value, negotiatorId: '' })} style={selectInp}>
@@ -287,7 +286,7 @@ export function ScheduleEditTicketModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Row>
               <Field label="Scheduled Date">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: inputBg, border: 1px solid , borderRadius: 8, padding: '7px 10px', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '7px 10px', cursor: 'pointer' }}>
                   <CalendarDays style={{ width: 14, height: 14, color: green, flexShrink: 0 }} strokeWidth={2.2} />
                   <input
                     type="date"
@@ -312,9 +311,9 @@ export function ScheduleEditTicketModal({
                 <button
                   type="button"
                   onClick={e => onOpenStatusPicker(e.currentTarget)}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, backgroundColor: inputBg, border: 1px solid , borderRadius: 8, padding: '7px 10px', cursor: 'pointer', width: '100%', textAlign: 'left', fontFamily: 'inherit' }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, backgroundColor: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '7px 10px', cursor: 'pointer', width: '100%', textAlign: 'left', fontFamily: 'inherit' }}
                 >
-                  <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, border: 1px solid , borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85%' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, border: `1px solid ${statusStyle.borderColor}`, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85%' }}>
                     {getStatusLabel(statusVal)}
                   </span>
                   <ChevronDown style={{ width: 13, height: 13, color: textMuted, flexShrink: 0 }} />
@@ -324,7 +323,7 @@ export function ScheduleEditTicketModal({
 
             {/* Resched sub-block */}
             {isReschedStatus && (
-              <div style={{ borderRadius: 10, padding: 12, backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)', border: 1.5px solid , display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ borderRadius: 10, padding: 12, backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)', border: `1.5px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.4)'}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <Row>
                   <Field label="Reschedule To" required={!form.reschedulePending}>
                     <input
@@ -350,10 +349,10 @@ export function ScheduleEditTicketModal({
                 {editOriginalDate && (
                   <p style={{ fontSize: 10, fontWeight: 600, color: isLight ? '#92400e' : '#fcd34d', margin: 0 }}>
                     {form.reschedulePending
-                      ? Stays on  as rescheduled (pending).
+                      ? `Stays on ${formatDateLabel(editOriginalDate)} as rescheduled (pending).`
                       : form.rescheduleToDate && form.rescheduleToDate !== editOriginalDate
-                        ? Will move from  → .
-                        : Currently on  — pick a new date or mark as pending.}
+                        ? `Will move from ${formatDateLabel(editOriginalDate)} → ${formatDateLabel(form.rescheduleToDate)}.`
+                        : `Currently on ${formatDateLabel(editOriginalDate)} — pick a new date or mark as pending.`}
                   </p>
                 )}
               </div>
@@ -361,7 +360,7 @@ export function ScheduleEditTicketModal({
 
             {/* Warning: clearing date returns to My Tickets */}
             {clearingDateWarning && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, borderRadius: 8, padding: 10, backgroundColor: isLight ? '#fef3c7' : 'rgba(251,191,36,0.08)', border: 1px solid  }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, borderRadius: 8, padding: 10, backgroundColor: isLight ? '#fef3c7' : 'rgba(251,191,36,0.08)', border: `1px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.3)'}` }}>
                 <AlertTriangle style={{ width: 13, height: 13, color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: 10, fontWeight: 600, color: isLight ? '#92400e' : '#fbbf24', margin: 0 }}>
                   Clearing the date will return this ticket to <strong>My Tickets</strong> and remove it from the schedule.
@@ -388,7 +387,7 @@ export function ScheduleEditTicketModal({
                 )}
               </div>
               {showPaymentSection && (
-                <div style={{ borderRadius: 12, padding: 12, border: 1px solid , backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.05)') : inputBg }}>
+                <div style={{ borderRadius: 12, padding: 12, border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.3)') : inputBorder}`, backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.05)') : inputBg }}>
                   <Row>
                     <Field label="Mode of Payment">
                       <select
@@ -435,9 +434,9 @@ export function ScheduleEditTicketModal({
         {/* Footer */}
         <div
           className="shrink-0 px-4 sm:px-5 py-3 flex items-center justify-end gap-2.5 safe-area-bottom"
-          style={{ borderTop: 1px solid , backgroundColor: isLight ? '#f8fafc' : 'rgba(6,12,24,0.6)' }}
+          style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : 'rgba(6,12,24,0.6)' }}
         >
-          <button type="button" onClick={onClose} disabled={saving} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, border: 1px solid , backgroundColor: 'transparent', color: textMuted, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, fontFamily: 'inherit' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, border: `1px solid ${inputBorder}`, backgroundColor: 'transparent', color: textMuted, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, fontFamily: 'inherit' }}>
             Cancel
           </button>
           <button type="button" onClick={onSave} disabled={saving} style={{ padding: '7px 20px', borderRadius: 8, fontSize: 12, fontWeight: 800, backgroundColor: green, color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
