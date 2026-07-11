@@ -632,9 +632,15 @@ function mergeServerListWithLocalEdits(
   serverList: Ticket[],
   localList: Ticket[],
   editedIds: Set<string>,
-  options?: { dateFilter?: string; extraLocal?: Ticket[] },
+  options?: { dateFilter?: string; extraLocal?: Ticket[]; stickyLocal?: boolean },
 ): Ticket[] {
-  if (editedIds.size === 0) return serverList
+  // stickyLocal: once a row has appeared on a schedule date it must NOT vanish because a later
+  // (possibly stale/incomplete) server response omitted it — re-add every cached row that still
+  // belongs on this date, not just ones edited in this session. Safe because: deleted rows are
+  // filtered afterward by applyOptimisticOverlay (deletedTicketsRef), and the branch/date display
+  // filter still runs, so this can't resurrect deleted, wrong-day, or wrong-branch rows.
+  const sticky = options?.stickyLocal ?? false
+  if (editedIds.size === 0 && !sticky) return serverList
 
   const localById = new Map<string, Ticket>()
   for (const t of localList) localById.set(t.id, t)
@@ -652,7 +658,9 @@ function mergeServerListWithLocalEdits(
 
   const dateKey = options?.dateFilter
   for (const local of localById.values()) {
-    if (!editedIds.has(local.id) || serverIds.has(local.id)) continue
+    if (serverIds.has(local.id)) continue
+    // Edited rows are always re-added; in sticky mode every cached row on this date is too.
+    if (!sticky && !editedIds.has(local.id)) continue
     if (dateKey && !ticketMatchesDateKey(local, dateKey) && !isScheduleGhostOnDate(local, dateKey)) continue
     merged.unshift(normalizeRelayScheduleTicket(local) as Ticket)
   }
@@ -2697,36 +2705,60 @@ function buildCellPatchBody(
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
     case 'SERVICE': {
-      const driverOnly = normalizeDriverInput(v)
-      body.driverName = driverOnly
-      const acUpdates: Record<string, any> = { driverName: driverOnly, driver_name: driverOnly }
+      const parts = getServiceVehicleParts(v)
+      if (parts.driver && parts.vehicle) {
+        body.driverName = parts.driver
+        body.serviceVehicle = parts.vehicle
+        body.acDetails = mergeAcMeta(acBase, {
+          driverName: parts.driver,
+          driver_name: parts.driver,
+          serviceVehicle: parts.vehicle,
+          service_vehicle: parts.vehicle,
+        })
+      } else {
+        const driverOnly = normalizeDriverInput(v)
+        body.driverName = driverOnly
+        const acUpdates: Record<string, any> = { driverName: driverOnly, driver_name: driverOnly }
 
-      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-        const parts = getServiceVehicleParts(formatServiceDriver(ticket))
-        if (parts.vehicle) {
-          body.serviceVehicle = parts.vehicle
-          acUpdates.serviceVehicle = parts.vehicle
+        const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+        if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+          const legacyParts = getServiceVehicleParts(formatServiceDriver(ticket))
+          if (legacyParts.vehicle) {
+            body.serviceVehicle = legacyParts.vehicle
+            acUpdates.serviceVehicle = legacyParts.vehicle
+          }
         }
+        body.acDetails = mergeAcMeta(acBase, acUpdates)
       }
-      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'VEHICLE': {
-      const vehicleOnly = normalizeDriverInput(v)
-      body.serviceVehicle = vehicleOnly
-      const acUpdates: Record<string, any> = { serviceVehicle: vehicleOnly }
+      const parts = getServiceVehicleParts(v)
+      if (parts.driver && parts.vehicle) {
+        body.driverName = parts.driver
+        body.serviceVehicle = parts.vehicle
+        body.acDetails = mergeAcMeta(acBase, {
+          driverName: parts.driver,
+          driver_name: parts.driver,
+          serviceVehicle: parts.vehicle,
+          service_vehicle: parts.vehicle,
+        })
+      } else {
+        const vehicleOnly = normalizeDriverInput(v)
+        body.serviceVehicle = vehicleOnly
+        const acUpdates: Record<string, any> = { serviceVehicle: vehicleOnly }
 
-      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-        const parts = getServiceVehicleParts(formatServiceDriver(ticket))
-        if (parts.driver) {
-          body.driverName = parts.driver
-          acUpdates.driverName = parts.driver
-          acUpdates.driver_name = parts.driver
+        const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+        if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+          const legacyParts = getServiceVehicleParts(formatServiceDriver(ticket))
+          if (legacyParts.driver) {
+            body.driverName = legacyParts.driver
+            acUpdates.driverName = legacyParts.driver
+            acUpdates.driver_name = legacyParts.driver
+          }
         }
+        body.acDetails = mergeAcMeta(acBase, acUpdates)
       }
-      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'UPDATE': {
@@ -5454,7 +5486,9 @@ export default function Tickets() {
           list as Ticket[],
           (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
           locallyEditedTicketIdsRef.current,
-          { dateFilter: requestDate, extraLocal: ticketsRef.current },
+          // stickyLocal: schedule rows that have already appeared on this date/branch must persist
+          // across reloads even if a stale/incomplete server response omits them.
+          { dateFilter: requestDate, extraLocal: ticketsRef.current, stickyLocal: true },
         )
         : mergeServerListWithLocalEdits(
           list as Ticket[],
