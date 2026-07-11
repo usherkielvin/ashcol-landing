@@ -702,7 +702,7 @@ function resolveTicketScheduleDateKey(ticket: Ticket): string {
   return getPreferredDateKey(ticket) || ''
 }
 
-function resolveFormScheduleDateKey(form: { finalDate?: string; preferredDate?: string; rescheduleToDate?: string }): string {
+function resolveFormScheduleDateKey(form: { finalDate?: string; preferredDate?: string }): string {
   const final = form.finalDate?.split('T')[0]?.trim() || ''
   const preferred = form.preferredDate?.split('T')[0]?.trim() || ''
   return final || preferred
@@ -1097,13 +1097,12 @@ function getRescheduleTargetDateKey(ticket: Ticket): string {
 }
 
 function shouldBlankReschedGhostPayment(
-  ticket: Ticket,
   dateKey?: string,
   ghostKind?: 'completed' | 'resched' | null,
 ): boolean {
   if (!dateKey) return false
   if (ghostKind === 'resched') return true
-  return isRescheduledGhostOnDate(ticket, dateKey)
+  return isRescheduledGhostOnDate()
 }
 
 function getContinuationDates(ticket: Ticket): string[] {
@@ -1164,6 +1163,12 @@ function isMovedToRescheduleRemark(text: string): boolean {
   return /^Moved to /i.test(text.trim())
 }
 
+/**
+ * Builds the patch for the inline "Reschedule appointment" dialog. Moves the ticket's Final Date
+ * in place — no ghost/duplicate row is left on the old date (previousScheduleDates/rescheduledTo
+ * are no longer written here; see isRescheduledGhostOnDate). "Pending" leaves the date untouched
+ * and just flags the ticket as awaiting a new slot.
+ */
 function buildReschedulePatchBody(
   ticket: Ticket,
   options: { newDateKey?: string | null; pending: boolean },
@@ -1174,7 +1179,6 @@ function buildReschedulePatchBody(
 
   if (options.pending) {
     acUpdates.reschedulePending = true
-    acUpdates.rescheduledTo = ''
     const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
     if (!base) {
       body.remarks = 'PENDING'
@@ -1186,20 +1190,12 @@ function buildReschedulePatchBody(
     const newDateKey = (options.newDateKey || '').split('T')[0].trim()
     if (!newDateKey) return {}
     acUpdates.reschedulePending = false
-    acUpdates.rescheduledTo = newDateKey
-    acUpdates.finalDate = ''
+    acUpdates.finalDate = newDateKey
     acUpdates.scheduledDate = newDateKey
     body.preferredDate = newDateKey
-    body.finalDate = ''
-    body.status = 'RESCHED'
+    body.finalDate = newDateKey
+    body.status = 'SCHEDULED'
     if (oldDateKey && oldDateKey !== newDateKey) {
-      const existing = parseAcMeta(ticket)
-      const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
-        ? [...existing.previousScheduleDates]
-        : []
-      if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
-      acUpdates.previousScheduleDates = prevDates
-      
       const formattedNewDate = formatDateKeyLabel(newDateKey)
       const reschedMsg = `Moved to ${formattedNewDate}`
       body.remarks = reschedMsg
@@ -1294,31 +1290,21 @@ function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return false
 }
 
-function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
-  if (!dateKey) return false
-  if (isInstalledWorkflowStatus(ticket.status)) return false
-
-  const target = getRescheduleTargetDateKey(ticket)
-  const isResched = (ticket.status || '').toUpperCase() === 'RESCHED'
-    || getScheduleStatusValue(ticket) === 'RESCHED'
-
-  // Active row on the new reschedule target day — not a ghost.
-  if (target === dateKey) return false
-
-  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
-
-  if (isResched && target && target !== dateKey) {
-    if (getFinalDateKey(ticket) === dateKey) return true
-    if (ticketMatchesDateKey(ticket, dateKey)) return true
-  }
-
+// Resched ghost rows are retired — rescheduling now moves a ticket in place (new date only)
+// instead of leaving a muted duplicate behind on its old date. That duplicate-row mechanism
+// (driven by rescheduledTo/previousScheduleDates) was the root cause of schedule dates losing
+// rows: any staleness in that bookkeeping made rows vanish or duplicate across dates. Stubbed
+// to `false` (rather than deleted) so legacy tickets that still carry old rescheduledTo/
+// previousScheduleDates values from before this change don't render stale ghosts either, and so
+// the handful of downstream call sites (shouldBlankReschedGhostPayment, formatGhostRemarks)
+// don't need touching.
+function isRescheduledGhostOnDate(): boolean {
   return false
 }
 
 function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | null {
   if (!dateKey) return null
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
-  if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
   return null
 }
 
@@ -1404,7 +1390,7 @@ function getInstalledDateKey(ticket: Ticket): string {
 }
 
 function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
-  return isRescheduledGhostOnDate(ticket, dateKey) || isCompletedGhostOnDate(ticket, dateKey)
+  return isRescheduledGhostOnDate() || isCompletedGhostOnDate(ticket, dateKey)
 }
 
 function formatGhostRemarks(
@@ -1514,7 +1500,7 @@ function getSchedulePaymentDisplay(
   dateKey?: string,
   ghostKind?: 'completed' | 'resched' | null,
 ): string {
-  if (shouldBlankReschedGhostPayment(ticket, dateKey, ghostKind)) return ''
+  if (shouldBlankReschedGhostPayment(dateKey, ghostKind)) return ''
   const resolved = resolveTicketPayment(ticket)
   if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE'
 
@@ -3284,9 +3270,8 @@ export default function Tickets() {
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
   const [editSaving, setEditSaving] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editOriginalDate, setEditOriginalDate] = useState('')
-  const [editInitialStatus, setEditInitialStatus] = useState('')
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
 
   useEffect(() => {
@@ -4050,7 +4035,6 @@ export default function Tickets() {
         return AUTO_STATUS_REMARKS.has(raw.toLowerCase()) ? '' : raw
       })(),
       acDetails: ticket.acDetails || ticket.ac_details,
-      rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
       reschedulePending: isReschedulePending(ticket),
     }
   }, [branchEmployees, activeBranchId, isMyTickets, user?.id, resolveBranch])
@@ -4062,7 +4046,6 @@ export default function Tickets() {
     const form = buildScheduleEditForm(localTicket)
     setEditForm(form)
     setEditFormSnapshot(JSON.stringify(form))
-    setEditInitialStatus(form.status || '')
     setEditModalOpen(true)
 
     const auth = token()
@@ -4157,8 +4140,8 @@ export default function Tickets() {
     if (!form.id) return 'Ticket not found'
     const isReschedStatusEarly = (form.status || '').toUpperCase() === 'RESCHED'
     if (isReschedStatusEarly) {
-      if (!form.reschedulePending && !form.rescheduleToDate?.trim()) {
-        return 'Select a reschedule date or choose Pending if no slot is available yet'
+      if (!form.reschedulePending && !form.finalDate?.trim()) {
+        return 'Pick a Final Date or choose Pending if no slot is available yet'
       }
     }
     if (!form.negotiatorId) return 'Negotiator is required'
@@ -4287,8 +4270,11 @@ export default function Tickets() {
 
       const oldDateKey = editOriginalDate?.split('T')[0]?.trim()
         || resolveTicketScheduleDateKey(originalTicket)
-      const newDateKey = isReschedStatus
-        ? (activeForm.reschedulePending ? '' : activeForm.rescheduleToDate?.split('T')[0]?.trim() || '')
+      // Final Date is the single source of truth for "where this ticket is" — used regardless of
+      // status, including RESCHED (no more separate rescheduleToDate field/indirection). "Pending"
+      // means no new date has been decided yet, so the ticket doesn't move.
+      const newDateKey = (isReschedStatus && activeForm.reschedulePending)
+        ? ''
         : resolveFormScheduleDateKey(activeForm)
       const isDateMove = Boolean(oldDateKey && newDateKey && oldDateKey !== newDateKey)
       const hadScheduleDate = Boolean(
@@ -4380,7 +4366,6 @@ export default function Tickets() {
         body.status = 'RESCHED'
         if (activeForm.reschedulePending) {
           acMetaExtras.reschedulePending = true
-          acMetaExtras.rescheduledTo = ''
           if (!remarksVal) {
             remarksVal = 'PENDING'
             body.remarks = remarksVal
@@ -4388,7 +4373,6 @@ export default function Tickets() {
           }
         } else {
           acMetaExtras.reschedulePending = false
-          acMetaExtras.rescheduledTo = newDateKey
         }
       } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
@@ -4428,16 +4412,16 @@ export default function Tickets() {
       }
       if (paymentMode) body.modeOfPayment = paymentMode
 
-      if (finalDateKey && !isReschedStatus) {
+      if (finalDateKey) {
         body.finalDate = finalDateKey
         body.preferredDate = activeForm.preferredDate || finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
-        if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
+        if (!isReschedStatus && ['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
           body.status = 'SCHEDULED'
         }
       }
 
-      const schedulePlacementDate = isReschedStatus ? '' : (finalDateKey || newDateKey)
+      const schedulePlacementDate = finalDateKey || newDateKey
 
       const isReturningToMyTickets = !isReschedStatus
         && !finalDateKey
@@ -4448,21 +4432,14 @@ export default function Tickets() {
         applyReturnToNegotiatorMyTicketsPatch(originalTicket, body, acMetaExtras)
       }
 
+      // A normal date move just updates finalDate/scheduledDate in place (set below) — no ghost
+      // row or reschedule history is written for it anymore.
       if (isDateMove && !leavingResched) {
-        const existing = parseAcMeta(activeForm as Ticket)
-        const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
-          ? [...existing.previousScheduleDates]
-          : []
-        if (!prevDates.includes(oldDateKey)) prevDates.push(oldDateKey)
-        acMetaExtras.previousScheduleDates = prevDates
-        acMetaExtras.rescheduledTo = newDateKey
         acMetaExtras.reschedulePending = false
       }
 
       // Leaving RESCHED for Installation/etc. Ã¢â‚¬â€ never re-apply ghost-date metadata
       if (leavingResched) {
-        // previousScheduleDates is kept (not cleared) — permanent ghost-row history for the old date.
-        acMetaExtras.rescheduledTo = ''
         acMetaExtras.reschedulePending = false
         if (isMovedToRescheduleRemark(remarksVal || '') || /^PENDING$/i.test((remarksVal || '').trim())) {
           remarksVal = ''
@@ -4497,12 +4474,12 @@ export default function Tickets() {
           branchEmployees,
           activeForm.negotiatorId,
         ) || undefined,
-        finalDate: isReschedStatus ? '' : finalDateKey,
-        scheduledDate: isReschedStatus ? '' : schedulePlacementDate,
+        finalDate: finalDateKey,
+        scheduledDate: schedulePlacementDate,
         scheduleOutcome: statusOutcome || statusAcMeta.scheduleOutcome || '',
         schedulePhase: statusAcMeta.schedulePhase ?? '',
         ...(leavingResched
-          ? { rescheduledTo: '', reschedulePending: false }
+          ? { reschedulePending: false }
           : {}),
       })
 
@@ -5825,9 +5802,7 @@ export default function Tickets() {
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
         commit: getF(live, 'commitType', 'commitTerms', 'description'),
         installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
-        update: dateFilter && isRescheduledGhostOnDate(live, dateFilter)
-          ? formatGhostRemarks(live, 'resched', dateFilter)
-          : getScheduleUpdateDisplay(live),
+        update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
         driver: getTicketDriverName(live) || formatServiceDriver(live) || '',
         service: formatRelayTicketTypeShort(live) || getF(live, 'serviceType', 'service_type') || '',
@@ -7152,7 +7127,7 @@ export default function Tickets() {
     }
 
     if (label === 'PAYMENT') {
-      if (shouldBlankReschedGhostPayment(ticket, dateFilter, ghostKind)) {
+      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) {
         return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
       }
       const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket, dateFilter, ghostKind))
@@ -8481,13 +8456,7 @@ export default function Tickets() {
         const pickStatus = (value: string) => {
           setStatusPicker(null)
           if (pickerMode === 'edit-form') {
-            setEditForm(prev => ({
-              ...prev,
-              status: value,
-              rescheduleToDate: value === 'RESCHED'
-                ? (prev.rescheduleToDate || prev.preferredDate || editOriginalDate || '')
-                : '',
-            }))
+            setEditForm(prev => ({ ...prev, status: value }))
             return
           }
           const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
@@ -8757,7 +8726,6 @@ export default function Tickets() {
       {finalDatePicker && (() => {
         const { ticket, x, y, value, preferredDate } = finalDatePicker
         const todayKey = todayDateKey()
-        const todayParts = todayKey.split('-').map(Number)
         const fallback = new Date(`${todayKey}T00:00:00`)
         const calYear = finalDateCalMonth?.year ?? fallback.getFullYear()
         const calMonth = finalDateCalMonth?.month ?? fallback.getMonth()
@@ -8766,18 +8734,12 @@ export default function Tickets() {
         const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
         const selLabel = value ? formatDateKeyLabel(value) : ''
         const preferredLabel = preferredDate ? formatDateKeyLabel(preferredDate) : ''
-        const isPast = (yr: number, mo: number, d: number) => {
-          if (yr < todayParts[0]) return true
-          if (yr === todayParts[0] && mo < todayParts[1]) return true
-          if (yr === todayParts[0] && mo === todayParts[1] && d < todayParts[2]) return true
-          return false
-        }
         const goMonth = (delta: number) => {
           const cur = new Date(calYear, calMonth, 1)
           cur.setMonth(cur.getMonth() + delta)
           setFinalDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
         }
-        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
+        const atTodayMonth = false
         const pickDate = (dateKey: string) => {
           setFinalDatePicker(prev => (prev ? { ...prev, value: dateKey } : null))
         }
@@ -8915,7 +8877,9 @@ export default function Tickets() {
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1
                     const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    const past = isPast(calYear, calMonth + 1, day)
+                    // Past dates are selectable — a ticket's schedule date can be moved to any
+                    // date, including catching up a record that should have been on an earlier day.
+                    const past = false
                     const isToday = dKey === todayKey
                     const isSel = dKey === value
                     const isPreferred = Boolean(preferredDate && dKey === preferredDate)
@@ -9522,7 +9486,6 @@ export default function Tickets() {
             serviceDriver: editForm.serviceDriver || (isMyTickets ? formatRelayTicketTypeShort(editTicket) : getTicketVehicleDisplay(editTicket)),
             driverName: editForm.driverName || (isMyTickets ? '' : getTicketDriverDisplay(editTicket)),
             installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
-            rescheduleToDate: editForm.rescheduleToDate || '',
             reschedulePending: Boolean(editForm.reschedulePending),
             remarks: editForm.remarks || editTicket.remarks || editTicket.remarksUpdate || '',
             commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
@@ -9537,8 +9500,6 @@ export default function Tickets() {
           form={editForm}
           onChange={patchScheduleEditForm}
           editOriginalDate={editOriginalDate}
-          editInitialStatus={editInitialStatus}
-          previousScheduleDates={editTicket ? getPreviousScheduleDates(editTicket) : []}
           isLight={isLight}
           isTaguigServices={isTaguigServices}
           canEdit={canEdit}
@@ -9613,7 +9574,6 @@ export default function Tickets() {
 
       {reschedDialog && (() => {
         const todayKey = todayDateKey()
-        const todayParts = todayKey.split('-').map(Number)
         const fallback = new Date(`${todayKey}T00:00:00`)
         const calYear = reschedCalMonth?.year ?? fallback.getFullYear()
         const calMonth = reschedCalMonth?.month ?? fallback.getMonth()
@@ -9622,19 +9582,12 @@ export default function Tickets() {
         const firstDow = new Date(calYear, calMonth, 1).getDay()
         const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
         const selLabel = reschedToDate ? formatDateKeyLabel(reschedToDate) : ''
-        const isPast = (y: number, m: number, d: number) => {
-          if (y < todayParts[0]) return true
-          if (y === todayParts[0] && m < todayParts[1]) return true
-          if (y === todayParts[0] && m === todayParts[1] && d < todayParts[2]) return true
-          return false
-        }
         const goMonth = (delta: number) => {
           const cur = new Date(calYear, calMonth, 1)
           cur.setMonth(cur.getMonth() + delta)
           setReschedCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
         }
-        // Prevent navigating back before the current month
-        const atTodayMonth = calYear === todayParts[0] && calMonth === todayParts[1] - 1
+        const atTodayMonth = false
         return (
           <div
             key={calKey}
@@ -9705,7 +9658,9 @@ export default function Tickets() {
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1
                     const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    const past = isPast(calYear, calMonth + 1, day)
+                    // Past dates are selectable — rescheduling to an earlier date (e.g.
+                    // correcting a record) is allowed, same as the Final Date picker.
+                    const past = false
                     const isToday = dKey === todayKey
                     const isSel = dKey === reschedToDate
                     return (

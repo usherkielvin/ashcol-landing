@@ -50,7 +50,6 @@ export type RelayEditDraft = {
   driverName: string
   finalDate: string
   scheduleStatus: string
-  rescheduleToDate: string
   reschedulePending: boolean
   remarks: string
   commitTerms: string
@@ -97,7 +96,6 @@ type TicketLike = {
   finalDate?: string
   final_date?: string
   remarks?: string
-  rescheduleToDate?: string
   reschedulePending?: boolean
   commitTerms?: string
 }
@@ -188,7 +186,6 @@ export function buildRelayEditDraft(
     driverName: ticket.driverName || ticket.driver_name || parsedDetails.driverName || '',
     finalDate: parsedDetails.finalDate || ticket.finalDate || ticket.final_date || '',
     scheduleStatus: ticket.status || 'INSTALLATION',
-    rescheduleToDate: '',
     reschedulePending: Boolean(parsedDetails.reschedulePending),
     remarks: ticket.remarks || ticket.remarksUpdate || '',
     commitTerms: ticket.commitType || ticket.commitTerms || '',

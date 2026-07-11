@@ -152,8 +152,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }
 
   const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
-  const previousScheduleDates = parseAcDetails ? (parseAcDetails(ticket).previousScheduleDates || []) : []
-  const lastRescheduledDate = previousScheduleDates[previousScheduleDates.length - 1] || ''
   const pendingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'pending')
   const closingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'closing')
   const isSaving = saving || actionSaving
@@ -437,9 +435,10 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               )}
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               {isFieldSurface && (
-                <EField label="Scheduled Date" className={!isOverview && !lastRescheduledDate ? 'md:col-span-2' : ''}>
+                <EField label="Final Date" className={!isOverview && !isReschedStatus ? 'md:col-span-2' : ''}>
                   <input
                     type="date"
+                    disabled={isReschedStatus && draft.reschedulePending}
                     value={draft.finalDate}
                     onChange={(e) => patch({ finalDate: e.target.value })}
                     className={relayInput}
@@ -447,52 +446,21 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                       ...inputStyle,
                       backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)',
                       borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)',
-                    }}
-                  />
-                </EField>
-              )}
-              {isFieldSurface && lastRescheduledDate && (
-                <EField label="Rescheduled Date" className={isOverview ? 'sm:col-span-2' : ''}>
-                  <input
-                    type="date"
-                    readOnly
-                    disabled
-                    value={lastRescheduledDate}
-                    className={relayInput}
-                    style={{
-                      ...inputStyle,
-                      backgroundColor: isLight ? '#fff7ed' : 'rgba(217,119,6,0.08)',
-                      borderColor: isLight ? '#fed7aa' : 'rgba(217,119,6,0.35)',
-                      color: textMuted,
+                      opacity: isReschedStatus && draft.reschedulePending ? 0.5 : 1,
                     }}
                   />
                 </EField>
               )}
               {isFieldSurface && isReschedStatus && (
-                <>
-                  <EField label="Reschedule To">
-                    <input
-                      type="date"
-                      disabled={draft.reschedulePending}
-                      value={draft.rescheduleToDate}
-                      onChange={(e) => patch({ rescheduleToDate: e.target.value, reschedulePending: false })}
-                      className={relayInput}
-                      style={inputStyle}
-                    />
-                  </EField>
-                  <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
-                    <input
-                      type="checkbox"
-                      checked={draft.reschedulePending}
-                      onChange={(e) => patch({
-                        reschedulePending: e.target.checked,
-                        rescheduleToDate: e.target.checked ? '' : (draft.rescheduleToDate || draft.preferredDate || ''),
-                      })}
-                      className="rounded border-slate-300"
-                    />
-                    Pending — no date slot available yet
-                  </label>
-                </>
+                <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
+                  <input
+                    type="checkbox"
+                    checked={draft.reschedulePending}
+                    onChange={(e) => patch({ reschedulePending: e.target.checked })}
+                    className="rounded border-slate-300"
+                  />
+                  Pending — no date slot available yet (Final Date above stays as-is until confirmed)
+                </label>
               )}
             </div>
           </div>

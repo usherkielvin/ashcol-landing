@@ -26,7 +26,6 @@ export type ScheduleEditForm = {
   installationCharges?: number
   modeOfPayment?: string
   remarks?: string
-  rescheduleToDate?: string
   reschedulePending?: boolean
 }
 
@@ -37,8 +36,6 @@ type ScheduleEditTicketModalProps = {
   form: ScheduleEditForm
   onChange: (patch: Partial<ScheduleEditForm>) => void
   editOriginalDate: string
-  editInitialStatus: string
-  previousScheduleDates?: string[]
   isLight: boolean
   isTaguigServices: boolean
   canEdit: boolean
@@ -90,8 +87,6 @@ export function ScheduleEditTicketModal({
   form,
   onChange,
   editOriginalDate,
-  editInitialStatus,
-  previousScheduleDates = [],
   isLight,
   isTaguigServices,
   saving,
@@ -124,8 +119,6 @@ export function ScheduleEditTicketModal({
 
   const isReschedStatus = (form.status || '').toUpperCase() === 'RESCHED'
   const isPendingStatus = !form.status || !CLOSING_STATUSES.has((form.status || '').toUpperCase())
-  const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
-  const lastRescheduledDate = previousScheduleDates[previousScheduleDates.length - 1] || ''
 
   const showPaymentSection = !isPendingStatus && (
     ticketHasPaymentInfo(form)
@@ -284,26 +277,24 @@ export function ScheduleEditTicketModal({
           {/* Date + Status */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Row>
-              <Field label="Scheduled Date">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '7px 10px', cursor: 'pointer' }}>
+              <Field label="Final Date">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '7px 10px', cursor: form.reschedulePending ? 'not-allowed' : 'pointer', opacity: form.reschedulePending ? 0.5 : 1 }}>
                   <CalendarDays style={{ width: 14, height: 14, color: green, flexShrink: 0 }} strokeWidth={2.2} />
                   <input
                     type="date"
+                    disabled={form.reschedulePending}
                     value={form.finalDate || ''}
                     onChange={e => onChange({ finalDate: e.target.value, preferredDate: e.target.value })}
-                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12, fontWeight: 700, color: form.finalDate ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' as any, fontFamily: 'inherit', cursor: 'pointer', minWidth: 0 }}
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12, fontWeight: 700, color: form.finalDate ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' as any, fontFamily: 'inherit', cursor: 'inherit', minWidth: 0 }}
                   />
-                  {form.finalDate && (
+                  {form.finalDate && !form.reschedulePending && (
                     <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); onChange({ finalDate: '', preferredDate: '' }) }} style={{ color: textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: 2, flexShrink: 0, display: 'flex' }} aria-label="Clear date">
                       <X style={{ width: 12, height: 12 }} />
                     </button>
                   )}
                 </label>
-                {lastRescheduledDate && (
-                  <p style={{ fontSize: 10, fontWeight: 700, color: isLight ? '#b45309' : '#fbbf24', margin: '3px 0 0' }}>
-                    Previously: {formatDateLabel(lastRescheduledDate)}
-                  </p>
-                )}
+                {/* Editable at any time, including past dates — moving this date always just
+                    moves the ticket, no duplicate row is left on the old date. */}
               </Field>
 
               <Field label="Status" required>
@@ -320,38 +311,26 @@ export function ScheduleEditTicketModal({
               </Field>
             </Row>
 
-            {/* Resched sub-block */}
+            {/* Resched sub-block — Final Date above is the single source for "where this ticket
+                is now"; Pending just means no new date has been decided yet (Final Date stays
+                locked at its current value until you uncheck Pending and pick a new one). */}
             {isReschedStatus && (
               <div style={{ borderRadius: 10, padding: 12, backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)', border: `1.5px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.4)'}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <Row>
-                  <Field label="Reschedule To" required={!form.reschedulePending}>
-                    <input
-                      type="date"
-                      autoFocus={justChangedToResched && !form.reschedulePending}
-                      disabled={form.reschedulePending}
-                      value={form.rescheduleToDate || ''}
-                      onChange={e => onChange({ rescheduleToDate: e.target.value, reschedulePending: false })}
-                      style={{ ...inp, opacity: form.reschedulePending ? 0.5 : 1, colorScheme: isLight ? 'light' : 'dark' as any }}
-                    />
-                  </Field>
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, color: textPrimary, cursor: 'pointer', paddingBottom: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(form.reschedulePending)}
-                        onChange={e => onChange({ reschedulePending: e.target.checked, rescheduleToDate: e.target.checked ? '' : (form.rescheduleToDate || editOriginalDate || '') })}
-                      />
-                      Pending (no date yet)
-                    </label>
-                  </div>
-                </Row>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, color: textPrimary, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.reschedulePending)}
+                    onChange={e => onChange({ reschedulePending: e.target.checked })}
+                  />
+                  Pending (no date yet)
+                </label>
                 {editOriginalDate && (
                   <p style={{ fontSize: 10, fontWeight: 600, color: isLight ? '#92400e' : '#fcd34d', margin: 0 }}>
                     {form.reschedulePending
                       ? `Stays on ${formatDateLabel(editOriginalDate)} as rescheduled (pending).`
-                      : form.rescheduleToDate && form.rescheduleToDate !== editOriginalDate
-                        ? `Will move from ${formatDateLabel(editOriginalDate)} → ${formatDateLabel(form.rescheduleToDate)}.`
-                        : `Currently on ${formatDateLabel(editOriginalDate)} — pick a new date or mark as pending.`}
+                      : form.finalDate && form.finalDate !== editOriginalDate
+                        ? `Will move from ${formatDateLabel(editOriginalDate)} → ${formatDateLabel(form.finalDate)}.`
+                        : `Currently on ${formatDateLabel(editOriginalDate)} — pick a new Final Date above or mark as pending.`}
                   </p>
                 )}
               </div>

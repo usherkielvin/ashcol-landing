@@ -61,14 +61,15 @@ A ticket moves through exactly one primary work queue at a time, driven by field
 
 Full details, gaps, and the field-by-field contract are documented in [docs/relay-ticket-lifecycle-flow.md](docs/relay-ticket-lifecycle-flow.md) — read it before touching relay/schedule/archive filtering logic.
 
-### Scheduled dates, reschedules, and "ghost rows"
+### Scheduled dates and reschedules
 
 `acDetails` carries the date state for a ticket once it's in Schedules:
-- `finalDate` — kept for backward compat; `scheduledDate` mirrors it going forward (additive, both present on newer tickets).
-- `previousScheduleDates` — array of dates a ticket was previously scheduled on. This is what drives the grayed-out **ghost row**: a rescheduled ticket must still show a muted row on its *old* date, not disappear from it, while the active row appears on the new date. **Never reset this array to `[]` on a normal status transition** — the only legitimate place that clears it is `applyReturnToNegotiatorMyTicketsPatch` in [src/pages/Tickets.tsx](src/pages/Tickets.tsx), because that path removes the ticket from scheduling entirely (back to My Tickets, no date at all). Clearing it anywhere else (e.g. in `clearRescheduleMetaInto`, or in `commitSaveEditTicket`'s status-transition merge) silently deletes the ghost row's history.
-- `rescheduledTo` / `reschedulePending` — transient "this ticket has a pending reschedule to X" markers; these *do* get cleared once the reschedule resolves, unlike `previousScheduleDates`.
+- `finalDate` — the single source of truth for "where this ticket is now" (`scheduledDate` mirrors it, additive). Editable at any time in the Edit Ticket modal regardless of current status, including dates in the past. Changing it always moves the ticket **in place** to the new date.
+- **Resched ghost rows are retired.** Rescheduling used to leave a muted duplicate row on the ticket's *old* date (driven by `previousScheduleDates`/`rescheduledTo`), but that bookkeeping was fragile — any staleness in it caused rows to vanish or duplicate across Schedules dates (see git history around July 2026 for the incident). A reschedule now simply updates `finalDate`; nothing is written to `previousScheduleDates` for a plain date move. `isRescheduledGhostOnDate` in [src/pages/Tickets.tsx](src/pages/Tickets.tsx) is stubbed to always return `false` — do not resurrect resched-ghost rendering without addressing the underlying staleness problem first.
+- `previousScheduleDates` is still used for the **completed-job** ghost (a muted row on the date a job was actually installed/archived, if the ticket is later viewed from a different day) — that write site is `buildArchiveAcMeta`, unrelated to reschedule. `isCompletedGhostOnDate` still reads it.
+- `reschedulePending` — status `RESCHED` + this flag means "needs a new slot, none picked yet"; `finalDate` is left untouched until a real date is chosen. `rescheduledTo` is no longer written (legacy tickets may still carry a stale value from before this change; nothing reads it for date-matching anymore).
 
-Backend (`ashcol-service-api`) matches tickets to a schedule date by substring-matching the `ac_details` TEXT column (`LIKE CONCAT('%key%', :value, '%')`, in `TicketRepository`/`TicketService`) since it's not a `jsonb` column — queries need an explicit `previousScheduleDates` OR-clause to surface ghost rows for a given date, not just `finalDate`.
+Backend (`ashcol-service-api`) matches tickets to a schedule date by substring-matching the whole `ac_details` TEXT column against the date (`LIKE CONCAT('%', :scheduleDate, '%')` in `TicketRepository`) rather than only behind specific key names — this is intentionally broad so the server never silently omits a row the client would otherwise consider on-date; the client re-filters precisely per field.
 
 ### Driver / vehicle fields
 
