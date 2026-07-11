@@ -2109,12 +2109,28 @@ function getTicketVehicleDisplay(ticket: Ticket): string {
   return getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
 }
 
+const VEHICLE_CODE_SRC = '(?:FB\\d+|T\\d+|STRADA|[A-Z]{1,3}\\d+[A-Z]*)'
+// A bare vehicle code may carry a trailing dispatch/site suffix, e.g. "T3-4" (truck T3, site 4)
+// or "FB19 - 3" — this must still resolve to vehicle-only, never get misread as a driver name.
+const VEHICLE_CODE_WITH_SUFFIX_RE = new RegExp(`^${VEHICLE_CODE_SRC}(?:\\s*-\\s*\\d+)?$`, 'i')
+const VEHICLE_CODE_RE = new RegExp(`^${VEHICLE_CODE_SRC}$`, 'i')
+
 /** Split a combined "ANGELO T2" or "ANGELO / T2" serviceVehicle value into driver + vehicle parts. */
 function getServiceVehicleParts(raw: string): { driver: string; vehicle: string } {
   const v = (raw || '').trim()
   if (!v) return { driver: '', vehicle: '' }
+  const upperV = v.toUpperCase()
+
+  // Check this first: a vehicle-only code (with or without a dispatch/site suffix) must never
+  // fall through to the driver-extraction paths below just because the suffix doesn't fit their
+  // narrower patterns — that's what previously dumped values like "T3-4"/"FB19 - 3" into the
+  // DRIVER column instead of VEHICLE.
+  if (VEHICLE_CODE_WITH_SUFFIX_RE.test(upperV)) {
+    return { driver: '', vehicle: upperV }
+  }
+
   // Pattern: "ANGELO T2", "ANGELO-T2", "ANGELO/T2" where vehicle is short code
-  const match = v.match(/^(.*?)\s*[-\/]?\s*\b(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)\s*$/i)
+  const match = v.match(new RegExp(`^(.*?)\\s*[-/]?\\s*\\b(${VEHICLE_CODE_SRC})\\s*$`, 'i'))
   if (match) {
     const driver = match[1].trim()
     const vehicle = match[2].trim().toUpperCase()
@@ -2130,13 +2146,9 @@ function getServiceVehicleParts(raw: string): { driver: string; vehicle: string 
   const parts = v.trim().split(/\s+/)
   if (parts.length >= 2) {
     const last = parts[parts.length - 1].toUpperCase()
-    if (/^(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)$/.test(last)) {
+    if (VEHICLE_CODE_RE.test(last)) {
       return { driver: parts.slice(0, parts.length - 1).join(' ').toUpperCase(), vehicle: last }
     }
-  }
-  const upperV = v.toUpperCase()
-  if (/^(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)$/.test(upperV)) {
-    return { driver: '', vehicle: upperV }
   }
   return { driver: upperV, vehicle: '' }
 }
@@ -2730,61 +2742,47 @@ function buildCellPatchBody(
       body.installerName = v
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
+    // SERVICE (driver) and VEHICLE are separate cells with their own dedicated inputs — each
+    // edit writes ONLY the field the user actually typed into. The previous version re-parsed
+    // the typed text with getServiceVehicleParts on every save and speculatively wrote the OTHER
+    // field too (e.g. editing DRIVER could also overwrite VEHICLE based on a guessed split), which
+    // is exactly what caused the two columns to stomp on each other. The only remaining use of the
+    // legacy splitter here is a one-time migration: if this ticket has never had a real driverName
+    // saved, its current serviceVehicle may still hold the old combined "NAME CODE" string, so the
+    // FIRST time either field is edited we salvage the other half out of that legacy text — but we
+    // never re-derive a field from what the user is editing right now.
     case 'SERVICE': {
-      const parts = getServiceVehicleParts(v)
-      if (parts.driver && parts.vehicle) {
-        body.driverName = parts.driver
-        body.serviceVehicle = parts.vehicle
-        body.acDetails = mergeAcMeta(acBase, {
-          driverName: parts.driver,
-          driver_name: parts.driver,
-          serviceVehicle: parts.vehicle,
-          service_vehicle: parts.vehicle,
-        })
-      } else {
-        const driverOnly = normalizeDriverInput(v)
-        body.driverName = driverOnly
-        const acUpdates: Record<string, any> = { driverName: driverOnly, driver_name: driverOnly }
-
-        const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-        if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-          const legacyParts = getServiceVehicleParts(formatServiceDriver(ticket))
-          if (legacyParts.vehicle) {
-            body.serviceVehicle = legacyParts.vehicle
-            acUpdates.serviceVehicle = legacyParts.vehicle
-          }
+      const driverVal = normalizeDriverInput(v)
+      body.driverName = driverVal
+      const acUpdates: Record<string, any> = { driverName: driverVal, driver_name: driverVal }
+      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+      const existingVehicle = sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
+      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+        const legacyParts = getServiceVehicleParts(existingVehicle)
+        if (legacyParts.driver && legacyParts.vehicle) {
+          body.serviceVehicle = legacyParts.vehicle
+          acUpdates.serviceVehicle = legacyParts.vehicle
+          acUpdates.service_vehicle = legacyParts.vehicle
         }
-        body.acDetails = mergeAcMeta(acBase, acUpdates)
       }
+      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'VEHICLE': {
-      const parts = getServiceVehicleParts(v)
-      if (parts.driver && parts.vehicle) {
-        body.driverName = parts.driver
-        body.serviceVehicle = parts.vehicle
-        body.acDetails = mergeAcMeta(acBase, {
-          driverName: parts.driver,
-          driver_name: parts.driver,
-          serviceVehicle: parts.vehicle,
-          service_vehicle: parts.vehicle,
-        })
-      } else {
-        const vehicleOnly = normalizeDriverInput(v)
-        body.serviceVehicle = vehicleOnly
-        const acUpdates: Record<string, any> = { serviceVehicle: vehicleOnly }
-
-        const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-        if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-          const legacyParts = getServiceVehicleParts(formatServiceDriver(ticket))
-          if (legacyParts.driver) {
-            body.driverName = legacyParts.driver
-            acUpdates.driverName = legacyParts.driver
-            acUpdates.driver_name = legacyParts.driver
-          }
+      const vehicleVal = normalizeDriverInput(v)
+      body.serviceVehicle = vehicleVal
+      const acUpdates: Record<string, any> = { serviceVehicle: vehicleVal, service_vehicle: vehicleVal }
+      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+      const existingVehicle = sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
+      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+        const legacyParts = getServiceVehicleParts(existingVehicle)
+        if (legacyParts.driver && legacyParts.vehicle) {
+          body.driverName = legacyParts.driver
+          acUpdates.driverName = legacyParts.driver
+          acUpdates.driver_name = legacyParts.driver
         }
-        body.acDetails = mergeAcMeta(acBase, acUpdates)
       }
+      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'UPDATE': {
