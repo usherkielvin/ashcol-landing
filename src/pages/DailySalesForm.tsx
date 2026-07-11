@@ -2237,6 +2237,57 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
 
+          {/* Fund Transfer from HO */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="HO Transfers & Cash on Hand" variant="income" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse text-xs">
+                <tbody>
+                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Fund Transfer from HO</td>
+                    <td className="px-2 py-1 text-right w-36">
+                      <NumericFormat
+                        thousandSeparator=","
+                        decimalScale={2}
+                        fixedDecimalScale={true}
+                        allowNegative={false}
+                        placeholder="0.00"
+                        value={fundFromHo}
+                        onValueChange={(values) => setFundFromHo(values.value)}
+                        className={`${flushInputNumber} ${submitAttempted && fundFromHo.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
+                        disabled={isFormDisabled}
+                        autoComplete="off"
+                      />
+                    </td>
+                  </tr>
+                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Cash on Hand (Previous Day)</td>
+                    <td className="px-2 py-1 text-right w-36">
+                      <NumericFormat
+                        thousandSeparator=","
+                        decimalScale={2}
+                        fixedDecimalScale={true}
+                        allowNegative={false}
+                        placeholder="0.00"
+                        value={cashOnHand}
+                        onValueChange={(values) => setCashOnHand(values.value)}
+                        className={`${flushInputNumber} ${submitAttempted && cashOnHand.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
+                        disabled={isFormDisabled}
+                        autoComplete="off"
+                      />
+                    </td>
+                  </tr>
+                  <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
+                    <td className="px-3 py-2 text-slate-800 dark:text-slate-200">Total Fund</td>
+                    <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
+                      {php(num(cashOnHand) + num(fundFromHo))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Online Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Online Transactions" total={totalOnline} variant="income" />
@@ -2396,57 +2447,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 </tbody>
               </table>
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setPartsSales(p => [...p, mkPart()])} label="Add row" />}
-            </div>
-          </div>
-
-          {/* Fund Transfer from HO */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="HO Transfers & Cash on Hand" variant="income" />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse text-xs">
-                <tbody>
-                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Fund Transfer from HO</td>
-                    <td className="px-2 py-1 text-right w-36">
-                      <NumericFormat
-                        thousandSeparator=","
-                        decimalScale={2}
-                        fixedDecimalScale={true}
-                        allowNegative={false}
-                        placeholder="0.00"
-                        value={fundFromHo}
-                        onValueChange={(values) => setFundFromHo(values.value)}
-                        className={`${flushInputNumber} ${submitAttempted && fundFromHo.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
-                        disabled={isFormDisabled}
-                        autoComplete="off"
-                      />
-                    </td>
-                  </tr>
-                  <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Cash on Hand (Previous Day)</td>
-                    <td className="px-2 py-1 text-right w-36">
-                      <NumericFormat
-                        thousandSeparator=","
-                        decimalScale={2}
-                        fixedDecimalScale={true}
-                        allowNegative={false}
-                        placeholder="0.00"
-                        value={cashOnHand}
-                        onValueChange={(values) => setCashOnHand(values.value)}
-                        className={`${flushInputNumber} ${submitAttempted && cashOnHand.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
-                        disabled={isFormDisabled}
-                        autoComplete="off"
-                      />
-                    </td>
-                  </tr>
-                  <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
-                    <td className="px-3 py-2 text-slate-800 dark:text-slate-200">Total Fund</td>
-                    <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {php(num(cashOnHand) + num(fundFromHo))}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
           </div>
 
