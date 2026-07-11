@@ -2990,6 +2990,11 @@ export default function Tickets() {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
   const [dateFilter, setDateFilter]   = useState(() => resolveInitialScheduleDate(location.pathname))
+  // Live mirror of dateFilter — read this inside setState updaters / async callbacks so a stale
+  // closure (e.g. a background save's applyTicketLocally that resolves after the date tab auto-jumped)
+  // never writes the current on-screen rows into a *different* date's cache key.
+  const dateFilterRef = useRef(dateFilter)
+  dateFilterRef.current = dateFilter
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
@@ -3005,15 +3010,20 @@ export default function Tickets() {
   const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => {})
 
   const schedulesCacheKeyForTab = useCallback(
+    // Default to the LIVE dateFilter (via ref), never the render-time closure value. Every date-keyed
+    // cache write goes through here; if this captured a stale dateFilter, an async caller (a background
+    // save/rollback/remap that resolves after the date tab moved) would write the current on-screen
+    // rows into a *different* date's cache slot and wipe that date's roster. Reading the ref keeps the
+    // key aligned with whatever date `prev` actually reflects at call time.
     (dateOverride?: string) => schedulesCacheKey(
       user,
       globalBranchId,
       isCustomer,
       isAdmin,
       isMyTickets,
-      isMyTickets ? undefined : (dateOverride ?? dateFilter),
+      isMyTickets ? undefined : (dateOverride ?? dateFilterRef.current),
     ),
-    [user, globalBranchId, isCustomer, isAdmin, isMyTickets, dateFilter],
+    [user, globalBranchId, isCustomer, isAdmin, isMyTickets],
   )
 
   const persistSchedulesSnapshot = useCallback(() => {
@@ -6044,22 +6054,21 @@ export default function Tickets() {
       writeSchedulesTabCache(cacheKey, nextList, 'local')
     }
 
-    if (!isMyTickets && activeTab === 'schedules') {
-      // Only auto-jump the date filter when we positively know the schedule date just moved
-      // (prevTicket found with a different date) — if prevTicket wasn't already loaded (e.g. the
-      // ticket was edited from Overview/search rather than the visible Schedules row), prevDate
-      // falls back to '' and would falsely look like "the date changed" on every single save,
-      // yanking the view to that ticket's date even when nothing about the date was touched.
-      if (prevTicket && nextDate && nextDate !== prevDate && nextDate !== dateFilter) {
-        handleDateFilterChange(nextDate)
-      }
-    }
+    // NB: intentionally NO auto-jump of the date filter here. Rescheduling / changing a schedule
+    // date must keep the user on the date they're viewing — the edited ticket "copies" in place
+    // (a muted ghost stays on the current date; the active copy is written into the new date's cache
+    // below via patchCacheForDate), rather than yanking the view to the new date. Jumping the tab was
+    // also what opened the stale-closure window that clobbered the old date's cached roster.
 
     setTickets(prev => {
+      // Use the LIVE dateFilter, not the closure's — `prev` always reflects the current on-screen
+      // date, so a stale closure here would classify/cache rows against the wrong date (this is the
+      // exact race that clobbered the old date's cache after a reschedule auto-jumped the tab).
+      const liveDateFilter = dateFilterRef.current
       const exists = prev.some(t => t.id === ticketId)
-      const showOnCurrentFilter = !dateFilter
-        || ticketMatchesDateKey(normalized, dateFilter)
-        || isScheduleGhostOnDate(normalized, dateFilter)
+      const showOnCurrentFilter = !liveDateFilter
+        || ticketMatchesDateKey(normalized, liveDateFilter)
+        || isScheduleGhostOnDate(normalized, liveDateFilter)
 
       let next: Ticket[]
       if (showOnCurrentFilter) {
@@ -6070,8 +6079,8 @@ export default function Tickets() {
         next = prev.filter(t => t.id !== ticketId)
       }
 
-      if (!isMyTickets && dateFilter) {
-        writeSchedulesTabCache(schedulesCacheKeyForTab(dateFilter), next, 'local')
+      if (!isMyTickets && liveDateFilter) {
+        writeSchedulesTabCache(schedulesCacheKeyForTab(liveDateFilter), next, 'local')
       }
       return next
     })
@@ -6099,7 +6108,7 @@ export default function Tickets() {
     setOverviewResults(prev => prev.map(t => (t.id === ticketId ? { ...t, ...normalized } : t)))
     setDetailTicket(prev => (prev?.id === ticketId ? { ...prev, ...normalized } : prev))
     syncTicketAcrossTabCaches(normalized)
-  }, [tickets, overviewResults, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab, handleDateFilterChange, dateFilter, activeTab])
+  }, [tickets, overviewResults, user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const resolveLiveScheduleTicket = useCallback((ticket: Ticket): Ticket => {
     return findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket

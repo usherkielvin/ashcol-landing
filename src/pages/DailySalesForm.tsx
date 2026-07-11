@@ -2393,112 +2393,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
 
-          {/* For Collection */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="For Collection" total={totalForColl} variant="income" />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Installer</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {forColl.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        {isFormDisabled ? (
-                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                            <EmployeeNameLink nameOrId={row.installer} />
-                          </div>
-                        ) : (
-                          <input type="text" placeholder="Installer" value={row.installer}
-                            onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                            className={flushInput} />
-                        )}
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                          onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
-            </div>
-          </div>
-
-          {/* Rebates for Collection */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Company / RA No.</th>
-                    <th className={tableTh}>Brand</th>
-                    <th className={tableTh + ' w-20 text-center'}>HP</th>
-                    <th className={tableTh + ' text-right w-32'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rebates.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer name" value={row.customer}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="e.g. MIDEA" value={row.company}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="1.5" value={row.hp}
-                          onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
-                          className={`${flushInput} text-center`} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                          onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
-            </div>
-          </div>
-
           {/* Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="HO Transfers & Cash on Hand" variant="income" />
@@ -2765,8 +2659,114 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         </div>
 
+        {/* For Collection */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
+          <SectionHeader label="For Collection" total={totalForColl} variant="income" />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Installer</th>
+                  <th className={tableTh + ' text-right w-28'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {forColl.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer" value={row.customer}
+                        onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      {isFormDisabled ? (
+                        <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          <EmployeeNameLink nameOrId={row.installer} />
+                        </div>
+                      ) : (
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                          className={flushInput} />
+                      )}
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
+          </div>
+        </div>
+
+        {/* Rebates for Collection */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
+          <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Company / RA No.</th>
+                  <th className={tableTh}>Brand</th>
+                  <th className={tableTh + ' w-20 text-center'}>HP</th>
+                  <th className={tableTh + ' text-right w-32'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rebates.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer name" value={row.customer}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="1.5" value={row.hp}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                        className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
+          </div>
+        </div>
+
         {/* Row: Unit Summary | Final Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
 
           {/* Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
