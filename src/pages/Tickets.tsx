@@ -2042,6 +2042,7 @@ function normalizeDriverInput(raw: string): string {
 function getTicketDriverName(ticket: Ticket): string {
   const meta = parseAcMeta(ticket)
   const candidates = [
+    getF(ticket, 'driverName', 'driver_name'),
     getF(ticket, 'serviceVehicle', 'service_vehicle'),
     String(meta.driverName || meta.driver || meta.serviceVehicle || meta.driver_name || ''),
   ]
