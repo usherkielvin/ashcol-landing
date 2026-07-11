@@ -104,7 +104,7 @@ export default function DTRScanner() {
 
   const [branches,      setBranches]      = useState<BranchOption[]>([])
   const [scanning,      setScanning]      = useState(false)
-  const [scanPreview,   setScanPreview]   = useState<string | null>(null)
+  const [scanPreviews,  setScanPreviews]  = useState<string[]>([])
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError,     setScanError]     = useState('')
   const [submitting,    setSubmitting]    = useState(false)
@@ -144,10 +144,11 @@ export default function DTRScanner() {
 
   const processImage = async (file: File) => {
     const url = URL.createObjectURL(file)
-    setScanPreview(url)
+    // Append rather than replace — pasting/uploading another DTR image (e.g. a second page)
+    // should add to the batch and merge its extracted fields, not wipe out what's already there.
+    setScanPreviews(prev => [...prev, url])
     setScanning(true)
     setScanError('')
-    setScannedFields(new Set())
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -221,7 +222,10 @@ export default function DTRScanner() {
       })
       return next
     })
-    setScannedFields(filled)
+    // Union with fields already marked from a previous pasted image in this batch, rather than
+    // replacing — so scanning a second/third image doesn't lose the "from scan" highlight on
+    // fields the earlier image already filled.
+    setScannedFields(prev => new Set([...prev, ...filled]))
   }
 
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -384,7 +388,7 @@ export default function DTRScanner() {
   }
 
   const resetReportForm = () => {
-    setScanPreview(null)
+    setScanPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return [] })
     setScannedFields(new Set())
     setScanError('')
     const base = emptyForm()
@@ -395,6 +399,13 @@ export default function DTRScanner() {
     }
     setForm(base)
     try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* best-effort */ }
+  }
+
+  // Remove a single pasted/uploaded image from the batch without touching extracted form data —
+  // clearing an individual thumbnail is just tidying the review list, not a "start over."
+  const removeScanPreview = (url: string) => {
+    setScanPreviews(prev => prev.filter(u => u !== url))
+    URL.revokeObjectURL(url)
   }
 
   const scannedStyle = (key: string): React.CSSProperties =>
@@ -522,26 +533,55 @@ export default function DTRScanner() {
               <FileSpreadsheet size={16} style={{ color: accent }} /> DTR Document
             </h3>
 
-            {scanPreview ? (
-              <div style={{ position: 'relative' }}>
-                <img
-                  src={scanPreview}
-                  alt="Scanned DTR"
-                  style={{ width: '100%', borderRadius: 12, border: `2px solid ${scanning ? inputBorder : scanBorder}44`, objectFit: 'contain' }}
-                />
-                {scanning && (
-                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                    <Loader2 size={32} className="animate-spin" style={{ color: '#3B82F6' }} />
-                    <span style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>Extracting data with AI...</span>
-                  </div>
-                )}
+            {scanPreviews.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {scanPreviews.map((url, idx) => {
+                    const isLast = idx === scanPreviews.length - 1
+                    return (
+                      <div key={url} style={{ position: 'relative' }}>
+                        <img
+                          src={url}
+                          alt={`Scanned DTR ${idx + 1}`}
+                          style={{ width: '100%', aspectRatio: '1', borderRadius: 12, border: `2px solid ${scanning && isLast ? inputBorder : scanBorder}44`, objectFit: 'cover' }}
+                        />
+                        {scanning && isLast && (
+                          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                            <Loader2 size={22} className="animate-spin" style={{ color: '#3B82F6' }} />
+                            <span style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', textAlign: 'center', padding: '0 6px' }}>Extracting...</span>
+                          </div>
+                        )}
+                        {!(scanning && isLast) && (
+                          <button
+                            type="button"
+                            onClick={() => removeScanPreview(url)}
+                            className="absolute top-1 right-1 p-1 rounded-lg bg-black/50 text-white hover:bg-red-500/80 transition-colors"
+                            aria-label="Remove this image"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    onClick={() => fileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl hover:border-blue-400 transition-colors disabled:opacity-50"
+                    style={{ borderColor: inputBorder, backgroundColor: inputBg, aspectRatio: '1' }}
+                  >
+                    <Upload size={16} style={{ color: textMuted }} />
+                    <span className="text-[10px] font-semibold" style={{ color: textMuted }}>Add page</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={resetReportForm}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 text-white hover:bg-red-500/80 transition-colors"
-                  aria-label="Clear report"
+                  className="text-xs font-semibold self-start px-2 py-1 rounded-lg transition-colors hover:bg-red-500/10"
+                  style={{ color: danger }}
                 >
-                  <X size={14} />
+                  Clear all &amp; start over
                 </button>
               </div>
             ) : (
