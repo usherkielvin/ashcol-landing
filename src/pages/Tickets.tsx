@@ -5223,7 +5223,8 @@ export default function Tickets() {
     preferredDate: string
   } | null>(null)
   const [finalDateCalMonth, setFinalDateCalMonth] = useState<{ year: number; month: number } | null>(null)
-  const [savingCellKey] = useState<string | null>(null)
+  // Which ticket ids currently have a PATCH in flight — drives the row-level "Saving…" indicator.
+  const [savingTicketIds, setSavingTicketIds] = useState<Set<string>>(new Set())
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cellEditDraftRef = useRef<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => {})
@@ -5974,8 +5975,6 @@ export default function Tickets() {
 
   const cancelEdit = discardCellEdit
 
-  const cellEditKey = (ticketId: string, colLabel: string) => `${ticketId}:${colLabel}`
-
   const openStatusPicker = useCallback((
     ticket: Ticket,
     mode: 'inline' | 'edit-form' = 'inline',
@@ -6149,7 +6148,15 @@ export default function Tickets() {
 
     if (!isMyTickets) {
       if (prevDate && prevDate !== nextDate) {
-        patchCacheForDate(prevDate, list => list.filter(t => t.id !== ticketId))
+        // The old date must keep a ghost row (previousScheduleDates) rather than lose the ticket
+        // outright — otherwise a page reload while viewing the old date depends entirely on the
+        // backend also returning the ghost, and if that lags (or its previousScheduleDates OR-clause
+        // misses it), the row vanishes from the old date instead of showing muted.
+        const stillGhostOnPrevDate = isScheduleGhostOnDate(normalized, prevDate)
+        patchCacheForDate(prevDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return stillGhostOnPrevDate ? [normalized, ...without] : without
+        })
       }
       if (nextDate) {
         patchCacheForDate(nextDate, list => {
@@ -6233,6 +6240,7 @@ export default function Tickets() {
     if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
+    setSavingTicketIds(prev => (prev.has(ticketId) ? prev : new Set(prev).add(ticketId)))
     let saveId = ticketId
     try {
       while (pendingSavesRef.current.has(saveId)) {
@@ -6323,6 +6331,13 @@ export default function Tickets() {
     } finally {
       activeSavesRef.current.delete(ticketId)
       activeSavesRef.current.delete(saveId)
+      setSavingTicketIds(prev => {
+        if (!prev.has(ticketId) && !prev.has(saveId)) return prev
+        const next = new Set(prev)
+        next.delete(ticketId)
+        next.delete(saveId)
+        return next
+      })
       const nextId = saveId !== ticketId ? saveId : ticketId
       if (pendingSavesRef.current.has(nextId)) {
         void flushTicketSave(nextId)
@@ -6366,8 +6381,6 @@ export default function Tickets() {
     injectedPayment?: { amount?: number; modeOfPayment: string }
   ) => {
     const liveTicket = resolveLiveScheduleTicket(ticket)
-    const key = cellEditKey(liveTicket.id, colLabel)
-    if (savingCellKey === key) return
 
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
     const body = buildCellPatchBody(liveTicket, colLabel, value, branchEmployees)
@@ -6642,8 +6655,7 @@ export default function Tickets() {
     if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
     if (rowIndex != null && editingCell.rowIndex !== rowIndex) return null
 
-    const key = cellEditKey(ticket.id, colLabel)
-    const isSaving = savingCellKey === key
+    const isSaving = savingTicketIds.has(ticket.id)
     const inputStyle: React.CSSProperties = {
       width: '100%',
       fontSize: '11px',
@@ -6984,9 +6996,19 @@ export default function Tickets() {
     if (label === 'TICKET NO') {
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       const displayVal = val ? `${prefix}${val}` : `${prefix}${EMPTY_CELL}`
+      const isRowSaving = savingTicketIds.has(ticket.id)
       return withEditPencil(
-        <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
-          {displayVal}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
+          <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
+            {displayVal}
+          </span>
+          {isRowSaving && (
+            <Loader2
+              className="w-3 h-3 shrink-0 animate-spin"
+              style={{ color: green }}
+              aria-label="Saving"
+            />
+          )}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -7755,7 +7777,12 @@ export default function Tickets() {
                       || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
                     )
                   return (
-                    <tr key={`${ticket.id}-${idx}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                    // Key must never include idx — visible re-sorts on every edit (installer/customer
+                    // grouping), and an index-based key made React remount the row each time instead of
+                    // reconciling it in place, which is what caused rows to visibly flicker/reorder on save.
+                    // ticket.id is already unique per date view (a ticket shows as either its active row or
+                    // one ghost row for that date, never both), so id + ghost-kind is enough.
+                    <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                         style={{
                           borderBottom: `1px solid ${tableBorder}`,
                           boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
