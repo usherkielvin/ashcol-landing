@@ -424,12 +424,20 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           {/* 5. Scheduling */}
           <div>
-            <ESHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Relay, requested & confirmed dates" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+            <ESHead
+              step={5}
+              icon={<CalendarDays className="w-3.5 h-3.5" />}
+              title="Scheduling"
+              subtitle={isOverview ? 'Requested & confirmed dates' : 'Relay, requested & confirmed dates'}
+              border={border}
+            />
+            <div className={isOverview ? 'grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4'}>
+              {!isOverview && (
+                <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              )}
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               {isFieldSurface && (
-                <EField label="Scheduled Date" className={lastRescheduledDate ? '' : 'md:col-span-2'}>
+                <EField label="Scheduled Date" className={!isOverview && !lastRescheduledDate ? 'md:col-span-2' : ''}>
                   <input
                     type="date"
                     value={draft.finalDate}
@@ -444,7 +452,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </EField>
               )}
               {isFieldSurface && lastRescheduledDate && (
-                <EField label="Rescheduled Date">
+                <EField label="Rescheduled Date" className={isOverview ? 'sm:col-span-2' : ''}>
                   <input
                     type="date"
                     readOnly
@@ -472,7 +480,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                       style={inputStyle}
                     />
                   </EField>
-                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer md:col-span-2" style={{ color: textPrimary }}>
+                  <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
                     <input
                       type="checkbox"
                       checked={draft.reschedulePending}
