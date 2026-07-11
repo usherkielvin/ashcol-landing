@@ -2,7 +2,6 @@ import { getActivePortalBranchId, isPortalAdmin } from './api'
 import { readLocalCache, readLocalCacheEnvelope, writeLocalCache } from './localDataCache'
 import {
   normalizeRelayScheduleTicket,
-  resolveRelayScheduleDateKey,
   shouldExcludeRelayFromTab,
   ticketReferencesScheduleDate,
 } from './relayScheduleSync'
@@ -361,7 +360,6 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
     const touchKey = (logicalKey: string, cached: { tickets?: unknown[]; branches?: unknown[]; employees?: unknown[]; lastSyncAt?: number }) => {
       if (!Array.isArray(cached?.tickets)) return
 
-      const ticketDate = resolveRelayScheduleDateKey(normalized)
       const cacheDate = logicalKey.startsWith('schedules:') ? schedulesCacheDateFromKey(logicalKey) : null
 
       const hadRow = cached.tickets.some(matchesRow)
@@ -377,13 +375,18 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
         // previousScheduleDates, or whose finalDate momentarily dropped leaving a stale
         // preferredDate as primary) would otherwise be wrongly removed from its correct day — the
         // "schedule row disappears after a few minutes of editing" bug.
-        if (hadRow && cacheDate && ticketDate && cacheDate !== ticketDate
-            && !ticketReferencesScheduleDate(normalized, cacheDate)) {
+        //
+        // Eviction must NOT require ticketDate to be truthy — a ticket returned to My Tickets
+        // (date cleared entirely, e.g. clearing FINAL DATE) has ticketDate === '', which made the
+        // old `ticketDate && cacheDate !== ticketDate` guard permanently false and left the row
+        // stuck in every date cache it had ever appeared in (a ghost duplicate that never clears).
+        // ticketReferencesScheduleDate is the sole authority here: it already returns false once
+        // every date field (including previousScheduleDates) has been cleared.
+        const stillReferencesCacheDate = Boolean(cacheDate) && ticketReferencesScheduleDate(normalized, cacheDate as string)
+        if (hadRow && cacheDate && !stillReferencesCacheDate) {
           tickets = tickets.filter((t: unknown) => !matchesRow(t))
-        } else if (!hadRow && !shouldExcludeRelayFromTab(normalized)) {
-          if (cacheDate && ((ticketDate && cacheDate === ticketDate) || ticketReferencesScheduleDate(normalized, cacheDate))) {
-            tickets = [normalized, ...tickets]
-          }
+        } else if (!hadRow && cacheDate && stillReferencesCacheDate && !shouldExcludeRelayFromTab(normalized)) {
+          tickets = [normalized, ...tickets]
         }
       }
 

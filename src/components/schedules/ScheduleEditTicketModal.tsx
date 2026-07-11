@@ -139,7 +139,7 @@ export function ScheduleEditTicketModal({
 
   const inp: React.CSSProperties = {
     backgroundColor: inputBg,
-    border: 1px solid ,
+    border: `1px solid ${inputBorder}`,
     color: textPrimary,
     borderRadius: 8,
     padding: '7px 10px',
@@ -164,7 +164,7 @@ export function ScheduleEditTicketModal({
     >
       <div
         className="w-full flex flex-col overflow-hidden shadow-2xl min-h-0 h-full sm:h-auto sm:max-w-[620px] sm:rounded-2xl sm:max-h-[92vh]"
-        style={{ backgroundColor: cardBg, border: 1px solid  }}
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         onClick={e => e.stopPropagation()}
         onMouseDown={e => e.stopPropagation()}
       >
