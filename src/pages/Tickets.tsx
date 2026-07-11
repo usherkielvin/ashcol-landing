@@ -2699,13 +2699,34 @@ function buildCellPatchBody(
     case 'SERVICE': {
       const driverOnly = normalizeDriverInput(v)
       body.driverName = driverOnly
-      body.acDetails = mergeAcMeta(acBase, { driverName: driverOnly, driver_name: driverOnly })
+      const acUpdates: Record<string, any> = { driverName: driverOnly, driver_name: driverOnly }
+
+      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+        const parts = getServiceVehicleParts(formatServiceDriver(ticket))
+        if (parts.vehicle) {
+          body.serviceVehicle = parts.vehicle
+          acUpdates.serviceVehicle = parts.vehicle
+        }
+      }
+      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'VEHICLE': {
       const vehicleOnly = normalizeDriverInput(v)
       body.serviceVehicle = vehicleOnly
-      body.acDetails = mergeAcMeta(acBase, { serviceVehicle: vehicleOnly })
+      const acUpdates: Record<string, any> = { serviceVehicle: vehicleOnly }
+
+      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
+      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
+        const parts = getServiceVehicleParts(formatServiceDriver(ticket))
+        if (parts.driver) {
+          body.driverName = parts.driver
+          acUpdates.driverName = parts.driver
+          acUpdates.driver_name = parts.driver
+        }
+      }
+      body.acDetails = mergeAcMeta(acBase, acUpdates)
       break
     }
     case 'UPDATE': {
@@ -5386,19 +5407,19 @@ export default function Tickets() {
       // The server's branchId param on /tickets/branch does not always scope tightly enough
       // (e.g. Taguig Sales/Services split, installer-lineup overrides) — always re-apply the
       // client branch filter as a safety net instead of trusting it outright when scheduleBranchId is set.
+      // Every ticket shown here must match BOTH date and branch — never fall back to showing
+      // other-branch tickets just because the branch-scoped result is empty (that previously
+      // masked the real problem AND silently leaked cross-branch rows, e.g. Taguig Sales seeing
+      // Taguig Services or other branches' tickets). If branch-scoped comes back empty, the retry
+      // below tries harder instead.
       if (!isMyTickets && requestDate) {
         const raw = (list as Ticket[]).filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
         const dateScoped = raw.filter(t => ticketBelongsOnScheduleDate(t, requestDate))
-        if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
-          const branchScoped = dateScoped.filter(t =>
-            ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
-          )
-          list = branchScoped.length > 0 ? branchScoped : dateScoped
-        } else {
-          list = dateScoped
-        }
+        list = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
+          ? dateScoped.filter(t => ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle))
+          : dateScoped
       }
-      // If still empty, retry date-only then apply the same branch+date filter (with the same net).
+      // If still empty, retry date-only then apply the same strict branch+date filter.
       if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
         const unscoped = await fetchTicketsPage(ep, auth, {
           size,
@@ -9344,7 +9365,7 @@ export default function Tickets() {
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={addForm.ticketNumber || ''}
-                      placeholder="Auto-generated if left blank (e.g. AS-01)"
+                      placeholder="Auto-generated if left blank (e.g. AS-001)"
                       onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />

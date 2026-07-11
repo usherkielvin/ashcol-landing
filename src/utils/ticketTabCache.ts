@@ -4,6 +4,7 @@ import {
   normalizeRelayScheduleTicket,
   resolveRelayScheduleDateKey,
   shouldExcludeRelayFromTab,
+  ticketReferencesScheduleDate,
 } from './relayScheduleSync'
 import { cacheTicketByNumber, normalizeTicketNumberKey } from './ticketNumberStore'
 
@@ -369,10 +370,18 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
       if (logicalKey.startsWith('relays:')) {
         tickets = tickets.filter((t: unknown) => !shouldExcludeRelayFromTab(t as Record<string, unknown>))
       } else if (logicalKey.startsWith('schedules:')) {
-        if (hadRow && cacheDate && ticketDate && cacheDate !== ticketDate) {
+        // Only evict the row from THIS date's cache if the ticket no longer references this date
+        // in ANY of its date fields — not merely because its "primary" resolved date is a
+        // different day. resolveRelayScheduleDateKey collapses to one date (final→scheduled→
+        // preferred), so a ticket that legitimately still sits on cacheDate (as a ghost via
+        // previousScheduleDates, or whose finalDate momentarily dropped leaving a stale
+        // preferredDate as primary) would otherwise be wrongly removed from its correct day — the
+        // "schedule row disappears after a few minutes of editing" bug.
+        if (hadRow && cacheDate && ticketDate && cacheDate !== ticketDate
+            && !ticketReferencesScheduleDate(normalized, cacheDate)) {
           tickets = tickets.filter((t: unknown) => !matchesRow(t))
         } else if (!hadRow && !shouldExcludeRelayFromTab(normalized)) {
-          if (cacheDate && ticketDate && cacheDate === ticketDate) {
+          if (cacheDate && ((ticketDate && cacheDate === ticketDate) || ticketReferencesScheduleDate(normalized, cacheDate))) {
             tickets = [normalized, ...tickets]
           }
         }

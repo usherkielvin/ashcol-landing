@@ -274,6 +274,40 @@ export function normalizeRelayScheduleTicketList(list: any[]): any[] {
   return list.map(t => normalizeRelayScheduleTicket(t))
 }
 
+/**
+ * Does this ticket reference `dateKey` in ANY of its schedule date fields — top-level
+ * final/preferred, or acDetails finalDate/scheduledDate/archivedScheduleDate/installedDate,
+ * or the previousScheduleDates ghost history. Unlike resolveRelayScheduleDateKey (which picks a
+ * single "primary" date), this answers "does the ticket still belong on this date at all", so a
+ * cross-tab cache sync never evicts a row from a date it legitimately still sits on just because
+ * a different field became its primary (e.g. a rescheduled ticket that keeps a ghost row, or a
+ * row whose finalDate momentarily dropped so the primary fell back to a stale preferredDate).
+ */
+export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKey: string): boolean {
+  const target = String(dateKey || '').trim().split('T')[0].split(' ')[0]
+  if (!target) return false
+  const norm = (v: unknown) => String(v || '').trim().split('T')[0].split(' ')[0]
+  if (norm(ticket.finalDate) === target || norm(ticket.final_date) === target) return true
+  if (norm(ticket.preferredDate) === target || norm(ticket.preferred_date) === target) return true
+  try {
+    const acRaw = ticket.acDetails || ticket.ac_details
+    const ac = typeof acRaw === 'string' ? JSON.parse(acRaw) : acRaw
+    const meta = Array.isArray(ac) ? ac[0] : ac
+    if (meta && typeof meta === 'object') {
+      for (const k of ['finalDate', 'scheduledDate', 'archivedScheduleDate', 'installedDate']) {
+        if (norm((meta as Record<string, unknown>)[k]) === target) return true
+      }
+      const prev = (meta as Record<string, unknown>).previousScheduleDates
+      if (Array.isArray(prev) && prev.some(d => norm(d) === target)) return true
+      const cont = (meta as Record<string, unknown>).continuationDates
+      if (Array.isArray(cont) && cont.some(d => norm(d) === target)) return true
+    }
+  } catch {
+    /* ignore malformed acDetails */
+  }
+  return false
+}
+
 /** Primary schedule date for cache placement (final → scheduled → preferred). */
 export function resolveRelayScheduleDateKey(ticket: any): string {
   const normalized = normalizeRelayScheduleTicket(ticket)

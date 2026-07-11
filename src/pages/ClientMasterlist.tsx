@@ -723,12 +723,12 @@ const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): strin
   const legacy = raw.match(/^TKT-0*(\d+)$/i)
   if (legacy) {
     const seq = parseInt(legacy[1], 10)
-    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
   const ashcol = raw.match(/^AS-0*(\d+)$/i)
   if (ashcol) {
     const seq = parseInt(ashcol[1], 10)
-    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
   return raw.toUpperCase()
 }

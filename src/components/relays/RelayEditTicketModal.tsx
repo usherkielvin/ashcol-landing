@@ -535,7 +535,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   </select>
                 </EField>
                 <EField label="Ticket No.">
-                  <input type="text" value={draft.ticketNumber} onChange={(e) => patch({ ticketNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="e.g. AS-01" />
+                  <input type="text" value={draft.ticketNumber} onChange={(e) => patch({ ticketNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="e.g. AS-001" />
                 </EField>
                 <EField label="Control No. / SI (Aircon)">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
