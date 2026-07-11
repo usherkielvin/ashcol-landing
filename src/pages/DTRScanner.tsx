@@ -34,6 +34,20 @@ type FormState = {
   date: string
 } & Record<ScanKey, string>
 
+const DRAFT_STORAGE_KEY = 'ashcol-dtr-scanner-draft'
+
+const loadDraftForm = (): FormState | null => {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return { ...emptyForm(), ...parsed }
+  } catch {
+    return null
+  }
+}
+
 const emptyForm = (): FormState => ({
   branchId: '',
   branchName: '',
@@ -95,8 +109,17 @@ export default function DTRScanner() {
   const [scanError,     setScanError]     = useState('')
   const [submitting,    setSubmitting]    = useState(false)
   const [success,       setSuccess]       = useState(false)
-  const [form,          setForm]          = useState<FormState>(emptyForm)
+  const [form,          setForm]          = useState<FormState>(() => loadDraftForm() || emptyForm())
   const [focusedField,  setFocusedField]  = useState<string | null>(null)
+
+  // Persist the in-progress draft so a page reload (e.g. to pick up a frontend update) or a
+  // failed submit doesn't wipe out data the user already scanned/typed — cleared on successful
+  // submit or explicit reset via resetReportForm.
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(form))
+    } catch { /* storage unavailable/full — draft persistence is best-effort */ }
+  }, [form])
 
   // Load branches (used to pre-fill manager's branch, and for manual override)
   useEffect(() => {
@@ -273,6 +296,11 @@ export default function DTRScanner() {
     setForm(prev => ({ ...prev, branchId, branchName: found?.name || '' }))
   }
 
+  // Backend restarts (e.g. a redeploy) briefly return 5xx/network errors — retry a few times
+  // with backoff before surfacing anything, so the user isn't forced to notice and resubmit
+  // manually (the draft is already preserved via DRAFT_STORAGE_KEY either way).
+  const RETRY_DELAYS_MS = [1000, 2500, 5000]
+
   const handleSubmit = async () => {
     if (!form.branchId) {
       alert('Branch could not be detected. Please scan a valid DTR image or select a branch manually.')
@@ -299,22 +327,45 @@ export default function DTRScanner() {
         remarks: 'CHECKED',
       }
 
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        // Surface the server's actual reason (permission denial, validation error, etc.) instead
-        // of a generic message — this was silently swallowed before, which made a real 403/500
-        // from the API indistinguishable from a plain network failure.
-        let detail = ''
+      let lastError: Error | null = null
+      let succeeded = false
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
         try {
-          const body = await res.json()
-          detail = body?.error || body?.message || ''
-        } catch { /* response wasn't JSON */ }
-        throw new Error(detail || `Submission failed (HTTP ${res.status})`)
+          const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          })
+          if (!res.ok) {
+            // Surface the server's actual reason (permission denial, validation error, etc.) instead
+            // of a generic message — this was silently swallowed before, which made a real 403/500
+            // from the API indistinguishable from a plain network failure.
+            let detail = ''
+            try {
+              const body = await res.json()
+              detail = body?.error || body?.message || ''
+            } catch { /* response wasn't JSON */ }
+            const err = new Error(detail || `Submission failed (HTTP ${res.status})`)
+            // Only 5xx is worth retrying — a 4xx (validation, permission) will fail again identically.
+            if (res.status < 500 || attempt === RETRY_DELAYS_MS.length) throw err
+            lastError = err
+          } else {
+            succeeded = true
+            break
+          }
+        } catch (err) {
+          // TypeError with no HTTP status = fetch itself failed (network unreachable, backend
+          // process not accepting connections mid-restart) — also worth retrying.
+          if (!(err instanceof TypeError) || attempt === RETRY_DELAYS_MS.length) throw err
+          lastError = err
+        }
+        setScanError(`Server is temporarily unavailable — retrying (${attempt + 1}/${RETRY_DELAYS_MS.length})…`)
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
       }
+      if (!succeeded && lastError) throw lastError
+
+      try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* best-effort */ }
+      setScanError('')
       setSuccess(true)
     } catch (e) {
       console.error(e)
@@ -330,6 +381,20 @@ export default function DTRScanner() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const resetReportForm = () => {
+    setScanPreview(null)
+    setScannedFields(new Set())
+    setScanError('')
+    const base = emptyForm()
+    if (isBranchRestricted && user?.branchId) {
+      const myBranch = branches.find(b => b.id === user.branchId)
+      base.branchId = user.branchId
+      base.branchName = myBranch?.name || ''
+    }
+    setForm(base)
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* best-effort */ }
   }
 
   const scannedStyle = (key: string): React.CSSProperties =>
@@ -351,7 +416,7 @@ export default function DTRScanner() {
         </p>
         <div className="flex gap-3 mt-2">
           <button
-            onClick={() => { setSuccess(false); setScanPreview(null); setScannedFields(new Set()); setForm(emptyForm()) }}
+            onClick={() => { setSuccess(false); resetReportForm() }}
             className="px-5 py-2.5 rounded-xl text-sm font-bold border transition-all hover:scale-105"
             style={{ borderColor: inputBorder, color: textMuted }}
           >
@@ -472,8 +537,9 @@ export default function DTRScanner() {
                 )}
                 <button
                   type="button"
-                  onClick={() => { setScanPreview(null); setScannedFields(new Set()); setScanError('') }}
+                  onClick={resetReportForm}
                   className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 text-white hover:bg-red-500/80 transition-colors"
+                  aria-label="Clear report"
                 >
                   <X size={14} />
                 </button>
