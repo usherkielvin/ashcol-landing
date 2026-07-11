@@ -156,7 +156,7 @@ type ImportUnmatchedRow = {
 
 
 const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED', 'CONTINUATION']
-const TABLE_ROW_HEIGHT = 38
+const TABLE_ROW_HEIGHT = 48
 
 /** Schedule install closed Ã¢â‚¬â€ DB uses INSTALLED; legacy rows may still be COMPLETED. */
 function isInstalledWorkflowStatus(status?: string | null): boolean {
@@ -7608,14 +7608,14 @@ export default function Tickets() {
                         }}
                         title={canSort ? 'Click to widen column Ã‚Â· Use arrow to sort' : 'Click to widen column'}
                         style={{
-                          padding: '11px 12px',
+                          padding: '13px 12px',
                           color: (col.isExpanded || isSorted)
                             ? (isLight ? '#16A34A' : '#4ADE80')
                             : (isMyTickets ? myTicketsTheadText : schedTheadText),
                           fontWeight: 700, whiteSpace: 'nowrap',
                           borderRight: `1px solid ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}`,
                           borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
-                          fontSize: '10px', letterSpacing: '0.08em',
+                          fontSize: '11px', letterSpacing: '0.06em',
                           width: col.w, minWidth: 0, maxWidth: col.w,
                           overflow: 'hidden', textOverflow: 'ellipsis',
                           backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
@@ -7780,7 +7780,7 @@ export default function Tickets() {
                               style={{
                                 padding: isEditingCell ? '6px' : '0 12px',
                                 color: isGhost ? textMuted : textPrimary,
-                                fontSize: '11px', fontWeight: isGhost ? 500 : 500,
+                                fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
                                 backgroundColor: emptyCellBg ?? bg,
                                 borderRight: `1px solid ${tableBorder}`,
                                 borderBottom: `1px solid ${tableBorder}`,
