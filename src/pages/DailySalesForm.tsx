@@ -33,6 +33,7 @@ interface ForCollRow   { id: string; installer: string; customer: string; amount
 interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
+interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,7 @@ const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amo
 const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
+const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 
 const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
   const clean = branchName.toUpperCase()
@@ -620,6 +622,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
+  // Incentives
+  const [incentives, setIncentives]     = useState<IncentiveRow[]>([mkInc()])
   // Unit summary
   const [scheduledUnits, setScheduledUnits]     = useState('0')
   const [surveyOnlyUnits, setSurveyOnlyUnits]   = useState('0')
@@ -841,6 +845,31 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         })
       }
       setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
+
+      // Populate incentives
+      const incentivesList: IncentiveRow[] = []
+      if (data.items && Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          if (item.type === 'INCENTIVE') {
+            const desc = item.description || ''
+            const parts = desc.startsWith('INCENTIVE|') ? desc.split('|') : ['', '', '']
+            const promodiser = parts[1] || ''
+            const hpRaw = parts[2] || ''
+            const hp = hpRaw.replace(/hp/i, '').trim()
+            const amt = item.amount != null ? String(item.amount) : ''
+            incentivesList.push({
+              id: uid(),
+              customer: item.customer || '',
+              company: item.company || '',
+              hp,
+              promodiser,
+              amount: amt,
+              collectionResolved: item.collectionResolved || false
+            })
+          }
+        })
+      }
+      setIncentives(incentivesList.length > 0 ? incentivesList : [mkInc()])
 
       // Populate units
       setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '0')
@@ -1500,7 +1529,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
-  const grandTotalExpenses   = totalExpReceipt + totalExpPurch
+  const totalIncentives      = sumArr(incentives.map(r => r.amount))
+  const grandTotalExpenses   = totalExpReceipt + totalExpPurch + totalIncentives
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
@@ -1614,6 +1644,14 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           description: r.installer,
           customer: r.customer,
           amount: parseFloat(r.amount) || 0,
+          collectionResolved: r.collectionResolved || false
+        })),
+        ...incentives.filter(r => r.customer || r.promodiser || r.amount).map(r => ({
+          type: 'INCENTIVE',
+          customer: r.customer,
+          company: r.company,
+          amount: parseFloat(r.amount) || 0,
+          description: `INCENTIVE|${r.promodiser}|${r.hp}`,
           collectionResolved: r.collectionResolved || false
         })),
       ]
@@ -1979,12 +2017,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         </div>
       )}
 
-      {/* ── Two-Column Layout for Sections ──────────────────────────── */}
+      {/* ── Sections ───────────────────────────────────────────────── */}
       <div className={isViewOnlyReport ? 'opacity-80 pointer-events-none select-none' : undefined}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="flex flex-col gap-4">
 
-        {/* ── LEFT COLUMN ── */}
-        <div className="flex flex-col gap-4">
+        {/* Row: Cash Transactions | Cash Returns */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
@@ -2020,7 +2058,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                         )}
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCashTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2075,7 +2113,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                         )}
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCashRet(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2091,6 +2129,110 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCashRet(p => [...p, mkRet()])} label="Add row" />}
             </div>
           </div>
+
+        </div>
+
+        {/* Row: Expenses with Receipts | Parts Order / Units Order */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+          {/* Expenses with Receipts */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Name</th>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {expReceipt.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.name} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Name" value={row.name}
+                            onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setExpReceipt(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
+            </div>
+          </div>
+
+          {/* Parts Order / Units Order */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Parts Order / Units Order" total={totalOrders} />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Customer</th>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setOrders(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setOrders(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Row: HO Transfers & Cash on Hand | Expenses for Purchase */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
@@ -2143,6 +2285,61 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
 
+          {/* Expenses for Purchase */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Name</th>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {expPurch.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.name} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Name" value={row.name}
+                            onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setExpPurch(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Row: Online Transactions | Check Remits */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
           {/* Online Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Online Transactions" total={totalOnline} />
@@ -2182,7 +2379,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2238,7 +2435,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2254,6 +2451,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCheckRem(p => [...p, mkChk()])} label="Add row" />}
             </div>
           </div>
+
+        </div>
+
+        {/* Row: Parts Sales / Unit Sales | For Collection */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
@@ -2283,12 +2485,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital}
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, capital: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice}
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, salePrice: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2338,7 +2540,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                         )}
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2357,152 +2559,126 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         </div>
 
-        {/* ── RIGHT COLUMN ── */}
-        <div className="flex flex-col gap-4">
-
-          {/* Parts Order / Units Order */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Parts Order / Units Order" total={totalOrders} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Description" value={row.description}
-                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setOrders(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setOrders(p => p.filter(r => r.id !== row.id))} />
-                        </td>
+        {/* ── Incentives — full width ───────────────────────────────── */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+          <SectionHeader label="Incentives" total={totalIncentives} />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Brand</th>
+                  <th className={tableTh + ' w-20 text-center'}>HP</th>
+                  <th className={tableTh}>Promodiser</th>
+                  <th className={tableTh + ' text-right w-32'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {incentives.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer name" value={row.customer}
+                        onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                        onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="1.5" value={row.hp}
+                        onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                        className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      {isFormDisabled ? (
+                        <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          <EmployeeNameLink nameOrId={row.promodiser} />
+                        </div>
+                      ) : (
+                        <input type="text" placeholder="Promodiser name" value={row.promodiser}
+                          onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, promodiser: e.target.value } : r))}
+                          className={flushInput} />
                       )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
-            </div>
-          </div>
-
-          {/* Expenses with Receipts */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Name</th>
-                    <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setIncentives(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setIncentives(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
                   </tr>
-                </thead>
-                <tbody>
-                  {expReceipt.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        {isFormDisabled ? (
-                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                            <EmployeeNameLink nameOrId={row.name} />
-                          </div>
-                        ) : (
-                          <input type="text" placeholder="Name" value={row.name}
-                            onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                            className={flushInput} />
-                        )}
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Description" value={row.description}
-                          onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setExpReceipt(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
-            </div>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setIncentives(p => [...p, mkInc()])} label="Add row" />}
           </div>
+        </div>
 
-          {/* Expenses for Purchase */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Name</th>
-                    <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+        {/* ── Rebates for Collection — full width ───────────────────── */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+          <SectionHeader label="Rebates for Collection" total={totalRebates} />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Company / RA No.</th>
+                  <th className={tableTh}>Brand</th>
+                  <th className={tableTh + ' w-20 text-center'}>HP</th>
+                  <th className={tableTh + ' text-right w-32'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rebates.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer name" value={row.customer}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="1.5" value={row.hp}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                        className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
                   </tr>
-                </thead>
-                <tbody>
-                  {expPurch.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        {isFormDisabled ? (
-                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                            <EmployeeNameLink nameOrId={row.name} />
-                          </div>
-                        ) : (
-                          <input type="text" placeholder="Name" value={row.name}
-                            onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                            className={flushInput} />
-                        )}
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Description" value={row.description}
-                          onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setExpPurch(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
-            </div>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
           </div>
+        </div>
+
+        {/* Row: Unit Summary | Final Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
@@ -2535,8 +2711,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           allowNegative={false}
                           placeholder="0"
                           value={value}
-                          onValueChange={(values) => setter(values.value)}
-                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && value.trim() === '' ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
+                          onValueChange={(values) => setter(values.value || '')}
+                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && (!value || value.trim() === '') ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
                           disabled={isFormDisabled}
                           autoComplete="off"
                         />
@@ -2578,62 +2754,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         </div>
 
-      </div>
-
-      {/* ── Rebates for Collection — full width ──────────────────────── */}
-      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <SectionHeader label="Rebates for Collection" total={totalRebates} />
-        <div className="p-2">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr>
-                <th className={tableTh}>Customer</th>
-                <th className={tableTh}>Company / RA No.</th>
-                <th className={tableTh}>Brand</th>
-                <th className={tableTh + ' w-20 text-center'}>HP</th>
-                <th className={tableTh + ' text-right w-32'}>Amount</th>
-                {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rebates.map(row => (
-                <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                  <td className={tableTd}>
-                    <input type="text" placeholder="Customer name" value={row.customer}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="e.g. MIDEA" value={row.company}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="1.5" value={row.hp}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
-                      className={`${flushInput} text-center`} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                      onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                      className={flushInputNumber} disabled={isFormDisabled} />
-                  </td>
-                  {canSubmit && !reviewMode && (
-                    <td className={tableTd + ' text-center'}>
-                      <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
-        </div>
       </div>
       </div>
 

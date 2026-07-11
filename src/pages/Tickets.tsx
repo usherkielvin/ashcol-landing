@@ -579,11 +579,20 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   copyIfLocal('status')
   copyIfLocal('serviceType')
   copyIfLocal('commitType')
+  copyIfLocal('preferredDate')
 
   if (hasLocalScheduleValue(local.mode_of_payment)) next.mode_of_payment = local.mode_of_payment
   if (hasLocalScheduleValue(local.installation_charges)) next.installation_charges = local.installation_charges
   if (hasLocalScheduleValue(local.service_vehicle)) next.service_vehicle = local.service_vehicle
   if (hasLocalScheduleValue(local.driver_name)) next.driver_name = local.driver_name
+  const localFinalDate = (local as Ticket & { finalDate?: string; final_date?: string }).finalDate
+    || (local as Ticket & { final_date?: string }).final_date
+  if (hasLocalScheduleValue(localFinalDate)) {
+    (next as Ticket & { finalDate?: string; final_date?: string }).finalDate = localFinalDate;
+    (next as Ticket & { final_date?: string }).final_date = localFinalDate
+  }
+  const localPreferredDate = local.preferred_date
+  if (hasLocalScheduleValue(localPreferredDate)) next.preferred_date = localPreferredDate
   const localRemarksUpdate = (local as Ticket & { remarks_update?: string }).remarks_update
   if (hasLocalScheduleValue(localRemarksUpdate)) {
     (next as Ticket & { remarks_update?: string }).remarks_update = localRemarksUpdate
@@ -598,6 +607,10 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
         'installerName', 'installer', 'technicianName', 'driverName', 'serviceVehicle', 'driver_name',
         'modeOfPayment', 'installationCharges', 'installation_charges', 'update', 'remarksUpdate',
         'scheduleOutcome', 'paymentMode', 'paymentStatus', 'charges', 'amountCharged',
+        // Schedule date fields — a just-saved date move must never be clobbered by a stale
+        // server re-fetch (e.g. read-after-write lag on the prod DB pooler); local is fresher.
+        'finalDate', 'scheduledDate', 'previousScheduleDates', 'rescheduledTo', 'reschedulePending',
+        'archivedScheduleDate', 'installedDate',
       ]) {
         const v = localMeta[key]
         if (hasLocalScheduleValue(v)) mergedMeta[key] = v
@@ -1229,12 +1242,18 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
 function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
   if (!isInstalledWorkflowStatus(ticket.status)) return false
+
+  // The ticket's own current/real date is never a ghost — only duplicate rows left
+  // behind on OLD dates are. Otherwise every completed ticket becomes permanently
+  // read-only (no remarks edits) even on the date it actually belongs on.
+  const currentKey = getEffectiveScheduleDateKey(ticket) || getInstalledDateKey(ticket) || getArchivedScheduleDate(ticket)
+  if (currentKey && currentKey === dateKey) return false
+
   const sched = getArchivedScheduleDate(ticket)
   if (sched === dateKey) return true
   if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
   if (getInstalledDateKey(ticket) === dateKey) return true
-  if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
-  return ticketMatchesDateKey(ticket, dateKey)
+  return false
 }
 
 function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
@@ -4354,14 +4373,24 @@ export default function Tickets() {
       } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
       } else {
-        Object.assign(body, applyScheduleStatusPatch((originalTicket || activeForm) as Ticket, scheduleVal))
-        // Status patch may clear Moved-to remarks / set preferredDate
-        if (typeof body.remarksUpdate === 'string') remarksVal = body.remarksUpdate
-        else if (typeof body.remarks === 'string') remarksVal = body.remarks
-        if (body.remarksUpdate === '') {
-          remarksVal = ''
-          body.remarks = ''
-          body.remarksUpdate = ''
+        const statusPatch = applyScheduleStatusPatch((originalTicket || activeForm) as Ticket, scheduleVal)
+        Object.assign(body, statusPatch)
+        // Status patch auto-clears stale "Moved to…"/PENDING placeholder remarks — but only
+        // apply that when the user didn't just type fresh remarks in this save, otherwise it
+        // silently discards what they typed (e.g. any ticket whose remark was left as "PENDING").
+        const originalRemarks = String(originalTicket?.remarksUpdate || originalTicket?.remarks || '').trim()
+        const userTypedNewRemarks = remarksVal !== originalRemarks
+        if (!userTypedNewRemarks) {
+          if (typeof body.remarksUpdate === 'string') remarksVal = body.remarksUpdate
+          else if (typeof body.remarks === 'string') remarksVal = body.remarks
+          if (body.remarksUpdate === '') {
+            remarksVal = ''
+            body.remarks = ''
+            body.remarksUpdate = ''
+          }
+        } else {
+          body.remarks = remarksVal
+          body.remarksUpdate = remarksVal
         }
       }
 
@@ -6154,21 +6183,32 @@ export default function Tickets() {
             mergedSaved = savedTicket?.id
               ? preserveLocalScheduleFields(base, savedTicket)
               : base
-            const ticketNumber = mergedSaved.ticketNumber || mergedSaved.ticket_number || payload.ticketNumber
-            if (ticketNumber) {
-              const refreshed = await fetchTicketByNumber(auth, String(ticketNumber))
-              if (refreshed && typeof refreshed === 'object') {
-                const refreshedTicket = preserveLocalScheduleFields(
-                  mergedSaved,
-                  normalizeRelayScheduleTicket(refreshed) as Ticket,
-                )
-                mergedSaved = refreshedTicket
-              }
-            }
             optimisticTicketsRef.current.delete(saveId)
             locallyEditedTicketIdsRef.current.add(saveId)
+            // Apply the PATCH response immediately — it's already the authoritative post-write
+            // state, so the Schedule calendar reflects the save without waiting on a second
+            // round trip.
             applyTicketLocally(saveId, mergedSaved)
             cacheTicketByNumber(mergedSaved as unknown as Record<string, unknown>)
+
+            const ticketNumber = mergedSaved.ticketNumber || mergedSaved.ticket_number || payload.ticketNumber
+            if (ticketNumber) {
+              const applyId = saveId
+              const baseline = mergedSaved
+              // Background refinement only (picks up fields the PATCH response may not compute,
+              // e.g. resolved negotiatorName) — never blocks the visible update, and
+              // preserveLocalScheduleFields keeps a slow/racing read from reverting the date or
+              // status just saved.
+              void fetchTicketByNumber(auth, String(ticketNumber)).then(refreshed => {
+                if (!refreshed || typeof refreshed !== 'object') return
+                const refreshedTicket = preserveLocalScheduleFields(
+                  baseline,
+                  normalizeRelayScheduleTicket(refreshed) as Ticket,
+                )
+                applyTicketLocally(applyId, refreshedTicket)
+                cacheTicketByNumber(refreshedTicket as unknown as Record<string, unknown>)
+              }).catch(() => {})
+            }
           }
           console.log('[Schedules] Saved to database', {
             ticketId: saveId,
@@ -6981,13 +7021,8 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span
-          className="inline-flex items-center justify-center px-2 py-0.5 rounded-full font-bold text-[10px] tracking-widest uppercase"
-          style={{
-            color: isLight ? '#1d4ed8' : '#93c5fd',
-            backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.18)',
-            border: `1px solid ${isLight ? '#bfdbfe' : 'rgba(96,165,250,0.3)'}`,
-            opacity: rowGhost ? 0.65 : 1,
-          }}
+          className="block w-full text-center font-bold text-[10px] tracking-wide uppercase leading-tight"
+          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
           title={vehicleCode}
         >
           {vehicleCode || EMPTY_CELL}
@@ -7607,11 +7642,11 @@ export default function Tickets() {
                               {isMyTickets
                                 ? (searchQuery
                                   ? 'No pending or assigned tickets match your search'
-                                  : 'No pending or assigned tickets Ã¢â‚¬â€ scheduled jobs are on Schedules, installed jobs on Archives')
+                                  : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
                                 : tickets.length > 0
                                   ? 'No tickets match this date or branch view'
                                   : fetchError
-                                    ? 'Could not load schedules Ã¢â‚¬â€ use Retry above'
+                                    ? 'Could not load schedules — use Retry above'
                                     : 'No records'}
                             </p>
                             {searchQuery && (
@@ -7784,7 +7819,7 @@ export default function Tickets() {
                   Portal Overview Search
                 </h2>
                 <p className="text-[11px] md:text-xs mt-1 leading-relaxed" style={{ color: textMuted }}>
-                  Search by customer name, ticket #, control #, contact, or location Ã¢â‚¬â€ best matches appear first.
+                  Search by customer name, ticket #, control #, contact, or location — best matches appear first.
                 </p>
               </div>
 
@@ -9410,7 +9445,7 @@ export default function Tickets() {
           textMuted={textMuted}
           inputBg={inputBg}
           inputBorder={inputBorder}
-          compactInput="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case"
+          compactInput="w-full border rounded-xl px-3.5 py-2.5 sm:py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case"
           branches={branches}
           relayCustomStores={relayCustomStores}
           onPersistCustomStores={(stores) => { setRelayCustomStores(stores); persistRelayCustomStores(stores) }}

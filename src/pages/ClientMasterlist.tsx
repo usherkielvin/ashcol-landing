@@ -4,7 +4,8 @@ import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, CalendarDays,
-  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
+  Store, UserRound, Wind, MessageSquare, Users
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -42,18 +43,34 @@ function RelayFormField({
 }) {
   return (
     <div className={className}>
-      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10px] mb-1' : 'text-[11px] mb-1.5'}`}>
-        {label}{required ? ' *' : ''}
+      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10.5px] mb-1.5' : 'text-[11px] mb-1.5'}`}>
+        {label}{required ? <span className="text-emerald-500 ml-0.5">*</span> : null}
       </label>
       {children}
     </div>
   )
 }
 
-function RelayFormSectionHead({ title }: { title: string }) {
+function RelayFormSectionHead({
+  title,
+  subtitle,
+  step,
+  icon: Icon,
+}: {
+  title: string
+  subtitle?: string
+  step?: number
+  icon?: ReactNode
+}) {
   return (
-    <div className="pt-0.5 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{title}</p>
+    <div className="flex items-center gap-2.5 pt-0.5 pb-2.5 border-b border-slate-200 dark:border-slate-700 mb-4">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
+        {Icon ?? <span className="text-[11px] font-black">{step}</span>}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">{title}</p>
+        {subtitle && <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">{subtitle}</p>}
+      </div>
     </div>
   )
 }
@@ -852,7 +869,7 @@ export default function ClientMasterlist() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const pageBg = isLight ? '#f1f5f9' : '#060B18'
-  const compactInput = `w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20`
+  const compactInput = `w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15`
 
   // State
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -3432,11 +3449,17 @@ export default function ClientMasterlist() {
       {isAddModalOpen && ReactDOM.createPortal((() => {
         const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Collection'
-          : /install|s\/i|\bsi\b/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Survey & Install'
+          : /continuation/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Continuation'
+          : /resched/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Resched'
+          : /approval/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'For Approval'
+          : /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Cleaning'
           : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Survey'
-          : /service|clean/i.test(`${addForm.serviceType} ${addForm.title}`)
+          : /service/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Service'
           : 'Survey & Install'
         const fieldStyle = (value?: string) => ({
@@ -3446,12 +3469,16 @@ export default function ClientMasterlist() {
           fontFamily: 'inherit',
           textTransform: 'none' as const,
         })
-        const addInput = 'w-full border rounded-lg px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
+        const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
         const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case'
         const categoryOptions = [
           { label: 'S / I', value: 'Survey & Install', title: 'Installation service' },
           { label: 'Service', value: 'Service', title: 'Service ticket' },
           { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
+          { label: 'Cleaning', value: 'Cleaning', title: 'Cleaning ticket' },
+          { label: 'For Approval', value: 'For Approval', title: 'For approval ticket' },
+          { label: 'Resched', value: 'Resched', title: 'Rescheduled ticket' },
+          { label: 'Continuation', value: 'Continuation', title: 'Continuation ticket' },
           { label: 'Collection', value: 'Collection', title: 'Collection ticket' },
         ]
         const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
@@ -3472,15 +3499,25 @@ export default function ClientMasterlist() {
         const applyCategory = (value: string) => {
           const option = categoryOptions.find(item => item.value === value)
           if (!option) return
-          setAddForm(prev => ({
-            ...prev,
-            serviceType: option.value,
-            title: option.title,
-            status: option.value === 'Collection' ? 'PENDING' : prev.status,
-            commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
-            installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
-            modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
-          }))
+          setAddForm(prev => {
+            let mappedSvc = option.value
+            if (option.value === 'Survey & Install') mappedSvc = 'S/I'
+            else if (option.value === 'Survey') mappedSvc = 'SURVEY'
+            else if (option.value === 'Cleaning') mappedSvc = 'CLEANING'
+            else if (option.value === 'For Approval') mappedSvc = 'FOR APPROVAL'
+            else if (option.value === 'Resched') mappedSvc = 'RESCHED'
+            else if (option.value === 'Continuation') mappedSvc = 'CONTINUATION'
+
+            return {
+              ...prev,
+              serviceType: mappedSvc,
+              title: option.title,
+              status: 'PENDING',
+              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
+              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
+              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
+            }
+          })
         }
         return (
         <div
@@ -3488,30 +3525,30 @@ export default function ClientMasterlist() {
           style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
         >
           <div
-            className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
-            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
+            className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '94vh' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
-                    <Plus className="w-4 h-4" />
+              <div className="px-5 sm:px-7 py-3.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
+                    <Plus className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
-                    <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>Ticket no. & relay date auto-filled</p>
+                    <h2 className="font-black text-lg leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
+                    <p className="text-[11px] mt-0.5 truncate font-semibold" style={{ color: textMuted }}>Ticket no. & relay date auto-filled</p>
                   </div>
                 </div>
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
-                  className="p-1.5 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
+                  className="p-2 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
                   style={{ borderColor: inputBorder, color: textMuted }}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="px-5 sm:px-6 pb-3 flex flex-wrap items-end gap-3">
-                <div className="w-36">
+              <div className="px-5 sm:px-7 pb-3.5 flex flex-wrap items-end gap-3">
+                <div className="w-72 max-w-full">
                   <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Category *</label>
                   <select
                     value={addCategory}
@@ -3522,19 +3559,6 @@ export default function ClientMasterlist() {
                     {categoryOptions.map(option => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
-                  </select>
-                </div>
-                <div className="w-32">
-                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Status</label>
-                  <select
-                    value={addForm.status}
-                    onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                    className={`${addInputSm} font-semibold`}
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  >
-                    <option value="PENDING">Pending</option>
-                    <option value="ASSIGNED">Assigned</option>
-                    <option value="SCHEDULED">Scheduled</option>
                   </select>
                 </div>
               </div>
@@ -3558,16 +3582,87 @@ export default function ClientMasterlist() {
             
             {/* Form */}
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
-              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-5">
-                {/* Customer + aircon */}
+              <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
+
+                {/* 1. Store / transaction */}
                 <section>
-                  <RelayFormSectionHead title="Customer & Unit" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Store & Transaction" subtitle="Where the relay came from" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Store" compact className="md:col-span-4">
+                      <select
+                        value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (val === '__add_store__') {
+                            setShowAddStoreField(true)
+                            return
+                          }
+                          setShowAddStoreField(false)
+                          setAddStoreDraft('')
+                          setAddForm(prev => ({
+                            ...prev,
+                            sourceVendor: val,
+                          }))
+                        }}
+                        className={addInput}
+                        style={fieldStyle(addForm.sourceVendor)}
+                      >
+                        {storeOptions.map(store => (
+                          <option key={store} value={store}>{store}</option>
+                        ))}
+                        <option value="__add_store__">+ Add store...</option>
+                      </select>
+                    </RelayFormField>
+                    {showAddStoreField && (
+                      <RelayFormField label="New Store Name" compact className="md:col-span-4">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={addStoreDraft}
+                            onChange={e => setAddStoreDraft(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
+                            placeholder="e.g. S&R, Anson's"
+                            className={addInput}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                          />
+                          <button
+                            type="button"
+                            onClick={addCustomStore}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
+                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </RelayFormField>
+                    )}
+                    <RelayFormField label="Store Branch" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.storeBranch}
+                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
+                        placeholder="Branch"
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                    </RelayFormField>
+                    {addForm.sourceVendor === 'Robinsons' && (
+                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
+                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
+                      </RelayFormField>
+                    )}
+                  </div>
+                </section>
+
+                {/* 2. Customer details */}
+                <section>
+                  <RelayFormSectionHead step={2} icon={<UserRound className="w-3.5 h-3.5" />} title="Customer Details" subtitle="Who and where to deliver service" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Customer Name" required compact className="md:col-span-5">
                       <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
                     </RelayFormField>
                     {addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -3585,7 +3680,7 @@ export default function ClientMasterlist() {
                       </div>
                     )}
                     {addFormDuplicate && !addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
                         <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -3650,28 +3745,7 @@ export default function ClientMasterlist() {
                         ))}
                       </div>
                     </RelayFormField>
-                    <RelayFormField label="Brand" compact className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
-                    </RelayFormField>
-                    <RelayFormField label="Capacity" compact className="md:col-span-2">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
-                    </RelayFormField>
-                    <RelayFormField label="SKU" compact className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
-                    </RelayFormField>
-                    <RelayFormField label="Serial No." compact className="md:col-span-4">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
-                    </RelayFormField>
-                    <RelayFormField label="District" compact className="md:col-span-4">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
-                    </RelayFormField>
-                    <RelayFormField label="Landmark" compact className="md:col-span-4">
-                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
-                    </RelayFormField>
-                    <RelayFormField label="Commit / Promo" compact className="md:col-span-4">
-                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
-                    </RelayFormField>
-                    <RelayFormField label="Address" required compact className="md:col-span-12">
+                    <RelayFormField label="Address" required compact className="md:col-span-8">
                       <textarea
                         required
                         value={addForm.locationRaw}
@@ -3688,72 +3762,42 @@ export default function ClientMasterlist() {
                         style={fieldStyle(addForm.locationRaw)}
                       />
                     </RelayFormField>
+                    <RelayFormField label="District" compact className="md:col-span-2">
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
+                    </RelayFormField>
+                    <RelayFormField label="Landmark" compact className="md:col-span-2">
+                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
+                    </RelayFormField>
                   </div>
                 </section>
 
-                {/* Store & assignment */}
+                {/* 3. Aircon / unit details */}
                 <section>
-                  <RelayFormSectionHead title="Store & Assignment" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <RelayFormField label="Store" compact className="md:col-span-3">
-                      <select
-                        value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
-                        onChange={e => {
-                          const val = e.target.value
-                          if (val === '__add_store__') {
-                            setShowAddStoreField(true)
-                            return
-                          }
-                          setShowAddStoreField(false)
-                          setAddStoreDraft('')
-                          setAddForm(prev => ({
-                            ...prev,
-                            sourceVendor: val,
-                          }))
-                        }}
-                        className={addInput}
-                        style={fieldStyle(addForm.sourceVendor)}
-                      >
-                        {storeOptions.map(store => (
-                          <option key={store} value={store}>{store}</option>
-                        ))}
-                        <option value="__add_store__">+ Add store...</option>
-                      </select>
+                  <RelayFormSectionHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Brand" compact className="md:col-span-3">
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
                     </RelayFormField>
-                    {showAddStoreField && (
-                      <RelayFormField label="New Store Name" compact className="md:col-span-4">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={addStoreDraft}
-                            onChange={e => setAddStoreDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
-                            placeholder="e.g. S&R, Anson's"
-                            className={addInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                          />
-                          <button
-                            type="button"
-                            onClick={addCustomStore}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
-                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </RelayFormField>
-                    )}
-                    <RelayFormField label="Store Branch" compact className="md:col-span-3">
-                      <input
-                        type="text"
-                        value={addForm.storeBranch}
-                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                        placeholder="Branch"
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
+                    <RelayFormField label="Capacity" compact className="md:col-span-2">
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
                     </RelayFormField>
-                    <RelayFormField label="Branch Zone" compact className="md:col-span-3">
+                    <RelayFormField label="SKU" compact className="md:col-span-3">
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
+                    </RelayFormField>
+                    <RelayFormField label="Serial No." compact className="md:col-span-4">
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
+                    </RelayFormField>
+                    <RelayFormField label="Commit / Promo" compact className="md:col-span-12">
+                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 4. Ashcol branch & assignment */}
+                <section>
+                  <RelayFormSectionHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch & Assignment" subtitle="Which Ashcol branch & negotiator owns this" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Branch Zone" compact className="md:col-span-5">
                       <select
                         value={addForm.branchId}
                         onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
@@ -3764,7 +3808,7 @@ export default function ClientMasterlist() {
                         {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
                       </select>
                     </RelayFormField>
-                    <RelayFormField label="Negotiator" required compact className="md:col-span-5">
+                    <RelayFormField label="Negotiator" required compact className="md:col-span-7">
                       <select
                         required
                         value={addForm.assignedTo || ''}
@@ -3792,40 +3836,49 @@ export default function ClientMasterlist() {
                         })}
                       </select>
                     </RelayFormField>
-                    {addForm.sourceVendor === 'Robinsons' && (
-                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
-                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
-                      </RelayFormField>
-                    )}
                   </div>
                 </section>
 
-                {/* Schedule & notes */}
+                {/* 5. Scheduling */}
                 <section>
-                  <RelayFormSectionHead title="Schedule & Notes" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <RelayFormField label="Requested" compact className="md:col-span-3">
+                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested date & collection details" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Requested Date" compact className="md:col-span-4">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
                     </RelayFormField>
                     {addCategory === 'Collection' && (
                       <>
-                        <RelayFormField label="Amount" compact className="md:col-span-3">
+                        <RelayFormField label="Amount" compact className="md:col-span-4">
                           <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
                         </RelayFormField>
-                        <RelayFormField label="Payment" compact className="md:col-span-3">
+                        <RelayFormField label="Payment" compact className="md:col-span-4">
                           <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
                         </RelayFormField>
                       </>
                     )}
-                    <RelayFormField label="Remarks" compact className="md:col-span-12">
-                      <input type="text" value={addForm.description} onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))} placeholder="Latest notes or dispatch update" className={addInput} style={fieldStyle(addForm.description)} />
+                  </div>
+                </section>
+
+                {/* 6. Comment / remarks */}
+                <section>
+                  <RelayFormSectionHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Comment / Remarks" subtitle="Latest notes or dispatch update" />
+                  <div className="grid grid-cols-1 gap-3.5">
+                    <RelayFormField label="Remarks" compact>
+                      <textarea
+                        value={addForm.description}
+                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                        placeholder="Latest notes or dispatch update"
+                        rows={3}
+                        className={`${addInput} resize-none`}
+                        style={fieldStyle(addForm.description)}
+                      />
                     </RelayFormField>
                   </div>
                 </section>
               </div>
 
               {/* Footer */}
-              <div className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="shrink-0 px-5 sm:px-7 py-3.5 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
                 <p className="text-[11px] font-medium hidden sm:block" style={{ color: textMuted }}>
                   Required: customer name, address, negotiator
                 </p>
