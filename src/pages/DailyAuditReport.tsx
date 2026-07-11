@@ -1797,12 +1797,12 @@ export default function DailyAuditReport() {
                         {renderItemTable('Incentives Breakdown', incentiveItems, [
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                           { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
-                          { label: 'Promodiser', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description?.split('|')[1] || '—'}</span> },
+                          { label: 'Promodiser', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.promodiser || item.description?.split('|')[1] || '—'}</span> },
                           {
                             label: 'HP',
                             render: (item) => (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                {item.description?.split('|')[2] || '—'}
+                                {item.hp || item.description?.split('|')[2] || '—'}
                               </span>
                             )
                           },
