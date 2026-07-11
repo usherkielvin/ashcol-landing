@@ -6179,9 +6179,19 @@ export default function Tickets() {
                 || optimisticTicketsRef.current.get(saveId)
                 || tickets.find(t => t.id === saveId)
               const ticketNumber = lookupTicket?.ticketNumber || lookupTicket?.ticket_number || ''
-              const found = ticketNumber
-                ? await lookupTicketByNumberOnServer(auth, ticketNumber)
-                : null
+              const wantedNumber = normalizeTicketNumberKey(ticketNumber)
+              // Prefer the copy already shown on THIS date/branch view over a blind global
+              // by-number/keyword search — if the ticket number has duplicate rows server-side
+              // (a known legacy data issue), a global search's first match can be the wrong
+              // duplicate, silently writing this edit onto an unrelated record while the row the
+              // user is actually looking at never gets updated (looks like the edit "reverted").
+              const localMatch = wantedNumber
+                ? ticketsRef.current.find(t =>
+                    t.id !== saveId && normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === wantedNumber,
+                  )
+                : undefined
+              const found = localMatch
+                || (ticketNumber ? await lookupTicketByNumberOnServer(auth, ticketNumber) : null)
               if (found?.id && found.id !== saveId) {
                 const remappedId = remapScheduleTicketId(saveId, found)
                 pendingSavesRef.current.set(remappedId, {
