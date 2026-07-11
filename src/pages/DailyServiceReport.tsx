@@ -1533,7 +1533,7 @@ export default function DailyServiceReport() {
         fetchRows({ soft: true, force: true })
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Import failed (HTTP ${res.status})`)
+        alert(err.error || err.message || `Import failed (HTTP ${res.status})`)
       }
     } catch (err) {
       console.error(err); alert('Network error during import')
@@ -1553,7 +1553,7 @@ export default function DailyServiceReport() {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Delete failed (HTTP ${res.status})`)
+        alert(err.error || err.message || `Delete failed (HTTP ${res.status})`)
         return
       }
       fetchRows({ soft: true, force: true })
@@ -1609,7 +1609,7 @@ export default function DailyServiceReport() {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Clear failed (HTTP ${res.status})`)
+        alert(err.error || err.message || `Clear failed (HTTP ${res.status})`)
         return
       }
       const result = await res.json()

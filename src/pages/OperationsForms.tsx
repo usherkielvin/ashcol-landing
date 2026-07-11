@@ -232,7 +232,7 @@ export default function OperationsForms() {
         fetchData()
       } else {
         const err = await res.json().catch(() => ({}))
-        setError(err.error || 'Failed to submit cash advance.')
+        setError(err.error || err.message || 'Failed to submit cash advance.')
       }
     } catch {
       setError('Failed to submit cash advance.')

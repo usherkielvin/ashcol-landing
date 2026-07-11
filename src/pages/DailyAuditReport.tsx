@@ -258,7 +258,7 @@ export default function DailyAuditReport() {
             fetchAudit()
           } else {
             const err = await res.json().catch(() => ({}))
-            alert(err.error || `Clear failed (HTTP ${res.status})`)
+            alert(err.error || err.message || `Clear failed (HTTP ${res.status})`)
           }
         } catch {
           alert('Failed to clear row data')
