@@ -5201,6 +5201,7 @@ export default function Tickets() {
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cellEditDraftRef = useRef<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => {})
+  const commitCellEditRef = useRef<() => void>(() => {})
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
@@ -5943,6 +5944,7 @@ export default function Tickets() {
     if (!ticket) return
     void saveCellEditRef.current(ticket, draft.colLabel, draft.value)
   }, [editingCell, tickets])
+  commitCellEditRef.current = commitCellEdit
 
   const cancelEdit = discardCellEdit
 
@@ -5953,8 +5955,7 @@ export default function Tickets() {
     mode: 'inline' | 'edit-form' = 'inline',
     anchorEl?: HTMLElement | null,
   ) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    cancelEdit()
+    commitCellEditRef.current()
     setExpandedCell(null)
 
     const popupW = 300
@@ -5982,8 +5983,7 @@ export default function Tickets() {
     anchorEl?: HTMLElement | null,
     ghostKind?: 'completed' | 'resched' | null,
   ) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    cancelEdit()
+    commitCellEditRef.current()
     setExpandedCell(null)
     setStatusPicker(null)
 
@@ -6014,8 +6014,7 @@ export default function Tickets() {
     ticket: Ticket,
     anchorEl?: HTMLElement | null,
   ) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    cancelEdit()
+    commitCellEditRef.current()
     setExpandedCell(null)
 
     const preferredDate = getPreferredDateKey(ticket)
@@ -6043,7 +6042,10 @@ export default function Tickets() {
   }, [])
 
   const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null, rowIndex?: number) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+    // Clicking straight from one open cell editor into another must save the first cell's
+    // draft rather than silently drop it — previously this only cleared the pending blur
+    // timer, which cancelled the SERVICE/VEHICLE (and other) cell's save entirely.
+    commitCellEdit()
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
       openStatusPicker(ticket)
@@ -6088,7 +6090,12 @@ export default function Tickets() {
     }
 
     if (!isMyTickets && activeTab === 'schedules') {
-      if (nextDate && nextDate !== prevDate && nextDate !== dateFilter) {
+      // Only auto-jump the date filter when we positively know the schedule date just moved
+      // (prevTicket found with a different date) — if prevTicket wasn't already loaded (e.g. the
+      // ticket was edited from Overview/search rather than the visible Schedules row), prevDate
+      // falls back to '' and would falsely look like "the date changed" on every single save,
+      // yanking the view to that ticket's date even when nothing about the date was touched.
+      if (prevTicket && nextDate && nextDate !== prevDate && nextDate !== dateFilter) {
         handleDateFilterChange(nextDate)
       }
     }
@@ -6429,8 +6436,7 @@ export default function Tickets() {
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
 
   const openReschedDialog = (ticket: Ticket) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    cancelEdit()
+    commitCellEdit()
     const preferred = getPreferredDateKey(ticket)
     const meta = parseAcMeta(ticket)
     const existingTarget = typeof meta.rescheduledTo === 'string' ? meta.rescheduledTo.split('T')[0].trim() : ''
@@ -6475,8 +6481,7 @@ export default function Tickets() {
   }
 
   const openContinuationDialog = (ticket: Ticket) => {
-    if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
-    cancelEdit()
+    commitCellEdit()
     const existingDates = getContinuationDates(ticket)
     setContinuationDialog({ ticket })
     setContinuationSelectedDates(existingDates)
