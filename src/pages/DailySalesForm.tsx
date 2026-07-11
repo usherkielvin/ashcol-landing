@@ -221,6 +221,12 @@ const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', a
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 
+// Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
+// (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
+// it's redeployed with a clean build. Hides the section and strips INCENTIVE rows from the
+// submit payload so previously-saved incentive data doesn't retrigger the crash either.
+const INCENTIVES_ENABLED = false
+
 const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
   const clean = branchName.toUpperCase()
     .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '')
@@ -1740,7 +1746,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           amount: parseFloat(r.amount) || 0,
           collectionResolved: r.collectionResolved || false
         })),
-        ...incentives.filter(r => r.customer || r.promodiser || r.amount).map(r => ({
+        ...(INCENTIVES_ENABLED ? incentives.filter(r => r.customer || r.promodiser || r.amount).map(r => ({
           type: 'INCENTIVE',
           customer: r.customer,
           company: r.company,
@@ -1751,7 +1757,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           hp: r.hp,
           promodiser: r.promodiser,
           collectionResolved: r.collectionResolved || false
-        })),
+        })) : []),
       ]
 
       const payload = {
@@ -2594,6 +2600,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           </div>
 
           {/* Incentives */}
+          {INCENTIVES_ENABLED && (
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Incentives" total={totalIncentives} variant="expense" />
             <div className="p-2">
@@ -2654,6 +2661,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setIncentives(p => [...p, mkInc()])} label="Add row" />}
             </div>
           </div>
+          )}
 
           </div>
 
@@ -2826,7 +2834,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
                     <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
                   </tr>
-                  {totalIncentives > 0 && (
+                  {INCENTIVES_ENABLED && totalIncentives > 0 && (
                     <tr className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Incentives (affects Gross Sales only)</td>
                       <td className="px-3 py-2 text-right font-bold text-red-500">{php(totalIncentives)}</td>
