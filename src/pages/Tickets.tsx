@@ -582,11 +582,33 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   copyIfLocal('serviceType')
   copyIfLocal('commitType')
   copyIfLocal('preferredDate')
+  // Every other Edit-Ticket-modal field must survive the same stale-server-refetch race as
+  // driver/vehicle/date above — branchId especially, since a just-moved branch (e.g. Taguig
+  // Sales -> Services) getting reverted by a lagging read silently reassigns the ticket back
+  // to the wrong branch's table.
+  copyIfLocal('branchId')
+  copyIfLocal('customerName')
+  copyIfLocal('location')
+  copyIfLocal('contactPhone')
+  copyIfLocal('unitType')
+  copyIfLocal('sourceVendor')
+  copyIfLocal('district')
+  copyIfLocal('negotiatorId')
+  copyIfLocal('ticketNumber')
+  copyIfLocal('controlNumber')
 
   if (hasLocalScheduleValue(local.mode_of_payment)) next.mode_of_payment = local.mode_of_payment
   if (hasLocalScheduleValue(local.installation_charges)) next.installation_charges = local.installation_charges
   if (hasLocalScheduleValue(local.service_vehicle)) next.service_vehicle = local.service_vehicle
   if (hasLocalScheduleValue(local.driver_name)) next.driver_name = local.driver_name
+  if (hasLocalScheduleValue(local.branch_id)) next.branch_id = local.branch_id
+  if (hasLocalScheduleValue(local.customer_name)) next.customer_name = local.customer_name
+  if (hasLocalScheduleValue(local.contact_phone)) next.contact_phone = local.contact_phone
+  if (hasLocalScheduleValue(local.unit_type)) next.unit_type = local.unit_type
+  if (hasLocalScheduleValue(local.source_vendor)) next.source_vendor = local.source_vendor
+  if (hasLocalScheduleValue(local.negotiator_id)) next.negotiator_id = local.negotiator_id
+  if (hasLocalScheduleValue(local.control_number)) next.control_number = local.control_number
+  if (hasLocalScheduleValue(local.ticket_number)) next.ticket_number = local.ticket_number
   const localFinalDate = (local as Ticket & { finalDate?: string; final_date?: string }).finalDate
     || (local as Ticket & { final_date?: string }).final_date
   if (hasLocalScheduleValue(localFinalDate)) {
@@ -613,6 +635,10 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
         // server re-fetch (e.g. read-after-write lag on the prod DB pooler); local is fresher.
         'finalDate', 'scheduledDate', 'previousScheduleDates', 'rescheduledTo', 'reschedulePending',
         'archivedScheduleDate', 'installedDate',
+        // Remaining Edit-Ticket-modal fields — same read-after-write race applies to these as
+        // to driver/vehicle/date above, so they need the same "local wins" protection.
+        'destination', 'address', 'district', 'brand', 'unitType', 'dealer', 'dlr',
+        'negotiatorId', 'negotiatorName',
       ]) {
         const v = localMeta[key]
         if (hasLocalScheduleValue(v)) mergedMeta[key] = v
