@@ -1312,10 +1312,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   }, [location.search])
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
+  // Pasting/uploading another DTR photo (a second page, a different table) must add to what's
+  // already on the form, not wipe it — clearForm() used to run on every scan, which meant the
+  // 2nd/3rd pasted image silently erased everything the 1st image had already filled in.
   const processImage = async (file: File) => {
     setScanning(true)
     setScanError(null)
-    clearForm(true) // Clear form state completely on new upload
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1360,63 +1362,116 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
+  // A row created by mkCash()/mkRet()/etc is "blank" (every field empty/false besides its id) —
+  // safe to drop when merging in newly scanned rows, but real data must never be dropped this way.
+  const isRowBlank = (row: Record<string, any>): boolean =>
+    Object.entries(row).every(([key, value]) => key === 'id' || value === '' || value === false || value == null)
+
+  // Merge newly scanned rows into whatever's already on the form instead of replacing it —
+  // pasting a 2nd/3rd DTR image (a different page/table) must add to the batch, not erase it.
+  function mergeScannedRows<T extends { id: string }>(
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
+    newRows: T[],
+    fallback: () => T,
+  ) {
+    setter(prev => {
+      const kept = prev.filter(r => !isRowBlank(r))
+      if (newRows.length > 0) return [...kept, ...newRows]
+      return kept.length > 0 ? kept : [fallback()]
+    })
+  }
+
   const applyScannedData = (data: Record<string, any>) => {
     isApplyingScannedData.current = true
     const activeBranchName = branchName
 
-    if (data.cohPreviousDay != null || data.fundFromHo != null) {
+    // Only overwrite COH/Fund-from-HO when this image actually reports them — otherwise a 2nd
+    // image that only shows (say) rebates would silently reset these back to 0.
+    if (data.cohPreviousDay != null) {
       ignoreNextCohFetch.current = true
+      setCashOnHand(String(data.cohPreviousDay))
     }
-    setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
-    setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
+    if (data.fundFromHo != null) {
+      ignoreNextCohFetch.current = true
+      setFundFromHo(String(data.fundFromHo))
+    }
 
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
-      setCashTx(data.cashTransactions.map((scanned: any) => ({
+      mergeScannedRows(setCashTx, data.cashTransactions.map((scanned: any) => ({
         id: uid(),
         customer: scanned.customer || '',
         installer: cleanInstallerName(scanned.name || scanned.installer || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkCash)
     } else if (data.totalCashCollection) {
-      setCashTx([{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }])
-    } else {
-      setCashTx([mkCash()])
+      mergeScannedRows(setCashTx, [{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }], mkCash)
     }
 
     if (data.cashReturnsList && Array.isArray(data.cashReturnsList) && data.cashReturnsList.length > 0) {
-      setCashRet(data.cashReturnsList.map((scanned: any) => ({
+      mergeScannedRows(setCashRet, data.cashReturnsList.map((scanned: any) => ({
         id: uid(),
         name: cleanInstallerName(scanned.name || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkRet)
     } else if (data.cashReturns != null) {
-      setCashRet([{ id: uid(), name: '', amount: String(data.cashReturns) }])
-    } else {
-      setCashRet([mkRet()])
+      mergeScannedRows(setCashRet, [{ id: uid(), name: '', amount: String(data.cashReturns) }], mkRet)
     }
 
     if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
-      setOnlineTx(data.onlineTransactions.map((scanned: any) => ({
+      mergeScannedRows(setOnlineTx, data.onlineTransactions.map((scanned: any) => ({
         id: uid(),
         installer: cleanInstallerName(scanned.installer || '', activeBranchName),
         customer: (scanned.customer || '').trim(),
         bank: (scanned.bank || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkOnl)
     } else if (data.totalOnlineCollection) {
-      setOnlineTx([{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
-    } else {
-      setOnlineTx([mkOnl()])
+      mergeScannedRows(setOnlineTx, [{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }], mkOnl)
     }
 
-    if (data.forCollection) {
-      setForColl([{ id: uid(), installer: '', customer: '', amount: String(data.forCollection) }])
-    } else {
-      setForColl([mkColl()])
+    if (data.checkRemits && Array.isArray(data.checkRemits) && data.checkRemits.length > 0) {
+      mergeScannedRows(setCheckRem, data.checkRemits.map((scanned: any) => ({
+        id: uid(),
+        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
+        customer: (scanned.customer || '').trim(),
+        bank: (scanned.bank || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })), mkChk)
+    }
+
+    if (data.partsSales && Array.isArray(data.partsSales) && data.partsSales.length > 0) {
+      mergeScannedRows(setPartsSales, data.partsSales.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        description: (scanned.description || '').trim(),
+        capital: scanned.capital != null ? String(scanned.capital) : '',
+        salePrice: scanned.salePrice != null ? String(scanned.salePrice) : ''
+      })), mkPart)
+    }
+
+    if (data.partsOrders && Array.isArray(data.partsOrders) && data.partsOrders.length > 0) {
+      mergeScannedRows(setOrders, data.partsOrders.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        description: (scanned.description || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })), mkOrd)
+    }
+
+    if (data.forCollectionList && Array.isArray(data.forCollectionList) && data.forCollectionList.length > 0) {
+      mergeScannedRows(setForColl, data.forCollectionList.map((scanned: any) => ({
+        id: uid(),
+        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
+        customer: (scanned.customer || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : '',
+        collectionResolved: false
+      })), mkColl)
+    } else if (data.forCollection) {
+      mergeScannedRows(setForColl, [{ id: uid(), installer: '', customer: '', amount: String(data.forCollection), collectionResolved: false }], mkColl)
     }
 
     if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
-      setRebates(data.rebates.map((scanned: any) => {
+      mergeScannedRows(setRebates, data.rebates.map((scanned: any) => {
         const sAmount = scanned.amount != null ? String(scanned.amount) : ''
         return {
           id: uid(),
@@ -1426,43 +1481,55 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           hp: '',
           amount: sAmount
         }
-      }))
+      }), mkReb)
     } else if (data.rebatesForCollection) {
-      setRebates([{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }])
-    } else {
-      setRebates([mkReb()])
+      mergeScannedRows(setRebates, [{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }], mkReb)
     }
 
     if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
-      setExpReceipt(data.expReceipt.map((scanned: any) => ({
+      mergeScannedRows(setExpReceipt, data.expReceipt.map((scanned: any) => ({
         id: uid(),
         name: (scanned.name || '').trim(),
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkExp)
     } else if (data.totalExpenses != null && Number(data.totalExpenses) > 0) {
-      setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
-    } else {
-      setExpReceipt([mkExp()])
+      mergeScannedRows(setExpReceipt, [{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }], mkExp)
     }
 
     if (data.expPurch && Array.isArray(data.expPurch) && data.expPurch.length > 0) {
-      setExpPurch(data.expPurch.map((scanned: any) => ({
+      mergeScannedRows(setExpPurch, data.expPurch.map((scanned: any) => ({
         id: uid(),
         name: (scanned.name || '').trim(),
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkExp)
     } else if (data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
-      setExpPurch([{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }])
-    } else {
-      setExpPurch([mkExp()])
+      mergeScannedRows(setExpPurch, [{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }], mkExp)
     }
 
-    // Unit summary from scan
-    if (data.totalUnitsInstalledServiced != null) {
-      setInstalledUnits(String(data.totalUnitsInstalledServiced))
+    if (data.incentives && Array.isArray(data.incentives) && data.incentives.length > 0) {
+      mergeScannedRows(setIncentives, data.incentives.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        company: (scanned.company || '').trim(),
+        hp: (scanned.hp || '').trim(),
+        promodiser: (scanned.promodiser || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : '',
+        collectionResolved: false
+      })), mkInc)
     }
+
+    // Unit summary from scan — each count only applied when this image actually reports it,
+    // so an image showing just one section doesn't zero out counts another image already filled.
+    if (data.totalUnitsScheduled != null) setScheduledUnits(String(data.totalUnitsScheduled))
+    if (data.totalUnitsRescheduled != null) setRescheduledUnits(String(data.totalUnitsRescheduled))
+    if (data.totalUnitsInstalled != null) setInstalledUnits(String(data.totalUnitsInstalled))
+    else if (data.totalUnitsInstalledServiced != null) setInstalledUnits(String(data.totalUnitsInstalledServiced))
+    if (data.totalUnitsServiced != null) setServicedUnits(String(data.totalUnitsServiced))
+    if (data.totalUnitsCancelled != null) setCancelledUnits(String(data.totalUnitsCancelled))
+    if (data.totalFreeInstallUnits != null) setFreeInstallUnits(String(data.totalFreeInstallUnits))
+    if (data.totalUnitsSurveyOnly != null) setSurveyOnlyUnits(String(data.totalUnitsSurveyOnly))
   }
 
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
