@@ -2095,64 +2095,15 @@ function formatServiceDriver(ticket: Ticket): string {
   return getTicketDriverName(ticket)
 }
 
-/** Driver name — real driver_name column when present, else guessed from the legacy combined serviceVehicle string. */
+/** Driver name — driverName column only, never guessed from serviceVehicle. Blank means "+ Add". */
 function getTicketDriverDisplay(ticket: Ticket): string {
   const direct = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-  if (direct && !isDriverPlaceholderToken(direct)) return direct
-  return getServiceVehicleParts(formatServiceDriver(ticket)).driver
+  return direct && !isDriverPlaceholderToken(direct) ? direct : ''
 }
 
-/** Vehicle code — once driver_name is set, serviceVehicle already holds only the code; else guess from legacy combined string. */
+/** Vehicle code — serviceVehicle column only, never guessed/split from driverName. Blank means "+ Add". */
 function getTicketVehicleDisplay(ticket: Ticket): string {
-  const direct = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-  if (direct && !isDriverPlaceholderToken(direct)) {
-    return sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
-  }
-  return getServiceVehicleParts(formatServiceDriver(ticket)).vehicle
-}
-
-const VEHICLE_CODE_SRC = '(?:FB\\d+|T\\d+|STRADA|[A-Z]{1,3}\\d+[A-Z]*)'
-// A bare vehicle code may carry a trailing dispatch/site suffix, e.g. "T3-4" (truck T3, site 4)
-// or "FB19 - 3" — this must still resolve to vehicle-only, never get misread as a driver name.
-const VEHICLE_CODE_WITH_SUFFIX_RE = new RegExp(`^${VEHICLE_CODE_SRC}(?:\\s*-\\s*\\d+)?$`, 'i')
-const VEHICLE_CODE_RE = new RegExp(`^${VEHICLE_CODE_SRC}$`, 'i')
-
-/** Split a combined "ANGELO T2" or "ANGELO / T2" serviceVehicle value into driver + vehicle parts. */
-function getServiceVehicleParts(raw: string): { driver: string; vehicle: string } {
-  const v = (raw || '').trim()
-  if (!v) return { driver: '', vehicle: '' }
-  const upperV = v.toUpperCase()
-
-  // Check this first: a vehicle-only code (with or without a dispatch/site suffix) must never
-  // fall through to the driver-extraction paths below just because the suffix doesn't fit their
-  // narrower patterns — that's what previously dumped values like "T3-4"/"FB19 - 3" into the
-  // DRIVER column instead of VEHICLE.
-  if (VEHICLE_CODE_WITH_SUFFIX_RE.test(upperV)) {
-    return { driver: '', vehicle: upperV }
-  }
-
-  // Pattern: "ANGELO T2", "ANGELO-T2", "ANGELO/T2" where vehicle is short code
-  const match = v.match(new RegExp(`^(.*?)\\s*[-/]?\\s*\\b(${VEHICLE_CODE_SRC})\\s*$`, 'i'))
-  if (match) {
-    const driver = match[1].trim()
-    const vehicle = match[2].trim().toUpperCase()
-    // Bare vehicle code with no driver prefix (e.g. just "T2") — not a driver name.
-    if (!driver) {
-      return { driver: '', vehicle }
-    }
-    if (vehicle && driver.toUpperCase() !== vehicle) {
-      return { driver: driver.toUpperCase(), vehicle }
-    }
-  }
-  // Fallback: two tokens split by whitespace where last token looks like a vehicle code
-  const parts = v.trim().split(/\s+/)
-  if (parts.length >= 2) {
-    const last = parts[parts.length - 1].toUpperCase()
-    if (VEHICLE_CODE_RE.test(last)) {
-      return { driver: parts.slice(0, parts.length - 1).join(' ').toUpperCase(), vehicle: last }
-    }
-  }
-  return { driver: upperV, vehicle: '' }
+  return sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
 }
 
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
@@ -2745,46 +2696,25 @@ function buildCellPatchBody(
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
     // SERVICE (driver) and VEHICLE are separate cells with their own dedicated inputs — each
-    // edit writes ONLY the field the user actually typed into. The previous version re-parsed
-    // the typed text with getServiceVehicleParts on every save and speculatively wrote the OTHER
-    // field too (e.g. editing DRIVER could also overwrite VEHICLE based on a guessed split), which
-    // is exactly what caused the two columns to stomp on each other. The only remaining use of the
-    // legacy splitter here is a one-time migration: if this ticket has never had a real driverName
-    // saved, its current serviceVehicle may still hold the old combined "NAME CODE" string, so the
-    // FIRST time either field is edited we salvage the other half out of that legacy text — but we
-    // never re-derive a field from what the user is editing right now.
+    // edit writes ONLY the field the user actually typed into, full stop. An earlier version also
+    // tried a "one-time migration" here (if driverName was empty, re-derive the OTHER field from
+    // whatever combined text sat in serviceVehicle using getServiceVehicleParts). That's just as
+    // unsafe as splitting the freshly-typed input: getServiceVehicleParts happily "splits" plain
+    // text like "TAMARAW JV1" or "FB4 SEDRICK2" into a fake driver+vehicle pair (see the SQL
+    // cleanup script for real examples), so editing DRIVER on one of those tickets was silently
+    // overwriting VEHICLE with a wrong guessed value. There is no reliable way to auto-split
+    // free-text without a real vehicle roster, so this never guesses — ambiguous legacy tickets
+    // are left for a human to clean up by hand (see backfill_split_driver_service_vehicle.sql).
     case 'SERVICE': {
       const driverVal = normalizeDriverInput(v)
       body.driverName = driverVal
-      const acUpdates: Record<string, any> = { driverName: driverVal, driver_name: driverVal }
-      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-      const existingVehicle = sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
-      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-        const legacyParts = getServiceVehicleParts(existingVehicle)
-        if (legacyParts.driver && legacyParts.vehicle) {
-          body.serviceVehicle = legacyParts.vehicle
-          acUpdates.serviceVehicle = legacyParts.vehicle
-          acUpdates.service_vehicle = legacyParts.vehicle
-        }
-      }
-      body.acDetails = mergeAcMeta(acBase, acUpdates)
+      body.acDetails = mergeAcMeta(acBase, { driverName: driverVal, driver_name: driverVal })
       break
     }
     case 'VEHICLE': {
       const vehicleVal = normalizeDriverInput(v)
       body.serviceVehicle = vehicleVal
-      const acUpdates: Record<string, any> = { serviceVehicle: vehicleVal, service_vehicle: vehicleVal }
-      const existingDriver = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
-      const existingVehicle = sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
-      if (!existingDriver || isDriverPlaceholderToken(existingDriver)) {
-        const legacyParts = getServiceVehicleParts(existingVehicle)
-        if (legacyParts.driver && legacyParts.vehicle) {
-          body.driverName = legacyParts.driver
-          acUpdates.driverName = legacyParts.driver
-          acUpdates.driver_name = legacyParts.driver
-        }
-      }
-      body.acDetails = mergeAcMeta(acBase, acUpdates)
+      body.acDetails = mergeAcMeta(acBase, { serviceVehicle: vehicleVal, service_vehicle: vehicleVal })
       break
     }
     case 'UPDATE': {
@@ -2986,23 +2916,23 @@ export default function Tickets() {
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  const cardBg      = isLight ? '#ffffff' : '#0A1120'
-  const border      = isLight ? '#cbd5e1' : '#334155'
-  const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
-  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
-  const textMuted   = isLight ? '#64748b' : '#7A95B8'
-  const inputBg     = isLight ? '#f8fafc' : '#0F1A2E'
-  const inputBorder = isLight ? '#cbd5e1' : '#243452'
-  const theadBg     = isLight ? '#e8edf3' : '#060C18'
+  const cardBg      = isLight ? '#ffffff' : '#111827'
+  const border      = isLight ? '#cbd5e1' : '#1f2f47'
+  const tableBorder = isLight ? '#e2e8f0' : '#1a2d42'
+  const textPrimary = isLight ? '#0f172a' : '#F1F5F9'
+  const textMuted   = isLight ? '#64748b' : '#94A3B8'
+  const inputBg     = isLight ? '#f8fafc' : '#1a2537'
+  const inputBorder = isLight ? '#cbd5e1' : '#2a3f5f'
+  const theadBg     = isLight ? '#e8edf3' : '#0d1b2e'
   const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0B2C30'
   const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
   const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
   const schedTheadBg     = isLight ? '#E3F4E9' : '#0B272D'
   const schedTheadText   = isLight ? '#166534' : '#86EFAC'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
-  const rowEven     = isLight ? '#ffffff' : '#0A1120'
-  const rowOdd      = isLight ? '#f7fbf8' : '#0b1620'
-  const rowHover    = isLight ? '#edf7f1' : '#0e242d'
+  const rowEven     = isLight ? '#ffffff' : '#111827'
+  const rowOdd      = isLight ? '#f7fbf8' : '#131f30'
+  const rowHover    = isLight ? '#edf7f1' : '#172438'
   const green       = '#16A34A'
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Data state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -7065,8 +6995,9 @@ export default function Tickets() {
     }
 
     if (label === 'SERVICE') {
-      // Show driver name only (vehicle is in its own column)
-      const driverName = !isMyTickets ? getServiceVehicleParts(val).driver || val : val
+      // Driver name only — val is already getTicketDriverDisplay's clean driverName-only read
+      // (no vehicle text ever leaks in here, no re-parsing needed).
+      const driverName = val
       if (!driverName && canEdit && !isMyTickets && !rowGhost) {
         return (
           <button
@@ -7101,8 +7032,8 @@ export default function Tickets() {
     }
 
     if (label === 'VEHICLE' && !isMyTickets) {
-      const rawDriver = formatServiceDriver(ticket)
-      const vehicleCode = getServiceVehicleParts(rawDriver).vehicle
+      // val is already getTicketVehicleDisplay's clean serviceVehicle-only read.
+      const vehicleCode = val
       if (!vehicleCode && canEdit && !rowGhost) {
         return (
           <button
@@ -7902,9 +7833,9 @@ export default function Tickets() {
           </div>
         )) : (
           /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#0a1120]">
+          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#111827]">
             {/* Mobile Top Header (< md) */}
-            <header className="flex md:hidden items-center justify-between w-full px-3 py-3 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0 safe-area-top">
+            <header className="flex md:hidden items-center justify-between w-full px-3 py-3 bg-white dark:bg-[#111827] border-b border-gray-200 dark:border-gray-800 shrink-0 safe-area-top">
               <button
                 onClick={() => setSidebarOpen?.(true)}
                 className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
@@ -8127,7 +8058,7 @@ export default function Tickets() {
 
               {/* Current status label */}
               <div className="px-4 py-2.5 flex items-center gap-2"
-                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
                 {(() => { const sc = statusColor(contextMenu.ticket.status, isLight); return (
                   <span className="px-2 py-0.5 rounded text-[10px] font-black border"
                         style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
@@ -8247,7 +8178,7 @@ export default function Tickets() {
 
                {/* Header */}
                <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
-                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
                  
                  {/* Header Row 1 */}
                  <div className="flex items-center justify-between w-full">
@@ -8419,7 +8350,7 @@ export default function Tickets() {
                  {/* Right Column: Update History */}
                  {showHistoryPanel && (
                  <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
-                      style={{ backgroundColor: isLight ? '#f8fafc' : '#070E1C' }}>
+                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
                      Update History
                    </h4>
@@ -8507,7 +8438,7 @@ export default function Tickets() {
 
                {/* Footer Actions */}
                <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
-                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
                  <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
                    className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
@@ -8604,7 +8535,7 @@ export default function Tickets() {
             >
               <div
                 className="px-3 py-2 flex items-center justify-between gap-2 shrink-0"
-                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
               >
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>STATUS</p>
@@ -8725,7 +8656,7 @@ export default function Tickets() {
             >
               <div
                 className="px-3 py-2.5 flex items-start justify-between gap-2 shrink-0"
-                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
               >
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>Schedule details</p>
@@ -8791,7 +8722,7 @@ export default function Tickets() {
               {canEdit && !isGhost ? (
                 <div
                   className="px-3 py-2.5 flex items-center justify-end gap-2 shrink-0"
-                  style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                  style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
                 >
                   <button
                     type="button"
@@ -8898,7 +8829,7 @@ export default function Tickets() {
               {preferredLabel && (
                 <div
                   className="px-3 py-2 shrink-0"
-                  style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                  style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
                 >
                   <p className="text-[9px] font-black uppercase tracking-[0.12em] mb-1.5" style={{ color: textMuted }}>
                     Customer preferred date
@@ -9003,7 +8934,7 @@ export default function Tickets() {
 
               <div
                 className="px-3 py-2 flex items-center justify-between gap-2 border-t shrink-0"
-                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
               >
                 <button
                   type="button"
@@ -9058,7 +8989,7 @@ export default function Tickets() {
             
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between gap-3 shrink-0 border-b"
-                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
               <div className="min-w-0">
                 <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
                   Excel Import: {importResults.fileName}
@@ -9107,7 +9038,7 @@ export default function Tickets() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left">
                         <thead>
-                          <tr className="border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f1f5f9' : '#070E1C' }}>
+                          <tr className="border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f1f5f9' : '#0d1b2e' }}>
                             <th className="px-3 py-2 font-bold" style={{ color: textMuted }}>Customer</th>
                             <th className="px-3 py-2 font-bold" style={{ color: textMuted }}>Remarks</th>
                             <th className="px-3 py-2 font-bold" style={{ color: textMuted }}>Payment Mode</th>
@@ -9270,7 +9201,7 @@ export default function Tickets() {
 
             {/* Footer */}
             <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0 border-t"
-                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
               <div className="flex items-center gap-2 mr-auto">
                 <span className="text-xs font-bold" style={{ color: textMuted }}>Scheduled Target Date:</span>
                 <input
@@ -9310,7 +9241,7 @@ export default function Tickets() {
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
           >
-            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
               <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
@@ -9517,7 +9448,7 @@ export default function Tickets() {
 
             <div
               className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-end gap-2.5 border-t"
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}
             >
               <button
                 type="button"
@@ -10040,7 +9971,7 @@ export default function Tickets() {
                 </div>
 
                 <div className="p-6 flex flex-col gap-4">
-                  <div className="p-3.5 rounded-xl border flex flex-col gap-1" style={{ backgroundColor: isLight ? '#f8fafc' : '#070d19', borderColor: border }}>
+                  <div className="p-3.5 rounded-xl border flex flex-col gap-1" style={{ backgroundColor: isLight ? '#f8fafc' : '#1a2537', borderColor: border }}>
                     <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: textMuted }}>Customer</span>
                     <span className="text-xs font-bold" style={{ color: textPrimary }}>{getCustomerDisplayName(ticket)}</span>
                   </div>
@@ -10085,7 +10016,7 @@ export default function Tickets() {
                   </div>
                 </div>
 
-                <div className="px-6 py-4 flex justify-end gap-3 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+                <div className="px-6 py-4 flex justify-end gap-3 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
                   <button type="button" onClick={() => setPaymentPrompt(null)} className="px-4 py-2 rounded-xl text-xs font-bold border transition-all" style={{ borderColor: inputBorder, color: textMuted }}>
                     Cancel
                   </button>
