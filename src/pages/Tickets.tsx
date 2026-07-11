@@ -802,7 +802,7 @@ function getScheduleRowColors(
       }
     }
     return {
-      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
     }
   }
@@ -816,7 +816,7 @@ function getScheduleRowColors(
 
   if (outcome === 'DONE_INSTALLED') {
     return {
-      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
     }
   }
@@ -6905,6 +6905,18 @@ export default function Tickets() {
       const statusTitle = showsDetails
         ? `${display} ${EMPTY_CELL} click to view remarks & payment`
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
+      const isDoneStatus = statusVal.startsWith('DONE_')
+      if (isDoneStatus) {
+        return (
+          <span
+            className="text-xs font-black uppercase tracking-wide select-none cursor-pointer"
+            style={{ color: badgeStyle.color }}
+            title={statusTitle}
+          >
+            {displayLabel}
+          </span>
+        )
+      }
       return (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
