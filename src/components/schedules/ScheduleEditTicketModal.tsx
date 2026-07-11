@@ -1,5 +1,5 @@
-import ReactDOM from 'react-dom'
-import { CalendarDays, ChevronDown, Loader2, X } from 'lucide-react'
+﻿import ReactDOM from 'react-dom'
+import { CalendarDays, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react'
 import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import type { TicketCategoryValue } from '../../constants/ticketCategories'
 
@@ -71,19 +71,19 @@ type ScheduleEditTicketModalProps = {
   onSave: () => void
 }
 
-function Field({ label, required, full, children }: {
-  label: string
-  required?: boolean
-  full?: boolean
-  children: React.ReactNode
-}) {
+function Row({ children, cols = 2 }: { children: React.ReactNode; cols?: 1 | 2 | 3 }) {
+  const gridClass = cols === 3 ? 'grid grid-cols-3' : cols === 2 ? 'grid grid-cols-2' : 'grid grid-cols-1'
+  return <div className={{gridClass} gap-3} style={{ display: 'grid', gridTemplateColumns: cols === 3 ? '1fr 1fr 1fr' : cols === 2 ? '1fr 1fr' : '1fr', gap: 12 }}>{children}</div>
+}
+
+function Field({ label, required, span, children }: { label: string; required?: boolean; span?: boolean; children: React.ReactNode }) {
   return (
-    <label className={`flex flex-col gap-1.5 min-w-0 w-full max-w-full ${full ? 'md:col-span-2' : ''}`}>
-      <span className="text-[10px] font-black uppercase tracking-wider opacity-70">
-        {label}{required ? <span className="text-red-500"> *</span> : null}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, ...(span ? { gridColumn: '1 / -1' } : {}) }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const, opacity: 0.55, display: 'block' }}>
+        {label}{required ? <span style={{ color: '#ef4444' }}> *</span> : null}
       </span>
       {children}
-    </label>
+    </div>
   )
 }
 
@@ -118,24 +118,16 @@ export function ScheduleEditTicketModal({
   onClose,
   onSave,
 }: ScheduleEditTicketModalProps) {
-  const inp = 'rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full min-w-0 max-w-full box-border'
-  const gridCls = 'grid grid-cols-1 md:grid-cols-2 gap-4'
-  const sectionTitleCls = 'text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400'
-
   const CLOSING_STATUSES = new Set([
-    'DONE_INSTALLED',
-    'DONE_CLEANING',
-    'DONE_SURVEY',
-    'DONE_CHECKUP',
-    'CANCELLED',
-    'COMPLETED',
-    'INSTALLED',
+    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP',
+    'CANCELLED', 'COMPLETED', 'INSTALLED',
   ])
-  const isPendingStatus = !form.status || !CLOSING_STATUSES.has((form.status || '').toUpperCase())
 
   const isReschedStatus = (form.status || '').toUpperCase() === 'RESCHED'
+  const isPendingStatus = !form.status || !CLOSING_STATUSES.has((form.status || '').toUpperCase())
   const justChangedToResched = isReschedStatus && editInitialStatus.toUpperCase() !== 'RESCHED'
   const lastRescheduledDate = previousScheduleDates[previousScheduleDates.length - 1] || ''
+
   const showPaymentSection = !isPendingStatus && (
     ticketHasPaymentInfo(form)
     || Boolean(form.modeOfPayment || form.installationCharges != null)
@@ -143,14 +135,28 @@ export function ScheduleEditTicketModal({
     || (form.status || '').toUpperCase() === 'DONE_INSTALLED'
   )
 
-  const reschedFieldStyle = {
-    backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.08)',
-    border: `2px solid ${isLight ? '#fbbf24' : 'rgba(251,191,36,0.55)'}`,
-    boxShadow: isLight ? '0 0 0 3px rgba(251,191,36,0.2)' : '0 0 0 3px rgba(251,191,36,0.15)',
-  }
-
   const statusVal = String(form.status || 'INSTALLATION').toUpperCase().replace(/\s+/g, '_')
   const statusStyle = getStatusBadgeStyle(statusVal, isLight)
+
+  const inp: React.CSSProperties = {
+    backgroundColor: inputBg,
+    border: 1px solid ,
+    color: textPrimary,
+    borderRadius: 8,
+    padding: '7px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box' as const,
+    fontFamily: 'inherit',
+  }
+
+  const selectInp: React.CSSProperties = { ...inp, backgroundColor: cardBg, cursor: 'pointer' }
+
+  const divider = <div style={{ height: 1, backgroundColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }} />
+
+  const clearingDateWarning = !form.finalDate && !!editOriginalDate && !isReschedStatus
 
   return ReactDOM.createPortal(
     <div
@@ -158,60 +164,46 @@ export function ScheduleEditTicketModal({
       onClick={e => e.stopPropagation()}
     >
       <div
-        className="w-full flex flex-col overflow-hidden shadow-2xl min-h-0 min-w-0 max-w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl sm:max-h-[90vh]"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+        className="w-full flex flex-col overflow-hidden shadow-2xl min-h-0 h-full sm:h-auto sm:max-w-[620px] sm:rounded-2xl sm:max-h-[92vh]"
+        style={{ backgroundColor: cardBg, border: 1px solid  }}
         onClick={e => e.stopPropagation()}
         onMouseDown={e => e.stopPropagation()}
       >
+        {/* Header */}
         <div
-          className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex items-start justify-between gap-2 safe-area-top min-w-0"
-          style={{ borderBottom: `1px solid ${border}` }}
+          className="shrink-0 px-4 sm:px-5 py-3 flex items-center justify-between gap-3 safe-area-top"
+          style={{ borderBottom: 1px solid  }}
         >
-          <div className="min-w-0 flex-1">
-            <h3 className="text-xl font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
-              Edit Ticket
-            </h3>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1">
-              {form.id ? (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}>
-                  {form.ticketNumber || 'Auto'}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 900, color: textPrimary, letterSpacing: '-0.01em', margin: 0 }}>Edit Ticket</h3>
+              {form.ticketNumber && (
+                <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace', padding: '2px 6px', borderRadius: 5, backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
+                  {form.ticketNumber}
                 </span>
-              ) : null}
-              {form.branchId ? (
-                <span className="text-[9px] font-bold uppercase tracking-wide truncate max-w-full" style={{ color: textMuted }}>
-                  {formatBranchLabel(form.branchId)}
-                </span>
-              ) : null}
-              {editOriginalDate && !isReschedStatus ? (
-                <span className="text-[9px] font-semibold shrink-0" style={{ color: textMuted }}>
-                  {formatDateLabel(editOriginalDate)}
-                </span>
-              ) : null}
+              )}
             </div>
+            {(form.branchId || editOriginalDate) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                {form.branchId && <span style={{ fontSize: 10, fontWeight: 600, color: textMuted }}>{formatBranchLabel(form.branchId)}</span>}
+                {editOriginalDate && !isReschedStatus && <span style={{ fontSize: 10, color: textMuted }}>· {formatDateLabel(editOriginalDate)}</span>}
+              </div>
+            )}
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 shrink-0 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }} aria-label="Close">
-            <X className="w-5 h-5" />
+          <button type="button" onClick={onClose} style={{ color: textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 8 }} aria-label="Close">
+            <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
-        <div className="px-4 sm:px-6 py-4 sm:py-6 gap-5 sm:gap-6 overflow-y-auto flex-1 min-h-0 flex flex-col">
-          <div
-            className="rounded-xl p-4"
-            style={{
-              border: `1px solid ${isLight ? 'rgba(22,163,74,0.28)' : 'rgba(74,222,128,0.25)'}`,
-              backgroundColor: isLight ? 'rgba(240,253,244,0.85)' : 'rgba(22,163,74,0.08)',
-            }}
-          >
-            <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 text-emerald-600">Branch & OIC</h4>
-            <div className={gridCls}>
+        {/* Body */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Branch & OIC */}
+          <div style={{ borderRadius: 12, padding: 14, border: 1px solid , backgroundColor: isLight ? 'rgba(240,253,244,0.7)' : 'rgba(22,163,74,0.06)' }}>
+            <Row>
               <Field label="Assigned Branch" required>
-                <select
-                  value={form.branchId || ''}
-                  onChange={e => onChange({ branchId: e.target.value, negotiatorId: '' })}
-                  className={inp}
-                  style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                >
-                  <option value="">{branches.length ? 'Select branch...' : 'Loading branches...'}</option>
+                <select value={form.branchId || ''} onChange={e => onChange({ branchId: e.target.value, negotiatorId: '' })} style={selectInp}>
+                  <option value="">{branches.length ? 'Select branch…' : 'Loading…'}</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </Field>
@@ -220,316 +212,237 @@ export function ScheduleEditTicketModal({
                   value={form.negotiatorId || ''}
                   onChange={e => onChange({ negotiatorId: e.target.value })}
                   disabled={!form.branchId}
-                  className={`${inp} disabled:opacity-50`}
-                  style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                  style={{ ...selectInp, opacity: !form.branchId ? 0.5 : 1 }}
                 >
                   <option value="">{form.branchId ? 'Select negotiator' : 'Select branch first'}</option>
                   {negotiators.map(emp => <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>)}
                 </select>
               </Field>
-            </div>
+            </Row>
           </div>
 
-          <div>
-            <h4 className={sectionTitleCls}>Customer</h4>
-            <div className={gridCls}>
+          {/* Customer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Row>
               <Field label="Customer Name" required>
-                <input type="text" value={form.customerName || ''} onChange={e => onChange({ customerName: e.target.value.toUpperCase() })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.customerName || ''} onChange={e => onChange({ customerName: e.target.value.toUpperCase() })} style={inp} placeholder="Full name" />
               </Field>
               <Field label="Contact No." required>
-                <input type="text" value={form.contactPhone || ''} onChange={e => onChange({ contactPhone: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.contactPhone || ''} onChange={e => onChange({ contactPhone: e.target.value })} style={inp} placeholder="Phone number" />
               </Field>
-              <Field label="Destination / Address" required full>
-                <textarea value={form.location || ''} onChange={e => onChange({ location: e.target.value.toUpperCase() })} rows={2} className={`${inp} resize-none`} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
+            </Row>
+            <Field label="Address / Destination" required span>
+              <textarea value={form.location || ''} onChange={e => onChange({ location: e.target.value.toUpperCase() })} rows={2} style={{ ...inp, resize: 'none' }} placeholder="Complete address" />
+            </Field>
+            <Row>
               <Field label="District">
-                <input type="text" value={form.district || ''} onChange={e => onChange({ district: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.district || ''} onChange={e => onChange({ district: e.target.value })} style={inp} />
               </Field>
-              <Field label="Commit Terms" full>
-                <textarea value={form.commitTerms || ''} onChange={e => onChange({ commitTerms: e.target.value })} rows={1} className={`${inp} resize-none`} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+              <Field label="Commit Terms">
+                <input type="text" value={form.commitTerms || ''} onChange={e => onChange({ commitTerms: e.target.value })} style={inp} />
               </Field>
-            </div>
+            </Row>
           </div>
 
-          <div>
-            <h4 className={sectionTitleCls}>Service & Schedule</h4>
-            <div className={gridCls}>
+          {divider}
+
+          {/* Service */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Row>
               <Field label="Ticket Type" required>
-                <select
-                  value={form.ticketCategory || 'INSTALLATION'}
-                  onChange={e => onChange({ ticketCategory: e.target.value as TicketCategoryValue })}
-                  className={inp}
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                >
+                <select value={form.ticketCategory || 'INSTALLATION'} onChange={e => onChange({ ticketCategory: e.target.value as TicketCategoryValue })} style={selectInp}>
                   {FIELD_TICKET_CATEGORIES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                 </select>
               </Field>
               <Field label="Brand / Unit Type">
-                <input type="text" value={form.unitType || ''} onChange={e => onChange({ unitType: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.unitType || ''} onChange={e => onChange({ unitType: e.target.value })} style={inp} placeholder="e.g. CARRIER 1.0HP" />
               </Field>
+            </Row>
+            <Row>
               <Field label="Dealer (DLR)">
-                <input type="text" value={form.sourceVendor || ''} onChange={e => onChange({ sourceVendor: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                <input type="text" value={form.sourceVendor || ''} onChange={e => onChange({ sourceVendor: e.target.value })} style={inp} placeholder="Store or supplier" />
               </Field>
+              <Field label="Control No. / SI">
+                <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />
+              </Field>
+            </Row>
+            <Row cols={3}>
               <Field label="Driver">
-                <input
-                  type="text"
-                  value={form.driverName || ''}
-                  list="schedule-edit-driver-roster"
-                  placeholder={driverRoster.length ? 'Select or type driver…' : 'e.g. ROMMEL'}
-                  onChange={e => onChange({ driverName: e.target.value })}
-                  className={inp}
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
-                <datalist id="schedule-edit-driver-roster">
-                  {driverRoster.map(name => <option key={name} value={name} />)}
-                </datalist>
+                <input type="text" value={form.driverName || ''} list="sched-edit-driver-roster" placeholder={driverRoster.length ? 'Select or type…' : 'e.g. ROMMEL'} onChange={e => onChange({ driverName: e.target.value })} style={inp} />
+                <datalist id="sched-edit-driver-roster">{driverRoster.map(n => <option key={n} value={n} />)}</datalist>
               </Field>
               <Field label="Service Vehicle">
-                <input
-                  type="text"
-                  value={form.serviceDriver || ''}
-                  placeholder="e.g. FB19 or T2"
-                  onChange={e => onChange({ serviceDriver: e.target.value })}
-                  className={inp}
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
+                <input type="text" value={form.serviceDriver || ''} placeholder="e.g. FB19 or T2" onChange={e => onChange({ serviceDriver: e.target.value })} style={inp} />
               </Field>
-              <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                <input
-                  type="text"
-                  value={form.installerName || ''}
-                  list="schedule-edit-installer-roster"
-                  placeholder={installerRoster.length ? 'Select or type installer…' : 'e.g. RANIL'}
-                  onChange={e => onChange({ installerName: e.target.value })}
-                  className={inp}
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                />
-                <datalist id="schedule-edit-installer-roster">
-                  {installerRoster.map(name => <option key={name} value={name} />)}
-                </datalist>
+              <Field label={isTaguigServices ? 'Technician' : 'Installer'}>
+                <input type="text" value={form.installerName || ''} list="sched-edit-installer-roster" placeholder={installerRoster.length ? 'Select or type…' : 'e.g. RANIL'} onChange={e => onChange({ installerName: e.target.value })} style={inp} />
+                <datalist id="sched-edit-installer-roster">{installerRoster.map(n => <option key={n} value={n} />)}</datalist>
               </Field>
-              <Field label="Control No. / SI (Aircon)">
-                <input type="text" value={form.controlNumber || ''} placeholder="Aircon papers / SI" onChange={e => onChange({ controlNumber: e.target.value })} className={inp} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
+            </Row>
+          </div>
 
-              {/* ── Premium Scheduled Date Card ── */}
-              <div className="md:col-span-2">
-                <span className="block text-[10px] font-black uppercase tracking-wider opacity-70 mb-2">
-                  Scheduled Date
-                </span>
-                <div
-                  className="rounded-xl p-0.5"
-                  style={{
-                    background: isLight
-                      ? 'linear-gradient(135deg, #16a34a 0%, #15803d 60%, #166534 100%)'
-                      : 'linear-gradient(135deg, #22c55e 0%, #16a34a 60%, #15803d 100%)',
-                    boxShadow: isLight
-                      ? '0 4px 14px -2px rgba(22,163,74,0.35)'
-                      : '0 4px 14px -2px rgba(34,197,94,0.3)',
-                  }}
-                >
-                  <div
-                    className="rounded-[10px] flex items-center gap-3 px-4 py-3"
-                    style={{
-                      backgroundColor: isLight ? '#f0fdf4' : 'rgba(6,12,24,0.92)',
-                    }}
-                  >
-                    <div
-                      className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                      style={{
-                        background: isLight
-                          ? 'linear-gradient(135deg,#16a34a,#15803d)'
-                          : 'linear-gradient(135deg,#22c55e,#16a34a)',
-                      }}
-                    >
-                      <CalendarDays className="w-4.5 h-4.5 text-white" strokeWidth={2.2} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <input
-                        type="date"
-                        value={form.finalDate || ''}
-                        onChange={e => onChange({ finalDate: e.target.value, preferredDate: e.target.value })}
-                        className="w-full bg-transparent outline-none font-black text-base tracking-wide"
-                        style={{
-                          color: form.finalDate ? textPrimary : (isLight ? '#9ca3af' : '#6b7280'),
-                          colorScheme: isLight ? 'light' : 'dark',
-                          fontFamily: 'inherit',
-                        }}
-                      />
-                    </div>
-                    {form.finalDate && (
-                      <button
-                        type="button"
-                        onClick={() => onChange({ finalDate: '', preferredDate: '' })}
-                        className="shrink-0 p-1 rounded-md opacity-50 hover:opacity-100 transition-opacity"
-                        style={{ color: textMuted }}
-                        aria-label="Clear date"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+          {divider}
+
+          {/* Date + Status */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Row>
+              <Field label="Scheduled Date">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: inputBg, border: 1px solid , borderRadius: 8, padding: '7px 10px', cursor: 'pointer' }}>
+                  <CalendarDays style={{ width: 14, height: 14, color: green, flexShrink: 0 }} strokeWidth={2.2} />
+                  <input
+                    type="date"
+                    value={form.finalDate || ''}
+                    onChange={e => onChange({ finalDate: e.target.value, preferredDate: e.target.value })}
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12, fontWeight: 700, color: form.finalDate ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' as any, fontFamily: 'inherit', cursor: 'pointer', minWidth: 0 }}
+                  />
+                  {form.finalDate && (
+                    <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); onChange({ finalDate: '', preferredDate: '' }) }} style={{ color: textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: 2, flexShrink: 0, display: 'flex' }} aria-label="Clear date">
+                      <X style={{ width: 12, height: 12 }} />
+                    </button>
+                  )}
+                </label>
                 {lastRescheduledDate && (
-                  <p className="mt-1.5 text-[10px] font-bold uppercase tracking-wide" style={{ color: isLight ? '#b45309' : '#fbbf24' }}>
-                    Rescheduled Date: {formatDateLabel(lastRescheduledDate)}
+                  <p style={{ fontSize: 10, fontWeight: 700, color: isLight ? '#b45309' : '#fbbf24', margin: '3px 0 0' }}>
+                    Previously: {formatDateLabel(lastRescheduledDate)}
                   </p>
                 )}
-              </div>
+              </Field>
 
-              <div className={`grid grid-cols-1 gap-4 md:col-span-2 ${isReschedStatus ? 'md:grid-cols-2' : ''}`}>
-                <Field label="Status" required>
-                  <button
-                    type="button"
-                    onClick={e => onOpenStatusPicker(e.currentTarget)}
-                    className="w-full flex items-center justify-between gap-2 rounded-xl px-3.5 py-3 text-left transition-all hover:opacity-95"
-                    style={{
-                      backgroundColor: statusStyle.backgroundColor,
-                      border: `2px solid ${statusStyle.borderColor}`,
-                      minHeight: 48,
-                    }}
-                  >
-                    <span
-                      className="inline-flex items-center rounded-full font-black uppercase tracking-wide border truncate px-3 py-1.5 text-xs"
-                      style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
-                    >
-                      {getStatusLabel(statusVal)}
-                    </span>
-                    <ChevronDown className="w-4 h-4 shrink-0" style={{ color: statusStyle.color }} />
-                  </button>
-                </Field>
+              <Field label="Status" required>
+                <button
+                  type="button"
+                  onClick={e => onOpenStatusPicker(e.currentTarget)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, backgroundColor: inputBg, border: 1px solid , borderRadius: 8, padding: '7px 10px', cursor: 'pointer', width: '100%', textAlign: 'left', fontFamily: 'inherit' }}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, border: 1px solid , borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '85%' }}>
+                    {getStatusLabel(statusVal)}
+                  </span>
+                  <ChevronDown style={{ width: 13, height: 13, color: textMuted, flexShrink: 0 }} />
+                </button>
+              </Field>
+            </Row>
 
-                {isReschedStatus ? (
-                  <div className="flex flex-col gap-2 min-w-0">
-                    <Field label="Reschedule To" required={!form.reschedulePending}>
-                      <input
-                        type="date"
-                        autoFocus={justChangedToResched && !form.reschedulePending}
-                        disabled={form.reschedulePending}
-                        value={form.rescheduleToDate || ''}
-                        onChange={e => onChange({ rescheduleToDate: e.target.value, reschedulePending: false })}
-                        className={`${inp} disabled:opacity-50`}
-                        style={{ ...reschedFieldStyle, maxWidth: '100%' }}
-                      />
-                    </Field>
-                    <label className="flex items-center gap-2 text-[11px] font-semibold cursor-pointer" style={{ color: textPrimary }}>
+            {/* Resched sub-block */}
+            {isReschedStatus && (
+              <div style={{ borderRadius: 10, padding: 12, backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)', border: 1.5px solid , display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Row>
+                  <Field label="Reschedule To" required={!form.reschedulePending}>
+                    <input
+                      type="date"
+                      autoFocus={justChangedToResched && !form.reschedulePending}
+                      disabled={form.reschedulePending}
+                      value={form.rescheduleToDate || ''}
+                      onChange={e => onChange({ rescheduleToDate: e.target.value, reschedulePending: false })}
+                      style={{ ...inp, opacity: form.reschedulePending ? 0.5 : 1, colorScheme: isLight ? 'light' : 'dark' as any }}
+                    />
+                  </Field>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 600, color: textPrimary, cursor: 'pointer', paddingBottom: 8 }}>
                       <input
                         type="checkbox"
                         checked={Boolean(form.reschedulePending)}
-                        onChange={e => onChange({
-                          reschedulePending: e.target.checked,
-                          rescheduleToDate: e.target.checked ? '' : (form.rescheduleToDate || editOriginalDate || ''),
-                        })}
-                        className="rounded border-slate-300"
+                        onChange={e => onChange({ reschedulePending: e.target.checked, rescheduleToDate: e.target.checked ? '' : (form.rescheduleToDate || editOriginalDate || '') })}
                       />
-                      Pending — no date yet
+                      Pending (no date yet)
                     </label>
                   </div>
-                ) : null}
+                </Row>
+                {editOriginalDate && (
+                  <p style={{ fontSize: 10, fontWeight: 600, color: isLight ? '#92400e' : '#fcd34d', margin: 0 }}>
+                    {form.reschedulePending
+                      ? Stays on  as rescheduled (pending).
+                      : form.rescheduleToDate && form.rescheduleToDate !== editOriginalDate
+                        ? Will move from  → .
+                        : Currently on  — pick a new date or mark as pending.}
+                  </p>
+                )}
               </div>
+            )}
 
-              {isReschedStatus && editOriginalDate ? (
-                <p className="text-[11px] font-semibold leading-relaxed md:col-span-2" style={{ color: isLight ? '#92400e' : '#fcd34d' }}>
-                  {form.reschedulePending
-                    ? `Stays on ${formatDateLabel(editOriginalDate)} as rescheduled (pending new date).`
-                    : form.rescheduleToDate && form.rescheduleToDate !== editOriginalDate
-                      ? `Row will gray out on ${formatDateLabel(editOriginalDate)} and appear on ${formatDateLabel(form.rescheduleToDate)}.`
-                      : `Currently on ${formatDateLabel(editOriginalDate)} — pick a new date or mark as pending.`}
+            {/* Warning: clearing date returns to My Tickets */}
+            {clearingDateWarning && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, borderRadius: 8, padding: 10, backgroundColor: isLight ? '#fef3c7' : 'rgba(251,191,36,0.08)', border: 1px solid  }}>
+                <AlertTriangle style={{ width: 13, height: 13, color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 10, fontWeight: 600, color: isLight ? '#92400e' : '#fbbf24', margin: 0 }}>
+                  Clearing the date will return this ticket to <strong>My Tickets</strong> and remove it from the schedule.
                 </p>
-              ) : null}
-
-              <Field label="Remarks / Update" full>
-                <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value })} rows={2} className={`${inp} resize-none`} style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              </Field>
-            </div>
+              </div>
+            )}
           </div>
 
+          {/* Remarks */}
+          <Field label="Remarks / Update" span>
+            <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value })} rows={2} style={{ ...inp, resize: 'none' }} placeholder="Any notes or update…" />
+          </Field>
+
+          {/* Payment */}
           {!isPendingStatus && (
-            <div>
-              <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
-                <h4 className={sectionTitleCls}>Payment</h4>
-                {!showPaymentSection ? (
-                  <button
-                    type="button"
-                    onClick={() => onChange({ modeOfPayment: form.modeOfPayment || 'CASH' })}
-                    className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors hover:opacity-80 shrink-0"
-                    style={{ borderColor: inputBorder, color: green }}
-                  >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {divider}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.5 }}>Payment</span>
+                {!showPaymentSection && (
+                  <button type="button" onClick={() => onChange({ modeOfPayment: form.modeOfPayment || 'CASH' })} style={{ fontSize: 10, fontWeight: 700, color: green, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}>
                     + Add
                   </button>
-                ) : null}
+                )}
               </div>
-              {showPaymentSection ? (
-                <div
-                  className={`${gridCls} rounded-xl p-4`}
-                  style={{
-                    border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.35)') : inputBorder}`,
-                    backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.06)') : inputBg,
-                  }}
-                >
-                  <Field label="Mode of Payment">
-                    <select
-                      value={form.modeOfPayment || ''}
-                      onChange={e => {
-                        const nextMode = e.target.value
-                        onChange({
-                          modeOfPayment: nextMode,
-                          installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
-                            ? 0
-                            : nextMode === 'PENDING'
-                              ? undefined
-                              : form.installationCharges,
-                        })
-                      }}
-                      className={inp}
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      <option value="">-- Select --</option>
-                      <option value="CASH">CASH</option>
-                      <option value="BANK TRANSFER">BANK TRANSFER</option>
-                      <option value="GCASH">GCASH</option>
-                      <option value="CHEQUE">CHEQUE</option>
-                      <option value="FREE INSTALL">FREE INSTALL</option>
-                      <option value="PENDING">PENDING</option>
-                    </select>
-                  </Field>
-                  <Field label="Payment Amount (₱)">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={form.installationCharges ?? ''}
-                      disabled={form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING'}
-                      onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                      className={`${inp} disabled:opacity-60`}
-                      style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                    />
-                  </Field>
-                  {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' ? (
-                    <p className="text-[11px] font-semibold md:col-span-2" style={{ color: green }}>
-                      Installed remarks + payment detected — saving will complete this ticket (view in Archives tab).
+              {showPaymentSection && (
+                <div style={{ borderRadius: 12, padding: 12, border: 1px solid , backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.05)') : inputBg }}>
+                  <Row>
+                    <Field label="Mode of Payment">
+                      <select
+                        value={form.modeOfPayment || ''}
+                        onChange={e => {
+                          const v = e.target.value
+                          onChange({ modeOfPayment: v, installationCharges: (v === 'FREE' || v === 'FREE INSTALL') ? 0 : v === 'PENDING' ? undefined : form.installationCharges })
+                        }}
+                        style={selectInp}
+                      >
+                        <option value="">-- Select --</option>
+                        <option value="CASH">CASH</option>
+                        <option value="BANK TRANSFER">BANK TRANSFER</option>
+                        <option value="GCASH">GCASH</option>
+                        <option value="CHEQUE">CHEQUE</option>
+                        <option value="FREE INSTALL">FREE INSTALL</option>
+                        <option value="PENDING">PENDING</option>
+                      </select>
+                    </Field>
+                    <Field label="Amount (₱)">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={form.installationCharges ?? ''}
+                        disabled={form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING'}
+                        onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
+                        style={{ ...inp, opacity: (form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING') ? 0.5 : 1 }}
+                      />
+                    </Field>
+                  </Row>
+                  {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' && (
+                    <p style={{ fontSize: 10, fontWeight: 700, color: green, marginTop: 8, marginBottom: 0 }}>
+                      ✓ Installed remarks + payment detected — saving will complete this ticket.
                     </p>
-                  ) : null}
+                  )}
                 </div>
-              ) : null}
+              )}
             </div>
           )}
         </div>
 
+        {/* Footer */}
         <div
-          className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 border-t safe-area-bottom"
-          style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}
+          className="shrink-0 px-4 sm:px-5 py-3 flex items-center justify-end gap-2.5 safe-area-bottom"
+          style={{ borderTop: 1px solid , backgroundColor: isLight ? '#f8fafc' : 'rgba(6,12,24,0.6)' }}
         >
-          <div className="hidden sm:block" />
-          <div className="flex gap-2.5 w-full sm:w-auto sm:ml-auto">
-            <button type="button" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold border" style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textMuted }}>
-              Cancel
-            </button>
-            <button type="button" onClick={onSave} disabled={saving} className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl text-xs font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: green }}>
-              {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saving...</> : 'Save Changes'}
-            </button>
-          </div>
+          <button type="button" onClick={onClose} disabled={saving} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, border: 1px solid , backgroundColor: 'transparent', color: textMuted, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, fontFamily: 'inherit' }}>
+            Cancel
+          </button>
+          <button type="button" onClick={onSave} disabled={saving} style={{ padding: '7px 20px', borderRadius: 8, fontSize: 12, fontWeight: 800, backgroundColor: green, color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
+            {saving ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Saving…</> : 'Save Changes'}
+          </button>
         </div>
       </div>
     </div>,
