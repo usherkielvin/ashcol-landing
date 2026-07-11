@@ -304,11 +304,29 @@ export default function DTRScanner() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error('Submission failed')
+      if (!res.ok) {
+        // Surface the server's actual reason (permission denial, validation error, etc.) instead
+        // of a generic message — this was silently swallowed before, which made a real 403/500
+        // from the API indistinguishable from a plain network failure.
+        let detail = ''
+        try {
+          const body = await res.json()
+          detail = body?.error || body?.message || ''
+        } catch { /* response wasn't JSON */ }
+        throw new Error(detail || `Submission failed (HTTP ${res.status})`)
+      }
       setSuccess(true)
     } catch (e) {
       console.error(e)
-      alert('Failed to submit DTR audit report.')
+      const message = e instanceof Error ? e.message : String(e)
+      // A TypeError with no HTTP status reaching this catch means fetch itself failed
+      // (network unreachable, CORS, DNS) — distinguish that from a server-returned error.
+      const isNetworkFailure = e instanceof TypeError
+      alert(
+        isNetworkFailure
+          ? `Could not reach the server to submit the DTR audit report. Check your connection and try again. (${message})`
+          : `Failed to submit DTR audit report: ${message}`
+      )
     } finally {
       setSubmitting(false)
     }

@@ -206,13 +206,21 @@ export function applyRelayScheduleSyncToPatch(
     next.customerName = next.customer_name
   }
 
-  const finalDate = String(
+  // A caller that explicitly clears finalDate/preferredDate (e.g. returning a ticket to My
+  // Tickets) sends them as empty strings, not `undefined` — that intent must not be undone by
+  // falling back to the stale pre-edit `ticket`'s value below, or the clear silently reverts.
+  const finalDateExplicitlyCleared = Object.prototype.hasOwnProperty.call(body, 'finalDate')
+    && !String(body.finalDate ?? '').trim()
+  const preferredDateExplicitlyCleared = Object.prototype.hasOwnProperty.call(body, 'preferredDate')
+    && !String(body.preferredDate ?? '').trim()
+
+  const finalDate = finalDateExplicitlyCleared ? '' : String(
     next.finalDate
     || (typeof next.acDetails === 'string' ? readFinalDateFromAc(next.acDetails) : '')
     || (ticket ? resolveRelayFinalDate(ticket) : ''),
   ).trim().split('T')[0]
 
-  const preferred = String(
+  const preferred = preferredDateExplicitlyCleared ? '' : String(
     next.preferredDate
     || next.preferred_date
     || (ticket ? (ticket.preferredDate || ticket.preferred_date) : '')

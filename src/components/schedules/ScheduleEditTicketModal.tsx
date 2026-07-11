@@ -182,10 +182,9 @@ export function ScheduleEditTicketModal({
                 </span>
               )}
             </div>
-            {(form.branchId || editOriginalDate) && (
+            {form.branchId && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                {form.branchId && <span style={{ fontSize: 10, fontWeight: 600, color: textMuted }}>{formatBranchLabel(form.branchId)}</span>}
-                {editOriginalDate && !isReschedStatus && <span style={{ fontSize: 10, color: textMuted }}>· {formatDateLabel(editOriginalDate)}</span>}
+                <span style={{ fontSize: 10, fontWeight: 600, color: textMuted }}>{formatBranchLabel(form.branchId)}</span>
               </div>
             )}
           </div>
