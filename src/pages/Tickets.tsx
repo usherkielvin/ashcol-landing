@@ -13,7 +13,9 @@ import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
   extractTicketNumbers,
+  getRecentlyLocallyEditedTicketIds,
   getTicketByNumber,
+  markTicketLocallyEdited,
   normalizeTicketNumberKey,
   writeScheduleDateTicketNumbers,
 } from '../utils/ticketNumberStore'
@@ -2098,7 +2100,11 @@ function getServiceVehicleParts(raw: string): { driver: string; vehicle: string 
       return { driver: parts.slice(0, parts.length - 1).join(' ').toUpperCase(), vehicle: last }
     }
   }
-  return { driver: v.toUpperCase(), vehicle: '' }
+  const upperV = v.toUpperCase()
+  if (/^(FB\d+|T\d+|STRADA|[A-Z]{1,3}\d+[A-Z]*)$/.test(upperV)) {
+    return { driver: '', vehicle: upperV }
+  }
+  return { driver: upperV, vehicle: '' }
 }
 
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
@@ -2691,19 +2697,13 @@ function buildCellPatchBody(
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
     case 'SERVICE': {
-      const category = inferCategoryFromTicket(ticket)
       const driverOnly = normalizeDriverInput(v)
-      const { serviceType } = parseServiceDriverValue('', category)
-      body.serviceType = serviceType
       body.driverName = driverOnly
       body.acDetails = mergeAcMeta(acBase, { driverName: driverOnly, driver_name: driverOnly })
       break
     }
     case 'VEHICLE': {
-      const category = inferCategoryFromTicket(ticket)
       const vehicleOnly = normalizeDriverInput(v)
-      const { serviceType } = parseServiceDriverValue('', category)
-      body.serviceType = serviceType
       body.serviceVehicle = vehicleOnly
       body.acDetails = mergeAcMeta(acBase, { serviceVehicle: vehicleOnly })
       break
@@ -5424,6 +5424,10 @@ export default function Tickets() {
       // edited elsewhere (e.g. Overview) may not be in the server response yet if its save
       // (or the backend's previousScheduleDates indexing) hasn't landed — mergeServerListWithLocalEdits
       // already re-filters extraLocal by dateFilter/ghost match, so this can't leak other-date rows in.
+      // locallyEditedTicketIdsRef only covers edits made in THIS mount; Overview/Schedules/My Tickets
+      // are separate routes (separate <Tickets> mounts), so an edit made on one route has no in-memory
+      // record on another — seed from the persisted cross-route marker so it still gets protected here.
+      for (const id of getRecentlyLocallyEditedTicketIds()) locallyEditedTicketIdsRef.current.add(id)
       const withLocalEdits = (!isMyTickets && requestDate)
         ? mergeServerListWithLocalEdits(
           list as Ticket[],
@@ -5469,7 +5473,13 @@ export default function Tickets() {
     // Always hit the network for the active schedules date — empty/wrong client filters
     // must not be locked behind a "fresh" cache skip.
     void fetchTickets({ soft: true, quiet: true, force: true })
-  }, [fetchTickets, globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
+    // fetchTickets is intentionally excluded — it's recreated on every dateFilter change (it
+    // reads dateFilter internally), and listing it here made this effect re-fire on every date
+    // change too, duplicating the dedicated date-change effect right below it (confirmed via
+    // network tab: two identical /tickets/branch requests per date-tab click). This effect
+    // should only re-run for branch/user/mount changes; the effect below owns date changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalBranchId, user, isCustomer, isAdmin, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
     if (isMyTickets) return
@@ -6004,6 +6014,7 @@ export default function Tickets() {
     const normalized = normalizeRelayScheduleTicket(nextTicket)
     cacheTicketByNumber(normalized as unknown as Record<string, unknown>)
     locallyEditedTicketIdsRef.current.add(ticketId)
+    markTicketLocallyEdited(ticketId)
     const prevTicket = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
       || overviewResults.find(t => t.id === ticketId)
@@ -6186,30 +6197,15 @@ export default function Tickets() {
               : base
             optimisticTicketsRef.current.delete(saveId)
             locallyEditedTicketIdsRef.current.add(saveId)
-            // Apply the PATCH response immediately — it's already the authoritative post-write
-            // state, so the Schedule calendar reflects the save without waiting on a second
-            // round trip.
+            // The PATCH response already runs through the same enrichTicketResponse pipeline as
+            // a plain GET (negotiatorName, branch resolution, etc. are all resolved server-side
+            // before it's returned) — apply it directly instead of firing a redundant follow-up
+            // GET /tickets/by-number for every single save. That second round trip used to be
+            // "just" wasted latency, but it was also the exact race that could revert a just-saved
+            // date/status if it happened to read before the write was visible; removing it fixes
+            // both at once.
             applyTicketLocally(saveId, mergedSaved)
             cacheTicketByNumber(mergedSaved as unknown as Record<string, unknown>)
-
-            const ticketNumber = mergedSaved.ticketNumber || mergedSaved.ticket_number || payload.ticketNumber
-            if (ticketNumber) {
-              const applyId = saveId
-              const baseline = mergedSaved
-              // Background refinement only (picks up fields the PATCH response may not compute,
-              // e.g. resolved negotiatorName) — never blocks the visible update, and
-              // preserveLocalScheduleFields keeps a slow/racing read from reverting the date or
-              // status just saved.
-              void fetchTicketByNumber(auth, String(ticketNumber)).then(refreshed => {
-                if (!refreshed || typeof refreshed !== 'object') return
-                const refreshedTicket = preserveLocalScheduleFields(
-                  baseline,
-                  normalizeRelayScheduleTicket(refreshed) as Ticket,
-                )
-                applyTicketLocally(applyId, refreshedTicket)
-                cacheTicketByNumber(refreshedTicket as unknown as Record<string, unknown>)
-              }).catch(() => {})
-            }
           }
           console.log('[Schedules] Saved to database', {
             ticketId: saveId,

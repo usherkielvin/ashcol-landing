@@ -100,6 +100,46 @@ export function readScheduleDateTicketNumbers(dateKey: string): string[] {
   }
 }
 
+const EDITED_TTL_MS = 5 * 60_000
+const EDITED_KEY = 'ashcol-recently-edited-tickets'
+
+/**
+ * Ticket edits happen from independently-mounted routes (Overview at /tickets, Schedules at
+ * /schedules, My Tickets at /my-tickets all render separate <Tickets> instances). The in-memory
+ * "which tickets did I just edit, so trust my local copy over a possibly-stale server read"
+ * tracking (locallyEditedTicketIdsRef) resets on every remount, so an edit made on Overview loses
+ * its protection the moment you navigate to Schedules — a fresh fetch there has no record the
+ * ticket was just touched and can overwrite the correct local value with a stale server response.
+ * This persists that "recently edited" marker to localStorage so it survives navigation.
+ */
+export function markTicketLocallyEdited(ticketId: string): void {
+  if (!ticketId) return
+  try {
+    const raw = localStorage.getItem(EDITED_KEY)
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {}
+    const cutoff = Date.now() - EDITED_TTL_MS
+    for (const id of Object.keys(map)) {
+      if (map[id] < cutoff) delete map[id]
+    }
+    map[ticketId] = Date.now()
+    localStorage.setItem(EDITED_KEY, JSON.stringify(map))
+  } catch {
+    /* ignore quota */
+  }
+}
+
+export function getRecentlyLocallyEditedTicketIds(): string[] {
+  try {
+    const raw = localStorage.getItem(EDITED_KEY)
+    if (!raw) return []
+    const map: Record<string, number> = JSON.parse(raw)
+    const cutoff = Date.now() - EDITED_TTL_MS
+    return Object.keys(map).filter(id => map[id] >= cutoff)
+  } catch {
+    return []
+  }
+}
+
 export function extractTicketNumbers(tickets: unknown[]): string[] {
   if (!Array.isArray(tickets)) return []
   const numbers: string[] = []
