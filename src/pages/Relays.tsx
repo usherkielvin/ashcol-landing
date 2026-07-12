@@ -1539,7 +1539,7 @@ export default function Relays() {
       { label: 'DEALER',           weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'BRANCH',           weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 8,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'SCHEDULED DATE',   weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: true },
     ] : [
@@ -1552,7 +1552,7 @@ export default function Relays() {
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'SCHEDULED DATE', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',      weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
@@ -1573,8 +1573,8 @@ export default function Relays() {
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
-    minWidth: col.label === 'NEGOTIATOR' ? '6.75rem' : col.w,
-    maxWidth: col.label === 'NEGOTIATOR' ? '9rem' : col.w,
+    minWidth: col.label === 'NEGOTIATOR' ? '5.5rem' : col.w,
+    maxWidth: col.label === 'NEGOTIATOR' ? '7.5rem' : col.w,
     boxSizing: 'border-box' as const,
     overflow: 'hidden' as const,
   })
