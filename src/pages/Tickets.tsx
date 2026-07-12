@@ -658,15 +658,19 @@ function mergeServerListWithLocalEdits(
   serverList: Ticket[],
   localList: Ticket[],
   editedIds: Set<string>,
-  options?: { dateFilter?: string; extraLocal?: Ticket[]; stickyLocal?: boolean },
+  options?: { dateFilter?: string; extraLocal?: Ticket[] },
 ): Ticket[] {
-  // stickyLocal: once a row has appeared on a schedule date it must NOT vanish because a later
-  // (possibly stale/incomplete) server response omitted it — re-add every cached row that still
-  // belongs on this date, not just ones edited in this session. Safe because: deleted rows are
-  // filtered afterward by applyOptimisticOverlay (deletedTicketsRef), and the branch/date display
-  // filter still runs, so this can't resurrect deleted, wrong-day, or wrong-branch rows.
-  const sticky = options?.stickyLocal ?? false
-  if (editedIds.size === 0 && !sticky) return serverList
+  // The server response is the source of truth for what's ON this date/branch. Only rows this
+  // browser genuinely has unconfirmed state for — recently edited within the 5-minute window,
+  // still queued/in-flight saves, or not-yet-created temp rows, all folded into editedIds by the
+  // caller — survive a server response that omits them. Anything else is trusted to reflect real
+  // backend state: if the server no longer returns it, it no longer belongs here.
+  // (This used to also re-add ANY row ever cached for this date regardless of age, via a
+  // "stickyLocal" flag — meant to stop a stale/incomplete server response from making rows vanish,
+  // but it meant a browser that had once loaded a ticket kept showing it forever even after it was
+  // deleted/moved elsewhere, while other devices with no such cache correctly stopped showing it.
+  // That per-device divergence is exactly what this function must prevent.)
+  if (editedIds.size === 0) return serverList
 
   const localById = new Map<string, Ticket>()
   for (const t of localList) localById.set(t.id, t)
@@ -685,8 +689,7 @@ function mergeServerListWithLocalEdits(
   const dateKey = options?.dateFilter
   for (const local of localById.values()) {
     if (serverIds.has(local.id)) continue
-    // Edited rows are always re-added; in sticky mode every cached row on this date is too.
-    if (!sticky && !editedIds.has(local.id)) continue
+    if (!editedIds.has(local.id)) continue
     if (dateKey && !ticketMatchesDateKey(local, dateKey) && !isScheduleGhostOnDate(local, dateKey)) continue
     merged.unshift(normalizeRelayScheduleTicket(local) as Ticket)
   }
@@ -3915,8 +3918,20 @@ export default function Tickets() {
             || payloadResult?.ticket
             || payloadResult) as Ticket | null
           if (!createdTicket?.id) {
-            // Keep temp row visible; list will pick up the server row on next manual refresh
-            console.log('[Schedules] Created ticket in database (refreshing list)', { tempId })
+            // POST succeeded but the response couldn't be parsed into a ticket — the temp row has
+            // no confirmed backend id, so it must not linger as a local-only ghost that only this
+            // browser ever sees. Force a real fetch now so this device converges to whatever the
+            // server actually persisted instead of silently waiting on a refresh that never comes.
+            console.log('[Schedules] Created ticket in database but response unparseable — forcing refresh', { tempId })
+            optimisticTicketsRef.current.delete(tempId)
+            pendingSavesRef.current.delete(tempId)
+            activeSavesRef.current.delete(tempId)
+            setTickets(prev => {
+              const next = prev.filter(t => t.id !== tempId)
+              writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+              return next
+            })
+            void fetchTickets({ force: true, quiet: true })
             return
           }
 
@@ -5426,19 +5441,26 @@ export default function Tickets() {
       // are separate routes (separate <Tickets> mounts), so an edit made on one route has no in-memory
       // record on another — seed from the persisted cross-route marker so it still gets protected here.
       for (const id of getRecentlyLocallyEditedTicketIds()) locallyEditedTicketIdsRef.current.add(id)
+      // Also protect saves still queued/in-flight and not-yet-created temp rows — these have no
+      // confirmed backend state yet, so the server response can't be trusted to include them. Any
+      // row NOT in this protected set defers entirely to the server response (see
+      // mergeServerListWithLocalEdits) so this browser can't keep showing a row forever after
+      // another device/the backend has deleted or moved it.
+      const protectedIds = new Set(locallyEditedTicketIdsRef.current)
+      for (const id of pendingSavesRef.current.keys()) protectedIds.add(id)
+      for (const id of activeSavesRef.current) protectedIds.add(id)
+      for (const t of ticketsRef.current) if (isTempTicketId(t.id)) protectedIds.add(t.id)
       const withLocalEdits = (!isMyTickets && requestDate)
         ? mergeServerListWithLocalEdits(
           list as Ticket[],
           (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
-          locallyEditedTicketIdsRef.current,
-          // stickyLocal: schedule rows that have already appeared on this date/branch must persist
-          // across reloads even if a stale/incomplete server response omits them.
-          { dateFilter: requestDate, extraLocal: ticketsRef.current, stickyLocal: true },
+          protectedIds,
+          { dateFilter: requestDate, extraLocal: ticketsRef.current },
         )
         : mergeServerListWithLocalEdits(
           list as Ticket[],
           (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
-          locallyEditedTicketIdsRef.current,
+          protectedIds,
           {
             dateFilter: isMyTickets ? undefined : requestDate,
             extraLocal: ticketsRef.current,
@@ -8415,21 +8437,21 @@ export default function Tickets() {
                                    <p className="text-[10px] font-semibold">
                                      By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
                                    </p>
-                                   {h.newStatus && h.newStatus !== h.previousStatus && (
-                                     <p className="text-[10px]">
-                                       Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> Ã¢Å¾â€ <span className="font-bold text-indigo-500">{h.newStatus}</span>
-                                     </p>
-                                   )}
-                                   {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
-                                     <p className="text-[10px]">
-                                       Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> Ã¢Å¾â€ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
-                                     </p>
-                                   )}
-                                   {h.newAssignedToName && (
-                                     <p className="text-[10px]">
-                                       Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
-                                     </p>
-                                   )}
+                                    {h.newStatus && h.newStatus !== h.previousStatus && (
+                                      <p className="text-[10px]">
+                                        Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                      </p>
+                                    )}
+                                    {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                      <p className="text-[10px]">
+                                        Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
+                                      </p>
+                                    )}
+                                    {h.newAssignedTo !== h.previousAssignedTo && (
+                                      <p className="text-[10px]">
+                                        Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
+                                      </p>
+                                    )}
                                  </div>
                                </div>
                              </div>

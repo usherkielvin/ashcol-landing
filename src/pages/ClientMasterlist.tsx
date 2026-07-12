@@ -4520,9 +4520,9 @@ export default function ClientMasterlist() {
                                       Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
                                     </p>
                                   )}
-                                  {h.newAssignedToName && (
+                                  {h.newAssignedTo !== h.previousAssignedTo && (
                                     <p className="text-[10px]">
-                                      Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
+                                      Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
                                     </p>
                                   )}
                                 </div>
