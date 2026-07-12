@@ -155,10 +155,10 @@ type ImportUnmatchedRow = {
 
 
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CANCELLED', 'CONTINUATION']
+const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CONTINUATION']
 const TABLE_ROW_HEIGHT = 48
 
-/** Schedule install closed Ã¢â‚¬â€ DB uses INSTALLED; legacy rows may still be COMPLETED. */
+/** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
 function isInstalledWorkflowStatus(status?: string | null): boolean {
   const s = (status || '').toUpperCase()
   return s === 'INSTALLED' || s === 'COMPLETED'
@@ -169,8 +169,11 @@ type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
   // Pending first
+  { value: 'S/I', label: 'SURVEY & INSTALL', group: 'pending' },
+  { value: 'INSTALL', label: 'INSTALL', group: 'pending' },
   { value: 'SURVEY', label: 'SURVEY', group: 'pending' },
   { value: 'CLEANING', label: 'CLEANING', group: 'pending' },
+  { value: 'CHECKUP', label: 'CHECKUP', group: 'pending' },
   { value: 'INSTALLATION', label: 'INSTALLATION', group: 'pending' },
   { value: 'SERVICES', label: 'SERVICE', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
@@ -196,17 +199,20 @@ function statusShowsScheduleDetails(statusVal: string): boolean {
 
 function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
   const kind = inferCategoryFromTicket(ticket)
-  if (kind === 'SURVEY' || kind === 'SERVICES') return kind
+  if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP') return kind
   return 'INSTALLATION'
 }
 
 function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: string; backgroundColor: string; borderColor: string } {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
-  if (normalized === 'INSTALLATION' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
+  if (normalized === 'INSTALLATION' || normalized === 'INSTALL' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
   }
   if (normalized === 'CLEANING') {
     return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#7dd3fc' : 'rgba(14,165,233,0.35)' }
+  }
+  if (normalized === 'CHECKUP') {
+    return { color: isLight ? '#0ea5e9' : '#38bdf8', backgroundColor: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#bae6fd' : 'rgba(14,165,233,0.35)' }
   }
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
@@ -223,14 +229,14 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'FOR_APPROVAL') {
     return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
   }
-  if (normalized === 'DONE_INSTALLED' || normalized === 'INSTALLED' || normalized === 'COMPLETED') {
+  if (
+    normalized === 'DONE_INSTALLED' ||
+    normalized === 'INSTALLED' ||
+    normalized === 'COMPLETED' ||
+    normalized === 'DONE_CLEANING' ||
+    normalized === 'DONE_CHECKUP'
+  ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
-  }
-  if (normalized === 'DONE_CHECKUP') {
-    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
-  }
-  if (normalized === 'DONE_CLEANING') {
-    return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)', borderColor: isLight ? '#38bdf8' : 'rgba(14,165,233,0.4)' }
   }
   if (normalized === 'SERVICES') {
     return { color: isLight ? '#0e7490' : '#67e8f9', backgroundColor: isLight ? '#cffafe' : 'rgba(6,182,212,0.15)', borderColor: isLight ? '#67e8f9' : 'rgba(6,182,212,0.3)' }
@@ -271,7 +277,10 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SERVICES' || phase === 'SERVICE') return 'SERVICES'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
-  if (stat === 'S/I' || stat === 'S_I' || stat === 'SI' || stat === 'INSTALLATION') return 'INSTALLATION'
+  if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
+  if (stat === 'INSTALL') return 'INSTALL'
+  if (stat === 'CHECKUP') return 'CHECKUP'
+  if (stat === 'INSTALLATION') return 'INSTALLATION'
   if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
   if (stat === 'RESCHED') return 'RESCHED'
   if (stat === 'SURVEY') return 'SURVEY'
@@ -283,6 +292,10 @@ function getScheduleStatusValue(ticket: Ticket): string {
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
   if (kind === 'SERVICES') return 'SERVICES'
+  if (kind === 'S/I') return 'S/I'
+  if (kind === 'INSTALL') return 'INSTALL'
+  if (kind === 'CLEANING') return 'CLEANING'
+  if (kind === 'CHECKUP') return 'CHECKUP'
   return 'INSTALLATION'
 }
 
@@ -6927,18 +6940,6 @@ export default function Tickets() {
       const statusTitle = showsDetails
         ? `${display} ${EMPTY_CELL} click to view remarks & payment`
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
-      const isDoneStatus = statusVal.startsWith('DONE_')
-      if (isDoneStatus) {
-        return (
-          <span
-            className="text-xs font-black uppercase tracking-wide select-none cursor-pointer"
-            style={{ color: badgeStyle.color }}
-            title={statusTitle}
-          >
-            {displayLabel}
-          </span>
-        )
-      }
       return (
         <span
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
@@ -8579,7 +8580,7 @@ export default function Tickets() {
               <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
                 {([
                   { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
-                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+                  ...(activeTab === 'schedules' ? [{ title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS }] : []),
                 ] as const).map((section, sectionIdx) => (
                   <div
                     key={section.title}
@@ -8599,8 +8600,11 @@ export default function Tickets() {
                             type="button"
                             onClick={() => pickStatus(opt.value)}
                             className="flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-left transition-colors"
-                            style={{
-                              backgroundColor: active ? (isLight ? '#f1f5f9' : '#1e293b') : 'transparent',
+                            style={active ? {
+                              backgroundColor: '#10B981',
+                              border: 'none',
+                            } : {
+                              backgroundColor: 'transparent',
                               border: 'none',
                             }}
                             onMouseEnter={e => {
@@ -8617,17 +8621,23 @@ export default function Tickets() {
                             <span className="flex items-center gap-2.5 min-w-0">
                               <span
                                 className="w-2 h-2 rounded-full shrink-0 border"
-                                style={{ backgroundColor: style.color, borderColor: style.borderColor }}
+                                style={active ? {
+                                  backgroundColor: '#ffffff',
+                                  borderColor: '#ffffff',
+                                } : {
+                                  backgroundColor: style.color,
+                                  borderColor: style.borderColor,
+                                }}
                               />
                               <span
                                 className="text-[11px] font-bold uppercase tracking-wide truncate"
-                                style={{ color: active ? (isLight ? '#0f172a' : '#f8fafc') : textPrimary }}
+                                style={{ color: active ? '#ffffff' : textPrimary }}
                               >
                                 {opt.label}
                               </span>
                             </span>
                             {active && (
-                              <span className="text-[9px] font-black uppercase tracking-wider shrink-0" style={{ color: green }}>
+                              <span className="text-[9px] font-black uppercase tracking-wider shrink-0" style={{ color: '#ffffff' }}>
                                 Active
                               </span>
                             )}

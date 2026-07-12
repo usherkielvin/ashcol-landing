@@ -2701,12 +2701,12 @@ export default function ClientMasterlist() {
 
   const getCategoryLabel = (ticket: Ticket) => {
     const svc = (ticket.serviceType || '').trim().toUpperCase()
-    if (/S\/I|\bSI\b|INSTALL/.test(svc)) return 'S/I'
+    if (/S\/I|\bSI\b|INSTALL|SURVEY\s*&\s*INSTALL/.test(svc)) return 'SURVEY & INSTALL'
     if (svc.includes('SURVEY')) return 'SURVEY'
     if (svc.includes('INSTALLATION')) return 'INSTALLATION'
     if (svc.includes('SERVICE') || svc.includes('CLEAN')) return 'SERVICE'
     const cat = getTicketCategory(ticket)
-    if (cat === 'Survey & Install') return 'S/I'
+    if (cat === 'Survey & Install') return 'SURVEY & INSTALL'
     if (cat === 'Survey') return 'SURVEY'
     if (cat === 'Service') return 'SERVICE'
     return svc || 'SERVICE'
@@ -3447,7 +3447,14 @@ export default function ClientMasterlist() {
       )}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
-        const addCategory = /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
+        const addCategory = 
+          addForm.serviceType === 'SURVEY & INSTALL' || addForm.serviceType === 'S/I' ? 'Survey & Install' :
+          addForm.serviceType === 'INSTALL' ? 'Install' :
+          addForm.serviceType === 'SURVEY' ? 'Survey' :
+          addForm.serviceType === 'CLEANING' ? 'Cleaning' :
+          addForm.serviceType === 'CHECKUP' ? 'Checkup' :
+          addForm.serviceType === 'Service' ? 'Service' :
+          /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Cleaning'
           : /checkup/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Checkup'
@@ -3496,7 +3503,7 @@ export default function ClientMasterlist() {
           if (!option) return
           setAddForm(prev => {
             let mappedSvc = option.value
-            if (option.value === 'Survey & Install') mappedSvc = 'S/I'
+            if (option.value === 'Survey & Install') mappedSvc = 'SURVEY & INSTALL'
             else if (option.value === 'Install') mappedSvc = 'INSTALL'
             else if (option.value === 'Survey') mappedSvc = 'SURVEY'
             else if (option.value === 'Cleaning') mappedSvc = 'CLEANING'
@@ -3524,29 +3531,22 @@ export default function ClientMasterlist() {
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="shrink-0" style={{ background: isLight ? 'linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%)' : 'linear-gradient(135deg, #061020 0%, #0A1120 100%)', borderBottom: `1px solid ${border}` }}>
+            <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
               {/* Top row: title + close */}
-              <div className="px-6 sm:px-8 pt-5 pb-3 flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.35)' }}>
-                    <Plus className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="font-black text-xl leading-tight tracking-tight" style={{ color: textPrimary }}>New Relay Ticket</h2>
-                    <p className="text-[11px] mt-0.5 font-medium" style={{ color: textMuted }}>Ticket number &amp; relay date are auto-filled on save</p>
-                  </div>
+              <div className="px-6 sm:px-8 pt-6 pb-4 flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-black text-2xl leading-none tracking-tight" style={{ color: textPrimary }}>Create a New Ticket</h2>
                 </div>
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
-                  className="p-2 rounded-xl transition-all hover:bg-slate-500/10 shrink-0 mt-0.5"
+                  className="p-2 rounded-xl transition-all hover:bg-slate-500/10 shrink-0"
                   style={{ color: textMuted }}>
-                  <X className="w-4.5 h-4.5" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-              {/* Category pill selector */}
-              <div className="px-6 sm:px-8 pb-4">
-                <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Service Category</p>
-                <div className="flex flex-wrap gap-2">
+              {/* Category grid selector */}
+              <div className="px-6 sm:px-8 pb-5">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] mb-3" style={{ color: textMuted }}>Ticket Category</p>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                   {categoryOptions.map(option => {
                     const isSelected = addCategory === option.value
                     return (
@@ -3554,26 +3554,27 @@ export default function ClientMasterlist() {
                         key={option.value}
                         type="button"
                         onClick={() => applyCategory(option.value)}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all duration-150"
+                        className="flex items-center justify-center py-3.5 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
                         style={isSelected ? {
-                          backgroundColor: option.color,
-                          borderColor: option.color,
-                          color: '#fff',
-                          boxShadow: `0 2px 10px ${option.color}55`,
+                          backgroundColor: '#10B981',
+                          borderColor: '#10B981',
+                          color: '#ffffff',
+                          boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
                         } : {
-                          backgroundColor: 'transparent',
+                          backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)',
                           borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)',
                           color: textMuted,
                         }}
                       >
-                        <span>{option.icon}</span>
-                        <span>{option.label}</span>
+                        <span className="leading-none text-center">{option.label.toUpperCase()}</span>
                       </button>
                     )
                   })}
                 </div>
               </div>
             </div>
+
+
 
             {addForm.images && (
               <div className="mx-6 sm:mx-8 mt-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-3"
@@ -4041,7 +4042,7 @@ export default function ClientMasterlist() {
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">Standard</span>
                               )}
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                                item.serviceType === 'S/I' || item.serviceType === 'SURVEY & INSTALL' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
                                 item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' :
                                 'bg-slate-500/10 text-slate-500 border border-slate-500/20'
                               }`}>{item.serviceType}</span>
@@ -4150,7 +4151,7 @@ export default function ClientMasterlist() {
                               : null
                             }
                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                              item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500' :
+                              item.serviceType === 'S/I' || item.serviceType === 'SURVEY & INSTALL' ? 'bg-emerald-500/10 text-emerald-500' :
                               item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500' : 'bg-slate-500/10 text-slate-400'
                             }`}>{item.serviceType}</span>
                           </div>
