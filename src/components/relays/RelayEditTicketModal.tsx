@@ -260,25 +260,25 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-6 min-h-0">
 
-          {/* 1. Store & transaction */}
+          {/* 1. Dealer & transaction */}
           <div>
-            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Store & Transaction" subtitle="Where the relay came from" border={border} />
+            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer & Transaction" subtitle="Where the relay came from" border={border} />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Store">
+              <EField label="Dealer">
                 <select value={showAddStoreField ? '__add_store__' : draft.storeVendor} onChange={(e) => { const val = e.target.value; if (val === '__add_store__') { setShowAddStoreField(true); return }; setShowAddStoreField(false); setStoreDraft(''); patch({ storeVendor: val }) }} className={relayInput} style={inputStyle}>
                   {storeOptions.map((store) => <option key={store} value={store}>{store}</option>)}
-                  <option value="__add_store__">+ Add store...</option>
+                  <option value="__add_store__">+ Add dealer...</option>
                 </select>
               </EField>
               {showAddStoreField && (
-                <EField label="New Store Name">
+                <EField label="New Dealer Name">
                   <div className="flex gap-2">
                     <input type="text" value={storeDraft} onChange={(e) => setStoreDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }} className={relayInput} style={inputStyle} />
                     <button type="button" onClick={addCustomStore} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 bg-emerald-600 hover:bg-emerald-700">Add</button>
                   </div>
                 </EField>
               )}
-              <EField label="Store Branch"><input type="text" value={draft.storeBranch} onChange={(e) => patch({ storeBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              <EField label="Dealer Branch"><input type="text" value={draft.storeBranch} onChange={(e) => patch({ storeBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               {draft.storeVendor === 'Robinsons' && (
                 <EField label="Transaction ID">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />

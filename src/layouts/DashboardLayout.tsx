@@ -105,34 +105,37 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
   ].filter(g => g.subItems.length > 0)
 }
 
-/** Collapsed rail: one icon per destination (no duplicate paths / redundant entries). */
 function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
   const groups = buildNavGroups(navLinks)
-  const items: { key: string; name: string; path: string; icon: React.ReactNode }[] = []
-  const seenPaths = new Set<string>()
+  const items: { key: string; name: string; path: string; icon: React.ReactNode; groupPaths?: string[] }[] = []
 
   const normalizePath = (path: string) => (path === '/tickets' ? '/schedules' : path)
 
-  const addItem = (name: string, path: string, icon: React.ReactNode) => {
-    if (!path || path === '#') return
-    const key = normalizePath(path)
-    if (seenPaths.has(key)) return
-    seenPaths.add(key)
-    items.push({ key, name, path, icon })
-  }
-
   for (const group of groups) {
-    for (const sub of group.subItems) {
-      addItem(sub.name, sub.path, sub.icon)
+    if (group.subItems.length > 0) {
+      const firstSub = group.subItems[0]
+      const Icon = group.Icon
+      items.push({
+        key: group.title,
+        name: group.title,
+        path: firstSub.path,
+        icon: <Icon size={20} className="shrink-0" />,
+        groupPaths: group.subItems.map(s => normalizePath(s.path))
+      })
     }
   }
 
-  const covered = new Set(items.map(i => normalizePath(i.path)))
+  const covered = new Set(groups.flatMap(g => g.subItems.map(s => normalizePath(s.path))))
   for (const link of navLinks) {
     const key = normalizePath(link.path)
     if (covered.has(key)) continue
     const Icon = link.icon
-    addItem(link.name, link.path, <Icon className="w-4 h-4 shrink-0" strokeWidth={2} />)
+    items.push({
+      key: link.name,
+      name: link.name,
+      path: link.path,
+      icon: <Icon className="w-5 h-5 shrink-0" strokeWidth={2} />
+    })
   }
 
   return items
@@ -367,6 +370,16 @@ export default function DashboardLayout() {
     }
   }, [location.pathname, navGroups])
 
+  // Auto collapse on table-heavy tabs
+  useEffect(() => {
+    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/tickets', '/lineup'].some(p => 
+      location.pathname === p || location.pathname.startsWith(p + '/')
+    )
+    if (isTablePage) {
+      setSidebarCollapsed(true)
+    }
+  }, [location.pathname])
+
   const toggleAccordion = (title: string) => {
     setOpenAccordion(prev => (prev === title ? null : title))
   }
@@ -570,14 +583,18 @@ export default function DashboardLayout() {
 
           {/* Collapsed mode: deduplicated icon rail */}
           {sidebarCollapsed && collapsedNavItems.map((item) => {
-            const isActive = location.pathname === item.path
-              || location.pathname.startsWith(item.path + '/')
-              || (item.path === '/schedules' && location.pathname === '/tickets')
+            const isActive = item.groupPaths
+              ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/') || (p === '/schedules' && location.pathname === '/tickets'))
+              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/') || (item.path === '/schedules' && location.pathname === '/tickets'))
+            
             return (
               <Link
                 key={item.key}
                 to={item.path}
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => {
+                  setSidebarOpen(false)
+                  if (item.groupPaths) setOpenAccordion(item.name) // Auto open accordion if clicking group icon
+                }}
                 title={item.name}
                 className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
                 style={isActive

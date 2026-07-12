@@ -521,7 +521,7 @@ export default function CreateTicket() {
             </div>
             {isStaffOrAdmin && (
               <div>
-                <FL label="Store / B2B Vendor Source" />
+                <FL label="Dealer / B2B Vendor Source" />
                 <select
                   value={
                     (sourceVendor || '').toLowerCase().includes('robinsons')

@@ -1384,7 +1384,7 @@ export default function ClientMasterlist() {
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: false },
       { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
+      { label: 'DEALER',           weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
@@ -1396,7 +1396,7 @@ export default function ClientMasterlist() {
       { label: 'CATEGORY',     weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME', weight: 14, expMul: 1.5,  sticky: false, freeze: false, center: false, right: false },
       { label: 'DISTRICT',     weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
-      { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
+      { label: 'DEALER',       weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
@@ -3186,7 +3186,7 @@ export default function ClientMasterlist() {
                     { value: (
                       <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
                         <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
-                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                        <span className="font-black tracking-wide truncate block" style={{ color: textPrimary }}>
                           {displayUpper(cleanTicketNo)}
                         </span>
                       </div>
@@ -3217,7 +3217,7 @@ export default function ClientMasterlist() {
                         {displayUpper(brandLabel) || '—'}
                       </span>
                     ) },
-                    // STORE / SOURCE
+                    // DEALER
                     { value: (
                       <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)} style={{ color: textPrimary }}>
                         {displayUpper(storeStyle.label)}
@@ -3257,7 +3257,7 @@ export default function ClientMasterlist() {
                     { value: (
                       <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
                         <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
-                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                        <span className="font-black tracking-wide truncate block" style={{ color: textPrimary }}>
                           {displayUpper(cleanTicketNo)}
                         </span>
                       </div>
@@ -3600,11 +3600,11 @@ export default function ClientMasterlist() {
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
               <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
 
-                {/* 1. Store / transaction */}
+                {/* 1. Dealer / transaction */}
                 <section>
-                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Store & Transaction" subtitle="Where the relay came from" />
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer & Transaction" subtitle="Where the relay came from" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Store" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer" compact className="md:col-span-4">
                       <select
                         value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
                         onChange={e => {
@@ -3626,11 +3626,11 @@ export default function ClientMasterlist() {
                         {storeOptions.map(store => (
                           <option key={store} value={store}>{store}</option>
                         ))}
-                        <option value="__add_store__">+ Add store...</option>
+                        <option value="__add_store__">+ Add dealer...</option>
                       </select>
                     </RelayFormField>
                     {showAddStoreField && (
-                      <RelayFormField label="New Store Name" compact className="md:col-span-4">
+                      <RelayFormField label="New Dealer Name" compact className="md:col-span-4">
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -3652,7 +3652,7 @@ export default function ClientMasterlist() {
                         </div>
                       </RelayFormField>
                     )}
-                    <RelayFormField label="Store Branch" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
                       <input
                         type="text"
                         value={addForm.storeBranch}
