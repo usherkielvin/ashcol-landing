@@ -5,7 +5,7 @@ import {
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
-  Store, UserRound, Wind, MessageSquare, Users
+  Store, UserRound, Wind, MessageSquare, Users, Settings
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -75,23 +75,9 @@ function RelayFormSectionHead({
   )
 }
 
-const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
-const RELAY_CUSTOM_STORES_KEY = 'ashcol-relay-custom-stores'
+const BUILT_IN_RELAY_STORES: string[] = []
 
-function readRelayCustomStores(): string[] {
-  try {
-    const raw = localStorage.getItem(RELAY_CUSTOM_STORES_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    if (!Array.isArray(parsed)) return []
-    return [...new Set(parsed.map((s) => String(s).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  } catch {
-    return []
-  }
-}
 
-function persistRelayCustomStores(stores: string[]) {
-  localStorage.setItem(RELAY_CUSTOM_STORES_KEY, JSON.stringify(stores))
-}
 
 interface Ticket {
   id: string
@@ -212,8 +198,12 @@ const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: 
 
 function resolveRelayStoreForSubmit(sourceVendor: string, storeBranch: string) {
   const vendor = (sourceVendor || 'Direct').trim()
-  if ((BUILT_IN_RELAY_STORES as readonly string[]).includes(vendor)) {
-    return combineStoreVendor(vendor as StoreCategory, storeBranch)
+  const lower = vendor.toLowerCase()
+  if (lower === 'robinsons') {
+    return combineStoreVendor('Robinsons', storeBranch)
+  }
+  if (lower === 'abenson') {
+    return combineStoreVendor('Abenson', storeBranch)
   }
   return combineStoreVendor('Other', storeBranch, vendor)
 }
@@ -571,14 +561,22 @@ const resolveRelayNegotiatorName = (
   ticket: Ticket,
   employees: Array<{ id?: string; name?: string }>,
 ) => {
+  let fullName = ''
   const byField = (ticket.negotiatorName || '').trim()
-  if (byField) return byField
-  const uid = resolveNegotiatorUserId(ticket)
-  if (uid) {
-    const match = employees.find((e) => String(e.id || '') === uid)
-    if (match?.name) return String(match.name).trim()
+  if (byField) {
+    fullName = byField
+  } else {
+    const uid = resolveNegotiatorUserId(ticket)
+    if (uid) {
+      const match = employees.find((e) => String(e.id || '') === uid)
+      if (match?.name) fullName = String(match.name).trim()
+    }
   }
-  return (ticket.assignedEmployeeName || '').trim() || '—'
+  if (!fullName) {
+    fullName = (ticket.assignedEmployeeName || '').trim()
+  }
+  if (!fullName) return '—'
+  return fullName.split(/\s+/)[0]
 }
 
 const resolveEmployeePhone = (employees: Array<Record<string, unknown>>, userId?: string) => {
@@ -1045,7 +1043,136 @@ export default function ClientMasterlist() {
 
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
+  const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
+  
+  const relayCustomStores = useMemo(() => {
+    return dealers.map(d => d.name).sort((a, b) => a.localeCompare(b))
+  }, [dealers])
+
+  const fetchDealers = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const list = await res.json()
+        setDealers(list)
+      }
+    } catch (err) {
+      console.error('Error fetching dealers:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchDealers()
+  }, [fetchDealers])
+
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [settingsNewDealerName, setSettingsNewDealerName] = useState('')
+  const [settingsEditingDealerIndex, setSettingsEditingDealerIndex] = useState<number | null>(null)
+  const [settingsEditDealerName, setSettingsEditDealerName] = useState('')
+
+  const handleSettingsAddDealer = async () => {
+    const name = settingsNewDealerName.trim()
+    if (!name) return
+    if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
+      alert('Dealer already exists')
+      return
+    }
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name })
+      })
+      if (res.ok) {
+        setSettingsNewDealerName('')
+        fetchDealers()
+      } else {
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to add dealer')
+      }
+    } catch (err) {
+      console.error('Error adding dealer:', err)
+    }
+  }
+
+  const handleSettingsSaveRename = async (index: number) => {
+    const oldDealer = dealers[index]
+    const newName = settingsEditDealerName.trim()
+    if (!newName || newName === oldDealer.name) {
+      setSettingsEditingDealerIndex(null)
+      return
+    }
+    if (dealers.some((d, idx) => d.name.toLowerCase() === newName.toLowerCase() && idx !== index)) {
+      alert('Dealer already exists')
+      return
+    }
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers/${oldDealer.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newName })
+      })
+      if (res.ok) {
+        setSettingsEditingDealerIndex(null)
+        fetchDealers()
+      } else {
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to rename dealer')
+      }
+    } catch (err) {
+      console.error('Error renaming dealer:', err)
+    }
+  }
+
+  const handleSettingsDeleteDealer = async (dealerId: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete dealer "${name}"?`)) return
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers/${dealerId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        fetchDealers()
+      } else {
+        alert('Failed to delete dealer')
+      }
+    } catch (err) {
+      console.error('Error deleting dealer:', err)
+    }
+  }
+
+  const handlePersistCustomStores = async (nextStores: string[]) => {
+    const newStore = nextStores.find(name => !dealers.some(d => d.name === name))
+    if (newStore) {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        await fetch(`${API_BASE_URL}/dealers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ name: newStore })
+        })
+        fetchDealers()
+      } catch (err) {
+        console.error('Error auto-creating dealer from edit drawer:', err)
+      }
+    }
+  }
+
   const [addStoreDraft, setAddStoreDraft] = useState('')
   const [showAddStoreField, setShowAddStoreField] = useState(false)
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
@@ -1182,22 +1309,36 @@ export default function ClientMasterlist() {
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
-  const handleAddStoreFromToolbar = useCallback(() => {
+  const handleAddStoreFromToolbar = useCallback(async () => {
     const name = toolbarStoreDraft.trim()
     if (!name) return
-    const isBuiltIn = (BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())
-    const isCustom = relayCustomStores.some(s => s.toLowerCase() === name.toLowerCase())
-    if (isBuiltIn || isCustom) {
-      alert('That store is already in the list.')
+    if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
+      alert('That dealer is already in the list.')
       return
     }
-    const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
-    setRelayCustomStores(next)
-    persistRelayCustomStores(next)
-    setStoreFilter(name)
-    setToolbarStoreDraft('')
-    setIsStoreFilterOpen(false)
-  }, [toolbarStoreDraft, relayCustomStores])
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name })
+      })
+      if (res.ok) {
+        setStoreFilter(name)
+        setToolbarStoreDraft('')
+        setIsStoreFilterOpen(false)
+        fetchDealers()
+      } else {
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to add dealer')
+      }
+    } catch (err) {
+      console.error('Error adding dealer from toolbar:', err)
+    }
+  }, [toolbarStoreDraft, dealers, fetchDealers])
 
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
@@ -1386,9 +1527,9 @@ export default function ClientMasterlist() {
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'DEALER',           weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
+      { label: 'BRANCH',           weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'SCHEDULED DATE',   weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: true },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
@@ -1401,7 +1542,7 @@ export default function ClientMasterlist() {
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'SCHEDULED DATE', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',      weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
 
@@ -1672,13 +1813,8 @@ export default function ClientMasterlist() {
           ? parsedStore.customStore
           : parsedStore.store
         if (parsedStore.store === 'Other' && parsedStore.customStore) {
-          setRelayCustomStores(prev => {
-            const name = parsedStore.customStore!.trim()
-            if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
-            const next = [...prev, name].sort((a, b) => a.localeCompare(b))
-            persistRelayCustomStores(next)
-            return next
-          })
+          const name = parsedStore.customStore.trim()
+          handlePersistCustomStores([...relayCustomStores, name])
         }
 
         const scannedPhones = [contactPhoneVal, (parsed as any).alternatePhone || '']
@@ -2409,16 +2545,6 @@ export default function ClientMasterlist() {
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
     setMergeTargetId('')
-    const parsedStore = parseStoreVendor(ticket.sourceVendor)
-    if (parsedStore.store === 'Other' && parsedStore.customStore) {
-      setRelayCustomStores(prev => {
-        const name = parsedStore.customStore!.trim()
-        if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
-        const next = [...prev, name].sort((a, b) => a.localeCompare(b))
-        persistRelayCustomStores(next)
-        return next
-      })
-    }
     setIsActionDrawerOpen(true)
   }
 
@@ -2678,7 +2804,9 @@ export default function ClientMasterlist() {
   const getStoreStyle = (store?: string) => {
     const s = (store || 'Direct').toLowerCase()
     if (s.includes('robinsons')) {
-      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: store || 'Robinsons' }
+      const parsed = parseStoreVendor(store || '')
+      const displayLabel = parsed.branch ? `RA ${parsed.branch}` : 'RA'
+      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: displayLabel }
     } else if (s.includes('abenson')) {
       return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: store || 'Abenson' }
     } else if (s.includes('direct')) {
@@ -2959,6 +3087,17 @@ export default function ClientMasterlist() {
           {/* Action buttons wrapper with right alignment */}
           {isAdmin && (
             <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={createDropdownRef}>
+              {/* Settings button */}
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="flex items-center justify-center p-2 rounded-lg border shadow-sm transition-all text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                title="Manage Dealer Settings"
+              >
+                <Settings className="w-4 h-4 shrink-0" />
+              </button>
+
               {/* Delete All Action */}
               {filtered.length > 0 && (
                 <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
@@ -3229,15 +3368,15 @@ export default function ClientMasterlist() {
                         {displayUpper(ticket.commitType || '') || '—'}
                       </span>
                     ) },
-                    // PREFERRED DATE
-                    { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    // BRANCH
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
                     // NEGOTIATOR
                     { value: (
                       <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
-                    // FINAL DATE (read-only — set by negotiator when scheduling)
+                    // SCHEDULED DATE (read-only — set by negotiator when scheduling)
                     { value: (
                       <span
                         className="whitespace-nowrap block w-full font-bold"
@@ -3429,7 +3568,7 @@ export default function ClientMasterlist() {
           compactInput={compactInput}
           branches={branches}
           relayCustomStores={relayCustomStores}
-          onPersistCustomStores={persistRelayCustomStores}
+          onPersistCustomStores={handlePersistCustomStores}
           parseStoreVendor={parseStoreVendor}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
@@ -3488,19 +3627,35 @@ export default function ClientMasterlist() {
           { label: 'Checkup', shortLabel: 'Checkup', value: 'Checkup', title: 'Checkup ticket', icon: '🩺', color: '#0EA5E9' },
         ]
         const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
-        const addCustomStore = () => {
+        const addCustomStore = async () => {
           const name = addStoreDraft.trim()
           if (!name) return
-          if ((BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())) {
-            alert('That store is already in the list.')
+          if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
+            alert('That dealer is already in the list.')
             return
           }
-          const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
-          setRelayCustomStores(next)
-          persistRelayCustomStores(next)
-          setAddForm(prev => ({ ...prev, sourceVendor: name }))
-          setAddStoreDraft('')
-          setShowAddStoreField(false)
+          try {
+            const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+            const res = await fetch(`${API_BASE_URL}/dealers`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({ name })
+            })
+            if (res.ok) {
+              setAddForm(prev => ({ ...prev, sourceVendor: name }))
+              setAddStoreDraft('')
+              setShowAddStoreField(false)
+              fetchDealers()
+            } else {
+              const errMsg = await res.text()
+              alert(errMsg || 'Failed to add dealer')
+            }
+          } catch (err) {
+            console.error('Error adding dealer:', err)
+          }
         }
         const applyCategory = (value: string) => {
           const option = categoryOptions.find(item => item.value === value)
@@ -3919,6 +4074,152 @@ export default function ClientMasterlist() {
         </div>
         )
       })(), document.body)}
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="w-full max-w-2xl rounded-2xl shadow-2xl border flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '85vh' }}
+            onClick={e => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>Masterlist Settings</h3>
+              </div>
+              <button onClick={() => setIsSettingsModalOpen(false)} style={{ color: textMuted }} className="hover:opacity-85">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#090f1b' }}>
+              <button
+                type="button"
+                className="px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all"
+                style={{
+                  borderColor: '#10B981',
+                  color: '#10B981',
+                }}
+              >
+                Dealers / Store Vendors
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Add New Dealer */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Add New Custom Dealer</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. S&R, Anson's"
+                    value={settingsNewDealerName}
+                    onChange={e => setSettingsNewDealerName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleSettingsAddDealer()
+                      }
+                    }}
+                    className="flex-1 border rounded-xl px-3 py-2.5 text-xs outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSettingsAddDealer}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shrink-0"
+                  >
+                    Add Dealer
+                  </button>
+                </div>
+              </div>
+
+              {/* List of Dealers */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Manage Active Dealers</label>
+                  <span className="text-[10px] font-bold" style={{ color: textMuted }}>{dealers.length} Total</span>
+                </div>
+                
+                <div className="border rounded-xl divide-y overflow-hidden" style={{ borderColor: border }}>
+                  {/* Custom Dealers */}
+                  {dealers.map((dealer, index) => {
+                    const store = dealer.name
+                    const isEditing = settingsEditingDealerIndex === index
+                    return (
+                      <div key={dealer.id} className="flex justify-between items-center p-3 text-xs font-semibold">
+                        {isEditing ? (
+                          <div className="flex gap-2 flex-1 mr-4">
+                            <input
+                              type="text"
+                              value={settingsEditDealerName}
+                              onChange={e => setSettingsEditDealerName(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleSettingsSaveRename(index)
+                                }
+                              }}
+                              className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none"
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSettingsSaveRename(index)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettingsEditingDealerIndex(null)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold border"
+                              style={{ borderColor: inputBorder, color: textPrimary }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span style={{ color: textPrimary }}>{store}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSettingsEditingDealerIndex(index)
+                                  setSettingsEditDealerName(store)
+                                }}
+                                className="p-1.5 rounded-lg hover:bg-slate-500/15"
+                                style={{ color: textMuted }}
+                                title="Rename"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSettingsDeleteDealer(dealer.id, store)}
+                                className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}
