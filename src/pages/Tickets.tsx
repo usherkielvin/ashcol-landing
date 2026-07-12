@@ -197,9 +197,9 @@ function statusShowsScheduleDetails(statusVal: string): boolean {
   return SCHEDULE_PENDING_STATUS_VALUES.has(statusVal) || SCHEDULE_CLOSING_STATUS_VALUES.has(statusVal)
 }
 
-function getScheduleTicketKind(ticket: Ticket): TicketCategoryValue {
-  const kind = inferCategoryFromTicket(ticket)
-  if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP') return kind
+function getScheduleTicketKind(ticket: Ticket): string {
+  const kind = inferCategoryFromTicket(ticket) as string
+  if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'SURVEY & INSTALL' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP') return kind
   return 'INSTALLATION'
 }
 
@@ -292,7 +292,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
   if (kind === 'SERVICES') return 'SERVICES'
-  if (kind === 'S/I') return 'S/I'
+  if (kind === 'SURVEY & INSTALL' || kind === 'S/I') return 'SURVEY & INSTALL'
   if (kind === 'INSTALL') return 'INSTALL'
   if (kind === 'CLEANING') return 'CLEANING'
   if (kind === 'CHECKUP') return 'CHECKUP'
