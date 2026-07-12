@@ -3831,7 +3831,7 @@ export default function ClientMasterlist() {
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                       />
                     </RelayFormField>
-                    {addForm.sourceVendor === 'Robinsons' && (
+                    {((addForm.sourceVendor || '').toLowerCase().startsWith('robinsons') || (addForm.sourceVendor || '').toLowerCase().startsWith('ra')) && (
                       <RelayFormField label="Transaction ID" compact className="md:col-span-4">
                         <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
                       </RelayFormField>
@@ -3948,7 +3948,7 @@ export default function ClientMasterlist() {
                       />
                     </RelayFormField>
                     <RelayFormField label="District" compact className="md:col-span-2">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value.toUpperCase() }))} placeholder="Area" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.district), textTransform: 'uppercase'}} />
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
                     </RelayFormField>
                     <RelayFormField label="Landmark" compact className="md:col-span-2">
                       <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
@@ -3961,16 +3961,16 @@ export default function ClientMasterlist() {
                   <RelayFormSectionHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Brand" compact className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value.toUpperCase() }))} placeholder="Brand" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.brand), textTransform: 'uppercase'}} />
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
                     </RelayFormField>
                     <RelayFormField label="Capacity" compact className="md:col-span-2">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value.toUpperCase() }))} placeholder="1.5 HP" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.capacity), textTransform: 'uppercase'}} />
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
                     </RelayFormField>
                     <RelayFormField label="SKU" compact className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))} placeholder="SKU" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.sku), textTransform: 'uppercase'}} />
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
                     </RelayFormField>
                     <RelayFormField label="Serial No." compact className="md:col-span-4">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value.toUpperCase() }))} placeholder="Serial" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.serialNumber), textTransform: 'uppercase'}} />
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
                     </RelayFormField>
                     <RelayFormField label="Commit / Promo" compact className="md:col-span-12">
                       <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />

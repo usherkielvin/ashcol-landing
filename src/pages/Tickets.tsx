@@ -37,7 +37,7 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import { type RelayEditDraft } from '../components/relays/relayEditForm'
-import { parseStoreVendor, readRelayCustomStores, persistRelayCustomStores } from '../utils/parseStoreVendor'
+import { parseStoreVendor } from '../utils/parseStoreVendor'
 import { mapRelayDraftToScheduleEditForm } from '../utils/ticketEditBridge'
 import {
   FIELD_TICKET_CATEGORIES,
@@ -3284,7 +3284,7 @@ export default function Tickets() {
   // Ã¢â€â‚¬Ã¢â€â‚¬ Manual Edit Modal State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
-  const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
+  const [relayCustomStores, setRelayCustomStores] = useState<string[]>([])
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & {
     serviceDriver?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string
@@ -3308,6 +3308,53 @@ export default function Tickets() {
       .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
       .catch(() => {})
   }, [editModalOpen, branches.length])
+
+  useEffect(() => {
+    const fetchDealers = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const list = await res.json()
+          setRelayCustomStores(list.map((d: any) => d.name.toUpperCase()))
+        }
+      } catch (err) {
+        console.error('Error fetching dealers in Tickets.tsx:', err)
+      }
+    }
+    fetchDealers()
+  }, [])
+
+  const handlePersistCustomStores = async (nextStores: string[]) => {
+    const uppercaseStores = nextStores.map(s => s.trim().toUpperCase()).filter(Boolean)
+    const newStore = uppercaseStores.find(name => !relayCustomStores.includes(name))
+    if (newStore) {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ name: newStore })
+        })
+        if (res.ok) {
+          const refetchRes = await fetch(`${API_BASE_URL}/dealers`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          if (refetchRes.ok) {
+            const list = await refetchRes.json()
+            setRelayCustomStores(list.map((d: any) => d.name.toUpperCase()))
+          }
+        }
+      } catch (err) {
+        console.error('Error auto-creating dealer from edit modal:', err)
+      }
+    }
+  }
 
   useEffect(() => {
     if (!editModalOpen || activeTab !== 'overview') return
@@ -9564,7 +9611,7 @@ export default function Tickets() {
           compactInput="w-full border rounded-xl px-3.5 py-2.5 sm:py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case"
           branches={branches}
           relayCustomStores={relayCustomStores}
-          onPersistCustomStores={(stores) => { setRelayCustomStores(stores); persistRelayCustomStores(stores) }}
+          onPersistCustomStores={handlePersistCustomStores}
           parseStoreVendor={parseStoreVendor}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}

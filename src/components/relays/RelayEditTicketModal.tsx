@@ -6,7 +6,7 @@ import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 
-const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
+
 
 type Branch = { id: string; name: string }
 type Employee = { id: string; name?: string; branchId?: string | null; phone?: string | null }
@@ -169,21 +169,18 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const relayInput = `${compactInput} normal-case`
 
   const storeOptions = useMemo(() => {
-    const options = [
-      ...BUILT_IN_RELAY_STORES,
-      ...relayCustomStores.filter((s) => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s as typeof BUILT_IN_RELAY_STORES[number])),
-    ]
-    if (draft.storeVendor && !options.includes(draft.storeVendor as typeof BUILT_IN_RELAY_STORES[number])) {
+    const options = [...relayCustomStores]
+    if (draft.storeVendor && !options.includes(draft.storeVendor)) {
       return [...options, draft.storeVendor]
     }
     return options
   }, [draft.storeVendor, relayCustomStores])
 
   const addCustomStore = () => {
-    const name = storeDraft.trim()
+    const name = storeDraft.trim().toUpperCase()
     if (!name) return
-    if ((BUILT_IN_RELAY_STORES as readonly string[]).some((s) => s.toLowerCase() === name.toLowerCase())) {
-      alert('That store is already in the list.')
+    if (relayCustomStores.some((s) => s.toLowerCase() === name.toLowerCase())) {
+      alert('That dealer is already in the list.')
       return
     }
     const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
@@ -262,7 +259,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           {/* 1. Dealer & transaction */}
           <div>
-            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer & Transaction" subtitle="Where the relay came from" border={border} />
+            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" border={border} />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
               <EField label="Dealer">
                 <select value={showAddStoreField ? '__add_store__' : draft.storeVendor} onChange={(e) => { const val = e.target.value; if (val === '__add_store__') { setShowAddStoreField(true); return }; setShowAddStoreField(false); setStoreDraft(''); patch({ storeVendor: val }) }} className={relayInput} style={inputStyle}>
@@ -279,7 +276,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </EField>
               )}
               <EField label="Dealer Branch"><input type="text" value={draft.storeBranch} onChange={(e) => patch({ storeBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              {draft.storeVendor === 'Robinsons' && (
+              {(draft.storeVendor.toLowerCase().startsWith('robinsons') || draft.storeVendor.toLowerCase().startsWith('ra')) && (
                 <EField label="Transaction ID">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />
                 </EField>

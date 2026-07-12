@@ -1,6 +1,5 @@
 import type { TicketCategoryValue } from '../constants/ticketCategories'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
-import { combineStoreVendor } from './parseStoreVendor'
 
 export type TicketEditSurface = 'relay' | 'schedules' | 'my-tickets' | 'overview'
 
@@ -55,10 +54,7 @@ export function mapRelayDraftToScheduleEditForm(
   draft: RelayEditDraft,
   base: ScheduleEditFormShape,
 ): ScheduleEditFormShape {
-  const isBuiltInStore = draft.storeVendor === 'Robinsons' || draft.storeVendor === 'Abenson' || draft.storeVendor === 'Direct'
-  const resolvedStore = isBuiltInStore
-    ? combineStoreVendor(draft.storeVendor as 'Robinsons' | 'Abenson' | 'Direct', draft.storeBranch)
-    : (draft.storeBranch ? `${draft.storeVendor} - ${draft.storeBranch}` : draft.storeVendor)
+  const resolvedStore = draft.storeBranch ? `${draft.storeVendor} - ${draft.storeBranch}` : draft.storeVendor
 
   const contactPhone = (draft.phoneNumbers[0] || '').trim()
   const remarksCombined = (draft.remarks || draft.remarksUpdate || '').trim()
