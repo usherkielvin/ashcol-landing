@@ -2868,6 +2868,8 @@ export default function Relays() {
   const formatBranchTableLabel = (branchId?: string) => {
     const full = formatAssignedBranchLabel(branchId)
     if (full === '—') return '—'
+    if (full === 'TAGUIG - SALES') return 'TAGUIG SALES'
+    if (full === 'TAGUIG - SERVICES') return 'TAGUIG SERVICES'
     if (full.startsWith('TAGUIG')) return 'TAGUIG'
     return full
   }
