@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket } from '../utils/api'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
@@ -1187,14 +1187,14 @@ export default function Relays() {
   const [addStoreDraft, setAddStoreDraft] = useState('')
   const [showAddStoreField, setShowAddStoreField] = useState(false)
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
-  const [addForm, setAddForm] = useState({
+  const [addForm, _setAddForm] = useState({
     title: 'S/I service',
     description: '',
     serviceType: 'S/I',
     customerName: '',
     contactPhone: '',
     locationRaw: '',
-    sourceVendor: 'Robinsons',
+    sourceVendor: '',
     otherStoreName: '',
     storeBranch: '',
     unitType: 'Split AC',
@@ -1223,6 +1223,21 @@ export default function Relays() {
     relayedDate: new Date().toISOString().split('T')[0],
     finalDate: ''
   })
+
+  const setAddForm = (action: React.SetStateAction<typeof addForm>) => {
+    _setAddForm((prev) => {
+      const next = typeof action === 'function' ? (action as any)(prev) : action
+      const uppercased: any = {}
+      for (const key in next) {
+        if (typeof (next as any)[key] === 'string' && !['id', 'assignedTo', 'branchId'].includes(key)) {
+          uppercased[key] = (next as any)[key].toUpperCase()
+        } else {
+          uppercased[key] = (next as any)[key]
+        }
+      }
+      return uppercased as typeof addForm
+    })
+  }
   const [employees, setEmployees] = useState<any[]>([])
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
@@ -1539,7 +1554,7 @@ export default function Relays() {
       { label: 'DEALER',           weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'BRANCH',           weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',       weight: 8,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 6,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'SCHEDULED DATE',   weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: true },
     ] : [
@@ -1552,7 +1567,7 @@ export default function Relays() {
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'NEGOTIATOR',   weight: 8,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',   weight: 6,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'SCHEDULED DATE', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',      weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
@@ -1573,8 +1588,8 @@ export default function Relays() {
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
-    minWidth: col.label === 'NEGOTIATOR' ? '5.5rem' : col.w,
-    maxWidth: col.label === 'NEGOTIATOR' ? '7.5rem' : col.w,
+    minWidth: col.w,
+    maxWidth: col.w,
     boxSizing: 'border-box' as const,
     overflow: 'hidden' as const,
   })
@@ -1819,7 +1834,7 @@ export default function Relays() {
 
         const defaultCommit = parsed.commitType || ''
         const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
-        const parsedStore = parseStoreVendor(parsed.sourceVendor || 'Robinsons')
+        const parsedStore = parseStoreVendor(parsed.sourceVendor || '')
         const scannedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
           ? parsedStore.customStore
           : parsedStore.store
@@ -2190,7 +2205,7 @@ export default function Relays() {
       customerName: '',
       contactPhone: '',
       locationRaw: '',
-      sourceVendor: 'Robinsons',
+      sourceVendor: '',
       otherStoreName: '',
       storeBranch: '',
       unitType: 'Split AC',
@@ -2865,8 +2880,14 @@ export default function Relays() {
     return 'ASSIGNED'
   }
 
-  const formatBranchTableLabel = (branchId?: string) => {
-    const full = formatAssignedBranchLabel(branchId)
+  const formatBranchTableLabel = (branchId?: string, ticket?: Ticket) => {
+    let full = formatAssignedBranchLabel(branchId)
+    
+    if (full.startsWith('TAGUIG') && ticket) {
+      const isService = isTaguigServiceTicket(ticket as any)
+      full = isService ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
+    }
+
     if (full === '—') return '—'
     if (full === 'TAGUIG - SALES') return 'TAGUIG SALES'
     if (full === 'TAGUIG - SERVICES') return 'TAGUIG SERVICES'
@@ -3294,7 +3315,7 @@ export default function Relays() {
                 filtered.map((ticket, idx) => {
                   const storeStyle = getStoreStyle(ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
-                  const branchName = formatBranchTableLabel(ticket.branchId)
+                  const branchName = formatBranchTableLabel(ticket.branchId, ticket)
                   const category = getTicketCategory(ticket)
                   const categoryLabel = getCategoryLabel(ticket)
                   const negotiator = resolveRelayNegotiatorName(ticket, employees)
@@ -3769,9 +3790,9 @@ export default function Relays() {
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
               <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
 
-                {/* 1. Dealer / transaction */}
+                {/* 1. Dealer & Transaction */}
                 <section>
-                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer & Transaction" subtitle="Where the relay came from" />
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Dealer" compact className="md:col-span-4">
                       <select
@@ -3867,7 +3888,7 @@ export default function Relays() {
                     {addFormDuplicate && !addFormSyncTarget && (
                       <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
-                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-amber-600 dark:amber-400 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                           Duplicate customer on Relays
                         </span>

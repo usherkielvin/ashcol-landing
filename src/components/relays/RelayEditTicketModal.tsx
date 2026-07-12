@@ -156,7 +156,18 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const closingStatusOpts = scheduleStatusOptions.filter(o => o.group === 'closing')
   const isSaving = saving || actionSaving
 
-  const patch = (updates: Partial<RelayEditDraft>) => setDraft((prev) => ({ ...prev, ...updates }))
+  const patch = (updates: Partial<RelayEditDraft>) => setDraft((prev) => {
+    const uppercased: any = {}
+    for (const key in updates) {
+      const val = (updates as any)[key]
+      if (typeof val === 'string' && !['id', 'assignTechId', 'assignBranchId'].includes(key)) {
+        uppercased[key] = val.toUpperCase()
+      } else {
+        uppercased[key] = val
+      }
+    }
+    return { ...prev, ...uppercased }
+  })
 
   const inputStyle = useMemo(() => ({
     backgroundColor: inputBg,

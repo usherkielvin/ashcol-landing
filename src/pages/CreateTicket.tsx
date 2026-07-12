@@ -376,19 +376,19 @@ export default function CreateTicket() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          customerName: fullName.trim(),
-          title: `${selectedService} service`,
-          description: fullDesc,
-          serviceType: selectedService,
-          unitType: unitNames,
-          acDetails: JSON.stringify(sel.map(u => ({ unitType: u.name, quantity: u.quantity, details: u.details }))),
+          customerName: fullName.trim().toUpperCase(),
+          title: `${selectedService} service`.toUpperCase(),
+          description: fullDesc.toUpperCase(),
+          serviceType: selectedService.toUpperCase(),
+          unitType: unitNames.toUpperCase(),
+          acDetails: JSON.stringify(sel.map(u => ({ unitType: u.name.toUpperCase(), quantity: u.quantity, details: u.details }))),
           contactPhone: contactPhone.trim(),
           preferredDate: selectedDate || undefined,
-          location: fullLoc.trim(),
+          location: fullLoc.trim().toUpperCase(),
           sourceVendor: selectedDealer === 'Direct'
-            ? 'Direct'
-            : (dealerBranch.trim() ? `${selectedDealer} - ${dealerBranch.trim().toUpperCase()}` : selectedDealer),
-          controlNumber: selectedDealer.toLowerCase().startsWith('robinsons') || selectedDealer.toLowerCase().startsWith('ra') ? controlNumber.trim() : undefined,
+            ? 'DIRECT'
+            : (dealerBranch.trim() ? `${selectedDealer.toUpperCase()} - ${dealerBranch.trim().toUpperCase()}` : selectedDealer.toUpperCase()),
+          controlNumber: selectedDealer.toLowerCase().startsWith('robinsons') || selectedDealer.toLowerCase().startsWith('ra') ? controlNumber.trim().toUpperCase() : undefined,
           branchId,
         })
       })

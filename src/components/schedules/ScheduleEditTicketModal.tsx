@@ -51,6 +51,8 @@ type ScheduleEditTicketModalProps = {
   negotiators: Employee[]
   driverRoster: string[]
   installerRoster: string[]
+  dealerOptions?: string[]
+  onAddDealer?: (name: string) => void
   formatBranchLabel: (branchId?: string) => string
   formatNegotiatorLabel: (emp: Employee) => string
   formatDateLabel: (dateKey: string) => string
@@ -101,6 +103,8 @@ export function ScheduleEditTicketModal({
   negotiators,
   driverRoster,
   installerRoster,
+  dealerOptions = [],
+  onAddDealer,
   formatBranchLabel,
   formatNegotiatorLabel,
   formatDateLabel,
@@ -251,7 +255,22 @@ export function ScheduleEditTicketModal({
             </Row>
             <Row>
               <Field label="Dealer (DLR)">
-                <input type="text" value={form.sourceVendor || ''} onChange={e => onChange({ sourceVendor: e.target.value })} style={inp} placeholder="Store or supplier" />
+                <input
+                  type="text"
+                  value={form.sourceVendor || ''}
+                  list="sched-edit-dealer-list"
+                  onChange={e => onChange({ sourceVendor: e.target.value })}
+                  onBlur={e => {
+                    const name = e.target.value.trim().toUpperCase()
+                    if (!name || name.includes(' - ')) return
+                    if (!dealerOptions.some(d => d.toUpperCase() === name)) {
+                      onAddDealer?.(name)
+                    }
+                  }}
+                  style={inp}
+                  placeholder="Store or supplier"
+                />
+                <datalist id="sched-edit-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
               </Field>
               <Field label="Control No. / SI">
                 <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />

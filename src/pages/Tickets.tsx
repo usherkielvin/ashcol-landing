@@ -9458,9 +9458,18 @@ export default function Tickets() {
                   </Field>
                   <Field label="Dealer (DLR)">
                     <input type="text" value={addForm.sourceVendor || ''}
+                      list="add-ticket-dealer-list"
                       onChange={e => setAddForm({ ...addForm, sourceVendor: e.target.value })}
+                      onBlur={e => {
+                        const name = e.target.value.trim().toUpperCase()
+                        if (!name || name.includes(' - ')) return
+                        if (!relayCustomStores.some(d => d.toUpperCase() === name)) {
+                          handlePersistCustomStores([...relayCustomStores, name])
+                        }
+                      }}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                    <datalist id="add-ticket-dealer-list">{relayCustomStores.map(d => <option key={d} value={d} />)}</datalist>
                   </Field>
                   <Field label="Service / Driver">
                     <input type="text" value={addForm.serviceDriver || ''}
@@ -9664,6 +9673,8 @@ export default function Tickets() {
           negotiators={editModalNegotiators}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
+          dealerOptions={relayCustomStores}
+          onAddDealer={(name) => handlePersistCustomStores([...relayCustomStores, name])}
           formatBranchLabel={formatAssignedBranchLabel}
           formatNegotiatorLabel={formatNegotiatorLabel}
           formatDateLabel={formatDateKeyLabel}

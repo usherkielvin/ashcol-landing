@@ -850,6 +850,35 @@ export default function DailyServiceReport() {
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
 
+  const [dealerOptions, setDealerOptions] = useState<string[]>([])
+  const fetchDealerOptions = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const list = await res.json()
+      setDealerOptions((list as { name: string }[]).map(d => d.name.toUpperCase()).sort((a, b) => a.localeCompare(b)))
+    } catch (err) {
+      console.error('Error fetching dealers in DailyServiceReport:', err)
+    }
+  }, [])
+  useEffect(() => { fetchDealerOptions() }, [fetchDealerOptions])
+  const registerNewDealer = useCallback(async (name: string) => {
+    const upper = name.trim().toUpperCase()
+    if (!upper || upper.includes(' - ') || dealerOptions.some(d => d === upper)) return
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      await fetch(`${API_BASE_URL}/dealers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: upper })
+      })
+      fetchDealerOptions()
+    } catch (err) {
+      console.error('Error auto-creating dealer from archives:', err)
+    }
+  }, [dealerOptions, fetchDealerOptions])
+
   useEffect(() => {
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     if (!token) return
@@ -2721,10 +2750,15 @@ export default function DailyServiceReport() {
                   </Field>
                   <Field label="Dealer (DLR)">
                     {canEdit ? (
-                      <input type="text" value={detailForm.dealer || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, dealer: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      <>
+                        <input type="text" value={detailForm.dealer || ''}
+                          list="archive-dealer-list"
+                          onChange={e => setDetailForm({ ...detailForm, dealer: e.target.value })}
+                          onBlur={e => registerNewDealer(e.target.value)}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                        <datalist id="archive-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
+                      </>
                     ) : (
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.dealer || '—'}</span>
                     )}
