@@ -3447,16 +3447,14 @@ export default function ClientMasterlist() {
       )}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
-        const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Collection'
-          : /continuation/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Continuation'
-          : /resched/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Resched'
-          : /approval/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'For Approval'
-          : /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
+        const addCategory = /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Cleaning'
+          : /checkup/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Checkup'
+          : /survey/i.test(`${addForm.serviceType} ${addForm.title}`) && /install/i.test(`${addForm.serviceType} ${addForm.title}`)
+          ? 'Survey & Install'
+          : /^install$/i.test((addForm.serviceType || '').trim()) || /^INSTALL$/i.test((addForm.title || '').trim())
+          ? 'Install'
           : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
           ? 'Survey'
           : /service/i.test(`${addForm.serviceType} ${addForm.title}`)
@@ -3470,16 +3468,13 @@ export default function ClientMasterlist() {
           textTransform: 'none' as const,
         })
         const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
-        const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case'
         const categoryOptions = [
-          { label: 'S / I', value: 'Survey & Install', title: 'Installation service' },
-          { label: 'Service', value: 'Service', title: 'Service ticket' },
-          { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
-          { label: 'Cleaning', value: 'Cleaning', title: 'Cleaning ticket' },
-          { label: 'For Approval', value: 'For Approval', title: 'For approval ticket' },
-          { label: 'Resched', value: 'Resched', title: 'Rescheduled ticket' },
-          { label: 'Continuation', value: 'Continuation', title: 'Continuation ticket' },
-          { label: 'Collection', value: 'Collection', title: 'Collection ticket' },
+          { label: 'Survey & Install', shortLabel: 'S & I', value: 'Survey & Install', title: 'Installation service', icon: '🔧', color: '#6366F1' },
+          { label: 'Install', shortLabel: 'Install', value: 'Install', title: 'Install ticket', icon: '🛠️', color: '#8B5CF6' },
+          { label: 'Survey', shortLabel: 'Survey', value: 'Survey', title: 'Survey ticket', icon: '📐', color: '#7C3AED' },
+          { label: 'Cleaning', shortLabel: 'Cleaning', value: 'Cleaning', title: 'Cleaning ticket', icon: '✨', color: '#10B981' },
+          { label: 'Service', shortLabel: 'Service', value: 'Service', title: 'Service ticket', icon: '⚙️', color: '#F59E0B' },
+          { label: 'Checkup', shortLabel: 'Checkup', value: 'Checkup', title: 'Checkup ticket', icon: '🩺', color: '#0EA5E9' },
         ]
         const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
         const addCustomStore = () => {
@@ -3502,27 +3497,26 @@ export default function ClientMasterlist() {
           setAddForm(prev => {
             let mappedSvc = option.value
             if (option.value === 'Survey & Install') mappedSvc = 'S/I'
+            else if (option.value === 'Install') mappedSvc = 'INSTALL'
             else if (option.value === 'Survey') mappedSvc = 'SURVEY'
             else if (option.value === 'Cleaning') mappedSvc = 'CLEANING'
-            else if (option.value === 'For Approval') mappedSvc = 'FOR APPROVAL'
-            else if (option.value === 'Resched') mappedSvc = 'RESCHED'
-            else if (option.value === 'Continuation') mappedSvc = 'CONTINUATION'
+            else if (option.value === 'Checkup') mappedSvc = 'CHECKUP'
 
             return {
               ...prev,
               serviceType: mappedSvc,
               title: option.title,
               status: 'PENDING',
-              commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
-              installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
-              modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
+              commitType: (option.value === 'Survey & Install' || option.value === 'Install') ? 'FREE FIRST 10 FEET' : prev.commitType,
+              installationCharges: 0,
+              modeOfPayment: '',
             }
           })
         }
         return (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
         >
           <div
             className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
@@ -3530,36 +3524,53 @@ export default function ClientMasterlist() {
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <div className="px-5 sm:px-7 py-3.5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
-                    <Plus className="w-5 h-5" />
+            <div className="shrink-0" style={{ background: isLight ? 'linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%)' : 'linear-gradient(135deg, #061020 0%, #0A1120 100%)', borderBottom: `1px solid ${border}` }}>
+              {/* Top row: title + close */}
+              <div className="px-6 sm:px-8 pt-5 pb-3 flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 4px 14px rgba(16,185,129,0.35)' }}>
+                    <Plus className="w-5 h-5 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="font-black text-lg leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
-                    <p className="text-[11px] mt-0.5 truncate font-semibold" style={{ color: textMuted }}>Ticket no. & relay date auto-filled</p>
+                    <h2 className="font-black text-xl leading-tight tracking-tight" style={{ color: textPrimary }}>New Relay Ticket</h2>
+                    <p className="text-[11px] mt-0.5 font-medium" style={{ color: textMuted }}>Ticket number &amp; relay date are auto-filled on save</p>
                   </div>
                 </div>
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
-                  className="p-2 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  <X className="w-4 h-4" />
+                  className="p-2 rounded-xl transition-all hover:bg-slate-500/10 shrink-0 mt-0.5"
+                  style={{ color: textMuted }}>
+                  <X className="w-4.5 h-4.5" />
                 </button>
               </div>
-              <div className="px-5 sm:px-7 pb-3.5 flex flex-wrap items-end gap-3">
-                <div className="w-72 max-w-full">
-                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Category *</label>
-                  <select
-                    value={addCategory}
-                    onChange={e => applyCategory(e.target.value)}
-                    className={`${addInputSm} font-semibold`}
-                    style={fieldStyle(addCategory)}
-                  >
-                    {categoryOptions.map(option => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+              {/* Category pill selector */}
+              <div className="px-6 sm:px-8 pb-4">
+                <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: textMuted }}>Service Category</p>
+                <div className="flex flex-wrap gap-2">
+                  {categoryOptions.map(option => {
+                    const isSelected = addCategory === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => applyCategory(option.value)}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all duration-150"
+                        style={isSelected ? {
+                          backgroundColor: option.color,
+                          borderColor: option.color,
+                          color: '#fff',
+                          boxShadow: `0 2px 10px ${option.color}55`,
+                        } : {
+                          backgroundColor: 'transparent',
+                          borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)',
+                          color: textMuted,
+                        }}
+                      >
+                        <span>{option.icon}</span>
+                        <span>{option.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -3843,19 +3854,10 @@ export default function ClientMasterlist() {
                 <section>
                   <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested date & collection details" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
                     </RelayFormField>
-                    {addCategory === 'Collection' && (
-                      <>
-                        <RelayFormField label="Amount" compact className="md:col-span-4">
-                          <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </RelayFormField>
-                        <RelayFormField label="Payment" compact className="md:col-span-4">
-                          <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
-                        </RelayFormField>
-                      </>
-                    )}
                   </div>
                 </section>
 
