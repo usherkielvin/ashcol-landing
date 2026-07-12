@@ -11,7 +11,7 @@ import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
-import ClientMasterlist from './pages/ClientMasterlist'
+import Relays from './pages/Relays'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
@@ -85,7 +85,7 @@ export default function App() {
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Tickets />} />
-          <Route path="/relays" element={<ClientMasterlist />} />
+          <Route path="/relays" element={<Relays />} />
           <Route path="/my-tickets" element={<Tickets />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />

@@ -75,8 +75,6 @@ function RelayFormSectionHead({
   )
 }
 
-const BUILT_IN_RELAY_STORES: string[] = []
-
 
 
 interface Ticket {
@@ -863,7 +861,7 @@ const isCollectionPaid = (ticket: Ticket) => {
   return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
 }
 
-export default function ClientMasterlist() {
+export default function Relays() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
@@ -3640,7 +3638,7 @@ export default function ClientMasterlist() {
           { label: 'Service', shortLabel: 'Service', value: 'Service', title: 'Service ticket', icon: '⚙️', color: '#F59E0B' },
           { label: 'Checkup', shortLabel: 'Checkup', value: 'Checkup', title: 'Checkup ticket', icon: '🩺', color: '#0EA5E9' },
         ]
-        const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
+        const storeOptions = [...relayCustomStores]
         const addCustomStore = async () => {
           const name = addStoreDraft.trim()
           if (!name) return
