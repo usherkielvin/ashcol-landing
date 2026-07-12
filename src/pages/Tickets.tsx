@@ -3286,7 +3286,17 @@ export default function Tickets() {
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
   const [editSaving, setEditSaving] = useState(false)
-  const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
+  const [editForm, setEditForm] = useState<Partial<Ticket> & {
+    serviceDriver?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string
+    // Present only when the edit originated from RelayEditTicketModal (overview tab) — see
+    // ticketEditBridge.ts. Left undefined when saved via ScheduleEditTicketModal so commitSaveEditTicket
+    // knows not to touch these acDetails keys (and not clobber them with undefined).
+    landmarks?: string; capacity?: string; sku?: string; serialNumber?: string; relayedDate?: string; alternatePhone?: string
+    storeReferralFee?: string; referralRecipient?: string; referralAmount?: string; referralStatus?: string
+    referralDatePaid?: string; referralReferenceNo?: string
+    rebatesClaim?: string; rebatesCompany?: string; rebatesAmountDue?: string; rebatesStatus?: string; rebatesReferenceNo?: string
+    warrantyStatus?: string; warrantyRegisteredBy?: string
+  }>({})
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
 
@@ -4480,8 +4490,46 @@ export default function Tickets() {
         ? { ...(originalTicket || activeForm), acDetails: body.acDetails }
         : (originalTicket || activeForm)) as Ticket
 
+      // Referral fee / rebates / warranty-registration / unit-detail fields only exist on
+      // activeForm when this save came from RelayEditTicketModal (overview tab, via
+      // mapRelayDraftToScheduleEditForm). Only include a key here when it was actually
+      // provided — spreading an explicit `undefined` would still shadow the prior acDetails
+      // value once JSON.stringify drops it, wiping the field on every plain Schedules save.
+      const overviewAcExtras: Record<string, unknown> = {}
+      if (activeForm.landmarks !== undefined) overviewAcExtras.landmarks = activeForm.landmarks
+      if (activeForm.capacity !== undefined) overviewAcExtras.capacity = activeForm.capacity
+      if (activeForm.sku !== undefined) overviewAcExtras.sku = activeForm.sku
+      if (activeForm.serialNumber !== undefined) overviewAcExtras.serialNumber = activeForm.serialNumber
+      if (activeForm.relayedDate !== undefined) overviewAcExtras.relayedDate = activeForm.relayedDate
+      if (activeForm.alternatePhone !== undefined) overviewAcExtras.alternatePhone = activeForm.alternatePhone
+      if (activeForm.referralRecipient !== undefined) {
+        overviewAcExtras.promodiserName = activeForm.referralRecipient
+        overviewAcExtras.referralFeeRecipient = activeForm.referralRecipient
+      }
+      if (activeForm.referralAmount !== undefined || activeForm.storeReferralFee !== undefined) {
+        overviewAcExtras.referralFeeAmount = activeForm.referralAmount || activeForm.storeReferralFee
+      }
+      if (activeForm.referralStatus !== undefined) overviewAcExtras.referralFeeStatus = activeForm.referralStatus
+      if (activeForm.referralDatePaid !== undefined) overviewAcExtras.referralFeeDatePaid = activeForm.referralDatePaid
+      if (activeForm.referralReferenceNo !== undefined) overviewAcExtras.referralFeeReferenceNo = activeForm.referralReferenceNo
+      if (activeForm.rebatesClaim !== undefined) overviewAcExtras.forRebatesClaim = activeForm.rebatesClaim
+      if (activeForm.rebatesCompany !== undefined) overviewAcExtras.rebatesCompany = activeForm.rebatesCompany
+      if (activeForm.rebatesAmountDue !== undefined) overviewAcExtras.rebatesAmountDue = activeForm.rebatesAmountDue
+      if (activeForm.rebatesStatus !== undefined) overviewAcExtras.rebatesStatus = activeForm.rebatesStatus
+      if (activeForm.rebatesReferenceNo !== undefined) overviewAcExtras.rebatesReferenceNo = activeForm.rebatesReferenceNo
+      if (activeForm.warrantyStatus !== undefined) overviewAcExtras.warrantyRegistrationStatus = activeForm.warrantyStatus
+      if (activeForm.warrantyRegisteredBy !== undefined) overviewAcExtras.warrantyRegisteredBy = activeForm.warrantyRegisteredBy
+      if (activeForm.storeReferralFee !== undefined || activeForm.referralAmount !== undefined) {
+        const fee = (activeForm.referralAmount || activeForm.storeReferralFee || '').trim()
+        body.storeReferralFee = fee ? fee : '0'
+      }
+      if (activeForm.warrantyStatus !== undefined) {
+        body.warrantyDocsStatus = activeForm.warrantyStatus || null
+      }
+
       body.acDetails = mergeAcMeta(acBaseTicket, {
         ...acMetaExtras,
+        ...overviewAcExtras,
         destination: activeForm.location.trim(),
         address: activeForm.location.trim(),
         district: activeForm.district?.trim() || undefined,

@@ -1064,7 +1064,7 @@ export default function ClientMasterlist() {
     slaExpirationDate: '',
     priorityTag: '',
     district: '',
-    commitType: 'FREE FIRST 10 FEET',
+    commitType: '',
     installerName: '',
     serviceVehicle: '',
     remarksUpdate: '',
@@ -1361,12 +1361,12 @@ export default function ClientMasterlist() {
 
   const tableRowBorder = isLight ? '#e2e8f0' : '#1e293b'
   const tableColBorder = `1px solid ${tableRowBorder}`
-  const cellPadY = 8
-  const cellPadX = 10
-  const headerPadY = 9
-  const tableFontSize = '11px'
-  const headerFontSize = '10px'
-  const TABLE_ROW_HEIGHT = 38
+  const cellPadY = 12
+  const cellPadX = 12
+  const headerPadY = 12
+  const tableFontSize = '13px'
+  const headerFontSize = '11px'
+  const TABLE_ROW_HEIGHT = 50
 
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
 
@@ -1402,7 +1402,7 @@ export default function ClientMasterlist() {
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
       { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
+      { label: 'REMARKS',      weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
 
     const weights = rawCols.map(col => {
@@ -1665,7 +1665,7 @@ export default function ClientMasterlist() {
           mappedSvc = 'SURVEY'
         }
 
-        const defaultCommit = isInstall ? 'FREE FIRST 10 FEET' : (parsed.commitType || '')
+        const defaultCommit = parsed.commitType || ''
         const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
         const parsedStore = parseStoreVendor(parsed.sourceVendor || 'Robinsons')
         const scannedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
@@ -1827,7 +1827,7 @@ export default function ClientMasterlist() {
               mappedSvc = 'SURVEY'
             }
             const rawCommit = getVal(row, colIndices.commitType)
-            const defaultCommit = isInstall ? (rawCommit || 'FREE FIRST 10 FEET') : rawCommit
+            const defaultCommit = rawCommit
 
             return {
               id: `excel-${idx}-${Date.now()}`,
@@ -1942,7 +1942,7 @@ export default function ClientMasterlist() {
       serialNumber: addForm.serialNumber || '',
       alternatePhone: cleanedPhones.slice(1).join(', '),
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
-      finalDate: '',
+      finalDate: addForm.finalDate || '',
     }
     const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
     const writeBranchId = resolvePortalWriteBranchId(
@@ -2229,6 +2229,10 @@ export default function ClientMasterlist() {
     payload.modeOfPayment = draft.modeOfPayment || null
     payload.controlNumber = draft.controlNumber || null
     const acDetailsObj = {
+      // Start from the ticket's existing acDetails so keys this modal doesn't expose
+      // (scheduleOutcome, schedulePhase, negotiatorName, destination, etc. set by the
+      // Schedules/My Tickets edit path) survive a save from the Relays drawer.
+      ...existingDetails,
       landmarks: draft.landmarks || '',
       brand: draft.brand || '',
       capacity: draft.capacity || '',
@@ -3085,13 +3089,13 @@ export default function ClientMasterlist() {
                       padding: `${headerPadY}px ${cellPadX}px`,
                       textAlign: 'center',
                       color: col.isExpanded ? (isLight ? '#10B981' : '#34D399') : textMuted,
-                      fontWeight: 700,
+                      fontWeight: 800,
                       whiteSpace: 'nowrap',
                       textOverflow: 'ellipsis',
                       borderRight: tableColBorder,
                       borderBottom: `2px solid ${tableRowBorder}`,
                       fontSize: headerFontSize,
-                      letterSpacing: '0.07em',
+                      letterSpacing: '0.09em',
                       backgroundColor: inputBg,
                       cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
                       userSelect: 'none',
@@ -3152,7 +3156,7 @@ export default function ClientMasterlist() {
                     return guessDistrict(loc) || '—'
                   })()
                   const relayedDate = formatRelayDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
-                  const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatRelayDate(ticket.updatedAt)}` : '—')
+                  const lastUpdate = ticket.remarksUpdate || ticket.description || '—'
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
                   const categoryTint = !isSelected
                     ? category === 'Survey'
@@ -3189,7 +3193,7 @@ export default function ClientMasterlist() {
                     ) },
                     // STATUS
                     { value: (
-                      <span className="font-semibold w-full truncate block" style={{
+                      <span className="font-bold w-full truncate block tracking-wide" style={{
                         color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
                       }}>
                         {relayStatus}
@@ -3197,46 +3201,46 @@ export default function ClientMasterlist() {
                     ) },
                     // CUSTOMER NAME
                     { value: (
-                      <span className="truncate block font-semibold w-full" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
+                      <span className="truncate block font-bold w-full" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
                     // DISTRICT
                     { value: (
-                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(district)}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(district)}>
                         {displayUpper(district)}
                       </span>
                     ) },
                     // BRAND
                     { value: (
-                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
                         {displayUpper(brandLabel) || '—'}
                       </span>
                     ) },
                     // STORE / SOURCE
                     { value: (
-                      <span className="truncate block w-full text-xs" title={displayUpper(storeStyle.label)}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)} style={{ color: textPrimary }}>
                         {displayUpper(storeStyle.label)}
                       </span>
                     ) },
                     // COMMIT
                     { value: (
-                      <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
                         {displayUpper(ticket.commitType || '') || '—'}
                       </span>
                     ) },
                     // PREFERRED DATE
-                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
                     // NEGOTIATOR
                     { value: (
-                      <span className="truncate block w-full font-semibold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
                     // FINAL DATE (read-only — set by negotiator when scheduling)
                     { value: (
                       <span
-                        className="whitespace-nowrap block w-full font-semibold"
+                        className="whitespace-nowrap block w-full font-bold"
                         style={{ color: finalDateLabel ? '#10B981' : textMuted }}
                         title={finalDateLabel || 'Pending negotiator schedule'}
                       >
@@ -3245,8 +3249,8 @@ export default function ClientMasterlist() {
                     ) },
                     // REMARKS
                     { value: (
-                      <span className="truncate block w-full text-xs" title={ticket.remarksUpdate || ''}>
-                        {ticket.remarksUpdate || lastUpdate || '—'}
+                      <span className="truncate block w-full font-semibold" title={(ticket.remarksUpdate || lastUpdate || '').toUpperCase()}>
+                        {(ticket.remarksUpdate || lastUpdate || '—').toUpperCase()}
                       </span>
                     ) }
                   ] : [
@@ -3260,45 +3264,45 @@ export default function ClientMasterlist() {
                     ) },
                     { value: (
                       <span
-                        className="font-semibold w-full truncate block"
+                        className="font-bold w-full truncate block tracking-wide"
                         title={relayStatus}
                         style={{ color: statusIsAssigned || statusIsScheduled ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
                         {relayStatus}
                       </span>
                     ) },
                     { value: (
-                      <span className="truncate block w-full font-semibold" style={{ color: textPrimary }} title={categoryLabel}>
+                      <span className="truncate block w-full font-bold" style={{ color: textPrimary }} title={categoryLabel}>
                         {categoryLabel}
                       </span>
                     ) },
                     { value: (
                       <span
-                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full`}
+                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-bold w-full`}
                         title={displayUpper(ticket.customerName || 'Direct Client')}
                         style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
-                    { value: <span className="block w-full truncate">{displayUpper(district)}</span> },
-                    { value: <span className="truncate block w-full" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(relayedDate)}</span> },
-                    { value: <span className="truncate block w-full" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
-                    { value: <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
+                    { value: <span className="block w-full truncate font-semibold">{displayUpper(district)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(relayedDate)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
                     { value: (
-                      <span className="truncate block w-full max-w-full" title={displayUpper(negotiator)}>
+                      <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
                     { value: (
                       <span
-                        className="whitespace-nowrap block w-full font-semibold"
+                        className="whitespace-nowrap block w-full font-bold"
                         style={{ color: finalDateLabel ? '#10B981' : textMuted }}
                         title={finalDateLabel || 'Pending negotiator schedule'}
                       >
                         {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
                       </span>
                     ) },
-                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{(lastUpdate || '—').toUpperCase()}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -3514,7 +3518,7 @@ export default function ClientMasterlist() {
               serviceType: mappedSvc,
               title: option.title,
               status: 'PENDING',
-              commitType: (option.value === 'Survey & Install' || option.value === 'Install') ? 'FREE FIRST 10 FEET' : prev.commitType,
+              commitType: prev.commitType,
               installationCharges: 0,
               modeOfPayment: '',
             }
@@ -3858,6 +3862,22 @@ export default function ClientMasterlist() {
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
                       <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
+                    </RelayFormField>
+                    {/* Schedule Date */}
+                    <RelayFormField label="Schedule Date" compact className="md:col-span-4">
+                      <input
+                        type="date"
+                        value={addForm.finalDate}
+                        onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                        className={addInput}
+                        style={{
+                          backgroundColor: addForm.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
+                          borderColor: addForm.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.4)') : inputBorder,
+                          color: addForm.finalDate ? '#10B981' : textPrimary,
+                          colorScheme: isLight ? 'light' : 'dark',
+                          fontWeight: addForm.finalDate ? 700 : undefined,
+                        }}
+                      />
                     </RelayFormField>
                   </div>
                 </section>

@@ -326,7 +326,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 <input type="text" value={draft.brandHp} onChange={(e) => { const val = e.target.value; const parts = val.trim().split(/\s+/); patch({ brandHp: val, brand: parts[0] || '', capacity: parts.slice(1).join(' ') || '' }) }} className={relayInput} style={inputStyle} />
               </EField>
               <EField label="Service Category / Type">
-                <input type="text" value={draft.serviceType} onChange={(e) => { const val = e.target.value; const isSI = /install|s\/i|\bsi\b/i.test(val); const isSurvey = /survey/i.test(val); let mappedSvc = val; let commitType = draft.commitType; if (isSI) { mappedSvc = 'Survey & Install'; commitType = 'FREE FIRST 10 FEET' } else if (isSurvey) { mappedSvc = 'SURVEY' }; patch({ serviceType: mappedSvc, commitType }) }} className={relayInput} style={inputStyle} />
+                <input type="text" value={draft.serviceType} onChange={(e) => { const val = e.target.value; const isSI = /install|s\/i|\bsi\b/i.test(val); const isSurvey = /survey/i.test(val); let mappedSvc = val; let commitType = draft.commitType; if (isSI) { mappedSvc = 'Survey & Install'; } else if (isSurvey) { mappedSvc = 'SURVEY' }; patch({ serviceType: mappedSvc, commitType }) }} className={relayInput} style={inputStyle} />
               </EField>
               <EField label="Commit Type / Promo">
                 <input type="text" value={draft.commitType} onChange={(e) => patch({ commitType: e.target.value })} className={relayInput} style={inputStyle} />
@@ -434,23 +434,23 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 <EField label="Relayed Date"><input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               )}
               <EField label="Preferred Date"><input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              {isFieldSurface && (
-                <EField label="Final Date" className={!isOverview && !isReschedStatus ? 'md:col-span-2' : ''}>
-                  <input
-                    type="date"
-                    disabled={isReschedStatus && draft.reschedulePending}
-                    value={draft.finalDate}
-                    onChange={(e) => patch({ finalDate: e.target.value })}
-                    className={relayInput}
-                    style={{
-                      ...inputStyle,
-                      backgroundColor: isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)',
-                      borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)',
-                      opacity: isReschedStatus && draft.reschedulePending ? 0.5 : 1,
-                    }}
-                  />
-                </EField>
-              )}
+              <EField label="Schedule Date" className={!isOverview && !isReschedStatus ? 'md:col-span-2' : ''}>
+                <input
+                  type="date"
+                  disabled={isFieldSurface && isReschedStatus && draft.reschedulePending}
+                  value={draft.finalDate}
+                  onChange={(e) => patch({ finalDate: e.target.value })}
+                  className={relayInput}
+                  style={{
+                    ...inputStyle,
+                    backgroundColor: draft.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
+                    borderColor: draft.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)') : inputBorder,
+                    color: draft.finalDate ? '#10B981' : textPrimary,
+                    fontWeight: draft.finalDate ? 700 : undefined,
+                    opacity: isFieldSurface && isReschedStatus && draft.reschedulePending ? 0.5 : 1,
+                  }}
+                />
+              </EField>
               {isFieldSurface && isReschedStatus && (
                 <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
                   <input

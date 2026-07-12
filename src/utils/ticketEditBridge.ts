@@ -29,6 +29,25 @@ export type ScheduleEditFormShape = {
   remarks?: string
   acDetails?: string
   reschedulePending?: boolean
+  landmarks?: string
+  capacity?: string
+  sku?: string
+  serialNumber?: string
+  relayedDate?: string
+  alternatePhone?: string
+  storeReferralFee?: string
+  referralRecipient?: string
+  referralAmount?: string
+  referralStatus?: string
+  referralDatePaid?: string
+  referralReferenceNo?: string
+  rebatesClaim?: string
+  rebatesCompany?: string
+  rebatesAmountDue?: string
+  rebatesStatus?: string
+  rebatesReferenceNo?: string
+  warrantyStatus?: string
+  warrantyRegisteredBy?: string
 }
 
 /** Map unified relay+field draft back into Tickets.tsx edit form for PATCH pipeline. */
@@ -68,5 +87,27 @@ export function mapRelayDraftToScheduleEditForm(
     modeOfPayment: draft.modeOfPayment !== undefined ? draft.modeOfPayment : base.modeOfPayment,
     remarks: remarksCombined !== undefined ? remarksCombined : base.remarks,
     reschedulePending: draft.reschedulePending ?? base.reschedulePending,
+    // Fields RelayEditTicketModal exposes (referral fee, rebates, warranty registration,
+    // unit details) that ScheduleEditTicketModal has no UI for — carry them through so a
+    // save from Tickets.tsx's overview tab doesn't silently discard what the user typed.
+    landmarks: draft.landmarks !== undefined ? draft.landmarks : base.landmarks,
+    capacity: draft.capacity !== undefined ? draft.capacity : base.capacity,
+    sku: draft.sku !== undefined ? draft.sku : base.sku,
+    serialNumber: draft.serialNumber !== undefined ? draft.serialNumber : base.serialNumber,
+    relayedDate: draft.relayedDate !== undefined ? draft.relayedDate : base.relayedDate,
+    alternatePhone: draft.phoneNumbers.slice(1).filter(Boolean).join(', '),
+    storeReferralFee: draft.storeReferralFee !== undefined ? draft.storeReferralFee : base.storeReferralFee,
+    referralRecipient: draft.referralRecipient !== undefined ? draft.referralRecipient : base.referralRecipient,
+    referralAmount: draft.referralAmount !== undefined ? draft.referralAmount : base.referralAmount,
+    referralStatus: draft.referralStatus !== undefined ? draft.referralStatus : base.referralStatus,
+    referralDatePaid: draft.referralDatePaid !== undefined ? draft.referralDatePaid : base.referralDatePaid,
+    referralReferenceNo: draft.referralReferenceNo !== undefined ? draft.referralReferenceNo : base.referralReferenceNo,
+    rebatesClaim: draft.rebatesClaim !== undefined ? draft.rebatesClaim : base.rebatesClaim,
+    rebatesCompany: draft.rebatesCompany !== undefined ? draft.rebatesCompany : base.rebatesCompany,
+    rebatesAmountDue: draft.rebatesAmountDue !== undefined ? draft.rebatesAmountDue : base.rebatesAmountDue,
+    rebatesStatus: draft.rebatesStatus !== undefined ? draft.rebatesStatus : base.rebatesStatus,
+    rebatesReferenceNo: draft.rebatesReferenceNo !== undefined ? draft.rebatesReferenceNo : base.rebatesReferenceNo,
+    warrantyStatus: draft.warrantyStatus !== undefined ? draft.warrantyStatus : base.warrantyStatus,
+    warrantyRegisteredBy: draft.warrantyRegisteredBy !== undefined ? draft.warrantyRegisteredBy : base.warrantyRegisteredBy,
   }
 }
