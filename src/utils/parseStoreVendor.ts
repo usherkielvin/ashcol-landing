@@ -5,21 +5,34 @@ export type ParsedStoreVendor = { store: StoreCategory; branch: string; customSt
 export function parseStoreVendor(sourceVendor?: string): ParsedStoreVendor {
   const sv = (sourceVendor || '').trim()
   const lower = sv.toLowerCase()
-  if (lower.includes('robinsons')) {
-    const branch = sv.replace(/^robinsons(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Robinsons', branch }
+  
+  // Try to split by ' - ' first to separate store name and branch name
+  const parts = sv.split(' - ')
+  const dealerName = parts[0]?.trim() || ''
+  const branchName = parts.slice(1).join(' - ').trim()
+  
+  const dealerLower = dealerName.toLowerCase()
+  if (dealerLower.startsWith('robinsons') || dealerLower.startsWith('ra')) {
+    return { store: 'Robinsons', branch: branchName }
   }
-  if (lower.includes('abenson')) {
-    const branch = sv.replace(/^abenson(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Abenson', branch }
+  if (dealerLower.startsWith('abenson')) {
+    return { store: 'Abenson', branch: branchName }
   }
-  if (lower === 'direct' || !sv) {
+  if (dealerLower === 'direct') {
     return { store: 'Direct', branch: '' }
   }
-  const parts = sv.split(' - ')
-  const customStore = parts[0]?.trim() || ''
-  const branch = parts.slice(1).join(' - ').trim()
-  return { store: 'Other', branch, customStore }
+  
+  // Fallback for space-separated legacy names (e.g. "Robinsons Taguig" or "Robinsons Appliances Malabon")
+  if (lower.startsWith('robinsons ') || lower.startsWith('ra ')) {
+    const branch = sv.replace(/^(robinsons|ra)(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
+    return { store: 'Robinsons', branch }
+  }
+  if (lower.startsWith('abenson ')) {
+    const branch = sv.replace(/^abenson(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
+    return { store: 'Abenson', branch }
+  }
+  
+  return { store: 'Other', branch: branchName, customStore: dealerName }
 }
 
 export function combineStoreVendor(store: StoreCategory, branch: string, customStore?: string): string {

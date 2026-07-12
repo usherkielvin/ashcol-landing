@@ -164,22 +164,34 @@ type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
 const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string; customStore?: string } => {
   const sv = (sourceVendor || '').trim()
   const lower = sv.toLowerCase()
-  if (lower.includes('robinsons')) {
-    const branch = sv.replace(/^robinsons(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Robinsons', branch }
+  
+  // Try to split by ' - ' first to separate store name and branch name
+  const parts = sv.split(' - ')
+  const dealerName = parts[0]?.trim() || ''
+  const branchName = parts.slice(1).join(' - ').trim()
+  
+  const dealerLower = dealerName.toLowerCase()
+  if (dealerLower.startsWith('robinsons') || dealerLower.startsWith('ra')) {
+    return { store: 'Robinsons', branch: branchName }
   }
-  if (lower.includes('abenson')) {
-    const branch = sv.replace(/^abenson(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Abenson', branch }
+  if (dealerLower.startsWith('abenson')) {
+    return { store: 'Abenson', branch: branchName }
   }
-  if (lower === 'direct' || !sv) {
+  if (dealerLower === 'direct') {
     return { store: 'Direct', branch: '' }
   }
-  // It's a custom store! Try to split by ' - ' to separate store name and branch name
-  const parts = sv.split(' - ')
-  const customStore = parts[0]?.trim() || ''
-  const branch = parts.slice(1).join(' - ').trim()
-  return { store: 'Other', branch, customStore }
+  
+  // Fallback for space-separated legacy names (e.g. "Robinsons Taguig" or "Robinsons Appliances Malabon")
+  if (lower.startsWith('robinsons ') || lower.startsWith('ra ')) {
+    const branch = sv.replace(/^(robinsons|ra)(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
+    return { store: 'Robinsons', branch }
+  }
+  if (lower.startsWith('abenson ')) {
+    const branch = sv.replace(/^abenson(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
+    return { store: 'Abenson', branch }
+  }
+  
+  return { store: 'Other', branch: branchName, customStore: dealerName }
 }
 
 const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: string): string => {
@@ -1074,9 +1086,9 @@ export default function ClientMasterlist() {
   const [settingsEditDealerName, setSettingsEditDealerName] = useState('')
 
   const handleSettingsAddDealer = async () => {
-    const name = settingsNewDealerName.trim()
+    const name = settingsNewDealerName.trim().toUpperCase()
     if (!name) return
-    if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
+    if (dealers.some(d => d.name.toUpperCase() === name)) {
       alert('Dealer already exists')
       return
     }
@@ -1104,12 +1116,12 @@ export default function ClientMasterlist() {
 
   const handleSettingsSaveRename = async (index: number) => {
     const oldDealer = dealers[index]
-    const newName = settingsEditDealerName.trim()
-    if (!newName || newName === oldDealer.name) {
+    const newName = settingsEditDealerName.trim().toUpperCase()
+    if (!newName || newName === oldDealer.name.toUpperCase()) {
       setSettingsEditingDealerIndex(null)
       return
     }
-    if (dealers.some((d, idx) => d.name.toLowerCase() === newName.toLowerCase() && idx !== index)) {
+    if (dealers.some((d, idx) => d.name.toUpperCase() === newName && idx !== index)) {
       alert('Dealer already exists')
       return
     }
@@ -1154,7 +1166,8 @@ export default function ClientMasterlist() {
   }
 
   const handlePersistCustomStores = async (nextStores: string[]) => {
-    const newStore = nextStores.find(name => !dealers.some(d => d.name === name))
+    const uppercaseStores = nextStores.map(s => s.trim().toUpperCase()).filter(Boolean)
+    const newStore = uppercaseStores.find(name => !dealers.some(d => d.name.toUpperCase() === name))
     if (newStore) {
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1310,9 +1323,9 @@ export default function ClientMasterlist() {
   )
 
   const handleAddStoreFromToolbar = useCallback(async () => {
-    const name = toolbarStoreDraft.trim()
+    const name = toolbarStoreDraft.trim().toUpperCase()
     if (!name) return
-    if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
+    if (dealers.some(d => d.name.toUpperCase() === name)) {
       alert('That dealer is already in the list.')
       return
     }
@@ -2802,17 +2815,18 @@ export default function ClientMasterlist() {
 
   // Store style mappings
   const getStoreStyle = (store?: string) => {
-    const s = (store || 'Direct').toLowerCase()
-    if (s.includes('robinsons')) {
-      const parsed = parseStoreVendor(store || '')
+    const parsed = parseStoreVendor(store || '')
+    if (parsed.store === 'Robinsons') {
       const displayLabel = parsed.branch ? `RA ${parsed.branch}` : 'RA'
       return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: displayLabel }
-    } else if (s.includes('abenson')) {
-      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: store || 'Abenson' }
-    } else if (s.includes('direct')) {
+    } else if (parsed.store === 'Abenson') {
+      const displayLabel = parsed.branch ? `Abenson ${parsed.branch}` : 'Abenson'
+      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: displayLabel }
+    } else if (parsed.store === 'Direct') {
       return { bg: 'rgba(99,102,241,0.1)', color: '#6366F1', label: 'Direct Client' }
     }
-    return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: store || 'Other Store' }
+    const displayLabel = parsed.branch ? `${parsed.customStore} - ${parsed.branch}` : (parsed.customStore || 'Other Store')
+    return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: displayLabel }
   }
 
   
@@ -3027,9 +3041,9 @@ export default function ClientMasterlist() {
                           handleAddStoreFromToolbar()
                         }
                       }}
-                      placeholder="e.g. S&R, Anson's"
+                      placeholder="e.g. S&R, ANSON'S"
                       className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                     />
                     <button
                       type="button"
@@ -3775,7 +3789,7 @@ export default function ClientMasterlist() {
                             sourceVendor: val,
                           }))
                         }}
-                        className={addInput}
+                        className={`${addInput} uppercase`}
                         style={fieldStyle(addForm.sourceVendor)}
                       >
                         {storeOptions.map(store => (
@@ -3792,9 +3806,9 @@ export default function ClientMasterlist() {
                             value={addStoreDraft}
                             onChange={e => setAddStoreDraft(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
-                            placeholder="e.g. S&R, Anson's"
-                            className={addInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                            placeholder="e.g. S&R, ANSON'S"
+                            className={`${addInput} uppercase`}
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                           />
                           <button
                             type="button"
@@ -3811,10 +3825,10 @@ export default function ClientMasterlist() {
                       <input
                         type="text"
                         value={addForm.storeBranch}
-                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
+                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value.toUpperCase() }))}
                         placeholder="Branch"
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                        className={`${addInput} uppercase`}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                       />
                     </RelayFormField>
                     {addForm.sourceVendor === 'Robinsons' && (
@@ -3934,7 +3948,7 @@ export default function ClientMasterlist() {
                       />
                     </RelayFormField>
                     <RelayFormField label="District" compact className="md:col-span-2">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value.toUpperCase() }))} placeholder="Area" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.district), textTransform: 'uppercase'}} />
                     </RelayFormField>
                     <RelayFormField label="Landmark" compact className="md:col-span-2">
                       <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
@@ -3947,16 +3961,16 @@ export default function ClientMasterlist() {
                   <RelayFormSectionHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Brand" compact className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value.toUpperCase() }))} placeholder="Brand" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.brand), textTransform: 'uppercase'}} />
                     </RelayFormField>
                     <RelayFormField label="Capacity" compact className="md:col-span-2">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value.toUpperCase() }))} placeholder="1.5 HP" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.capacity), textTransform: 'uppercase'}} />
                     </RelayFormField>
                     <RelayFormField label="SKU" compact className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))} placeholder="SKU" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.sku), textTransform: 'uppercase'}} />
                     </RelayFormField>
                     <RelayFormField label="Serial No." compact className="md:col-span-4">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value.toUpperCase() }))} placeholder="Serial" className={`${addInput} uppercase`} style={{...fieldStyle(addForm.serialNumber), textTransform: 'uppercase'}} />
                     </RelayFormField>
                     <RelayFormField label="Commit / Promo" compact className="md:col-span-12">
                       <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
@@ -4115,7 +4129,7 @@ export default function ClientMasterlist() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="e.g. S&R, Anson's"
+                    placeholder="e.g. S&R, ANSON'S"
                     value={settingsNewDealerName}
                     onChange={e => setSettingsNewDealerName(e.target.value)}
                     onKeyDown={e => {
@@ -4124,8 +4138,8 @@ export default function ClientMasterlist() {
                         handleSettingsAddDealer()
                       }
                     }}
-                    className="flex-1 border rounded-xl px-3 py-2.5 text-xs outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    className="flex-1 border rounded-xl px-3 py-2.5 text-xs outline-none uppercase"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                   />
                   <button
                     type="button"
@@ -4163,8 +4177,8 @@ export default function ClientMasterlist() {
                                   handleSettingsSaveRename(index)
                                 }
                               }}
-                              className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none"
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                              className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none uppercase"
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                               autoFocus
                             />
                             <button
@@ -4185,7 +4199,7 @@ export default function ClientMasterlist() {
                           </div>
                         ) : (
                           <>
-                            <span style={{ color: textPrimary }}>{store}</span>
+                            <span style={{ color: textPrimary, textTransform: 'uppercase' }}>{store}</span>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
