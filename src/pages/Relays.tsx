@@ -2882,6 +2882,11 @@ export default function Relays() {
     if (label === 'Pending') return 'PENDING'
     if (label === 'Cancelled') return 'CANCELLED'
     if (label === 'Scheduled') return 'SCHEDULED'
+    
+    const s = (ticket.status || '').toUpperCase()
+    if (s === 'S/I') return 'SURVEY & INSTALL'
+    if (s) return s
+    
     return 'ASSIGNED'
   }
 
@@ -3356,8 +3361,9 @@ export default function Relays() {
                   const ticketNo = getTicketNumber(ticket)
                   const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
                   const relayStatus = getRelayStatusShort(ticket)
-                  const statusIsAssigned = relayStatus === 'ASSIGNED'
-                  const statusIsScheduled = relayStatus === 'SCHEDULED'
+                  const relayStatusLabel = getRelayStatusLabel(ticket)
+                  const statusIsAssigned = relayStatusLabel === 'Assigned'
+                  const statusIsScheduled = relayStatusLabel === 'Scheduled' || relayStatus === 'SCHEDULED'
                   const finalDateKey = resolveRelayFinalDate(ticket)
                   const finalDateLabel = finalDateKey ? formatRelayDate(finalDateKey) : ''
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
