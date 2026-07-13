@@ -19,6 +19,7 @@ import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
 import WarrantyRegistration from './pages/WarrantyRegistration'
 import LineUp from './pages/LineUp'
+import Dashboard from './pages/Dashboard'
 
 import Hris from './pages/Hris'
 import Bills from './pages/Bills'
@@ -80,7 +81,7 @@ export default function App() {
         {/* Portal Routes */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/dashboard-home" element={<Navigate to="/schedules" replace />} />
+          <Route path="/dashboard-home" element={<Dashboard />} />
           <Route path="/search" element={<Tickets />} />
           <Route path="/tickets" element={<Navigate to="/search" replace />} />
           <Route path="/tickets/create" element={<CreateTicket />} />

@@ -866,14 +866,8 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
     || jobTitle.includes('service')
 }
 
-export function getPortalHomePath(user?: PortalUserLike | null) {
-  const role = normalizeUserValue(user?.role)
-  if (isPortalAdmin(role)) return '/audit-report'
-  if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
-  if (isServiceWorkspaceUser(user)) return '/service-report'
-  // Negotiator / field-sales employees (EMPLOYEE role, not service/coordinator) → My Tickets
-  if (role === 'employee' || role === 'staff') return '/my-tickets'
-  return '/audit-report?tab=submit'
+export function getPortalHomePath(_user?: PortalUserLike | null) {
+  return '/dashboard-home'
 }
 
 /** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */
