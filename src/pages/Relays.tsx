@@ -2817,17 +2817,42 @@ export default function Relays() {
     return svc || 'SERVICE'
   }
 
+  // Maps the service-type codes set by the status buttons (Relays create/edit forms) to their display label.
+  const RELAY_SERVICE_TYPE_LABELS: Record<string, string> = {
+    'S/I': 'SURVEY & INSTALL',
+    'INSTALL': 'INSTALL',
+    'SURVEY': 'SURVEY',
+    'CLEANING': 'CLEANING',
+    'CHECKUP': 'CHECKUP',
+    'SERVICE': 'SERVICE',
+    'RESCHED': 'RESCHED',
+    'CONTINUATION': 'CONTINUATION',
+    'FOR APPROVAL': 'FOR APPROVAL',
+    'DONE_INSTALLED': 'DONE INSTALL',
+    'DONE_CLEANING': 'DONE CLEANING',
+    'DONE_SURVEY': 'DONE SURVEY',
+    'DONE_CHECKUP': 'DONE CHECKUP',
+  }
+
   const getRelayStatusShort = (ticket: Ticket) => {
     if (hasRelayLeftQueue(ticket)) return 'SCHEDULED'
     const label = getRelayStatusLabel(ticket)
     if (label === 'Pending') return 'PENDING'
     if (label === 'Cancelled') return 'CANCELLED'
     if (label === 'Scheduled') return 'SCHEDULED'
-    
+
     const s = (ticket.status || '').toUpperCase()
     if (s === 'S/I') return 'SURVEY & INSTALL'
+    // Tickets created before the negotiator-selection fix always got status stomped to
+    // 'ASSIGNED' regardless of the SURVEY/INSTALL/etc type picked — serviceType still holds
+    // that original selection (it's set alongside status but was never overwritten), so
+    // prefer it over the uninformative generic 'ASSIGNED' when it matches a known type code.
+    if (s === 'ASSIGNED') {
+      const svc = (ticket.serviceType || '').trim().toUpperCase()
+      if (RELAY_SERVICE_TYPE_LABELS[svc]) return RELAY_SERVICE_TYPE_LABELS[svc]
+    }
     if (s) return s
-    
+
     return 'ASSIGNED'
   }
 
