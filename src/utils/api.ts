@@ -867,7 +867,7 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
 }
 
 export function getPortalHomePath(_user?: PortalUserLike | null) {
-  return '/dashboard-home'
+  return '/search'
 }
 
 /** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */

@@ -53,6 +53,22 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
   return formatBranchName(name || id)
 }
 
+const getBranchCode = (name: string) => {
+  if (!name) return ''
+  const upper = name.toUpperCase()
+  if (upper.includes('TAGUIG')) {
+    if (upper.includes('SERVICE')) return 'TS'
+    return 'TG'
+  }
+  if (upper.includes('BULACAN')) return 'BU'
+  const words = upper.split(/[\s-]+/).filter(Boolean)
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).substring(0, 2)
+  }
+  return upper.substring(0, 2)
+}
+
+
 interface BranchOption { id: string; name: string }
 
 type NavLinkDef = { name: string; path: string; icon: typeof TicketIcon; roles?: string[] }
@@ -145,9 +161,11 @@ export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isHoverExpanded, setIsHoverExpanded] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
+  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
+  const branchRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
@@ -290,13 +308,13 @@ export default function DashboardLayout() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (branchRef.current && !branchRef.current.contains(e.target as Node)) setBranchDropdownOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   const allLinks = [
-    { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
@@ -319,8 +337,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['Overview', 'My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
-  const serviceWorkspaceLinks = ['Overview', 'My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -346,7 +364,9 @@ export default function DashboardLayout() {
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
-      const fallback = isPortalAdmin(role) ? navLinks[0].path : getPortalHomePath(user)
+      const homePath = getPortalHomePath(user)
+      const hasHome = navLinks.some(l => l.path === homePath)
+      const fallback = hasHome ? homePath : navLinks[0].path
       navigate(fallback, { replace: true })
     }
   }, [location.pathname, navLinks, role, user, navigate])
@@ -656,12 +676,46 @@ export default function DashboardLayout() {
               {/* Branch Button (admin only) */}
               {showBranch && (
                 sidebarCollapsed ? (
-                  <div
-                    onClick={() => setSidebarCollapsed(false)}
-                    className="flex justify-center cursor-pointer py-3"
-                    title="Active Branch Switcher"
-                  >
-                    <Building2 className="w-5 h-5 text-white/70" />
+                  <div ref={branchRef} className="relative">
+                    {/* Branch dropdown popup */}
+                    {branchDropdownOpen && (
+                      <div
+                        className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
+                        style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
+                      >
+                        <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-white/40" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                          Active Branch
+                        </div>
+                        <div className="py-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+                          {adminBranches.map((b) => {
+                            const isSelected = b.id === globalBranchId
+                            return (
+                              <button
+                                key={b.id}
+                                onClick={() => {
+                                  handleGlobalBranchChange(b.id)
+                                  setBranchDropdownOpen(false)
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
+                                  isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                <span>{formatBranchName(b.name)}</span>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => setBranchDropdownOpen(prev => !prev)}
+                      className="flex items-center justify-center w-11 h-11 rounded-xl border border-white/10 bg-[#1e732c] hover:bg-[#238533] transition-all text-white font-black text-[13px] shadow-sm uppercase"
+                      title={`Active Branch: ${branchLabel || ''}`}
+                    >
+                      {branchLabel ? getBranchCode(branchLabel) : <Building2 className="w-5 h-5 text-white/70" />}
+                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1.5">
@@ -833,7 +887,7 @@ export default function DashboardLayout() {
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
-          (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search' || currentPage === 'Overview')
+          (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
             ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
             : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
@@ -846,7 +900,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search' || currentPage === 'Overview') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Outlet context={{ setSidebarOpen }} />
           </div>
