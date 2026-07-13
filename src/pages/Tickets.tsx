@@ -7041,8 +7041,8 @@ export default function Tickets() {
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
       return (
         <span
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-normal border cursor-pointer select-none"
-          style={{ color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor, borderColor: badgeStyle.borderColor, maxWidth: '100%' }}
+          className="inline-flex items-center gap-0.5 text-[9.5px] font-bold uppercase tracking-normal cursor-pointer select-none"
+          style={{ ...truncStyle, color: badgeStyle.color, maxWidth: '100%' }}
           title={statusTitle}
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
