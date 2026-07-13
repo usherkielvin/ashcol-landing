@@ -10,7 +10,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated } from '../utils/api'
-import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
   normalizeRelayScheduleTicket,
@@ -1388,7 +1388,7 @@ export default function Relays() {
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [isActionDrawerOpen, setIsActionDrawerOpen] = useState(false)
-  const [actionSaving, setActionSaving] = useState(false)
+
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [merging, setMerging] = useState(false)
 
@@ -2471,36 +2471,6 @@ export default function Relays() {
     queueRelayPatch(original, payload, optimisticTicket)
   }
 
-  const handleDeleteTicket = (ticketId: string, customerName?: string) => {
-    if (!window.confirm(`Are you sure you want to delete the client ticket for "${customerName || 'Direct Client'}"?\n\nThis action cannot be undone.`)) return
-
-    const rollback = tickets.find(t => t.id === ticketId)
-      || openFieldTickets.find(t => t.id === ticketId)
-      || selectedTicket
-    setIsActionDrawerOpen(false)
-    setSelectedTicket(null)
-    applyRelayTicketLocally(ticketId, null)
-
-    void (async () => {
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          throw new Error(err.message || `Failed to delete ticket (HTTP ${res.status})`)
-        }
-        clearRelaysCache()
-        clearWarrantyCache()
-      } catch (err: any) {
-        if (rollback) applyRelayTicketLocally(ticketId, rollback)
-        alert(err.message || 'Error occurred while deleting ticket.')
-      }
-    })()
-  }
-
   const handleMergeTickets = async () => {
     if (!selectedTicket || !mergeTargetId) return
     const target = tickets.find(t => t.id === mergeTargetId)
@@ -2536,40 +2506,6 @@ export default function Relays() {
     } finally {
       setMerging(false)
     }
-  }
-
-  const handleDeleteAllTickets = async () => {
-    const count = filtered.length
-    if (count === 0) { alert('No client tickets to delete with the current filters.'); return }
-    if (!window.confirm(
-      `⚠️ DANGER ZONE\n\nYou are about to permanently delete ALL ${count} currently visible client ticket${count !== 1 ? 's' : ''}.\n\nThis action CANNOT be undone. Are you absolutely sure?`
-    )) return
-    // Second confirmation for safety
-    const confirmText = window.prompt(`Type "DELETE ALL" to confirm removing all ${count} tickets permanently:`)
-    if (confirmText?.trim() !== 'DELETE ALL') {
-      alert('Cancelled — confirmation text did not match.')
-      return
-    }
-
-    setActionSaving(true)
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    let successCount = 0
-    let failCount = 0
-    for (const ticket of filtered) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (res.ok) successCount++
-        else failCount++
-      } catch {
-        failCount++
-      }
-    }
-    setActionSaving(false)
-    fetchData({ soft: true })
-    alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
   }
 
   // Open action drawer for a ticket
@@ -3143,18 +3079,6 @@ export default function Relays() {
                 <Settings className="w-4 h-4 shrink-0" />
               </button>
 
-              {/* Delete All Action */}
-              {filtered.length > 0 && (
-                <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 bg-transparent text-red-600 border border-red-600 hover:bg-red-50 dark:text-red-500 dark:border-red-500 dark:hover:bg-red-950/30"
-                  title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL_PENDING')
-                    ? 'Only matching filtered records will be deleted'
-                    : 'Deletes all records permanently'}>
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">{actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}</span>
-                  <span className="sm:hidden">{actionSaving ? 'Deleting...' : 'Delete All'}</span>
-                </button>
-              )}
 
               <div className="flex items-center rounded-lg overflow-hidden shadow-sm border transition-all"
                 style={{
@@ -3623,14 +3547,10 @@ export default function Relays() {
           mergeCandidates={mergeCandidates}
           mergeTargetId={mergeTargetId}
           merging={merging}
-          actionSaving={actionSaving}
+          actionSaving={false}
           onMergeTargetChange={setMergeTargetId}
           onMerge={handleMergeTickets}
           onClose={() => setIsActionDrawerOpen(false)}
-          onDelete={() => {
-            handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)
-            setIsActionDrawerOpen(false)
-          }}
           onSave={handleDrawerActionSave}
           getTicketNumber={(t) => getTicketNumber(t as Ticket)}
           parseAcDetails={(t) => parseAcDetails(t as Ticket)}
@@ -4877,12 +4797,6 @@ export default function Relays() {
                   <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
                     Edit
-                  </button>
-                )}
-                {isAdmin && (
-                  <button type="button" onClick={() => { handleDeleteTicket(t.id, t.customerName); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
-                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all">
-                    Delete
                   </button>
                 )}
                 <button type="button" onClick={() => setIsViewModalOpen(false)}
