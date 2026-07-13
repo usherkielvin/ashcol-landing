@@ -3,12 +3,12 @@ import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, ChevronDown, Loader2, Pencil, Clock,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
+  Eye, ChevronDown, Loader2, Pencil, Clock, Moon, Sun,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -604,6 +604,7 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   copyIfLocal('location')
   copyIfLocal('contactPhone')
   copyIfLocal('unitType')
+  copyIfLocal('dealer')
   copyIfLocal('sourceVendor')
   copyIfLocal('district')
   copyIfLocal('negotiatorId')
@@ -1593,7 +1594,7 @@ function getEmptyRequiredColumnsForClose(
   if (!brand) missing.push('Brand')
 
   // 5. Dealer
-  const dealer = (ticketOrForm.sourceVendor || (ticketOrForm as any).source_vendor || (ticketOrForm as any).dealerName || (ticketOrForm as any).dealer_name || (ticketOrForm as any).dealer || '').trim()
+  const dealer = ((ticketOrForm as any).dealer || ticketOrForm.sourceVendor || (ticketOrForm as any).source_vendor || (ticketOrForm as any).dealerName || (ticketOrForm as any).dealer_name || '').trim()
   if (!dealer) missing.push('Dealer')
 
   // 6. Commit
@@ -2011,7 +2012,7 @@ function applyImportFieldsFromRow(
   set('district', row.district)
   set('contactPhone', row.phone)
   set('unitType', row.brand)
-  set('sourceVendor', row.dlr)
+  set('dealer', row.dlr)
   set('note', row.note)
   set('commitType', row.commit)
   set('remarksUpdate', row.update)
@@ -2150,7 +2151,7 @@ function ticketColumnText(
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
     case 'DESTINATION': return formatAddress(ticket.location)
     case 'BRAND': return parseBrand(ticket)
-    case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
+    case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
     case 'STATUS': return ticket.status || ''
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
@@ -2219,13 +2220,13 @@ function statusCode(s: string) {
 
 function statusColor(s: string, light: boolean) {
   switch (s.toUpperCase()) {
-    case 'PENDING':     return { text: '#FB923C', bg: light ? '#fff7ed' : 'rgba(251,146,60,0.13)',  b: 'rgba(251,146,60,0.4)' }
-    case 'ASSIGNED':    return { text: '#3B82F6', bg: light ? '#eff6ff' : 'rgba(59,130,246,0.13)',  b: 'rgba(59,130,246,0.4)'  }
-    case 'ON_THE_WAY':  return { text: '#06B6D4', bg: light ? '#ecfeff' : 'rgba(6,182,212,0.13)',   b: 'rgba(6,182,212,0.4)'   }
-    case 'IN_PROGRESS': return { text: '#10B981', bg: light ? '#f0fdf4' : 'rgba(16,185,129,0.13)',  b: 'rgba(16,185,129,0.4)'  }
-    case 'CANCELLED':   return { text: '#EF4444', bg: light ? '#fef2f2' : 'rgba(239,68,68,0.10)',   b: 'rgba(239,68,68,0.35)'  }
-    case 'CONTINUATION': return { text: '#7C3AED', bg: light ? '#F3E8FF' : 'rgba(124,58,237,0.18)',  b: 'rgba(124,58,237,0.35)' }
-    default:            return { text: '#94A3B8', bg: 'transparent',                                b: 'rgba(148,163,184,0.3)' }
+    case 'PENDING': return { text: '#FB923C', bg: light ? '#fff7ed' : 'rgba(251,146,60,0.13)', b: 'rgba(251,146,60,0.4)' }
+    case 'ASSIGNED': return { text: '#3B82F6', bg: light ? '#eff6ff' : 'rgba(59,130,246,0.13)', b: 'rgba(59,130,246,0.4)' }
+    case 'ON_THE_WAY': return { text: '#06B6D4', bg: light ? '#ecfeff' : 'rgba(6,182,212,0.13)', b: 'rgba(6,182,212,0.4)' }
+    case 'IN_PROGRESS': return { text: '#10B981', bg: light ? '#f0fdf4' : 'rgba(16,185,129,0.13)', b: 'rgba(16,185,129,0.4)' }
+    case 'CANCELLED': return { text: '#EF4444', bg: light ? '#fef2f2' : 'rgba(239,68,68,0.10)', b: 'rgba(239,68,68,0.35)' }
+    case 'CONTINUATION': return { text: '#7C3AED', bg: light ? '#F3E8FF' : 'rgba(124,58,237,0.18)', b: 'rgba(124,58,237,0.35)' }
+    default: return { text: '#94A3B8', bg: 'transparent', b: 'rgba(148,163,184,0.3)' }
   }
 }
 
@@ -2234,9 +2235,9 @@ function fmtPhone(raw: string): string {
   const nums: string[] = []
   let rem = digits
   while (rem.length >= 10) {
-    if (rem.startsWith('63') && rem.length >= 12)      { nums.push('0' + rem.slice(2, 12)); rem = rem.slice(12) }
-    else if (rem.startsWith('09') && rem.length >= 11) { nums.push(rem.slice(0, 11));        rem = rem.slice(11) }
-    else if (rem.startsWith('9') && rem.length >= 10)  { nums.push('0' + rem.slice(0, 10));  rem = rem.slice(10) }
+    if (rem.startsWith('63') && rem.length >= 12) { nums.push('0' + rem.slice(2, 12)); rem = rem.slice(12) }
+    else if (rem.startsWith('09') && rem.length >= 11) { nums.push(rem.slice(0, 11)); rem = rem.slice(11) }
+    else if (rem.startsWith('9') && rem.length >= 10) { nums.push('0' + rem.slice(0, 10)); rem = rem.slice(10) }
     else break
   }
   return nums.slice(0, 2).map(n => n.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')).join(' / ')
@@ -2324,7 +2325,7 @@ function buildImportCreateRow(
     ticketCategory: taguigServices ? 'SERVICES' : 'INSTALLATION',
     unitType: item.brand || 'Split AC',
     location,
-    sourceVendor: item.dlr || 'Direct',
+    dealer: item.dlr || 'Direct',
     status: importTargetDate ? 'SCHEDULED' : 'PENDING',
   }
 
@@ -2376,7 +2377,7 @@ function buildPatchImportBody(
   set('district', updatedFields.district)
   set('contactPhone', updatedFields.contactPhone)
   set('unitType', updatedFields.unitType)
-  set('sourceVendor', updatedFields.sourceVendor)
+  set('dealer', updatedFields.dealer)
   set('commitType', updatedFields.commitType ?? updatedFields.commitTerms)
   set('serviceVehicle', updatedFields.serviceVehicle)
   set('remarksUpdate', updatedFields.remarksUpdate ?? updatedFields.remarks)
@@ -2412,8 +2413,8 @@ function buildPatchImportBody(
     body.acDetails = acDetails
     acBase = { ...ticket, acDetails }
   }
-  if (updatedFields.sourceVendor) {
-    const acDetails = mergeAcMeta(acBase, { dealer: updatedFields.sourceVendor, dlr: updatedFields.sourceVendor })
+  if (updatedFields.dealer) {
+    const acDetails = mergeAcMeta(acBase, { dealer: updatedFields.dealer, dlr: updatedFields.dealer })
     body.acDetails = acDetails
     acBase = { ...ticket, acDetails }
   }
@@ -2503,7 +2504,7 @@ function buildArchiveServiceReportPayload(
     contactPhone?: string
     district?: string
     commitType?: string
-    sourceVendor?: string
+    dealer?: string
     unitType?: string
     installerName?: string
     serviceVehicle?: string
@@ -2592,7 +2593,7 @@ function buildArchiveServiceReportPayload(
     serviceType,
     statusCode: 'I',
     commitTerms,
-    dealer: fields.sourceVendor ?? getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') ?? '',
+    dealer: fields.dealer ?? getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') ?? '',
     unitBrandModel: fields.unitType ?? parseBrand(ticket),
     unitSerial: unitSerial || undefined,
     quantity: quantity > 0 ? quantity : 1,
@@ -2640,7 +2641,7 @@ function getCellRawValue(
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
     case 'DESTINATION': return formatAddress(ticket.location)
     case 'BRAND': return parseBrand(ticket)
-    case 'DLR': return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
+    case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
     case 'STATUS': return getScheduleStatusValue(ticket)
     case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
     case 'FINAL DATE': return getFinalDateKey(ticket)
@@ -2682,7 +2683,7 @@ function buildCellPatchBody(
       body.acDetails = mergeAcMeta(acBase, { brand: v, unitType: v })
       break
     case 'DLR':
-      body.sourceVendor = v || undefined
+      body.dealer = v || undefined
       body.acDetails = mergeAcMeta(acBase, { dealer: v, dlr: v })
       break
     case 'STATUS': {
@@ -2762,14 +2763,14 @@ function buildCellPatchBody(
 
 export default function Tickets() {
   const { theme, toggleTheme } = useTheme()
-  const { user }  = useAuth()
+  const { user } = useAuth()
   const location = useLocation()
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const isMyTickets = location.pathname === '/my-tickets'
-  const isLight    = theme === 'light'
+  const isLight = theme === 'light'
 
   const [activeTab, setActiveTab] = useState<'schedules' | 'overview'>(
-    () => location.pathname === '/tickets' ? 'overview' : 'schedules'
+    () => (location.pathname === '/tickets' || location.pathname === '/search') ? 'overview' : 'schedules'
   )
 
   useEffect(() => {
@@ -2792,7 +2793,7 @@ export default function Tickets() {
   }, [])
 
   useEffect(() => {
-    if (location.pathname === '/tickets') {
+    if (location.pathname === '/tickets' || location.pathname === '/search') {
       setActiveTab('overview')
     } else if (location.pathname === '/schedules') {
       setActiveTab('schedules')
@@ -2889,12 +2890,12 @@ export default function Tickets() {
     )
   }
 
-  const role      = (user?.role || '').toLowerCase()
+  const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
-  const isAdmin    = isPortalAdmin(role)
-  const isManager  = role === 'manager'
+  const isAdmin = isPortalAdmin(role)
+  const isManager = role === 'manager'
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
-  const canEdit    = isAdmin || isManager || isEmployee
+  const canEdit = isAdmin || isManager || isEmployee
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Global branch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
@@ -2918,24 +2919,24 @@ export default function Tickets() {
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  const cardBg      = isLight ? '#ffffff' : '#111827'
-  const border      = isLight ? '#cbd5e1' : '#1f2f47'
+  const cardBg = isLight ? '#ffffff' : '#111827'
+  const border = isLight ? '#cbd5e1' : '#1f2f47'
   const tableBorder = isLight ? '#e2e8f0' : '#1a2d42'
   const textPrimary = isLight ? '#0f172a' : '#F1F5F9'
-  const textMuted   = isLight ? '#64748b' : '#94A3B8'
-  const inputBg     = isLight ? '#f8fafc' : '#1a2537'
+  const textMuted = isLight ? '#64748b' : '#94A3B8'
+  const inputBg = isLight ? '#f8fafc' : '#1a2537'
   const inputBorder = isLight ? '#cbd5e1' : '#2a3f5f'
-  const theadBg     = isLight ? '#e8edf3' : '#0d1b2e'
+  const theadBg = isLight ? '#e8edf3' : '#0d1b2e'
   const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0B2C30'
   const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
   const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
-  const schedTheadBg     = isLight ? '#E3F4E9' : '#0B272D'
-  const schedTheadText   = isLight ? '#166534' : '#86EFAC'
+  const schedTheadBg = isLight ? '#E3F4E9' : '#0B272D'
+  const schedTheadText = isLight ? '#166534' : '#86EFAC'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
-  const rowEven     = isLight ? '#ffffff' : '#111827'
-  const rowOdd      = isLight ? '#f7fbf8' : '#131f30'
-  const rowHover    = isLight ? '#edf7f1' : '#172438'
-  const green       = '#16A34A'
+  const rowEven = isLight ? '#ffffff' : '#111827'
+  const rowOdd = isLight ? '#f7fbf8' : '#131f30'
+  const rowHover = isLight ? '#edf7f1' : '#172438'
+  const green = '#16A34A'
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Data state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
@@ -2963,7 +2964,7 @@ export default function Tickets() {
   const [syncing, setSyncing] = useState(false)
   const [backgroundSyncing, setBackgroundSyncing] = useState(false)
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
-  const [progress, setProgress]       = useState(0)
+  const [progress, setProgress] = useState(0)
 
   useEffect(() => {
     if (loading) {
@@ -2982,7 +2983,7 @@ export default function Tickets() {
       setProgress(100)
     }
   }, [loading])
-  const [fetchError, setFetchError]   = useState<string | null>(null)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
@@ -2991,14 +2992,14 @@ export default function Tickets() {
   useEffect(() => {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
-  const [dateFilter, setDateFilter]   = useState(() => resolveInitialScheduleDate(location.pathname))
+  const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(location.pathname))
   // Live mirror of dateFilter — read this inside setState updaters / async callbacks so a stale
   // closure (e.g. a background save's applyTicketLocally that resolves after the date tab auto-jumped)
   // never writes the current on-screen rows into a *different* date's cache key.
   const dateFilterRef = useRef(dateFilter)
   dateFilterRef.current = dateFilter
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
-  const [hoveredRow, setHoveredRow]   = useState<string | null>(null)
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedPopoverPos, setExpandedPopoverPos] = useState<{ left: number; top: number; width: number } | null>(null)
@@ -3009,7 +3010,7 @@ export default function Tickets() {
   /** Ticket ids removed in UI while DELETE runs (or until server list confirms absence). */
   const deletedTicketsRef = useRef(new Set<string>())
   /** Latest flushTicketSave Ã¢â‚¬â€ used by create/import paths defined earlier in the component. */
-  const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => {})
+  const flushTicketSaveRef = useRef<(ticketId: string) => void>(() => { })
 
   const schedulesCacheKeyForTab = useCallback(
     // Default to the LIVE dateFilter (via ref), never the render-time closure value. Every date-keyed
@@ -3127,8 +3128,8 @@ export default function Tickets() {
     resetTicketTableScroll()
   }, [dateFilter])
 
-  const [saving]                      = useState(false)
-  const [toast, setToast]             = useState<string | null>(null)
+  const [saving] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
   const [promptMode, setPromptMode] = useState<string>('CASH')
@@ -3197,7 +3198,7 @@ export default function Tickets() {
     district: '',
     commitTerms: '',
     unitType: '',
-    sourceVendor: 'Direct',
+    dealer: 'Direct',
     serviceDriver: '',
     installerName: '',
     negotiatorId: '',
@@ -3285,6 +3286,7 @@ export default function Tickets() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>([])
+  const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
   const [editSaving, setEditSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & {
     serviceDriver?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string
@@ -3306,26 +3308,33 @@ export default function Tickets() {
     if (!authToken) return
     fetchCachedBranches(authToken)
       .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
-      .catch(() => {})
+      .catch(() => { })
   }, [editModalOpen, branches.length])
 
-  useEffect(() => {
-    const fetchDealers = async () => {
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        const res = await fetch(`${API_BASE_URL}/dealers`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (res.ok) {
-          const list = await res.json()
-          setRelayCustomStores(list.map((d: any) => d.name.toUpperCase()))
-        }
-      } catch (err) {
-        console.error('Error fetching dealers in Tickets.tsx:', err)
+  const fetchDealers = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const list = await res.json()
+        setDealers(list)
+        setRelayCustomStores(list.map((d: any) => d.name.toUpperCase()))
       }
+    } catch (err) {
+      console.error('Error fetching dealers in Tickets.tsx:', err)
     }
-    fetchDealers()
   }, [])
+
+  useEffect(() => {
+    fetchDealers()
+  }, [fetchDealers])
+
+  useEffect(() => {
+    window.addEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+    return () => window.removeEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+  }, [fetchDealers])
 
   const handlePersistCustomStores = async (nextStores: string[]) => {
     const uppercaseStores = nextStores.map(s => s.trim().toUpperCase()).filter(Boolean)
@@ -3342,13 +3351,8 @@ export default function Tickets() {
           body: JSON.stringify({ name: newStore })
         })
         if (res.ok) {
-          const refetchRes = await fetch(`${API_BASE_URL}/dealers`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-          if (refetchRes.ok) {
-            const list = await refetchRes.json()
-            setRelayCustomStores(list.map((d: any) => d.name.toUpperCase()))
-          }
+          await fetchDealers()
+          notifyDealersUpdated()
         }
       } catch (err) {
         console.error('Error auto-creating dealer from edit modal:', err)
@@ -3661,7 +3665,7 @@ export default function Tickets() {
       const startIdx = headerIdx + 1
       const endIdx = grid.length - 1
       const rowRangeLabel = `rows ${startIdx + 1}-${endIdx + 1}`
-      
+
       const findColIdx = (aliases: string[]): number => {
         // 1. Try exact match first
         const exactIdx = headers.findIndex((h: string) => aliases.some(alias => h === alias))
@@ -3705,8 +3709,8 @@ export default function Tickets() {
         const rowPhone = val(colMap.phone)
 
         if (!rowName ||
-            ['closed', 'total', 'grand total', 'subtotal', 'online', 'cash'].includes(rowName.toLowerCase().trim()) ||
-            (!rowDest && !rowPhone)) {
+          ['closed', 'total', 'grand total', 'subtotal', 'online', 'cash'].includes(rowName.toLowerCase().trim()) ||
+          (!rowDest && !rowPhone)) {
           continue
         }
 
@@ -3926,7 +3930,7 @@ export default function Tickets() {
         contactPhone: (addForm.contactPhone || '').trim(),
         unitType: addForm.unitType?.trim() || undefined,
         preferredDate: scheduledDate,
-        sourceVendor: addForm.sourceVendor?.trim() || 'Direct',
+        dealer: addForm.dealer?.trim() || 'Direct',
         district: addForm.district?.trim() || undefined,
         commitType: addForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
@@ -4096,7 +4100,7 @@ export default function Tickets() {
       district: ticket.district || parseDistrict(ticket.location) || '',
       commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
       unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
-      sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
+      dealer: getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketVehicleDisplay(ticket),
       driverName: isMyTickets ? '' : getTicketDriverDisplay(ticket),
       installerName: getInstallerDisplay(ticket, branchEmployees, activeBranchId),
@@ -4310,7 +4314,7 @@ export default function Tickets() {
         commitTerms: editForm.commitTerms,
         commitType: editForm.commitTerms,
         unitType: editForm.unitType,
-        sourceVendor: editForm.sourceVendor,
+        dealer: editForm.dealer,
         installerName: editForm.installerName,
         negotiatorId: editForm.negotiatorId,
         branchId: editForm.branchId,
@@ -4366,7 +4370,7 @@ export default function Tickets() {
         oldDateKey
         || (originalTicket && ticketHadScheduleDate(originalTicket)),
       )
-      
+
       let remarksVal = activeForm.remarks?.trim() ?? ''
       if (isDateMove) {
         const reschedMsg = isReschedStatus && newDateKey
@@ -4377,7 +4381,7 @@ export default function Tickets() {
           : (remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg)
         activeForm.remarks = remarksVal
       }
-      
+
       const acMetaExtras: Record<string, any> = {}
 
       const body: Record<string, any> = {
@@ -4392,7 +4396,7 @@ export default function Tickets() {
         preferredDate: isReschedStatus && activeForm.reschedulePending
           ? (oldDateKey || activeForm.preferredDate?.split('T')[0]?.trim() || undefined)
           : newDateKey,
-        sourceVendor: activeForm.sourceVendor?.trim() || 'Direct',
+        dealer: activeForm.dealer?.trim() || 'Direct',
         district: activeForm.district?.trim() || undefined,
         commitType: activeForm.commitTerms?.trim() || undefined,
         serviceVehicle: serviceVehicle || undefined,
@@ -4582,8 +4586,8 @@ export default function Tickets() {
         district: activeForm.district?.trim() || undefined,
         brand: activeForm.unitType?.trim() || undefined,
         unitType: activeForm.unitType?.trim() || undefined,
-        dealer: activeForm.sourceVendor?.trim() || undefined,
-        dlr: activeForm.sourceVendor?.trim() || undefined,
+        dealer: activeForm.dealer?.trim() || undefined,
+        dlr: activeForm.dealer?.trim() || undefined,
         update: remarksVal || '',
         remarksUpdate: remarksVal || '',
         driverName: activeForm.driverName?.trim() || undefined,
@@ -4648,45 +4652,45 @@ export default function Tickets() {
         finalBody,
         needsArchive
           ? async () => {
-              const branchId = resolveTicketArchiveBranch(
-                { ...archiveOriginal, ...archiveBody },
-                { installerName: archiveBody.installerName as string | undefined },
-              )
-              const archivePayload = buildArchiveServiceReportPayload(
-                archiveOriginal,
-                branchId,
-                {
-                  customerName: archiveBody.customerName,
-                  location: archiveBody.location,
-                  contactPhone: archiveBody.contactPhone,
-                  district: archiveBody.district,
-                  commitType: archiveBody.commitType,
-                  sourceVendor: archiveBody.sourceVendor,
-                  unitType: archiveBody.unitType,
-                  installerName: archiveBody.installerName,
-                  serviceVehicle: archiveBody.serviceVehicle,
-                  installationCharges: archiveFinalBody.installationCharges as number | undefined,
-                  modeOfPayment: archiveFinalBody.modeOfPayment as string | undefined,
-                  remarks: archiveFinalBody.remarksUpdate as string | undefined,
-                  remarksUpdate: archiveFinalBody.remarksUpdate as string | undefined,
-                  controlNumber: archiveBody.controlNumber,
-                  ticketNumber: archiveBody.ticketNumber,
-                  note: archiveOriginal.note,
-                  negotiatorName: resolveNegotiatorName(archiveOriginal, branchEmployees, activeForm.negotiatorId),
-                },
-                schedKey,
-              )
-              if (!archivePayload) {
-                alert('Ticket marked completed but not added to Archives Ã¢â‚¬â€ select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
-                return
-              }
-              try {
-                await postArchiveServiceReport(archivePayload, tokenVal)
-              } catch (err) {
-                console.warn('Archive service report failed:', err)
-                alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
-              }
+            const branchId = resolveTicketArchiveBranch(
+              { ...archiveOriginal, ...archiveBody },
+              { installerName: archiveBody.installerName as string | undefined },
+            )
+            const archivePayload = buildArchiveServiceReportPayload(
+              archiveOriginal,
+              branchId,
+              {
+                customerName: archiveBody.customerName,
+                location: archiveBody.location,
+                contactPhone: archiveBody.contactPhone,
+                district: archiveBody.district,
+                commitType: archiveBody.commitType,
+                dealer: archiveBody.dealer,
+                unitType: archiveBody.unitType,
+                installerName: archiveBody.installerName,
+                serviceVehicle: archiveBody.serviceVehicle,
+                installationCharges: archiveFinalBody.installationCharges as number | undefined,
+                modeOfPayment: archiveFinalBody.modeOfPayment as string | undefined,
+                remarks: archiveFinalBody.remarksUpdate as string | undefined,
+                remarksUpdate: archiveFinalBody.remarksUpdate as string | undefined,
+                controlNumber: archiveBody.controlNumber,
+                ticketNumber: archiveBody.ticketNumber,
+                note: archiveOriginal.note,
+                negotiatorName: resolveNegotiatorName(archiveOriginal, branchEmployees, activeForm.negotiatorId),
+              },
+              schedKey,
+            )
+            if (!archivePayload) {
+              alert('Ticket marked completed but not added to Archives Ã¢â‚¬â€ select a branch (e.g. Taguig Sales) in the sidebar, then add the record manually in Archives.')
+              return
             }
+            try {
+              await postArchiveServiceReport(archivePayload, tokenVal)
+            } catch (err) {
+              console.warn('Archive service report failed:', err)
+              alert(`Ticket saved as completed but Archives entry failed: ${formatFetchError(err)}`)
+            }
+          }
           : undefined,
       )
 
@@ -4730,7 +4734,7 @@ export default function Tickets() {
       user?.branchId,
       typeof localStorage !== 'undefined' ? localStorage.getItem('ashcol-global-branch-id') : null,
     ),
-  [installerLineupIndex, driverOnlyNames, globalBranchId, user?.branchId])
+    [installerLineupIndex, driverOnlyNames, globalBranchId, user?.branchId])
 
   const handleApplyImport = () => {
     if (!importResults) return
@@ -4761,15 +4765,15 @@ export default function Tickets() {
 
     const scheduleUpdates = isScheduleImport
       ? importResults.updates.map(item => {
-          const merged = { ...item.ticket, ...item.updatedFields }
-          if (qualifiesForInstallComplete(merged, item.updatedFields)) {
-            return { ...item, updatedFields: { ...item.updatedFields, status: 'COMPLETED' as Ticket['status'] } }
-          }
-          if ((item.updatedFields.status || '').toUpperCase() === 'COMPLETED') {
-            return { ...item, updatedFields: { ...item.updatedFields, status: 'SCHEDULED' as Ticket['status'] } }
-          }
-          return item
-        })
+        const merged = { ...item.ticket, ...item.updatedFields }
+        if (qualifiesForInstallComplete(merged, item.updatedFields)) {
+          return { ...item, updatedFields: { ...item.updatedFields, status: 'COMPLETED' as Ticket['status'] } }
+        }
+        if ((item.updatedFields.status || '').toUpperCase() === 'COMPLETED') {
+          return { ...item, updatedFields: { ...item.updatedFields, status: 'SCHEDULED' as Ticket['status'] } }
+        }
+        return item
+      })
       : normalUpdates
 
     const postCompletedServiceReport = async (ticket: Ticket, updatedFields: Partial<Ticket>, reportDate: string) => {
@@ -4781,7 +4785,7 @@ export default function Tickets() {
         contactPhone: updatedFields.contactPhone,
         district: updatedFields.district,
         commitType: updatedFields.commitType,
-        sourceVendor: updatedFields.sourceVendor,
+        dealer: updatedFields.dealer,
         unitType: updatedFields.unitType,
         installerName: updatedFields.installerName,
         serviceVehicle: updatedFields.serviceVehicle,
@@ -4874,13 +4878,13 @@ export default function Tickets() {
         job.body,
         job.shouldComplete
           ? async () => {
-              try {
-                await postCompletedServiceReport(job.ticket, job.updatedFields, scheduleDate || todayStr)
-                console.log('[Schedules] Import archived completed ticket', { ticketId: job.ticket.id })
-              } catch (err: unknown) {
-                console.error('[Schedules] Import archive FAILED', job.ticket.id, err)
-              }
+            try {
+              await postCompletedServiceReport(job.ticket, job.updatedFields, scheduleDate || todayStr)
+              console.log('[Schedules] Import archived completed ticket', { ticketId: job.ticket.id })
+            } catch (err: unknown) {
+              console.error('[Schedules] Import archive FAILED', job.ticket.id, err)
             }
+          }
           : undefined,
       )
     }
@@ -4898,7 +4902,7 @@ export default function Tickets() {
         const archivePayload = buildArchiveServiceReportPayload(ticket, branchId, {
           location: updatedFields.location,
           district: updatedFields.district,
-          sourceVendor: updatedFields.sourceVendor,
+          dealer: updatedFields.dealer,
           unitType: updatedFields.unitType,
           installerName: updatedFields.installerName,
           serviceVehicle: updatedFields.serviceVehicle,
@@ -5267,8 +5271,8 @@ export default function Tickets() {
   const [savingTicketIds, setSavingTicketIds] = useState<Set<string>>(new Set())
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cellEditDraftRef = useRef<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
-  const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => {})
-  const commitCellEditRef = useRef<() => void>(() => {})
+  const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => { })
+  const commitCellEditRef = useRef<() => void>(() => { })
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
@@ -5356,32 +5360,32 @@ export default function Tickets() {
   // Ã¢â€â‚¬Ã¢â€â‚¬ Column config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const columns = useMemo(() => {
     const scheduleCols = [
-      { label: 'TICKET NO',       display: 'TICKET NO',                                 weight: 9,  expMul: 1.2,  sticky: true,  freeze: false, align: 'center' as const },
-      { label: "CUSTOMER'S NAME", display: "CUSTOMER",                                  weight: 15, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: 'DISTRICT',                                    weight: 12, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
-      { label: 'BRAND',           display: "BRAND",                                     weight: 11, expMul: 1.5,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'DLR',             display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'COMMIT',          display: "COMMIT",                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 8,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'INSTALLER',       display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'SERVICE',         display: "DRIVER",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'VEHICLE',          display: "VEHICLE",                                   weight: 7,  expMul: 1.2,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS',          display: "STATUS",                                    weight: 9,  expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
-      { label: 'UPDATE',          display: "REMARKS",                                   weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
-      { label: 'PAYMENT',         display: "PAYMENT",                                   weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
+      { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
+      { label: "CUSTOMER'S NAME", display: "CUSTOMER", weight: 15, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 12, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'VEHICLE', display: "VEHICLE", weight: 7, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
+      { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
     const myTicketsCols = [
-      { label: 'TICKET NO',       display: 'TICKET NO',                                 weight: 9,  expMul: 1.2,  sticky: true,  freeze: false, align: 'center' as const },
-      { label: "CUSTOMER'S NAME", display: 'CUSTOMER',                                  weight: 14, expMul: 1.5,  sticky: true,  freeze: false, align: 'left' as const },
-      { label: 'DESTINATION',     display: 'DISTRICT',                                  weight: 11, expMul: 1.5,  sticky: true,  freeze: true,  align: 'center' as const },
-      { label: 'BRAND',           display: 'BRAND',                                     weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'DLR',             display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'COMMIT',          display: 'COMMIT',                                    weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR',      display: 'NEGOTIATOR',                                weight: 8,  expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'SERVICE',         display: 'TYPE',                                      weight: 8,  editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS',          display: 'STATUS',                                    weight: 8,  expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'UPDATE',          display: 'REMARKS',                                   weight: 13, expMul: 1.5,  sticky: false, freeze: false, align: 'right' as const },
-      { label: 'FINAL DATE',      display: 'FINAL DATE',                                weight: 10, expMul: 1.3,  sticky: false, freeze: false, align: 'center' as const },
+      { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
+      { label: "CUSTOMER'S NAME", display: 'CUSTOMER', weight: 14, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 11, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'BRAND', display: 'BRAND', weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'DLR', display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'COMMIT', display: 'COMMIT', weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
+      { label: 'SERVICE', display: 'TYPE', weight: 8, editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: 'STATUS', weight: 8, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'UPDATE', display: 'REMARKS', weight: 13, expMul: 1.5, sticky: false, freeze: false, align: 'right' as const },
+      { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
     ]
     const raw = isMyTickets ? myTicketsCols : scheduleCols
     const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
@@ -5744,8 +5748,8 @@ export default function Tickets() {
         const q = searchQuery.toLowerCase()
         list = list.filter(t =>
           [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
-            t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-            t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+          t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
           || formatAddress(t.location).toLowerCase().includes(q)
         )
       }
@@ -5817,8 +5821,8 @@ export default function Tickets() {
       const q = searchQuery.toLowerCase()
       list = list.filter(t =>
         [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
-         t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-         t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+        t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+        t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
         || formatAddress(t.location).toLowerCase().includes(q)
       )
     }
@@ -5928,7 +5932,7 @@ export default function Tickets() {
         district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
         contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
         brand: parseBrand(live),
-        dealer: getF(live, 'sourceVendor', 'source_vendor', 'dealer') || '',
+        dealer: getF(live, 'dealer', 'sourceVendor', 'source_vendor') || '',
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
         commit: getF(live, 'commitType', 'commitTerms', 'description'),
         installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
@@ -5961,26 +5965,26 @@ export default function Tickets() {
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     const raw = (() => {
       switch (colLabel) {
-        case 'TICKET NO':       return getTicketNumberDisplay(ticket)
+        case 'TICKET NO': return getTicketNumberDisplay(ticket)
         case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
-        case 'DESTINATION':     return resolveTicketDistrict(ticket)
-        case 'DISTRICT':        return parseDistrict(ticket.location, ticket.district)
-        case 'CONTACT NO.':     return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-        case 'BRAND':           return parseBrand(ticket)
-        case 'DLR':             return getF(ticket, 'sourceVendor', 'source_vendor', 'dealer') || ''
-        case 'STATUS':          return getScheduleStatusLabel(getScheduleStatusValue(ticket))
-        case 'SCHEDULED DATE':  return formatDateKeyLabel(getArchivedScheduleDate(ticket))
-        case 'INSTALLED DATE':  return formatDateKeyLabel(getInstalledDateKey(ticket))
-        case 'FINAL DATE':      return formatDateKeyLabel(getFinalDateKey(ticket))
-        case 'PAYMENT':         return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
-        case 'MOP':             return getPaymentMode(ticket)
-        case 'COMMIT':          return getF(ticket, 'commitType', 'commitTerms', 'description')
-        case 'INSTALLER':       return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
-        case 'NEGOTIATOR':      return getTicketNegotiatorName(ticket, branchEmployees)
-        case 'NOTE':            return ticket.note || ''
-        case 'SERVICE':         return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
-        case 'VEHICLE':         return isMyTickets ? '' : getTicketVehicleDisplay(ticket)
-        case 'UPDATE':          return getScheduleUpdateDisplay(ticket)
+        case 'DESTINATION': return resolveTicketDistrict(ticket)
+        case 'DISTRICT': return parseDistrict(ticket.location, ticket.district)
+        case 'CONTACT NO.': return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+        case 'BRAND': return parseBrand(ticket)
+        case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
+        case 'STATUS': return getScheduleStatusLabel(getScheduleStatusValue(ticket))
+        case 'SCHEDULED DATE': return formatDateKeyLabel(getArchivedScheduleDate(ticket))
+        case 'INSTALLED DATE': return formatDateKeyLabel(getInstalledDateKey(ticket))
+        case 'FINAL DATE': return formatDateKeyLabel(getFinalDateKey(ticket))
+        case 'PAYMENT': return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
+        case 'MOP': return getPaymentMode(ticket)
+        case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
+        case 'INSTALLER': return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+        case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
+        case 'NOTE': return ticket.note || ''
+        case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
+        case 'VEHICLE': return isMyTickets ? '' : getTicketVehicleDisplay(ticket)
+        case 'UPDATE': return getScheduleUpdateDisplay(ticket)
         default: return ''
       }
     })()
@@ -6317,8 +6321,8 @@ export default function Tickets() {
               // user is actually looking at never gets updated (looks like the edit "reverted").
               const localMatch = wantedNumber
                 ? ticketsRef.current.find(t =>
-                    t.id !== saveId && normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === wantedNumber,
-                  )
+                  t.id !== saveId && normalizeTicketNumberKey(t.ticketNumber || t.ticket_number) === wantedNumber,
+                )
                 : undefined
               const found = localMatch
                 || (ticketNumber ? await lookupTicketByNumberOnServer(auth, ticketNumber) : null)
@@ -6486,35 +6490,35 @@ export default function Tickets() {
       finalBody,
       shouldArchive
         ? async () => {
-            const branchId = resolveTicketArchiveBranch(liveTicket, {
-              installerName: body.installerName as string | undefined,
+          const branchId = resolveTicketArchiveBranch(liveTicket, {
+            installerName: body.installerName as string | undefined,
+            installationCharges: archiveBody.installationCharges as number | undefined,
+            modeOfPayment: archiveBody.modeOfPayment as string | undefined,
+            remarks: archiveBody.remarksUpdate as string | undefined,
+            remarksUpdate: archiveBody.remarksUpdate as string | undefined,
+          })
+          const archivePayload = buildArchiveServiceReportPayload(
+            liveTicket,
+            branchId,
+            {
               installationCharges: archiveBody.installationCharges as number | undefined,
               modeOfPayment: archiveBody.modeOfPayment as string | undefined,
               remarks: archiveBody.remarksUpdate as string | undefined,
               remarksUpdate: archiveBody.remarksUpdate as string | undefined,
-            })
-            const archivePayload = buildArchiveServiceReportPayload(
-              liveTicket,
-              branchId,
-              {
-                installationCharges: archiveBody.installationCharges as number | undefined,
-                modeOfPayment: archiveBody.modeOfPayment as string | undefined,
-                remarks: archiveBody.remarksUpdate as string | undefined,
-                remarksUpdate: archiveBody.remarksUpdate as string | undefined,
-                negotiatorName: resolveNegotiatorName(liveTicket, branchEmployees),
-              },
-              schedKey,
-            )
-            if (!archivePayload) {
-              alert('Ticket completed but not added to Archives â€” select a branch in the sidebar.')
-              return
-            }
-            try {
-              await postArchiveServiceReport(archivePayload, token())
-            } catch (err) {
-              alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
-            }
+              negotiatorName: resolveNegotiatorName(liveTicket, branchEmployees),
+            },
+            schedKey,
+          )
+          if (!archivePayload) {
+            alert('Ticket completed but not added to Archives â€” select a branch in the sidebar.')
+            return
           }
+          try {
+            await postArchiveServiceReport(archivePayload, token())
+          } catch (err) {
+            alert(`Ticket completed but Archives entry failed: ${formatFetchError(err)}`)
+          }
+        }
         : undefined,
     )
 
@@ -6639,7 +6643,7 @@ export default function Tickets() {
     setTickets(prev => {
       const next = prev.filter(t => t.id !== ticketId)
       const cacheKey = schedulesCacheKeyForTab()
-              writeSchedulesTabCache(cacheKey, next, "local")
+      writeSchedulesTabCache(cacheKey, next, "local")
       return next
     })
     setOverviewResults(prev => prev.filter(t => t.id !== ticketId))
@@ -6811,8 +6815,8 @@ export default function Tickets() {
             style={inputStyle}
             placeholder={
               colLabel === 'INSTALLER' ? 'Select or type installer\u2026'
-              : colLabel === 'VEHICLE' ? 'Type vehicle code\u2026'
-              : 'Select or type driver\u2026'
+                : colLabel === 'VEHICLE' ? 'Type vehicle code\u2026'
+                  : 'Select or type driver\u2026'
             }
           />
           <datalist id={listId}>
@@ -7194,10 +7198,10 @@ export default function Tickets() {
     if (label === 'CONTACT NO.') {
       const formatted = val ? fmtPhone(val) || val : ''
       return withEditPencil(
-        <a href={val ? `tel:${val.replace(/\D/g,'').replace(/^0/,'+63')}` : '#'}
-           style={{ color: '#10B981', ...truncStyle }}
-           onClick={e => { e.stopPropagation(); }}
-           title={val}>
+        <a href={val ? `tel:${val.replace(/\D/g, '').replace(/^0/, '+63')}` : '#'}
+          style={{ color: '#10B981', ...truncStyle }}
+          onClick={e => { e.stopPropagation(); }}
+          title={val}>
           {formatted}
         </a>,
         ticket, label, rowGhost, rowIndex,
@@ -7207,7 +7211,7 @@ export default function Tickets() {
     if (label === 'NOTE') {
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? '#EF4444' : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val}>
+          title={val}>
           {val || ''}
         </span>,
         ticket, label, rowGhost, rowIndex,
@@ -7259,7 +7263,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
-              title={val}>
+          title={val}>
           {val || EMPTY_CELL}
         </span>,
         ticket, label, rowGhost, rowIndex,
@@ -7420,7 +7424,7 @@ export default function Tickets() {
       {/* Toast Ã¢â‚¬â€ success/info only; saves run silently in background */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-[9999] px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-2xl transition-all"
-             style={{ backgroundColor: green }}>
+          style={{ backgroundColor: green }}>
           {toast}
         </div>
       )}
@@ -7448,7 +7452,7 @@ export default function Tickets() {
       />
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      {!isMyTickets && ReactDOM.createPortal(
+      {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center gap-2 w-full">
             {/* Weekly Date Tabs Picker */}
@@ -7510,7 +7514,7 @@ export default function Tickets() {
             {/* Search bar */}
             {activeTab === 'schedules' && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
-                   style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
                 <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                 <input
                   type="text"
@@ -7582,7 +7586,7 @@ export default function Tickets() {
       {/* Stats bar */}
       {!isMyTickets && activeTab === 'schedules' && (hasHydratedOnce || tickets.length > 0) && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
-             style={{ backgroundColor: cardBg, borderColor: border }}>
+          style={{ backgroundColor: cardBg, borderColor: border }}>
           <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
           <div className="flex items-center gap-1">
             <span style={{ color: textMuted }}>Installation</span>
@@ -7616,7 +7620,7 @@ export default function Tickets() {
       {/* Error */}
       {fetchError && activeTab === 'schedules' && (
         <div className="flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold shrink-0"
-             style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
+          style={{ color: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)', borderColor: border }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />{fetchError}
           <button onClick={() => void fetchTickets({ soft: false, force: true })} className="ml-2 px-2 py-0.5 rounded text-white font-bold text-xs" style={{ backgroundColor: green }}>Retry</button>
         </div>
@@ -7624,547 +7628,578 @@ export default function Tickets() {
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
-           onClick={e => e.stopPropagation()}>
+        onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
-               style={{ backgroundColor: cardBg }}>
-            <div className="relative flex items-center justify-center w-36 h-36">
-              {(() => {
-                const radius = 52
-                const circumference = 2 * Math.PI * radius
-                const strokeDashoffset = circumference - (progress / 100) * circumference
-                return (
-                  <>
-                    <svg className="w-36 h-36 transform -rotate-90">
-                      {/* Trailing Background */}
-                      <circle
-                        cx="72"
-                        cy="72"
-                        r={radius}
-                        stroke={isLight ? '#e2e8f0' : '#1e293b'}
-                        strokeWidth="8"
-                        fill="transparent"
-                      />
-                      {/* Animated Active Ring */}
-                      <circle
-                        cx="72"
-                        cy="72"
-                        r={radius}
-                        stroke={green}
-                        strokeWidth="8"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
-                        fill="transparent"
-                        className="transition-all duration-150 ease-out"
-                      />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-lg font-black font-mono tracking-tight" style={{ color: textPrimary }}>
-                        {progress}%
-                      </span>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-0.5">
-                        {progress === 100 ? 'Ready' : 'Loading'}
-                      </span>
-                    </div>
-                  </>
-                )
-              })()}
-            </div>
-            <div className="flex flex-col items-center gap-1.5 text-center">
-              <h4 className="font-extrabold text-sm" style={{ color: textPrimary }}>
-                {progress === 100 ? 'Loaded Schedules!' : 'Fetching Schedules'}
-              </h4>
-              <p className="text-xs" style={{ color: textMuted }}>
-                Please wait while we synchronize branch lineup and dates.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {(syncing || backgroundSyncing) && !searchQuery && (
-              <div
-                className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
-                style={{
-                  backgroundColor: isLight ? 'rgba(236,253,245,0.96)' : 'rgba(11,39,45,0.96)',
-                  borderColor: isMyTickets ? myTicketsTheadBorder : schedTheadBorder,
-                  color: green,
-                }}
-              >
-                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                <span className="text-[11px] font-bold tracking-wide">Syncing with portal database...</span>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
+              style={{ backgroundColor: cardBg }}>
+              <div className="relative flex items-center justify-center w-36 h-36">
+                {(() => {
+                  const radius = 52
+                  const circumference = 2 * Math.PI * radius
+                  const strokeDashoffset = circumference - (progress / 100) * circumference
+                  return (
+                    <>
+                      <svg className="w-36 h-36 transform -rotate-90">
+                        {/* Trailing Background */}
+                        <circle
+                          cx="72"
+                          cy="72"
+                          r={radius}
+                          stroke={isLight ? '#e2e8f0' : '#1e293b'}
+                          strokeWidth="8"
+                          fill="transparent"
+                        />
+                        {/* Animated Active Ring */}
+                        <circle
+                          cx="72"
+                          cy="72"
+                          r={radius}
+                          stroke={green}
+                          strokeWidth="8"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={strokeDashoffset}
+                          strokeLinecap="round"
+                          fill="transparent"
+                          className="transition-all duration-150 ease-out"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-lg font-black font-mono tracking-tight" style={{ color: textPrimary }}>
+                          {progress}%
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-0.5">
+                          {progress === 100 ? 'Ready' : 'Loading'}
+                        </span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
-            )}
-          <div
-            ref={tableScrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
-            data-ticket-table-scroll
-            style={{
-              paddingBottom: activeCellOverlay ? 72 : 12,
-            }}
-          >
-            <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <colgroup>
-                {columns.map(col => (
-                  <col key={col.label} style={{ width: col.w }} />
-                ))}
-              </colgroup>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <h4 className="font-extrabold text-sm" style={{ color: textPrimary }}>
+                  {progress === 100 ? 'Loaded Schedules!' : 'Fetching Schedules'}
+                </h4>
+                <p className="text-xs" style={{ color: textMuted }}>
+                  Please wait while we synchronize branch lineup and dates.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              {(syncing || backgroundSyncing) && !searchQuery && (
+                <div
+                  className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
                   style={{
-                    backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
-                    borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
+                    backgroundColor: isLight ? 'rgba(236,253,245,0.96)' : 'rgba(11,39,45,0.96)',
+                    borderColor: isMyTickets ? myTicketsTheadBorder : schedTheadBorder,
+                    color: green,
                   }}
                 >
-                  {columns.map(rawCol => {
-                    const col = rawCol as any
-                    const canSort = 'sortable' in col && col.sortable
-                    const isSorted = canSort && sortConfig?.column === col.label
-                    const SortIcon = isSorted
-                      ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
-                      : ArrowUpDown
-                    return (
-                    <th key={col.label}
-                        onClick={e => {
-                          const isExpanding = !expandedCols[col.label]
-                          toggleCol(col.label)
-                          if (isExpanding) {
-                            const th = e.currentTarget
-                            setTimeout(() => {
-                              th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-                            }, 80)
-                          }
-                        }}
-                        title={canSort ? 'Click to widen column Ã‚Â· Use arrow to sort' : 'Click to widen column'}
-                        style={{
-                          padding: '13px 12px',
-                          color: (col.isExpanded || isSorted)
-                            ? (isLight ? '#16A34A' : '#4ADE80')
-                            : (isMyTickets ? myTicketsTheadText : schedTheadText),
-                          fontWeight: 700, whiteSpace: 'nowrap',
-                          borderRight: `1px solid ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}`,
-                          borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
-                          fontSize: '11px', letterSpacing: '0.06em',
-                          width: col.w, minWidth: 0, maxWidth: col.w,
-                          overflow: 'hidden', textOverflow: 'ellipsis',
-                          backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
-                          cursor: 'pointer',
-                          userSelect: 'none',
-                          transition: 'color 0.15s ease',
-                          textAlign: col.align || 'left',
-                          ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
-                        }}>
-                      <div className={`flex items-center gap-1 w-full ${
-                        col.align === 'center' ? 'justify-center text-center' :
-                        col.align === 'right' ? 'justify-end text-right' :
-                        'justify-start text-left'
-                      }`}>
-                        <span>{col.display as any}</span>
-                        {canSort && (
-                          <button
-                            type="button"
-                            data-sort-trigger
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleColumnSort(col.label)
-                            }}
-                            className="flex items-center justify-center rounded hover:bg-emerald-500/10"
-                            title="Sort column"
-                          >
-                            <SortIcon
-                              className="w-3 h-3 shrink-0 opacity-70"
-                              style={{ color: isSorted ? green : (isMyTickets ? myTicketsTheadText : schedTheadText) }}
-                            />
-                          </button>
-                        )}
-                      </div>
-                    </th>
-                    )
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.length === 0 ? (
-                  <tr>
-                    <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
-                      <div className="flex flex-col items-center justify-center gap-3 py-6">
-                        {(syncing || backgroundSyncing) && !searchQuery ? (
-                          <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
-                            <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
-                            <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
-                              Syncing with portal database...
-                            </p>
-                          </div>
-                        ) : (
-                          <>
-                            <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                              {isMyTickets
-                                ? (searchQuery
-                                  ? 'No pending or assigned tickets match your search'
-                                  : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
-                                : tickets.length > 0
-                                  ? 'No tickets match this date or branch view'
-                                  : fetchError
-                                    ? 'Could not load schedules — use Retry above'
-                                    : 'No records'}
-                            </p>
-                            {searchQuery && (
-                              <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  visible.map((ticket, idx) => {
-                    const isHovered = hoveredRow === ticket.id
-                    const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
-                    const isGhost = Boolean(ghostKind)
-                    const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
-                    const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
-                    const baseBg = rowColors.baseBg
-                    const bg       = isHovered && !isGhost ? rowHover : baseBg
-                    const ghostAccent = rowColors.accent
-                    const rowIsActive = columns.some(col =>
-                      (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
-                      || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
-                    )
-                  return (
-                    // Key must never include idx — visible re-sorts on every edit (installer/customer
-                    // grouping), and an index-based key made React remount the row each time instead of
-                    // reconciling it in place, which is what caused rows to visibly flicker/reorder on save.
-                    // ticket.id is already unique per date view (a ticket shows as either its active row or
-                    // one ghost row for that date, never both), so id + ghost-kind is enough.
-                    <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
-                        style={{
-                          borderBottom: `1px solid ${tableBorder}`,
-                          boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
-                          position: rowIsActive ? 'relative' : undefined,
-                          zIndex: rowIsActive ? 80 : undefined,
-                          height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
-                        }}
-                        onMouseEnter={() => setHoveredRow(ticket.id)}
-                        onMouseLeave={() => setHoveredRow(null)}
-                        onDoubleClick={() => setDetailTicket(ticket)}
-                        onContextMenu={e => {
-                          e.preventDefault()
-                          if (canEdit || isAdmin) setContextMenu({ x: e.clientX, y: e.clientY, ticket })
-                        }}>
-
-
-
-                      {/* Data cells */}
-                      {columns.map((col) => {
-                        const isEditingCell = editingCell?.ticketId === ticket.id
-                          && editingCell?.rowIndex === idx
-                          && editingCell?.colLabel === col.label
-                        const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
-                        const isStatusCol = col.label === 'STATUS'
-                        const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
-                        const cellVal = getCellDisplay(ticket, col.label)
-                        const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
-                        const emptyCellBg = isCellEmpty
-                          ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
-                          : undefined
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  <span className="text-[11px] font-bold tracking-wide">Syncing with portal database...</span>
+                </div>
+              )}
+              <div
+                ref={tableScrollRef}
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+                data-ticket-table-scroll
+                style={{
+                  paddingBottom: activeCellOverlay ? 72 : 12,
+                }}
+              >
+                <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                  <colgroup>
+                    {columns.map(col => (
+                      <col key={col.label} style={{ width: col.w }} />
+                    ))}
+                  </colgroup>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+                    <tr
+                      style={{
+                        backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
+                        borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
+                      }}
+                    >
+                      {columns.map(rawCol => {
+                        const col = rawCol as any
+                        const canSort = 'sortable' in col && col.sortable
+                        const isSorted = canSort && sortConfig?.column === col.label
+                        const SortIcon = isSorted
+                          ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
+                          : ArrowUpDown
                         return (
-                          <td key={col.label}
-                              data-cell-key={`${ticket.id}:${col.label}`}
-                              onMouseEnter={() => setHoveredCell({ ticketId: ticket.id, colLabel: col.label })}
-                              onMouseLeave={() => setHoveredCell(prev =>
-                                prev?.ticketId === ticket.id && prev?.colLabel === col.label ? null : prev
+                          <th key={col.label}
+                            onClick={e => {
+                              const isExpanding = !expandedCols[col.label]
+                              toggleCol(col.label)
+                              if (isExpanding) {
+                                const th = e.currentTarget
+                                setTimeout(() => {
+                                  th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+                                }, 80)
+                              }
+                            }}
+                            title={canSort ? 'Click to widen column Ã‚Â· Use arrow to sort' : 'Click to widen column'}
+                            style={{
+                              padding: '13px 12px',
+                              color: (col.isExpanded || isSorted)
+                                ? (isLight ? '#16A34A' : '#4ADE80')
+                                : (isMyTickets ? myTicketsTheadText : schedTheadText),
+                              fontWeight: 700, whiteSpace: 'nowrap',
+                              borderRight: `1px solid ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}`,
+                              borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
+                              fontSize: '11px', letterSpacing: '0.06em',
+                              width: col.w, minWidth: 0, maxWidth: col.w,
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              transition: 'color 0.15s ease',
+                              textAlign: col.align || 'left',
+                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
+                            }}>
+                            <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
+                                col.align === 'right' ? 'justify-end text-right' :
+                                  'justify-start text-left'
+                              }`}>
+                              <span>{col.display as any}</span>
+                              {canSort && (
+                                <button
+                                  type="button"
+                                  data-sort-trigger
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    handleColumnSort(col.label)
+                                  }}
+                                  className="flex items-center justify-center rounded hover:bg-emerald-500/10"
+                                  title="Sort column"
+                                >
+                                  <SortIcon
+                                    className="w-3 h-3 shrink-0 opacity-70"
+                                    style={{ color: isSorted ? green : (isMyTickets ? myTicketsTheadText : schedTheadText) }}
+                                  />
+                                </button>
                               )}
-                              onClick={e => {
-                                e.stopPropagation()
-                                if (isEditingCell) return
-                                if (isStatusCol && !isMyTickets) {
-                                  const statusVal = getScheduleStatusValue(ticket)
-                                  if (isGhost || statusShowsScheduleDetails(statusVal)) {
-                                    openScheduleDetailsPopup(ticket, e.currentTarget as HTMLElement, ghostKind)
-                                    return
-                                  }
-                                  if (canEdit && !isGhost) {
-                                    openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
-                                    return
-                                  }
-                                }
-                                if (isStatusCol && canEdit && !isGhost) {
-                                  openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
-                                  return
-                                }
-                                setExpandedCell(prev =>
-                                  prev?.ticketId === ticket.id && prev?.colLabel === col.label
-                                    ? null
-                                    : { ticketId: ticket.id, colLabel: col.label },
-                                )
-                              }}
-                              onDoubleClick={e => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                if (!canEdit || isGhost || isEditingCell) return
-                                if (INLINE_EDIT_COLUMNS.has(col.label)) {
-                                  startCellEdit(ticket, col.label, undefined, idx)
-                                }
-                              }}
-                              style={{
-                                padding: isEditingCell ? '6px' : '0 12px',
-                                color: isGhost ? textMuted : textPrimary,
-                                fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
-                                backgroundColor: emptyCellBg ?? bg,
-                                borderRight: `1px solid ${tableBorder}`,
-                                borderBottom: `1px solid ${tableBorder}`,
-                                width: col.w,
-                                minWidth: 0,
-                                maxWidth: col.w,
-                                height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
-                                maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
-                                overflow: 'visible',
-                                textOverflow: 'ellipsis',
-                                transition: 'background-color 0.1s ease',
-                                cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
-                                verticalAlign: 'middle',
-                                textAlign: col.align || 'left',
-                                userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
-                                WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
-                                ...(col.sticky
-                                  ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
-                                  : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
-                              }}>
-                            {isEditingCell ? (
-                              renderCell(ticket, col, idx, isGhost, ghostKind, false)
-                            ) : (
-                              <div
-                                className={`relative w-full h-full flex items-center ${
-                                  col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''
-                                }`}
-                                style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
-                              >
-                                <div className={`min-w-0 overflow-hidden ${col.align === 'center' ? 'w-auto max-w-full' : 'w-full'}`}>
-                                  {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
-                                </div>
-                              </div>
-                            )}
-                          </td>
+                            </div>
+                          </th>
                         )
                       })}
                     </tr>
-                  )
-                }))}
-              </tbody>
-            </table>
-          </div>
-          </div>
-        )) : (
+                  </thead>
+                  <tbody>
+                    {visible.length === 0 ? (
+                      <tr>
+                        <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
+                          <div className="flex flex-col items-center justify-center gap-3 py-6">
+                            {(syncing || backgroundSyncing) && !searchQuery ? (
+                              <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
+                                <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
+                                <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
+                                  Syncing with portal database...
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                                  {isMyTickets
+                                    ? (searchQuery
+                                      ? 'No pending or assigned tickets match your search'
+                                      : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
+                                    : tickets.length > 0
+                                      ? 'No tickets match this date or branch view'
+                                      : fetchError
+                                        ? 'Could not load schedules — use Retry above'
+                                        : 'No records'}
+                                </p>
+                                {searchQuery && (
+                                  <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      visible.map((ticket, idx) => {
+                        const isHovered = hoveredRow === ticket.id
+                        const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
+                        const isGhost = Boolean(ghostKind)
+                        const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
+                        const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                        const baseBg = rowColors.baseBg
+                        const bg = isHovered && !isGhost ? rowHover : baseBg
+                        const ghostAccent = rowColors.accent
+                        const rowIsActive = columns.some(col =>
+                          (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
+                          || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
+                        )
+                        return (
+                          // Key must never include idx — visible re-sorts on every edit (installer/customer
+                          // grouping), and an index-based key made React remount the row each time instead of
+                          // reconciling it in place, which is what caused rows to visibly flicker/reorder on save.
+                          // ticket.id is already unique per date view (a ticket shows as either its active row or
+                          // one ghost row for that date, never both), so id + ghost-kind is enough.
+                          <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                            style={{
+                              borderBottom: `1px solid ${tableBorder}`,
+                              boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
+                              position: rowIsActive ? 'relative' : undefined,
+                              zIndex: rowIsActive ? 80 : undefined,
+                              height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
+                            }}
+                            onMouseEnter={() => setHoveredRow(ticket.id)}
+                            onMouseLeave={() => setHoveredRow(null)}
+                            onDoubleClick={() => setDetailTicket(ticket)}
+                            onContextMenu={e => {
+                              e.preventDefault()
+                              if (canEdit || isAdmin) setContextMenu({ x: e.clientX, y: e.clientY, ticket })
+                            }}>
+
+
+
+                            {/* Data cells */}
+                            {columns.map((col) => {
+                              const isEditingCell = editingCell?.ticketId === ticket.id
+                                && editingCell?.rowIndex === idx
+                                && editingCell?.colLabel === col.label
+                              const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
+                              const isStatusCol = col.label === 'STATUS'
+                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
+                              const cellVal = getCellDisplay(ticket, col.label)
+                              const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
+                              const emptyCellBg = isCellEmpty
+                                ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
+                                : undefined
+                              return (
+                                <td key={col.label}
+                                  data-cell-key={`${ticket.id}:${col.label}`}
+                                  onMouseEnter={() => setHoveredCell({ ticketId: ticket.id, colLabel: col.label })}
+                                  onMouseLeave={() => setHoveredCell(prev =>
+                                    prev?.ticketId === ticket.id && prev?.colLabel === col.label ? null : prev
+                                  )}
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    if (isEditingCell) return
+                                    if (isStatusCol && !isMyTickets) {
+                                      const statusVal = getScheduleStatusValue(ticket)
+                                      if (isGhost || statusShowsScheduleDetails(statusVal)) {
+                                        openScheduleDetailsPopup(ticket, e.currentTarget as HTMLElement, ghostKind)
+                                        return
+                                      }
+                                      if (canEdit && !isGhost) {
+                                        openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
+                                        return
+                                      }
+                                    }
+                                    if (isStatusCol && canEdit && !isGhost) {
+                                      openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
+                                      return
+                                    }
+                                    setExpandedCell(prev =>
+                                      prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                        ? null
+                                        : { ticketId: ticket.id, colLabel: col.label },
+                                    )
+                                  }}
+                                  onDoubleClick={e => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (!canEdit || isGhost || isEditingCell) return
+                                    if (INLINE_EDIT_COLUMNS.has(col.label)) {
+                                      startCellEdit(ticket, col.label, undefined, idx)
+                                    }
+                                  }}
+                                  style={{
+                                    padding: isEditingCell ? '6px' : '0 12px',
+                                    color: isGhost ? textMuted : textPrimary,
+                                    fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
+                                    backgroundColor: emptyCellBg ?? bg,
+                                    borderRight: `1px solid ${tableBorder}`,
+                                    borderBottom: `1px solid ${tableBorder}`,
+                                    width: col.w,
+                                    minWidth: 0,
+                                    maxWidth: col.w,
+                                    height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
+                                    maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
+                                    overflow: 'visible',
+                                    textOverflow: 'ellipsis',
+                                    transition: 'background-color 0.1s ease',
+                                    cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
+                                    verticalAlign: 'middle',
+                                    textAlign: col.align || 'left',
+                                    userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
+                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
+                                    ...(col.sticky
+                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
+                                      : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
+                                  }}>
+                                  {isEditingCell ? (
+                                    renderCell(ticket, col, idx, isGhost, ghostKind, false)
+                                  ) : (
+                                    <div
+                                      className={`relative w-full h-full flex items-center ${col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''
+                                        }`}
+                                      style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
+                                    >
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' ? 'w-auto max-w-full' : 'w-full'}`}>
+                                        {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      }))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )) : (
           /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#111827]">
-            {/* Mobile Top Header (< md) */}
-            <header className="flex md:hidden items-center justify-between w-full px-3 py-3 bg-white dark:bg-[#111827] border-b border-gray-200 dark:border-gray-800 shrink-0 safe-area-top">
+          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
+            {/* Top Header Row */}
+            <div className="flex items-center justify-center p-4 md:p-6 pb-2 w-full shrink-0 z-50 relative">
+              {/* Mobile Menu Button (absolute to keep branches perfectly centered) */}
               <button
                 onClick={() => setSidebarOpen?.(true)}
-                className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+                className="md:hidden absolute left-4 p-2.5 rounded-xl border shadow-sm transition-transform active:scale-95 shrink-0 z-10"
+                style={{ borderColor: border, backgroundColor: cardBg, color: textPrimary }}
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Overview</span>
-              <button
-                onClick={toggleTheme}
-                className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-colors"
+
+              {/* Branches Showcase (Centered) */}
+              <div
+                className="flex items-center justify-start overflow-x-auto hide-scrollbar py-1 w-full max-w-full"
+                style={{ WebkitOverflowScrolling: 'touch', maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}
               >
-                {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
-              </button>
-            </header>
-
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 py-4 md:px-8 md:py-6 bg-transparent">
-              <div className="max-w-4xl w-full mx-auto flex flex-col gap-4 md:gap-6 animate-in fade-in duration-200">
-              
-              {/* Header Section */}
-              <div className="text-center md:text-center">
-                <h2 className="text-lg md:text-xl font-black tracking-tight" style={{ color: textPrimary }}>
-                  Portal Overview Search
-                </h2>
-                <p className="text-[11px] md:text-xs mt-1 leading-relaxed" style={{ color: textMuted }}>
-                  Search by customer name, ticket #, control #, contact, or location — best matches appear first.
-                </p>
-              </div>
-
-              {/* Search Input Box */}
-              <div 
-                className="sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-1 pb-3 md:pb-0 md:pt-0"
-              >
-                <div
-                  className="flex items-center gap-2.5 md:gap-3 px-3.5 md:px-4 py-3 rounded-xl md:rounded-2xl shadow-sm border-2 transition-all duration-200"
-                  style={{
-                    backgroundColor: cardBg,
-                    borderColor: overviewSearchFocused ? green : border,
-                    boxShadow: overviewSearchFocused ? `0 0 0 3px ${green}15` : 'none'
-                  }}
-                >
-                <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
-                <input
-                  type="text"
-                  placeholder="Search customer, ticket #, contact, location..."
-                  value={overviewSearchInput}
-                  onChange={e => setOverviewSearchInput(e.target.value)}
-                  onFocus={() => setOverviewSearchFocused(true)}
-                  onBlur={() => setOverviewSearchFocused(false)}
-                  enterKeyHint="search"
-                  autoComplete="off"
-                  className="bg-transparent outline-none text-sm flex-1 min-w-0 font-medium"
-                  style={{ color: textPrimary }}
-                />
-                {overviewSearchInput && (
-                  <button 
-                    type="button" 
-                    onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }} 
-                    style={{ color: textMuted }}
-                    className="hover:scale-110 transition-transform"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              </div>
-
-              {/* Results Section */}
-              {overviewLoading ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
-                  <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
+                <div className="flex items-center justify-center gap-4 px-4 mx-auto w-max">
+                  {[
+                    "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE", 
+                    "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL", 
+                    "SILANG, CAVITE", "TAGUIG", "VALENZUELA"
+                  ].map((branch, idx, arr) => (
+                    <div key={branch} className="flex items-center gap-4 shrink-0">
+                      <span 
+                        className="text-[13px] md:text-[16px] font-black uppercase tracking-[0.15em]"
+                        style={{ color: idx % 2 === 0 ? green : textPrimary }}
+                      >
+                        {branch}
+                      </span>
+                      {idx < arr.length - 1 && (
+                        <span className="text-[10px] opacity-40" style={{ color: textMuted }}>&bull;</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : overviewResults.length > 0 ? (
-                <div className="flex flex-col gap-4">
-                  <div className="flex justify-between items-center px-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                      Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
-                    </span>
+              </div>
+            </div>
+
+            <div className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-4 md:py-6'}`}>
+              <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? '' : 'pb-[15vh] gap-6 md:gap-8'}`}>
+
+                {/* Sticky Header: Logo + Search Input (opaque bg so results don't show through while scrolling) */}
+                <div
+                  className={overviewSearchInput || overviewResults.length > 0
+                    ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
+                    : 'flex flex-col gap-6 md:gap-8'}
+                  style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
+                >
+                  {/* Big Logo / Name (Google Style) */}
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <h1
+                      className={`font-black tracking-tighter transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                    >
+                      <span style={{ color: green }}>ASHCOL</span>
+                      <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
+                    </h1>
                   </div>
-                  
-                  {/* Results Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                    {overviewResults.map(ticket => {
-                      const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
-                      const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
-                      const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
-                      const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
-                      const rawBranch = ticket.branchId || ticket.branch_id || null;
-                      const branchLabel = formatAssignedBranchLabel(
-                        resolveScopedBranchId(rawBranch) || rawBranch,
-                      );
-                      const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
-                      const finalDateKey = getFinalDateKey(ticket);
-                      const scheduleDateLabel = finalDateKey
-                        ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
-                        : getPreferredDateKey(ticket)
-                          ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
-                          : 'No Date';
-                      
-                      return (
-                        <div 
-                          key={ticket.id}
-                          className="rounded-xl md:rounded-2xl p-3.5 md:p-4 border shadow-sm transition-all duration-300 md:hover:shadow-md md:hover:-translate-y-0.5 flex flex-col justify-between active:scale-[0.99]"
-                          style={{ backgroundColor: cardBg, borderColor: border }}
-                        >
-                          <div>
-                            {/* Card Header */}
-                            <div className="flex justify-between items-start gap-2 mb-2">
-                              <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
-                                {ticketNum}
-                              </span>
-                              <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                {branchLabel && branchLabel !== EMPTY_CELL && (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
-                                    {branchLabel}
-                                  </span>
-                                )}
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
-                                  {statusLabel}
+
+                  {/* Search Input Box */}
+                  <div
+                    className="flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-all duration-200"
+                    style={{
+                      backgroundColor: cardBg,
+                      borderColor: overviewSearchFocused ? green : border,
+                      boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
+                    }}
+                  >
+                    <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
+                    <input
+                      type="text"
+                      placeholder="Search tickets, customers, or contacts..."
+                      value={overviewSearchInput}
+                      onChange={e => setOverviewSearchInput(e.target.value)}
+                      onFocus={() => setOverviewSearchFocused(true)}
+                      onBlur={() => setOverviewSearchFocused(false)}
+                      enterKeyHint="search"
+                      autoComplete="off"
+                      className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
+                      style={{ color: textPrimary }}
+                    />
+                    {overviewSearchInput && (
+                      <button
+                        type="button"
+                        onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
+                        style={{ color: textMuted }}
+                        className="hover:scale-110 transition-transform p-1"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Results Section */}
+                {overviewLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
+                    <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
+                  </div>
+                ) : overviewResults.length > 0 ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                        Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
+                      </span>
+                    </div>
+
+                    {/* Results Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                      {overviewResults.map(ticket => {
+                        const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
+                        const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
+                        const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
+                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
+                        const rawBranch = ticket.branchId || ticket.branch_id || null;
+                        const branchLabel = formatAssignedBranchLabel(
+                          resolveScopedBranchId(rawBranch) || rawBranch,
+                        );
+                        const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
+                        const finalDateKey = getFinalDateKey(ticket);
+                        const scheduleDateLabel = finalDateKey
+                          ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
+                          : getPreferredDateKey(ticket)
+                            ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
+                            : 'No Date';
+
+                        return (
+                          <div
+                            key={ticket.id}
+                            className="rounded-xl md:rounded-2xl p-3.5 md:p-4 border shadow-sm transition-all duration-300 md:hover:shadow-md md:hover:-translate-y-0.5 flex flex-col justify-between active:scale-[0.99]"
+                            style={{ backgroundColor: cardBg, borderColor: border }}
+                          >
+                            <div>
+                              {/* Card Header */}
+                              <div className="flex justify-between items-start gap-2 mb-2">
+                                <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
+                                  {ticketNum}
                                 </span>
+                                <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                                  {branchLabel && branchLabel !== EMPTY_CELL && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
+                                      {branchLabel}
+                                    </span>
+                                  )}
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Customer & Location */}
+                              <h3 className="font-bold text-sm leading-tight mb-2" style={{ color: textPrimary }}>
+                                {highlightMatch(customer, overviewSearchInput)}
+                              </h3>
+
+                              <div className="flex flex-col gap-1 text-[11px] mb-3" style={{ color: textMuted }}>
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="w-3 h-3 shrink-0" style={{ color: green }} />
+                                  <span className="truncate">{formatAddress(ticket.location)}</span>
+                                </div>
+                                {ticket.contactPhone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold">Contact:</span>
+                                    <span>{ticket.contactPhone}</span>
+                                  </div>
+                                )}
+                                {negotiatorLabel !== EMPTY_CELL && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold">Negotiator:</span>
+                                    <span>{negotiatorLabel}</span>
+                                  </div>
+                                )}
+                                {ticket.assignedEmployeeName && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold">Technician:</span>
+                                    <span>{ticket.assignedEmployeeName}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
 
-                            {/* Customer & Location */}
-                            <h3 className="font-bold text-sm leading-tight mb-2" style={{ color: textPrimary }}>
-                              {highlightMatch(customer, overviewSearchInput)}
-                            </h3>
-                            
-                            <div className="flex flex-col gap-1 text-[11px] mb-3" style={{ color: textMuted }}>
-                              <div className="flex items-center gap-1.5">
-                                <MapPin className="w-3 h-3 shrink-0" style={{ color: green }} />
-                                <span className="truncate">{formatAddress(ticket.location)}</span>
-                              </div>
-                              {ticket.contactPhone && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold">Contact:</span>
-                                  <span>{ticket.contactPhone}</span>
-                                </div>
-                              )}
-                              {negotiatorLabel !== EMPTY_CELL && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold">Negotiator:</span>
-                                  <span>{negotiatorLabel}</span>
-                                </div>
-                              )}
-                              {ticket.assignedEmployeeName && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold">Technician:</span>
-                                  <span>{ticket.assignedEmployeeName}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Card Footer */}
-                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
-                            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
-                              {scheduleDateLabel}
-                            </span>
-                            <div className="flex gap-2 w-full sm:w-auto">
-                              {isAdmin && (
+                            {/* Card Footer */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
+                              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
+                                {scheduleDateLabel}
+                              </span>
+                              <div className="flex gap-2 w-full sm:w-auto">
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }}
+                                    className="flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white bg-red-600 transition-opacity hover:opacity-90 active:opacity-80"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }}
-                                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white bg-red-600 transition-opacity hover:opacity-90 active:opacity-80"
+                                  onClick={() => openEditModal(ticket)}
+                                  className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
+                                  style={{ backgroundColor: green }}
                                 >
-                                  Delete
+                                  View Details
                                 </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => openEditModal(ticket)}
-                                className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
-                                style={{ backgroundColor: green }}
-                              >
-                                View Details
-                              </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ) : overviewSearchInput.trim() ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: textMuted }} />
-                  <h3 className="font-bold text-xs" style={{ color: textPrimary }}>No results found</h3>
-                  <p className="text-[11px] max-w-xs mt-1" style={{ color: textMuted }}>
-                    We couldn't find any tickets matching "{overviewSearchInput}". Try another search term.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center opacity-80">
-                  <Search className="w-10 h-10 mb-2" style={{ color: textMuted }} />
-                  <h3 className="font-bold text-xs" style={{ color: textPrimary }}>Ready to Search</h3>
-                  <p className="text-[11px] max-w-md mt-1" style={{ color: textMuted }}>
-                    Start typing to search tickets by customer name, ticket/control number, technician, contact phone, or address.
-                  </p>
-                </div>
-              )}
+                ) : overviewSearchInput.trim() ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <AlertTriangle className="w-10 h-10 mb-3" style={{ color: textMuted }} />
+                    <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>No results found</h3>
+                    <p className="text-xs max-w-sm mt-2" style={{ color: textMuted }}>
+                      We couldn't find any tickets matching "{overviewSearchInput}". Try adjusting your search term.
+                    </p>
+                  </div>
+                ) : null}
 
+              </div>
+            </div>
+
+            {/* Dark Mode Toggle - Bottom Right Floating */}
+            <div className="absolute bottom-6 right-6 z-50">
+              <button
+                onClick={toggleTheme}
+                title={isLight ? 'Switch to Dark' : 'Switch to Light'}
+                className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
+                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+              >
+                {isLight ? (
+                  <Moon className="w-5 h-5" style={{ color: textMuted }} />
+                ) : (
+                  <Sun className="w-5 h-5" style={{ color: '#F59E0B' }} />
+                )}
+              </button>
             </div>
           </div>
-        </div>
         )}
       </div>
 
@@ -8176,30 +8211,32 @@ export default function Tickets() {
         const topPos = contextMenu.y + menuH > window.innerHeight ? Math.max(10, window.innerHeight - menuH - 10) : contextMenu.y
         return (
           <div ref={contextMenuRef} className="fixed z-[200]" style={{ top: topPos, left: leftPos }}
-               onClick={e => e.stopPropagation()}>
+            onClick={e => e.stopPropagation()}>
             <div className="rounded-2xl shadow-2xl overflow-hidden"
-                 style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
 
               {/* Current status label */}
               <div className="px-4 py-2.5 flex items-center gap-2"
-                   style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                {(() => { const sc = statusColor(contextMenu.ticket.status, isLight); return (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-black border"
-                        style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
-                    {statusCode(contextMenu.ticket.status)}
-                  </span>
-                ) })()}
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
+                {(() => {
+                  const sc = statusColor(contextMenu.ticket.status, isLight); return (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black border"
+                      style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
+                      {statusCode(contextMenu.ticket.status)}
+                    </span>
+                  )
+                })()}
                 <span className="text-[11px] font-bold truncate" style={{ color: textMuted }}>
-                  {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0,3).join(' ')}
+                  {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0, 3).join(' ')}
                 </span>
               </div>
 
               {/* View full details */}
               <button onClick={() => { setDetailTicket(contextMenu.ticket); setContextMenu(null) }}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                      style={{ color: textPrimary }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                style={{ color: textPrimary }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
                 <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
                 View Full Details
               </button>
@@ -8207,10 +8244,10 @@ export default function Tickets() {
               {/* Edit Details */}
               {canEdit && (
                 <button onClick={() => { openEditModal(contextMenu.ticket); setContextMenu(null) }}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                        style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                  style={{ color: textPrimary }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
                   <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
                   Edit Details
                 </button>
@@ -8286,253 +8323,253 @@ export default function Tickets() {
 
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-[3px]"
-               style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-               onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}>
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+            onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}>
             <div className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95"
-                 style={{
-                   backgroundColor: cardBg,
-                   border: `1px solid ${border}`,
-                   height: 'calc(100vh - 6px)',
-                   maxHeight: 'calc(100vh - 6px)',
-                   maxWidth: showHistoryPanel
-                     ? 'min(1480px, calc(100vw - 6px))'
-                     : 'min(1180px, calc(100vw - 6px))',
-                 }}
-                 onClick={e => e.stopPropagation()}>
+              style={{
+                backgroundColor: cardBg,
+                border: `1px solid ${border}`,
+                height: 'calc(100vh - 6px)',
+                maxHeight: 'calc(100vh - 6px)',
+                maxWidth: showHistoryPanel
+                  ? 'min(1480px, calc(100vw - 6px))'
+                  : 'min(1180px, calc(100vw - 6px))',
+              }}
+              onClick={e => e.stopPropagation()}>
 
-               {/* Header */}
-               <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
-                    style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
-                 
-                 {/* Header Row 1 */}
-                 <div className="flex items-center justify-between w-full">
-                   <div className="min-w-0 flex-1 mr-4">
-                     <div className="flex items-center gap-3 flex-wrap">
-                       <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
-                         {custName || 'Direct Client'}
-                       </h2>
-                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
-                         backgroundColor: scheduleBadgeStyle.backgroundColor,
-                         color: scheduleBadgeStyle.color,
-                         border: `1px solid ${scheduleBadgeStyle.borderColor || 'transparent'}`,
-                       }}>
-                         {scheduleStatusDisplay}
-                       </span>
-                       {branchName && branchName !== EMPTY_CELL && (
-                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
-                           backgroundColor: inputBg,
-                           color: textMuted,
-                           border: `1px solid ${border}`,
-                         }}>
-                           {branchName}
-                         </span>
-                       )}
-                       <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
-                         TICKET NO: {t.ticketNumber || t.ticket_number || EMPTY_CELL}
-                       </span>
-                       {isDuplicateName && (
-                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
-                           Duplicate Name
-                         </span>
-                       )}
-                     </div>
-                   </div>
-                   <button type="button" onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
-                           className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                     <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
-                   </button>
-                 </div>
+              {/* Header */}
+              <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
+                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
 
-                 {/* Header Row 2 */}
-                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
-                   <div>
-                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
-                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
-                   </div>
-                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
-                   <div>
-                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
-                     <span className="font-semibold text-xs font-mono" style={{ color: textPrimary }}>
-                       {t.createdBy || (t.customerEmail || 'System')}
-                     </span>
-                   </div>
-                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
-                   <div>
-                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
-                     <span className="font-semibold text-xs" style={{ color: textPrimary }}>
-                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL}
-                     </span>
-                   </div>
-                   <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
-                   <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
-                      <span className="font-semibold text-xs animate-in fade-in duration-200" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
-                        {negotiatorPhone ? (
-                          <a href={`tel:${negotiatorPhone.replace(/\D/g,'').replace(/^0/,'+63')}`} className="hover:underline">
-                            {fmtPhone(negotiatorPhone) || negotiatorPhone}
-                          </a>
-                        ) : EMPTY_CELL}
+                {/* Header Row 1 */}
+                <div className="flex items-center justify-between w-full">
+                  <div className="min-w-0 flex-1 mr-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                        {custName || 'Direct Client'}
+                      </h2>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                        backgroundColor: scheduleBadgeStyle.backgroundColor,
+                        color: scheduleBadgeStyle.color,
+                        border: `1px solid ${scheduleBadgeStyle.borderColor || 'transparent'}`,
+                      }}>
+                        {scheduleStatusDisplay}
                       </span>
+                      {branchName && branchName !== EMPTY_CELL && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                          backgroundColor: inputBg,
+                          color: textMuted,
+                          border: `1px solid ${border}`,
+                        }}>
+                          {branchName}
+                        </span>
+                      )}
+                      <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
+                        TICKET NO: {t.ticketNumber || t.ticket_number || EMPTY_CELL}
+                      </span>
+                      {isDuplicateName && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
+                          Duplicate Name
+                        </span>
+                      )}
                     </div>
-                 </div>
-               </div>
+                  </div>
+                  <button type="button" onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
+                    className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
+                  </button>
+                </div>
 
-               {/* Two Column Body */}
-               <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
-                 
-                 {/* Left Column: Details */}
-                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                   {/* Grid 1: Client & Location Info */}
-                   <div>
-                     <SHead title="Client & Location Details" />
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <DField label="Customer" value={custName} />
-                       <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
-                       {!isMyTickets && (
-                         <DField label="Address" value={addr} className="sm:col-span-2" />
-                       )}
-                       <DField label="District" value={district || resolveTicketDistrict(t) || EMPTY_CELL} className={isMyTickets ? "sm:col-span-2" : ""} />
-                     </div>
-                   </div>
+                {/* Header Row 2 */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
+                    <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
+                  </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
+                    <span className="font-semibold text-xs font-mono" style={{ color: textPrimary }}>
+                      {t.createdBy || (t.customerEmail || 'System')}
+                    </span>
+                  </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
+                    <span className="font-semibold text-xs" style={{ color: textPrimary }}>
+                      {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL}
+                    </span>
+                  </div>
+                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
+                    <span className="font-semibold text-xs animate-in fade-in duration-200" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
+                      {negotiatorPhone ? (
+                        <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="hover:underline">
+                          {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                        </a>
+                      ) : EMPTY_CELL}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-                   {/* Grid 2: Service & Equipment Details */}
-                   <div>
-                     <SHead title="Service & Equipment Details" />
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || EMPTY_CELL} />
-                       <DField label="Brand / Unit" value={brand || EMPTY_CELL} />
-                       <DField label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
-                       <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
-                       <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL} />
-                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
-                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || EMPTY_CELL} />
-                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
-                     </div>
-                   </div>
+              {/* Two Column Body */}
+              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
 
-                   {/* Grid 3: Scheduling Details */}
-                   <div>
-                     <SHead title="Scheduling Details" />
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <DField label="Assigned Branch" value={branchName} />
-                       <DField label="Preferred Date" value={formatDisplayDate(preferredDate)} />
-                       <DField label="Final Schedule" value={formatDisplayDate(finalScheduleDate)} green />
-                       {isCompleted && archivedSched && (
-                         <DField label="Scheduled Date" value={archivedSched} />
-                       )}
-                       {isCompleted && installedDate && (
-                         <DField label="Installed Date" value={installedDate} />
-                       )}
-                     </div>
-                   </div>
+                {/* Left Column: Details */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  {/* Grid 1: Client & Location Info */}
+                  <div>
+                    <SHead title="Client & Location Details" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DField label="Customer" value={custName} />
+                      <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
+                      {!isMyTickets && (
+                        <DField label="Address" value={addr} className="sm:col-span-2" />
+                      )}
+                      <DField label="District" value={district || resolveTicketDistrict(t) || EMPTY_CELL} className={isMyTickets ? "sm:col-span-2" : ""} />
+                    </div>
+                  </div>
 
-                   {/* Grid 4: Payment Details */}
-                   {(hasPayment || t.modeOfPayment || t.mode_of_payment || t.amountCharged || t.installationCharges || t.installation_charges) && (
-                     <div>
-                       <SHead title="Payment Details" />
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         <DField label="Mode of Payment" value={paymentMode || EMPTY_CELL} />
-                         <DField label="Payment Amount" value={paymentAmt || EMPTY_CELL} green />
-                       </div>
-                     </div>
-                   )}
+                  {/* Grid 2: Service & Equipment Details */}
+                  <div>
+                    <SHead title="Service & Equipment Details" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || EMPTY_CELL} />
+                      <DField label="Brand / Unit" value={brand || EMPTY_CELL} />
+                      <DField label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
+                      <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
+                      <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL} />
+                      <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
+                      <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || EMPTY_CELL} />
+                      <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
+                    </div>
+                  </div>
 
-                   {/* Commit terms / note / remarks */}
-                   {(commit || note || update) && (
-                     <div className="space-y-4">
-                       {commit && (
-                         <div>
-                           <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
-                           <p className="text-xs leading-relaxed rounded-xl p-4"
-                             style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
-                             {commit}
-                           </p>
-                         </div>
-                       )}
-                       {note && (
-                         <div>
-                           <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
-                           <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                             style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
-                             {note}
-                           </p>
-                         </div>
-                       )}
-                       {update && (
-                         <div>
-                           <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
-                           <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                             style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
-                             {update}
-                           </p>
-                         </div>
-                       )}
-                     </div>
-                   )}
-                 </div>
+                  {/* Grid 3: Scheduling Details */}
+                  <div>
+                    <SHead title="Scheduling Details" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DField label="Assigned Branch" value={branchName} />
+                      <DField label="Preferred Date" value={formatDisplayDate(preferredDate)} />
+                      <DField label="Final Schedule" value={formatDisplayDate(finalScheduleDate)} green />
+                      {isCompleted && archivedSched && (
+                        <DField label="Scheduled Date" value={archivedSched} />
+                      )}
+                      {isCompleted && installedDate && (
+                        <DField label="Installed Date" value={installedDate} />
+                      )}
+                    </div>
+                  </div>
 
-                 {/* Right Column: Update History */}
-                 {showHistoryPanel && (
-                 <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
-                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                   <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
-                     Update History
-                   </h4>
-                   
-                   {loadingHistory ? (
-                     <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
-                       <div className="relative w-10 h-10">
-                         <svg viewBox="0 0 40 40" fill="none" style={{ width: 40, height: 40, transform: "rotate(-90deg)" }}>
-                           <circle cx="20" cy="20" r="16" stroke={isLight ? "#e2e8f0" : "#1e293b"} strokeWidth="3" />
-                           <circle cx="20" cy="20" r="16" stroke={green} strokeWidth="3" strokeDasharray="100.53" strokeDashoffset="25.13" strokeLinecap="round" className="animate-spin" style={{ transformOrigin: "20px 20px" }} />
-                         </svg>
-                       </div>
-                       <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs&#x2026;</span>
-                     </div>
-                   ) : (
-                     <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
-                       {(() => {
-                         const listToRender = [...history]
-                         // Removed virtual initial submission
-                         
-                         listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                         
-                         if (listToRender.length === 0) {
-                           return (
-                             <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
-                               No update history recorded.
-                             </div>
-                           )
-                         }
+                  {/* Grid 4: Payment Details */}
+                  {(hasPayment || t.modeOfPayment || t.mode_of_payment || t.amountCharged || t.installationCharges || t.installation_charges) && (
+                    <div>
+                      <SHead title="Payment Details" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <DField label="Mode of Payment" value={paymentMode || EMPTY_CELL} />
+                        <DField label="Payment Amount" value={paymentAmt || EMPTY_CELL} green />
+                      </div>
+                    </div>
+                  )}
 
-                         return listToRender.map((h, idx) => {
-                           const dt = new Date(h.createdAt).toLocaleString('en-PH', {
-                             month: 'short', day: 'numeric', year: 'numeric',
-                             hour: 'numeric', minute: '2-digit', hour12: true
-                           })
-                           
-                           return (
-                             <div key={h.id || idx} className="relative">
-                               <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
-                                     style={{
-                                       borderColor: idx === 0 ? green : border,
-                                       backgroundColor: idx === 0 ? green : cardBg
-                                     }} />
-                               
-                               <div className="text-xs">
-                                 <div className="flex items-start justify-between gap-2">
-                                   <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
-                                     {h.changeNote || 'Ticket details updated'}
-                                   </span>
-                                   <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
-                                     {dt}
-                                   </span>
-                                 </div>
-                                 
-                                 <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
-                                   <p className="text-[10px] font-semibold">
-                                     By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
-                                   </p>
+                  {/* Commit terms / note / remarks */}
+                  {(commit || note || update) && (
+                    <div className="space-y-4">
+                      {commit && (
+                        <div>
+                          <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
+                          <p className="text-xs leading-relaxed rounded-xl p-4"
+                            style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
+                            {commit}
+                          </p>
+                        </div>
+                      )}
+                      {note && (
+                        <div>
+                          <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
+                          <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                            style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
+                            {note}
+                          </p>
+                        </div>
+                      )}
+                      {update && (
+                        <div>
+                          <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
+                          <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                            style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
+                            {update}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Update History */}
+                {showHistoryPanel && (
+                  <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
+                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
+                      Update History
+                    </h4>
+
+                    {loadingHistory ? (
+                      <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
+                        <div className="relative w-10 h-10">
+                          <svg viewBox="0 0 40 40" fill="none" style={{ width: 40, height: 40, transform: "rotate(-90deg)" }}>
+                            <circle cx="20" cy="20" r="16" stroke={isLight ? "#e2e8f0" : "#1e293b"} strokeWidth="3" />
+                            <circle cx="20" cy="20" r="16" stroke={green} strokeWidth="3" strokeDasharray="100.53" strokeDashoffset="25.13" strokeLinecap="round" className="animate-spin" style={{ transformOrigin: "20px 20px" }} />
+                          </svg>
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs&#x2026;</span>
+                      </div>
+                    ) : (
+                      <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
+                        {(() => {
+                          const listToRender = [...history]
+                          // Removed virtual initial submission
+
+                          listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+                          if (listToRender.length === 0) {
+                            return (
+                              <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
+                                No update history recorded.
+                              </div>
+                            )
+                          }
+
+                          return listToRender.map((h, idx) => {
+                            const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                              month: 'short', day: 'numeric', year: 'numeric',
+                              hour: 'numeric', minute: '2-digit', hour12: true
+                            })
+
+                            return (
+                              <div key={h.id || idx} className="relative">
+                                <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
+                                  style={{
+                                    borderColor: idx === 0 ? green : border,
+                                    backgroundColor: idx === 0 ? green : cardBg
+                                  }} />
+
+                                <div className="text-xs">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                      {h.changeNote || 'Ticket details updated'}
+                                    </span>
+                                    <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                      {dt}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                                    <p className="text-[10px] font-semibold">
+                                      By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
+                                    </p>
                                     {h.newStatus && h.newStatus !== h.previousStatus && (
                                       <p className="text-[10px]">
                                         Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
@@ -8548,38 +8585,38 @@ export default function Tickets() {
                                         Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
                                       </p>
                                     )}
-                                 </div>
-                               </div>
-                             </div>
-                           )
-                         })
-                       })()}
-                     </div>
-                   )}
-                 </div>
-                 )}
-               </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-               {/* Footer Actions */}
-               <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
-                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                 <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
-                   className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
-                   style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
-                   <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                   {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
-                 </button>
-                 {canEdit && (
-                   <button onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
-                           className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
-                           style={{ borderColor: inputBorder, color: textPrimary }}>
-                     <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
-                     Edit Details
-                   </button>
-                 )}
-                </div>
+              {/* Footer Actions */}
+              <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
+                style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
+                <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
+                  className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
+                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
+                  <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                  {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
+                </button>
+                {canEdit && (
+                  <button onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
+                    className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
+                    style={{ borderColor: inputBorder, color: textPrimary }}>
+                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
+                    Edit Details
+                  </button>
+                )}
               </div>
             </div>
+          </div>
         )
       })(), document.body)}
 
@@ -9105,13 +9142,13 @@ export default function Tickets() {
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Excel Import Results Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {importResults && importResults.isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-             style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="flex flex-col w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
-               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between gap-3 shrink-0 border-b"
-                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
               <div className="min-w-0">
                 <h3 className="font-black text-sm leading-tight" style={{ color: textPrimary }}>
                   Excel Import: {importResults.fileName}
@@ -9122,8 +9159,8 @@ export default function Tickets() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button onClick={() => setImportResults(null)}
-                        className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors"
-                        style={{ color: textMuted }}>
+                  className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors"
+                  style={{ color: textMuted }}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -9131,7 +9168,7 @@ export default function Tickets() {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-              
+
               {/* Stats dashboard */}
               <div className="grid grid-cols-4 gap-3 shrink-0">
                 {[
@@ -9229,7 +9266,7 @@ export default function Tickets() {
                     Ã¢Å“â€¦ Ready to Update ({importResults.updates.length})
                   </h4>
                   <div className="max-h-48 overflow-y-auto border rounded-2xl p-3 flex flex-col gap-2"
-                       style={{ borderColor: border, backgroundColor: inputBg }}>
+                    style={{ borderColor: border, backgroundColor: inputBg }}>
                     {importResults.updates.map((item) => {
                       const custName = getF(item.ticket, 'customerName', 'customer_name') || item.ticket.title
                       const fields = Object.keys(item.updatedFields).filter(k => item.updatedFields[k as keyof Ticket] !== undefined)
@@ -9323,7 +9360,7 @@ export default function Tickets() {
 
             {/* Footer */}
             <div className="px-6 py-4 flex items-center justify-end gap-3 shrink-0 border-t"
-                 style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
               <div className="flex items-center gap-2 mr-auto">
                 <span className="text-xs font-bold" style={{ color: textMuted }}>Scheduled Target Date:</span>
                 <input
@@ -9335,14 +9372,14 @@ export default function Tickets() {
                 />
               </div>
               <button onClick={() => setImportResults(null)}
-                      disabled={saving}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
-                      style={{ borderColor: inputBorder, color: textPrimary }}>
+                disabled={saving}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
+                style={{ borderColor: inputBorder, color: textPrimary }}>
                 Cancel
               </button>
               <button onClick={handleApplyImport}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
-                      style={{ backgroundColor: green }}>
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
+                style={{ backgroundColor: green }}>
                 {`Apply & Save All (${importResults.matchedCount} updates, ${importResults.unmatchedCount} new)`}
               </button>
             </div>
@@ -9457,9 +9494,9 @@ export default function Tickets() {
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
                   <Field label="Dealer (DLR)">
-                    <input type="text" value={addForm.sourceVendor || ''}
+                    <input type="text" value={addForm.dealer || ''}
                       list="add-ticket-dealer-list"
-                      onChange={e => setAddForm({ ...addForm, sourceVendor: e.target.value })}
+                      onChange={e => setAddForm({ ...addForm, dealer: e.target.value })}
                       onBlur={e => {
                         const name = e.target.value.trim().toUpperCase()
                         if (!name || name.includes(' - ')) return
@@ -9621,6 +9658,8 @@ export default function Tickets() {
           branches={branches}
           relayCustomStores={relayCustomStores}
           onPersistCustomStores={handlePersistCustomStores}
+          dealers={dealers}
+          onDealersChanged={fetchDealers}
           parseStoreVendor={parseStoreVendor}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
@@ -9629,7 +9668,7 @@ export default function Tickets() {
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
           isTaguigServices={isTaguigServices}
-          scheduleStatusOptions={SCHEDULE_STATUS_OPTS}
+
           editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
           onClose={closeEditModal}
           onDelete={() => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } }}
@@ -9807,7 +9846,7 @@ export default function Tickets() {
 
                 {/* Day-of-week header */}
                 <div className="grid grid-cols-7 mb-1">
-                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
                     <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
                   ))}
                 </div>
@@ -10001,7 +10040,7 @@ export default function Tickets() {
 
                 {/* Day-of-week header */}
                 <div className="grid grid-cols-7 mb-1">
-                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
                     <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
                   ))}
                 </div>
@@ -10075,10 +10114,10 @@ export default function Tickets() {
         }
         return ReactDOM.createPortal(
           <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-               onClick={() => setPaymentPrompt(null)}>
+            onClick={() => setPaymentPrompt(null)}>
             <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-                 style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-                 onClick={e => e.stopPropagation()}>
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+              onClick={e => e.stopPropagation()}>
               <form onSubmit={handleSubmit}>
                 <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
                   <div>

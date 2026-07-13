@@ -86,6 +86,13 @@
 }
 
 @layer utilities {
+  .hide-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   .glow-green {
     box-shadow: 0 0 24px rgba(16, 185, 129, 0.3);
   }

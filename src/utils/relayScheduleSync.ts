@@ -74,9 +74,9 @@ export function parseRelayAcDetails(ticket: RelayScheduleTicket) {
   }
 }
 
-export function isRelayStoreVendor(ticket: RelayScheduleTicket): boolean {
-  const vendor = String(ticket.sourceVendor || '').trim().toLowerCase()
-  return Boolean(vendor && vendor !== 'direct' && vendor !== 'other' && !vendor.startsWith('direct '))
+export function isRelayHasDealer(ticket: RelayScheduleTicket): boolean {
+  const dealer = String(ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
+  return Boolean(dealer && dealer !== 'direct' && dealer !== 'other' && !dealer.startsWith('direct '))
 }
 
 /** Ticket has left relay negotiator queue and belongs on Schedules. */
@@ -97,7 +97,7 @@ export function hasRelayLeftQueue(ticket: RelayScheduleTicket): boolean {
     const preferred = String(ticket.preferredDate || ticket.preferred_date || '').trim().split('T')[0]
     const negotiator = String(ticket.negotiatorId || ticket.negotiator_id || '').trim()
     if (preferred && negotiator) {
-      if (isRelayStoreVendor(ticket) && !resolveRelayFinalDate(ticket)) return false
+      if (isRelayHasDealer(ticket) && !resolveRelayFinalDate(ticket)) return false
       return true
     }
   }
@@ -131,7 +131,7 @@ const TICKET_TEXT_FIELDS = [
   'assignedEmployeeName', 'assigned_employee_name',
   'modeOfPayment', 'mode_of_payment', 'note',
   'commitType', 'commitTerms', 'description',
-  'sourceVendor', 'source_vendor',
+  'dealer', 'sourceVendor', 'source_vendor',
 ] as const
 
 function sanitizeTicketTextFields(ticket: Record<string, unknown>): void {
@@ -151,6 +151,7 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
   syncAlias(next, 'ticketNumber', 'ticket_number')
   syncAlias(next, 'remarksUpdate', 'remarks_update')
   syncAlias(next, 'sourceVendor', 'source_vendor')
+  if (!next.dealer && next.sourceVendor) next.dealer = next.sourceVendor
   syncAlias(next, 'installationCharges', 'installation_charges')
   syncAlias(next, 'modeOfPayment', 'mode_of_payment')
   syncAlias(next, 'driverName', 'driver_name')

@@ -11,6 +11,7 @@ export type WarrantyTicket = {
   unitType?: string | null
   acDetails?: string | null
   unitBrandDisplay?: string | null
+  dealer?: string | null
   sourceVendor?: string | null
   district?: string | null
   branchId?: string | null

@@ -11,6 +11,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
+import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 import { parseStoreVendor } from '../utils/parseStoreVendor'
@@ -217,6 +218,8 @@ export default function CreateTicket() {
       }
     }
     fetchDealers()
+    window.addEventListener('ashcol-dealers-updated', fetchDealers)
+    return () => window.removeEventListener('ashcol-dealers-updated', fetchDealers)
   }, [])
 
   const location = useLocation()
@@ -248,9 +251,9 @@ export default function CreateTicket() {
         } catch (e) {}
       }
       
-      // Set sourceVendor if valid
-      if (scannedData.sourceVendor) {
-        const parsed = parseStoreVendor(scannedData.sourceVendor)
+      // Set dealer if valid
+      if (scannedData.dealer || scannedData.sourceVendor) {
+        const parsed = parseStoreVendor(scannedData.dealer || scannedData.sourceVendor)
         if (parsed.store === 'Direct') {
           setSelectedDealer('Direct')
           setDealerBranch('')
@@ -385,10 +388,12 @@ export default function CreateTicket() {
           contactPhone: contactPhone.trim(),
           preferredDate: selectedDate || undefined,
           location: fullLoc.trim().toUpperCase(),
-          sourceVendor: selectedDealer === 'Direct'
+          dealer: selectedDealer === 'Direct'
             ? 'DIRECT'
+            : ROBINSON_APPLIANCES_RE.test(selectedDealer)
+            ? (dealerBranch.trim() ? `RA ${dealerBranch.trim().toUpperCase()}` : 'RA')
             : (dealerBranch.trim() ? `${selectedDealer.toUpperCase()} - ${dealerBranch.trim().toUpperCase()}` : selectedDealer.toUpperCase()),
-          controlNumber: selectedDealer.toLowerCase().startsWith('robinsons') || selectedDealer.toLowerCase().startsWith('ra') ? controlNumber.trim().toUpperCase() : undefined,
+          controlNumber: ROBINSON_APPLIANCES_RE.test(selectedDealer) ? controlNumber.trim().toUpperCase() : undefined,
           branchId,
         })
       })
@@ -583,7 +588,7 @@ export default function CreateTicket() {
                     />
                   </div>
                 )}
-                {(selectedDealer.toLowerCase().startsWith('robinsons') || selectedDealer.toLowerCase().startsWith('ra')) && (
+                {ROBINSON_APPLIANCES_RE.test(selectedDealer) && (
                   <div className="mt-3">
                     <FL label="Transaction ID" />
                     <input

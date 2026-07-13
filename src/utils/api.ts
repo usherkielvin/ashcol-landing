@@ -379,7 +379,7 @@ export function isTaguigServiceTicket(ticket: Record<string, unknown>): boolean 
     branchId,
     serviceType: String(ticket.serviceType || ticket.service_type || ''),
     statusCode: String(ticket.statusCode || ticket.status_code || meta.statusCode || ''),
-    dealer: String(ticket.sourceVendor || ticket.source_vendor || meta.dealer || meta.dlr || ''),
+    dealer: String(ticket.dealer || ticket.sourceVendor || ticket.source_vendor || meta.dealer || meta.dlr || ''),
     technicianName: installer,
     remarks: String(ticket.remarks || ticket.remarksUpdate || meta.update || meta.remarksUpdate || ''),
     note: String(ticket.note || meta.note || ''),
@@ -673,6 +673,11 @@ export function resolveImageUrl(path: string | null | undefined): string {
 
 export const PROFILE_UPDATED_EVENT = 'ashcol-profile-updated'
 export const EMPLOYEES_DIRECTORY_UPDATED_EVENT = 'ashcol-employees-directory-updated'
+export const DEALERS_UPDATED_EVENT = 'ashcol-dealers-updated'
+
+export function notifyDealersUpdated(): void {
+  window.dispatchEvent(new Event(DEALERS_UPDATED_EVENT))
+}
 
 export function isPortalStaffUser(role?: string | null): boolean {
   return (role || '').toLowerCase() !== 'customer'

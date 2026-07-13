@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
@@ -863,17 +863,22 @@ export default function DailyServiceReport() {
     }
   }, [])
   useEffect(() => { fetchDealerOptions() }, [fetchDealerOptions])
+  useEffect(() => {
+    window.addEventListener(DEALERS_UPDATED_EVENT, fetchDealerOptions)
+    return () => window.removeEventListener(DEALERS_UPDATED_EVENT, fetchDealerOptions)
+  }, [fetchDealerOptions])
   const registerNewDealer = useCallback(async (name: string) => {
     const upper = name.trim().toUpperCase()
     if (!upper || upper.includes(' - ') || dealerOptions.some(d => d === upper)) return
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      await fetch(`${API_BASE_URL}/dealers`, {
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: upper })
       })
       fetchDealerOptions()
+      if (res.ok) notifyDealersUpdated()
     } catch (err) {
       console.error('Error auto-creating dealer from archives:', err)
     }

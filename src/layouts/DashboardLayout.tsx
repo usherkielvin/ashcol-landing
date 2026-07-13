@@ -5,8 +5,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import {
   Ticket as TicketIcon,
   Menu, LogOut, X, Sun, Moon,
-  ChevronRight, UserCircle, ChevronDown,
-  PanelLeftOpen, ClipboardList,
+  ChevronRight, ChevronLeft, UserCircle, ChevronDown,
+  PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck,
   LayoutDashboard
@@ -109,25 +109,10 @@ function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
   const groups = buildNavGroups(navLinks)
   const items: { key: string; name: string; path: string; icon: React.ReactNode; groupPaths?: string[] }[] = []
 
-  const normalizePath = (path: string) => (path === '/tickets' ? '/schedules' : path)
-
-  for (const group of groups) {
-    if (group.subItems.length > 0) {
-      const firstSub = group.subItems[0]
-      const Icon = group.Icon
-      items.push({
-        key: group.title,
-        name: group.title,
-        path: firstSub.path,
-        icon: <Icon size={20} className="shrink-0" />,
-        groupPaths: group.subItems.map(s => normalizePath(s.path))
-      })
-    }
-  }
-
-  const covered = new Set(groups.flatMap(g => g.subItems.map(s => normalizePath(s.path))))
+  const covered = new Set(groups.flatMap(g => g.subItems.map(s => s.path)))
+  
   for (const link of navLinks) {
-    const key = normalizePath(link.path)
+    const key = link.path
     if (covered.has(key)) continue
     const Icon = link.icon
     items.push({
@@ -138,12 +123,27 @@ function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
     })
   }
 
+  for (const group of groups) {
+    if (group.subItems.length > 0) {
+      const firstSub = group.subItems[0]
+      const Icon = group.Icon
+      items.push({
+        key: group.title,
+        name: group.title,
+        path: firstSub.path,
+        icon: <Icon size={20} className="shrink-0" />,
+        groupPaths: group.subItems.map(s => s.path)
+      })
+    }
+  }
+
   return items
 }
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
@@ -155,6 +155,20 @@ export default function DashboardLayout() {
   const { user, logout } = useAuth()
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
+
+  const handleMouseEnter = () => {
+    if (sidebarCollapsed) {
+      setSidebarCollapsed(false)
+      setIsHoverExpanded(true)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (isHoverExpanded) {
+      setSidebarCollapsed(true)
+      setIsHoverExpanded(false)
+    }
+  }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
@@ -286,7 +300,7 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
-    { name: 'Overview',        path: '/tickets',          icon: LayoutDashboard },
+    { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
@@ -305,8 +319,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
-  const serviceWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -368,11 +382,15 @@ export default function DashboardLayout() {
         return
       }
     }
+    
+    // If the new path doesn't match any accordion subItem, clear the active subItem
+    setActiveSubItem(null)
+    setOpenAccordion(null)
   }, [location.pathname, navGroups])
 
   // Auto collapse on table-heavy tabs
   useEffect(() => {
-    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/tickets', '/lineup'].some(p => 
+    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup'].some(p => 
       location.pathname === p || location.pathname.startsWith(p + '/')
     )
     if (isTablePage) {
@@ -407,7 +425,12 @@ export default function DashboardLayout() {
       )}
 
       {/* ── Sidebar ─────────────────────────────────────── */}
-      <aside
+      <div
+        className="relative flex shrink-0"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <aside
         className={`
           fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
           transition-all duration-300 ease-in-out
@@ -425,7 +448,7 @@ export default function DashboardLayout() {
           <img
             src={logoImg}
             alt="ASHCOL"
-            onClick={() => setSidebarCollapsed(c => !c)}
+            onClick={() => { setSidebarCollapsed(c => !c); setIsHoverExpanded(false) }}
             className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
           />
           <img
@@ -460,9 +483,9 @@ export default function DashboardLayout() {
             </div>
           )}
 
-          {/* ── Overview (expanded only) ─────── */}
-          {!sidebarCollapsed && navLinks.some(l => l.name === 'Overview') && (() => {
-            const link = navLinks.find(l => l.name === 'Overview')!
+          {/* ── Search (expanded only) ─────── */}
+          {!sidebarCollapsed && navLinks.some(l => l.name === 'Search') && (() => {
+            const link = navLinks.find(l => l.name === 'Search')!
             const isActive = location.pathname === link.path
             const Icon = link.icon
             return (
@@ -581,11 +604,10 @@ export default function DashboardLayout() {
             )
           })}
 
-          {/* Collapsed mode: deduplicated icon rail */}
           {sidebarCollapsed && collapsedNavItems.map((item) => {
             const isActive = item.groupPaths
-              ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/') || (p === '/schedules' && location.pathname === '/tickets'))
-              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/') || (item.path === '/schedules' && location.pathname === '/tickets'))
+              ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
+              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
             
             return (
               <Link
@@ -621,15 +643,7 @@ export default function DashboardLayout() {
             )
           })}
 
-          {sidebarCollapsed && (
-            <button
-              className="hidden md:flex items-center justify-center w-11 h-11 mt-2 rounded-xl transition-colors text-white/70 hover:text-white hover:bg-white/10"
-              title="Expand sidebar"
-              onClick={() => setSidebarCollapsed(false)}
-            >
-              <PanelLeftOpen className="w-4 h-4" />
-            </button>
-          )}
+
         </nav>
 
         {/* ── Admin Branch Switcher (only for admin) ── */}
@@ -709,8 +723,8 @@ export default function DashboardLayout() {
                 {/* Profile button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`w-full flex items-center gap-3 text-left rounded-xl border border-white/10 bg-white/10 hover:bg-white/15 transition-all ${
-                    sidebarCollapsed ? 'p-2 justify-center w-11 h-11' : 'px-4 py-3'
+                  className={`flex items-center gap-3 text-left transition-all ${
+                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
                   }`}
                 >
                   <UserAvatar
@@ -748,12 +762,13 @@ export default function DashboardLayout() {
 
 
       </aside>
+    </div>
 
       {/* ── Main Content Area ───────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'Overview' && (
+        {currentPage !== 'Search' && (
           <header 
             className="flex-none z-20 backdrop-blur-md"
             style={{ 
@@ -818,11 +833,9 @@ export default function DashboardLayout() {
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
-          currentPage === 'Overview'
-            ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
-            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
-              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+          (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search' || currentPage === 'Overview')
+            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+            : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}
           {!isLight && (
@@ -833,7 +846,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search' || currentPage === 'Overview') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Outlet context={{ setSidebarOpen }} />
           </div>

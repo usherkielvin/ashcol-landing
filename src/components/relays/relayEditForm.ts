@@ -4,8 +4,8 @@ export type RelayEditDraft = {
   customerName: string
   controlNumber: string
   phoneNumbers: string[]
-  storeVendor: string
-  storeBranch: string
+  dealerName: string
+  dealerBranch: string
   location: string
   district: string
   landmarks: string
@@ -59,6 +59,7 @@ type TicketLike = {
   customerName?: string
   controlNumber?: string
   contactPhone?: string
+  dealer?: string
   sourceVendor?: string
   location?: string
   district?: string
@@ -106,7 +107,7 @@ type BranchRef = { id: string }
 
 export function buildRelayEditDraft(
   ticket: TicketLike,
-  parseStoreVendor: (sourceVendor?: string) => ParsedStore,
+  parseDealer: (dealer?: string) => ParsedStore,
   resolveBranch?: (branchId?: string) => BranchRef | null,
   extensions?: Partial<RelayEditDraft>,
 ): RelayEditDraft {
@@ -119,10 +120,14 @@ export function buildRelayEditDraft(
     }
   }
 
-  const parsedStore = parseStoreVendor(ticket.sourceVendor)
-  const openedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
-    ? parsedStore.customStore
-    : parsedStore.store
+  const parsedDealer = parseDealer(ticket.dealer || ticket.sourceVendor)
+  const openedDealerName = parsedDealer.store === 'Other' && parsedDealer.customStore
+    ? parsedDealer.customStore
+    : parsedDealer.store === 'Robinsons'
+    ? 'ROBINSON APPLIANCES'
+    : parsedDealer.store === 'Abenson'
+    ? 'ABENSONS'
+    : parsedDealer.store
 
   const phonesList = [ticket.contactPhone || '']
     .concat(parsedDetails.alternatePhone
@@ -134,8 +139,8 @@ export function buildRelayEditDraft(
     customerName: ticket.customerName || '',
     controlNumber: ticket.controlNumber || '',
     phoneNumbers: phonesList.length ? phonesList : [''],
-    storeVendor: openedStoreVendor,
-    storeBranch: parsedStore.branch,
+    dealerName: openedDealerName,
+    dealerBranch: parsedDealer.branch,
     location: ticket.location || '',
     district: ticket.district || '',
     landmarks: parsedDetails.landmarks || '',

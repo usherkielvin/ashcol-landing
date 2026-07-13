@@ -13,7 +13,7 @@ export type ScheduleEditForm = {
   district?: string
   commitTerms?: string
   unitType?: string
-  sourceVendor?: string
+  dealer?: string
   serviceDriver?: string
   driverName?: string
   installerName?: string
@@ -257,9 +257,9 @@ export function ScheduleEditTicketModal({
               <Field label="Dealer (DLR)">
                 <input
                   type="text"
-                  value={form.sourceVendor || ''}
+                  value={form.dealer || ''}
                   list="sched-edit-dealer-list"
-                  onChange={e => onChange({ sourceVendor: e.target.value })}
+                  onChange={e => onChange({ dealer: e.target.value })}
                   onBlur={e => {
                     const name = e.target.value.trim().toUpperCase()
                     if (!name || name.includes(' - ')) return

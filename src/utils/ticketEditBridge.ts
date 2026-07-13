@@ -1,5 +1,6 @@
 import type { TicketCategoryValue } from '../constants/ticketCategories'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
+import { combineDealerForSave } from './dealer'
 
 export type TicketEditSurface = 'relay' | 'schedules' | 'my-tickets' | 'overview'
 
@@ -13,7 +14,7 @@ export type ScheduleEditFormShape = {
   district?: string
   commitTerms?: string
   unitType?: string
-  sourceVendor?: string
+  dealer?: string
   serviceDriver?: string
   driverName?: string
   installerName?: string
@@ -54,7 +55,7 @@ export function mapRelayDraftToScheduleEditForm(
   draft: RelayEditDraft,
   base: ScheduleEditFormShape,
 ): ScheduleEditFormShape {
-  const resolvedStore = draft.storeBranch ? `${draft.storeVendor} - ${draft.storeBranch}` : draft.storeVendor
+  const resolvedDealer = combineDealerForSave(draft.dealerName, draft.dealerBranch)
 
   const contactPhone = (draft.phoneNumbers[0] || '').trim()
   const remarksCombined = (draft.remarks || draft.remarksUpdate || '').trim()
@@ -67,7 +68,7 @@ export function mapRelayDraftToScheduleEditForm(
     district: draft.district,
     commitTerms: draft.commitType || draft.commitTerms || base.commitTerms,
     unitType: draft.brandHp || draft.unitType || base.unitType,
-    sourceVendor: resolvedStore || base.sourceVendor || 'Direct',
+    dealer: resolvedDealer || base.dealer || 'Direct',
     serviceDriver: draft.serviceDriver !== undefined ? draft.serviceDriver : base.serviceDriver,
     driverName: draft.driverName !== undefined ? draft.driverName : base.driverName,
     installerName: draft.installerName !== undefined ? draft.installerName : base.installerName,

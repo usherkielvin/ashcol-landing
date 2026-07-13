@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated } from '../utils/api'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
@@ -26,6 +26,8 @@ import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { DealerSelect } from '../components/DealerSelect'
+import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import type { ReactNode } from 'react'
 
 function RelayFormField({
@@ -101,6 +103,7 @@ interface Ticket {
   preferredDate?: string
   createdAt: string
   updatedAt: string
+  dealer?: string
   sourceVendor?: string
   slaExpirationDate?: string
   priorityTag?: string
@@ -133,6 +136,7 @@ interface ParsedVoucher {
   customerName?: string
   contactPhone?: string
   location?: string
+  dealer?: string
   sourceVendor?: string
   unitType?: string
   serviceType?: string
@@ -157,42 +161,36 @@ interface ParsedVoucher {
   finalDate?: string
 }
 
-type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
+type DealerCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
 
-const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string; customStore?: string } => {
-  const sv = (sourceVendor || '').trim()
+const parseDealer = (dealerValue?: string): { store: DealerCategory; branch: string; customStore?: string } => {
+  const sv = (dealerValue || '').trim()
   const lower = sv.toLowerCase()
-  
-  // Try to split by ' - ' first to separate store name and branch name
+
+  if (lower === 'direct') {
+    return { store: 'Direct', branch: '' }
+  }
+
+  // Robinson Appliances: saved as "RA <BRANCH>" going forward; also recognize legacy
+  // "Robinsons ..." / "Robinsons Appliances - <branch>" formats already in the database.
+  if (ROBINSON_APPLIANCES_RE.test(sv)) {
+    const branch = sv.replace(/^(robinsons?(\s+appliances)?|ra)\s*-?\s*/i, '').trim()
+    return { store: 'Robinsons', branch }
+  }
+
+  if (/^abenson/i.test(sv)) {
+    const branch = sv.replace(/^abenson(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*-?\s*/i, '').trim()
+    return { store: 'Abenson', branch }
+  }
+
+  // Fallback: split by ' - ' for any other/custom dealer
   const parts = sv.split(' - ')
   const dealerName = parts[0]?.trim() || ''
   const branchName = parts.slice(1).join(' - ').trim()
-  
-  const dealerLower = dealerName.toLowerCase()
-  if (dealerLower.startsWith('robinsons') || dealerLower.startsWith('ra')) {
-    return { store: 'Robinsons', branch: branchName }
-  }
-  if (dealerLower.startsWith('abenson')) {
-    return { store: 'Abenson', branch: branchName }
-  }
-  if (dealerLower === 'direct') {
-    return { store: 'Direct', branch: '' }
-  }
-  
-  // Fallback for space-separated legacy names (e.g. "Robinsons Taguig" or "Robinsons Appliances Malabon")
-  if (lower.startsWith('robinsons ') || lower.startsWith('ra ')) {
-    const branch = sv.replace(/^(robinsons|ra)(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
-    return { store: 'Robinsons', branch }
-  }
-  if (lower.startsWith('abenson ')) {
-    const branch = sv.replace(/^abenson(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*/i, '').trim()
-    return { store: 'Abenson', branch }
-  }
-  
   return { store: 'Other', branch: branchName, customStore: dealerName }
 }
 
-const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: string): string => {
+const combineDealer = (store: DealerCategory, branch: string, customStore?: string): string => {
   if (store === 'Direct') return 'Direct'
   if (store === 'Other') {
     const s = (customStore || '').trim()
@@ -200,22 +198,26 @@ const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: 
     if (!s) return 'Other'
     return b ? `${s} - ${b}` : s
   }
+  if (store === 'Robinsons') {
+    const b = branch.trim()
+    return b ? `RA ${b}` : 'RA'
+  }
   const b = branch.trim()
   if (!b) return store
   if (b.toLowerCase().startsWith(store.toLowerCase())) return b
   return `${store} ${b}`
 }
 
-function resolveRelayStoreForSubmit(sourceVendor: string, storeBranch: string) {
-  const vendor = (sourceVendor || 'Direct').trim()
+function resolveRelayDealerForSubmit(dealerValue: string, dealerBranch: string) {
+  const vendor = (dealerValue || 'Direct').trim()
   const lower = vendor.toLowerCase()
-  if (lower === 'robinsons') {
-    return combineStoreVendor('Robinsons', storeBranch)
+  if (ROBINSON_APPLIANCES_RE.test(lower)) {
+    return combineDealer('Robinsons', dealerBranch)
   }
-  if (lower === 'abenson') {
-    return combineStoreVendor('Abenson', storeBranch)
+  if (lower === 'abenson' || lower.startsWith('abenson')) {
+    return combineDealer('Abenson', dealerBranch)
   }
-  return combineStoreVendor('Other', storeBranch, vendor)
+  return combineDealer('Other', dealerBranch, vendor)
 }
 
 const guessDistrict = (address: string): string => {
@@ -681,7 +683,7 @@ const isScheduledManualTicket = (ticket: Ticket): boolean => {
 
   // Store/source vendors are relay intake. Older builds wrongly stamped scheduleIntake on
   // those rows when preferredDate was set — keep them on Relays until finalDate is set.
-  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const vendor = (ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
   const isRelayVendor = Boolean(
     vendor
     && vendor !== 'direct'
@@ -761,7 +763,7 @@ const normalizeRelayCustomerKey = (ticket: Ticket): string | null => {
   const phone = (ticket.contactPhone || '').replace(/\D/g, '').slice(-10)
   const preferred = (ticket.preferredDate || '').trim().slice(0, 10)
   const district = (ticket.district || '').trim().toLowerCase()
-  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const vendor = (ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
   const commit = (ticket.commitType || '').trim().toLowerCase()
   return `${name}|${branch}|${phone}|${preferred}|${district}|${vendor}|${commit}`
 }
@@ -1078,6 +1080,11 @@ export default function Relays() {
     fetchDealers()
   }, [fetchDealers])
 
+  useEffect(() => {
+    window.addEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+    return () => window.removeEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+  }, [fetchDealers])
+
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [settingsNewDealerName, setSettingsNewDealerName] = useState('')
   const [settingsEditingDealerIndex, setSettingsEditingDealerIndex] = useState<number | null>(null)
@@ -1103,6 +1110,7 @@ export default function Relays() {
       if (res.ok) {
         setSettingsNewDealerName('')
         fetchDealers()
+        notifyDealersUpdated()
       } else {
         const errMsg = await res.text()
         alert(errMsg || 'Failed to add dealer')
@@ -1136,6 +1144,7 @@ export default function Relays() {
       if (res.ok) {
         setSettingsEditingDealerIndex(null)
         fetchDealers()
+        notifyDealersUpdated()
       } else {
         const errMsg = await res.text()
         alert(errMsg || 'Failed to rename dealer')
@@ -1155,6 +1164,7 @@ export default function Relays() {
       })
       if (res.ok) {
         fetchDealers()
+        notifyDealersUpdated()
       } else {
         alert('Failed to delete dealer')
       }
@@ -1169,7 +1179,7 @@ export default function Relays() {
     if (newStore) {
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        await fetch(`${API_BASE_URL}/dealers`, {
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1178,14 +1188,13 @@ export default function Relays() {
           body: JSON.stringify({ name: newStore })
         })
         fetchDealers()
+        if (res.ok) notifyDealersUpdated()
       } catch (err) {
         console.error('Error auto-creating dealer from edit drawer:', err)
       }
     }
   }
 
-  const [addStoreDraft, setAddStoreDraft] = useState('')
-  const [showAddStoreField, setShowAddStoreField] = useState(false)
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
   const [addForm, _setAddForm] = useState({
     title: 'S/I service',
@@ -1194,9 +1203,9 @@ export default function Relays() {
     customerName: '',
     contactPhone: '',
     locationRaw: '',
-    sourceVendor: '',
+    dealer: '',
     otherStoreName: '',
-    storeBranch: '',
+    dealerBranch: '',
     unitType: 'Split AC',
     preferredDate: '',
     slaExpirationDate: '',
@@ -1218,7 +1227,7 @@ export default function Relays() {
     serialNumber: '',
     alternatePhone: '',
     images: '',
-    status: 'PENDING',
+    status: 'S/I',
     branchId: '',
     relayedDate: new Date().toISOString().split('T')[0],
     finalDate: ''
@@ -1292,7 +1301,7 @@ export default function Relays() {
       contactPhone: addPhoneNumbers[0] || addForm.contactPhone,
       preferredDate: addForm.preferredDate,
       district: addForm.district,
-      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       commitType: addForm.commitType,
     } as Ticket
     return openFieldTickets.find((t) => isRelayCustomerDuplicate(probe, t)) || null
@@ -1369,8 +1378,6 @@ export default function Relays() {
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
     setAddPhoneNumbers([''])
-    setShowAddStoreField(false)
-    setAddStoreDraft('')
     setAddForm(prev => ({
       ...prev,
       branchId: defaultBranch || prev.branchId,
@@ -1834,8 +1841,8 @@ export default function Relays() {
 
         const defaultCommit = parsed.commitType || ''
         const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
-        const parsedStore = parseStoreVendor(parsed.sourceVendor || '')
-        const scannedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
+        const parsedStore = parseDealer((parsed as any).dealer || parsed.sourceVendor || '')
+        const scannedDealer = parsedStore.store === 'Other' && parsedStore.customStore
           ? parsedStore.customStore
           : parsedStore.store
         if (parsedStore.store === 'Other' && parsedStore.customStore) {
@@ -1857,9 +1864,9 @@ export default function Relays() {
           customerName: customerNameVal,
           contactPhone: '',
           locationRaw: locationVal,
-          sourceVendor: scannedStoreVendor,
+          dealer: scannedDealer,
           otherStoreName: '',
-          storeBranch: parsedStore.branch,
+          dealerBranch: parsedStore.branch,
           unitType: parsed.unitType || (brandVal && capacityVal ? formatBrandCapacityLabel(brandVal, capacityVal) : 'Split AC'),
           preferredDate: preferredDateFormatted,
           slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1937,7 +1944,7 @@ export default function Relays() {
           district: 3,
           contactPhone: 4,
           unitType: 5,
-          sourceVendor: 6,
+          dealer: 6,
           serviceType: 7,
           commitType: 8,
           installerName: 9,
@@ -1955,7 +1962,7 @@ export default function Relays() {
           else if (/district/i.test(h)) colIndices.district = idx
           else if (/contact/i.test(h) || /phone/i.test(h) || /mobile/i.test(h)) colIndices.contactPhone = idx
           else if (/brand/i.test(h) || /unit/i.test(h)) colIndices.unitType = idx
-          else if (/dlr/i.test(h) || /dealer/i.test(h) || /vendor/i.test(h)) colIndices.sourceVendor = idx
+          else if (/dlr/i.test(h) || /dealer/i.test(h) || /vendor/i.test(h)) colIndices.dealer = idx
           else if (/status/i.test(h)) colIndices.serviceType = idx
           else if (/commit/i.test(h)) colIndices.commitType = idx
           else if (/installer/i.test(h)) colIndices.installerName = idx
@@ -1999,7 +2006,7 @@ export default function Relays() {
               district: getVal(row, colIndices.district) || guessDistrict(getVal(row, colIndices.location)) || '',
               contactPhone: getVal(row, colIndices.contactPhone),
               unitType: getVal(row, colIndices.unitType) || 'Split AC',
-              sourceVendor: getVal(row, colIndices.sourceVendor) || 'Direct',
+              dealer: getVal(row, colIndices.dealer) || 'Direct',
               serviceType: mappedSvc,
               commitType: defaultCommit,
               installerName: getVal(row, colIndices.installerName),
@@ -2049,7 +2056,7 @@ export default function Relays() {
             unitType: item.unitType,
             contactPhone: item.contactPhone,
             location: item.location ? item.location.trim() : 'No Address Provided',
-            sourceVendor: item.sourceVendor,
+            dealer: item.dealer,
             priorityTag: item.priorityTag,
             district: item.district,
             commitType: item.commitType,
@@ -2126,7 +2133,7 @@ export default function Relays() {
       unitType: createBrandHp || addForm.unitType,
       contactPhone: cleanedPhones[0] || undefined,
       location: addForm.locationRaw?.trim() || 'No Address Provided',
-      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       preferredDate: addForm.preferredDate || undefined,
       slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
       priorityTag: addForm.priorityTag || undefined,
@@ -2158,7 +2165,7 @@ export default function Relays() {
       unitType: createPayload.unitType,
       contactPhone: createPayload.contactPhone,
       location: createPayload.location,
-      sourceVendor: createPayload.sourceVendor,
+      dealer: createPayload.dealer,
       preferredDate: createPayload.preferredDate,
       priorityTag: createPayload.priorityTag,
       district: createPayload.district,
@@ -2195,8 +2202,6 @@ export default function Relays() {
     }
 
     setIsAddModalOpen(false)
-    setShowAddStoreField(false)
-    setAddStoreDraft('')
     setAddPhoneNumbers([''])
     setAddForm({
       title: 'Installation service',
@@ -2205,9 +2210,9 @@ export default function Relays() {
       customerName: '',
       contactPhone: '',
       locationRaw: '',
-      sourceVendor: '',
+      dealer: '',
       otherStoreName: '',
-      storeBranch: '',
+      dealerBranch: '',
       unitType: 'Split AC',
       preferredDate: '',
       slaExpirationDate: '',
@@ -2423,7 +2428,7 @@ export default function Relays() {
     payload.warrantyDocsStatus = draft.warrantyStatus || null
     payload.images = draft.images || null
     payload.contactPhone = draft.phoneNumbers[0] || null
-    payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
+    payload.dealer = resolveRelayDealerForSubmit(draft.dealerName, draft.dealerBranch) || null
     const brandHpLabel = formatBrandCapacityLabel(draft.brand, draft.capacity)
     payload.unitType = brandHpLabel || draft.unitType || null
     payload.serviceType = draft.serviceType || null
@@ -2454,7 +2459,7 @@ export default function Relays() {
       warrantyDocsStatus: draft.warrantyStatus || selectedTicket.warrantyDocsStatus,
       images: draft.images || selectedTicket.images,
       contactPhone: draft.phoneNumbers[0] || selectedTicket.contactPhone,
-      sourceVendor: payload.sourceVendor || selectedTicket.sourceVendor,
+      dealer: payload.dealer || selectedTicket.dealer || selectedTicket.sourceVendor,
       unitType: brandHpLabel || draft.unitType || selectedTicket.unitType,
       serviceType: draft.serviceType || selectedTicket.serviceType,
       updatedAt: new Date().toISOString(),
@@ -2593,7 +2598,7 @@ export default function Relays() {
       }
 
       if (storeFilter !== 'ALL') {
-        const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+        const vendorLower = (t.dealer || t.sourceVendor || 'Direct').toLowerCase()
         if (!vendorLower.includes(storeFilter.toLowerCase())) return false
       }
       if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
@@ -2662,7 +2667,7 @@ export default function Relays() {
 
     // Vendor filter
     if (storeFilter !== 'ALL') {
-      const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+      const vendorLower = (t.dealer || t.sourceVendor || 'Direct').toLowerCase()
       const filterLower = storeFilter.toLowerCase()
       if (!vendorLower.includes(filterLower)) return false
     }
@@ -2692,7 +2697,7 @@ export default function Relays() {
       const loc = (t.location || '').toLowerCase()
       const ctrlNum = (t.controlNumber || '').toLowerCase()
       const phone = (t.contactPhone || '').toLowerCase()
-      const vendor = (t.sourceVendor || '').toLowerCase()
+      const vendor = (t.dealer || t.sourceVendor || '').toLowerCase()
       const svcType = (t.serviceType || '').toLowerCase()
       const commit = (t.commitType || '').toLowerCase()
       const installer = (t.installerName || '').toLowerCase()
@@ -2827,8 +2832,8 @@ export default function Relays() {
   }, [filtered, selectedPreviewTicket, selectedColIndex, columns.length])
 
   // Store style mappings
-  const getStoreStyle = (store?: string) => {
-    const parsed = parseStoreVendor(store || '')
+  const getDealerStyle = (dealerValue?: string) => {
+    const parsed = parseDealer(dealerValue || '')
     if (parsed.store === 'Robinsons') {
       const displayLabel = parsed.branch ? `RA ${parsed.branch}` : 'RA'
       return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: displayLabel }
@@ -3313,7 +3318,7 @@ export default function Relays() {
                 </tr>
               ) : (
                 filtered.map((ticket, idx) => {
-                  const storeStyle = getStoreStyle(ticket.sourceVendor)
+                  const storeStyle = getDealerStyle(ticket.dealer || ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
                   const branchName = formatBranchTableLabel(ticket.branchId, ticket)
                   const category = getTicketCategory(ticket)
@@ -3604,7 +3609,9 @@ export default function Relays() {
           branches={branches}
           relayCustomStores={relayCustomStores}
           onPersistCustomStores={handlePersistCustomStores}
-          parseStoreVendor={parseStoreVendor}
+          dealers={dealers}
+          onDealersChanged={fetchDealers}
+          parseStoreVendor={parseDealer}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
           mergeCandidates={mergeCandidates}
@@ -3625,26 +3632,7 @@ export default function Relays() {
       )}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
-        const addCategory = 
-          addForm.serviceType === 'SURVEY & INSTALL' || addForm.serviceType === 'S/I' ? 'Survey & Install' :
-          addForm.serviceType === 'INSTALL' ? 'Install' :
-          addForm.serviceType === 'SURVEY' ? 'Survey' :
-          addForm.serviceType === 'CLEANING' ? 'Cleaning' :
-          addForm.serviceType === 'CHECKUP' ? 'Checkup' :
-          addForm.serviceType === 'Service' ? 'Service' :
-          /clean/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Cleaning'
-          : /checkup/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Checkup'
-          : /survey/i.test(`${addForm.serviceType} ${addForm.title}`) && /install/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Survey & Install'
-          : /^install$/i.test((addForm.serviceType || '').trim()) || /^INSTALL$/i.test((addForm.title || '').trim())
-          ? 'Install'
-          : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Survey'
-          : /service/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Service'
-          : 'Survey & Install'
+
         const fieldStyle = (value?: string) => ({
           backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.08)') : inputBg,
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
@@ -3653,67 +3641,7 @@ export default function Relays() {
           textTransform: 'none' as const,
         })
         const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
-        const categoryOptions = [
-          { label: 'Survey & Install', shortLabel: 'S & I', value: 'Survey & Install', title: 'Installation service', icon: '🔧', color: '#6366F1' },
-          { label: 'Install', shortLabel: 'Install', value: 'Install', title: 'Install ticket', icon: '🛠️', color: '#8B5CF6' },
-          { label: 'Survey', shortLabel: 'Survey', value: 'Survey', title: 'Survey ticket', icon: '📐', color: '#7C3AED' },
-          { label: 'Cleaning', shortLabel: 'Cleaning', value: 'Cleaning', title: 'Cleaning ticket', icon: '✨', color: '#10B981' },
-          { label: 'Service', shortLabel: 'Service', value: 'Service', title: 'Service ticket', icon: '⚙️', color: '#F59E0B' },
-          { label: 'Checkup', shortLabel: 'Checkup', value: 'Checkup', title: 'Checkup ticket', icon: '🩺', color: '#0EA5E9' },
-        ]
-        const storeOptions = [...relayCustomStores]
-        const addCustomStore = async () => {
-          const name = addStoreDraft.trim()
-          if (!name) return
-          if (dealers.some(d => d.name.toLowerCase() === name.toLowerCase())) {
-            alert('That dealer is already in the list.')
-            return
-          }
-          try {
-            const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-            const res = await fetch(`${API_BASE_URL}/dealers`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-              },
-              body: JSON.stringify({ name })
-            })
-            if (res.ok) {
-              setAddForm(prev => ({ ...prev, sourceVendor: name }))
-              setAddStoreDraft('')
-              setShowAddStoreField(false)
-              fetchDealers()
-            } else {
-              const errMsg = await res.text()
-              alert(errMsg || 'Failed to add dealer')
-            }
-          } catch (err) {
-            console.error('Error adding dealer:', err)
-          }
-        }
-        const applyCategory = (value: string) => {
-          const option = categoryOptions.find(item => item.value === value)
-          if (!option) return
-          setAddForm(prev => {
-            let mappedSvc = option.value
-            if (option.value === 'Survey & Install') mappedSvc = 'SURVEY & INSTALL'
-            else if (option.value === 'Install') mappedSvc = 'INSTALL'
-            else if (option.value === 'Survey') mappedSvc = 'SURVEY'
-            else if (option.value === 'Cleaning') mappedSvc = 'CLEANING'
-            else if (option.value === 'Checkup') mappedSvc = 'CHECKUP'
 
-            return {
-              ...prev,
-              serviceType: mappedSvc,
-              title: option.title,
-              status: 'PENDING',
-              commitType: prev.commitType,
-              installationCharges: 0,
-              modeOfPayment: '',
-            }
-          })
-        }
         return (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
@@ -3727,44 +3655,15 @@ export default function Relays() {
             {/* Header */}
             <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
               {/* Top row: title + close */}
-              <div className="px-6 sm:px-8 pt-6 pb-4 flex items-center justify-between gap-4">
+              <div className="px-6 sm:px-8 pt-6 pb-6 flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="font-black text-2xl leading-none tracking-tight" style={{ color: textPrimary }}>Create a New Ticket</h2>
+                  <h2 className="text-xl sm:text-2xl font-black leading-none uppercase tracking-wide" style={{ color: textPrimary }}>CREATE TICKET</h2>
                 </div>
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
                   className="p-2 rounded-xl transition-all hover:bg-slate-500/10 shrink-0"
                   style={{ color: textMuted }}>
                   <X className="w-5 h-5" />
                 </button>
-              </div>
-              {/* Category grid selector */}
-              <div className="px-6 sm:px-8 pb-5">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] mb-3" style={{ color: textMuted }}>Ticket Category</p>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {categoryOptions.map(option => {
-                    const isSelected = addCategory === option.value
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => applyCategory(option.value)}
-                        className="flex items-center justify-center py-3.5 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
-                        style={isSelected ? {
-                          backgroundColor: '#10B981',
-                          borderColor: '#10B981',
-                          color: '#ffffff',
-                          boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
-                        } : {
-                          backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)',
-                          borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)',
-                          color: textMuted,
-                        }}
-                      >
-                        <span className="leading-none text-center">{option.label.toUpperCase()}</span>
-                      </button>
-                    )
-                  })}
-                </div>
               </div>
             </div>
 
@@ -3786,73 +3685,111 @@ export default function Relays() {
               </div>
             )}
             
-            {/* Form */}
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
               <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
+
+                <div className="flex flex-col gap-5 pb-6 border-b" style={{ borderColor: border }}>
+                  <div className="flex flex-col gap-5">
+                    {(() => {
+                      const renderStatusButton = (st: { value: string, label: string }) => {
+                         const isSelected = addForm.status === st.value
+                         return (
+                           <button
+                             key={st.value}
+                             type="button"
+                             onClick={() => {
+                               if (!isSelected) {
+                                 if (window.confirm(`Are you sure you want to set the status to ${st.label}?`)) {
+                                   setAddForm(prev => ({
+                                     ...prev,
+                                     status: st.value,
+                                     serviceType: st.value,
+                                     ticketCategory: st.value.includes('CLEANING') ? 'SERVICES' : st.value.includes('SURVEY') ? 'SURVEY' : 'INSTALLATION'
+                                   }))
+                                 }
+                               }
+                             }}
+                             className="flex items-center justify-center py-3 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
+                             style={isSelected ? {
+                               backgroundColor: '#10B981',
+                               borderColor: '#10B981',
+                               color: 'white',
+                               boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                             } : {
+                               backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)',
+                               borderColor: border,
+                               color: textMuted
+                             }}
+                           >
+                             {st.label}
+                           </button>
+                         )
+                      }
+                      
+                      return (
+                        <>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Pending</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {[
+                                { value: 'S/I', label: 'SURVEY & INSTALL' },
+                                { value: 'INSTALL', label: 'INSTALL' },
+                                { value: 'SURVEY', label: 'SURVEY' },
+                                { value: 'CLEANING', label: 'CLEANING' },
+                                { value: 'CHECKUP', label: 'CHECKUP' },
+                                { value: 'SERVICE', label: 'SERVICE' },
+                                { value: 'RESCHED', label: 'RESCHED' },
+                                { value: 'CONTINUATION', label: 'CONTINUATION' },
+                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' }
+                              ].map(renderStatusButton)}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Closing</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {[
+                                { value: 'DONE_INSTALLED', label: 'DONE INSTALL' },
+                                { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
+                                { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
+                                { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
+                                { value: 'CANCELLED', label: 'CANCELLED' }
+                              ].map(renderStatusButton)}
+                            </div>
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
 
                 {/* 1. Dealer & Transaction */}
                 <section>
                   <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Dealer" compact className="md:col-span-4">
-                      <select
-                        value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
-                        onChange={e => {
-                          const val = e.target.value
-                          if (val === '__add_store__') {
-                            setShowAddStoreField(true)
-                            return
-                          }
-                          setShowAddStoreField(false)
-                          setAddStoreDraft('')
-                          setAddForm(prev => ({
-                            ...prev,
-                            sourceVendor: val,
-                          }))
-                        }}
-                        className={`${addInput} uppercase`}
-                        style={fieldStyle(addForm.sourceVendor)}
-                      >
-                        {storeOptions.map(store => (
-                          <option key={store} value={store}>{store}</option>
-                        ))}
-                        <option value="__add_store__">+ Add dealer...</option>
-                      </select>
+                      <DealerSelect
+                        value={addForm.dealer}
+                        dealers={dealers}
+                        onChange={(name) => setAddForm(prev => ({ ...prev, dealer: name }))}
+                        onDealersChanged={fetchDealers}
+                        isLight={isLight}
+                        inputBg={inputBg}
+                        inputBorder={inputBorder}
+                        textPrimary={textPrimary}
+                        textMuted={textMuted}
+                      />
                     </RelayFormField>
-                    {showAddStoreField && (
-                      <RelayFormField label="New Dealer Name" compact className="md:col-span-4">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={addStoreDraft}
-                            onChange={e => setAddStoreDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
-                            placeholder="e.g. S&R, ANSON'S"
-                            className={`${addInput} uppercase`}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={addCustomStore}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
-                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </RelayFormField>
-                    )}
                     <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
                       <input
                         type="text"
-                        value={addForm.storeBranch}
-                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value.toUpperCase() }))}
+                        value={addForm.dealerBranch}
+                        onChange={e => setAddForm(prev => ({ ...prev, dealerBranch: e.target.value.toUpperCase() }))}
                         placeholder="Branch"
                         className={`${addInput} uppercase`}
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
                       />
                     </RelayFormField>
-                    {((addForm.sourceVendor || '').toLowerCase().startsWith('robinsons') || (addForm.sourceVendor || '').toLowerCase().startsWith('ra')) && (
+                    {ROBINSON_APPLIANCES_RE.test(addForm.dealer || '') && (
                       <RelayFormField label="Transaction ID" compact className="md:col-span-4">
                         <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
                       </RelayFormField>
@@ -4034,10 +3971,12 @@ export default function Relays() {
                       >
                         <option value="">Select negotiator...</option>
                         {addModalNegotiators.map(emp => {
-                          const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                          const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                          const branchRaw = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                          const branchName = formatBranchName(branchRaw)
+                          const firstName = (emp.name || '').split(' ')[0]
+                          const nameWithBranch = branchName ? `${firstName} - ${branchName}` : firstName
                           return (
-                            <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                            <option key={emp.id} value={emp.id}>{nameWithBranch.toUpperCase()}</option>
                           )
                         })}
                       </select>
@@ -4051,15 +3990,28 @@ export default function Relays() {
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
-                      <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                      >
+                        {addForm.preferredDate ? new Date(addForm.preferredDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                      </button>
                     </RelayFormField>
                     {/* Schedule Date */}
                     <RelayFormField label="Schedule Date" compact className="md:col-span-4">
-                      <input
-                        type="date"
-                        value={addForm.finalDate}
-                        onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
-                        className={addInput}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
                         style={{
                           backgroundColor: addForm.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
                           borderColor: addForm.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.4)') : inputBorder,
@@ -4067,7 +4019,16 @@ export default function Relays() {
                           colorScheme: isLight ? 'light' : 'dark',
                           fontWeight: addForm.finalDate ? 700 : undefined,
                         }}
-                      />
+                      >
+                        {addForm.finalDate ? new Date(addForm.finalDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input
+                          type="date"
+                          value={addForm.finalDate}
+                          onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                          className="absolute opacity-0 pointer-events-none w-0 h-0"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      </button>
                     </RelayFormField>
                   </div>
                 </section>
@@ -4431,7 +4392,7 @@ export default function Relays() {
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>AC / Unit</span>
                               <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.unitType || 'Split AC'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Vendor</span>
-                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.sourceVendor || 'Direct'}</span></div>
+                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.dealer || 'Direct'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Control #</span>
                               <span className="font-mono font-bold block truncate" style={{ color: textPrimary }}>{item.controlNumber || '—'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Charge</span>
@@ -4515,7 +4476,7 @@ export default function Relays() {
                           {/* Unit type */}
                           <div className="shrink-0 text-[10px] font-semibold" style={{ color: textMuted, minWidth: 80, maxWidth: 100 }}>
                             <div className="truncate">{item.unitType || '—'}</div>
-                            <div className="text-[9px] truncate">{item.sourceVendor || '—'}</div>
+                            <div className="text-[9px] truncate">{item.dealer || '—'}</div>
                           </div>
 
                           {/* Address */}
@@ -4594,7 +4555,7 @@ export default function Relays() {
         const referralFee = t.storeReferralFee ?? t.store_referral_fee
         const promodiserName = det.promodiserName || '—'
         const bn  = formatAssignedBranchLabel(t.branchId)
-        const storeInfo = parseStoreVendor(t.sourceVendor)
+        const storeInfo = parseDealer(t.dealer || t.sourceVendor)
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
