@@ -610,9 +610,16 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
-  if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+  if (status === 'COMPLETED' || status === 'INSTALLED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
   // finalDate / schedule phase = on Schedules tab, not relay assigned queue
   if (finalDate || hasRelayLeftQueue(ticket)) return 'Scheduled'
+  // Check specific backend lifecycle statuses before the generic "has a negotiator" fallback below,
+  // otherwise every assigned ticket collapses to "Assigned" regardless of its real stage.
+  if (status === 'SURVEY') return 'Survey'
+  if (status === 'FOR_APPROVAL') return 'For Approval'
+  if (status === 'CONTINUATION') return 'Continuation'
+  if (status === 'IN_PROGRESS') return 'In Progress'
+  if (status === 'ON_THE_WAY') return 'On the Way'
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
@@ -623,8 +630,6 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   ) {
     return 'Assigned'
   }
-  if (status === 'IN_PROGRESS') return 'In Progress'
-  if (status === 'ON_THE_WAY') return 'On the Way'
   return 'Pending'
 }
 
@@ -3889,7 +3894,9 @@ export default function Relays() {
                             assignedTo: val,
                             installerName: foundEmp ? foundEmp.name : '',
                             branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
-                            status: val ? 'ASSIGNED' : prev.status,
+                            // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
+                            // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).
+                            status: (val && prev.status === 'PENDING') ? 'ASSIGNED' : prev.status,
                           }))
                         }}
                         className={addInput}
