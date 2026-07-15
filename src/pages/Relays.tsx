@@ -2711,7 +2711,7 @@ export default function Relays() {
           </div>
 
           {/* ── Row 2: Search bar ────────────────────────────── */}
-          <div className="flex items-center gap-2.5 w-full h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
+          <div className="flex items-center gap-2.5 w-full md:max-w-sm h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
             <input

@@ -426,15 +426,15 @@ export type BranchStaffOption = {
   phone?: string | null
 }
 
-/** Staff who may appear as negotiator — any branch employee, including field crew. */
+/** Staff who may appear as negotiator — any branch employee (incl. field crew and OIC/management). */
 export function isNegotiatorCandidate(user: {
   role?: string | null
   jobTitle?: string | null
 }): boolean {
   const roleLower = (user.role || '').toLowerCase().replace(/\s+/g, '_')
   if (roleLower === 'customer') return false
-  // Exclude portal-level admins (system admins, management accounts) — they are not branch OICs
-  if (roleLower === 'admin' || roleLower === 'management' || roleLower === 'administrator') return false
+  // Only exclude system-wide admin accounts — they aren't tied to a single branch.
+  if (roleLower === 'admin' || roleLower === 'administrator') return false
 
   return roleLower !== ''
 }
@@ -455,8 +455,7 @@ export function filterBranchNegotiators(
       u.branchId.toUpperCase() === 'ALL' ||
       u.branchId.toUpperCase() === 'ALL_BRANCHES' ||
       u.role?.toLowerCase() === 'admin' ||
-      u.role?.toLowerCase() === 'administrator' ||
-      u.role?.toLowerCase() === 'management'
+      u.role?.toLowerCase() === 'administrator'
     if (isGlobal) return true
 
     const normalizedSource = branchSource.toUpperCase()
