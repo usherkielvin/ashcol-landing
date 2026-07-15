@@ -2176,7 +2176,10 @@ export default function Relays() {
 
     const optimisticTicket: Ticket = {
       ...selectedTicket,
-      status: finalStatus,
+      // Use the resolved backend status (payload.status), not the raw picker value (finalStatus,
+      // e.g. 'BACKJOB') — the raw value has no Ticket.Status enum constant and previously leaked
+      // into the local ticket's status field until a hard refresh replaced it with server data.
+      status: payload.status ?? finalStatus,
       branchId: branchId || undefined,
       assignedTo: assignedTo || undefined,
       negotiatorId: draft.assignTechId || '',
@@ -2547,6 +2550,10 @@ export default function Relays() {
     const phase = String(parseAcDetails(ticket).schedulePhase || '').trim().toUpperCase().replace(/\s+/g, '_')
     if (phase === 'CHECKUP') return 'CHECKUP'
     if (phase === 'BACKJOB') return 'BACKJOB'
+    if (phase === 'CLEANING') return 'CLEANING'
+
+    const rawStatus = (ticket.status || '').trim().toUpperCase()
+    if (rawStatus === 'S/I') return 'SURVEY & INSTALL'
 
     const svc = (ticket.serviceType || '').trim().toUpperCase()
     if (/S\/I|\bSI\b|INSTALL|SURVEY\s*&\s*INSTALL/.test(svc)) return 'SURVEY & INSTALL'
@@ -2560,45 +2567,23 @@ export default function Relays() {
     return svc || 'SERVICE'
   }
 
-  // Maps the service-type codes set by the status buttons (Relays create/edit forms) to their display label.
-  const RELAY_SERVICE_TYPE_LABELS: Record<string, string> = {
-    'S/I': 'SURVEY & INSTALL',
-    'INSTALL': 'INSTALL',
-    'SURVEY': 'SURVEY',
-    'CLEANING': 'CLEANING',
-    'CHECKUP': 'CHECKUP',
-    'BACKJOB': 'BACKJOB',
-    'SERVICE': 'SERVICE',
-    'RESCHED': 'RESCHED',
-    'CONTINUATION': 'CONTINUATION',
-    'FOR APPROVAL': 'FOR APPROVAL',
-    'DONE_INSTALLED': 'DONE INSTALL',
-    'DONE_CLEANING': 'DONE CLEANING',
-    'DONE_SURVEY': 'DONE SURVEY',
-    'DONE_CHECKUP': 'DONE CHECKUP',
-    'DONE_BACKJOB': 'DONE BACKJOB',
-  }
-
+  // STATUS is the relay workflow stage only — never a field-type sub-status (BACKJOB, CHECKUP,
+  // SURVEY & INSTALL, ...). Those belong on CATEGORY (getCategoryLabel). Purely a function of
+  // negotiator assignment + final date, per the relay intake flow: no negotiator = PENDING,
+  // negotiator but no final date = ASSIGNED, negotiator + final date = SCHEDULED.
   const getRelayStatusShort = (ticket: Ticket) => {
-    if (hasRelayLeftQueue(ticket)) return 'SCHEDULED'
-    const label = getRelayStatusLabel(ticket)
-    if (label === 'Pending') return 'PENDING'
-    if (label === 'Cancelled') return 'CANCELLED'
-    if (label === 'Scheduled') return 'SCHEDULED'
+    const status = (ticket.status || '').toUpperCase()
+    if (status === 'CANCELLED') return 'CANCELLED'
+    if (getRelayStatusLabel(ticket) === 'Installed') return 'INSTALLED'
 
-    const s = (ticket.status || '').toUpperCase()
-    if (s === 'S/I') return 'SURVEY & INSTALL'
-    // Tickets created before the negotiator-selection fix always got status stomped to
-    // 'ASSIGNED' regardless of the SURVEY/INSTALL/etc type picked — serviceType still holds
-    // that original selection (it's set alongside status but was never overwritten), so
-    // prefer it over the uninformative generic 'ASSIGNED' when it matches a known type code.
-    if (s === 'ASSIGNED') {
-      const svc = (ticket.serviceType || '').trim().toUpperCase()
-      if (RELAY_SERVICE_TYPE_LABELS[svc]) return RELAY_SERVICE_TYPE_LABELS[svc]
-    }
-    if (s) return s
-
-    return 'ASSIGNED'
+    const finalDate = resolveRelayFinalDate(ticket)
+    const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+    const hasNegotiator = Boolean(
+      negotiatorId || ticket.assignedTo || ticket.negotiatorName?.trim() || ticket.assignedEmployeeName?.trim(),
+    )
+    if (finalDate && hasNegotiator) return 'SCHEDULED'
+    if (hasNegotiator) return 'ASSIGNED'
+    return 'PENDING'
   }
 
   const formatBranchTableLabel = (branchId?: string, ticket?: Ticket) => {
@@ -3024,9 +3009,8 @@ export default function Relays() {
                   const ticketNo = getTicketNumber(ticket)
                   const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
                   const relayStatus = getRelayStatusShort(ticket)
-                  const relayStatusLabel = getRelayStatusLabel(ticket)
-                  const statusIsAssigned = relayStatusLabel === 'Assigned'
-                  const statusIsScheduled = relayStatusLabel === 'Scheduled' || relayStatus === 'SCHEDULED'
+                  const statusIsAssigned = relayStatus === 'ASSIGNED'
+                  const statusIsScheduled = relayStatus === 'SCHEDULED' || relayStatus === 'INSTALLED'
                   const finalDateKey = resolveRelayFinalDate(ticket)
                   const finalDateLabel = finalDateKey ? formatRelayDate(finalDateKey) : ''
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
@@ -3291,9 +3275,8 @@ export default function Relays() {
                   const ticketNo = getTicketNumber(ticket)
                   const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
                   const relayStatus = getRelayStatusShort(ticket)
-                  const relayStatusLabel = getRelayStatusLabel(ticket)
-                  const statusIsAssigned = relayStatusLabel === 'Assigned'
-                  const statusIsScheduled = relayStatusLabel === 'Scheduled' || relayStatus === 'SCHEDULED'
+                  const statusIsAssigned = relayStatus === 'ASSIGNED'
+                  const statusIsScheduled = relayStatus === 'SCHEDULED' || relayStatus === 'INSTALLED'
                   
                   const isHighlighted = ticket.id === lastUpdatedTicketId
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
