@@ -4571,9 +4571,10 @@ export default function Tickets() {
       } else if (!isReschedStatus && !hadScheduleDate && String(body.status || '').toUpperCase() === 'SCHEDULED') {
         // Picking a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/SERVICES)
         // always resolves body.status to SCHEDULED regardless of whether a date was actually
-        // picked — a ticket that never had a final date has no business showing SCHEDULED (that
-        // implies day-of Schedules placement). Keep it ASSIGNED until a real date is chosen.
-        body.status = 'ASSIGNED'
+        // picked — a ticket with no final date must show PENDING, not SCHEDULED (that implies
+        // day-of Schedules placement) and not ASSIGNED (this is what the field-type buttons used
+        // to fall back to before — status must read PENDING until a real date is chosen).
+        body.status = 'PENDING'
       }
 
       const schedulePlacementDate = finalDateKey || newDateKey

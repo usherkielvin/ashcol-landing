@@ -1828,6 +1828,12 @@ export default function Relays() {
     // DONE_CHECKUP, ...) which Ticket.Status has no enum constant for — resolve to a value the
     // backend actually accepts before sending, same mapper used by Schedules/My Tickets saves.
     const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
+    // Same as edits: a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/
+    // SERVICES) resolves to SCHEDULED regardless of whether a date was picked — with no date
+    // yet, the new ticket must show PENDING, not SCHEDULED.
+    const createStatus = (resolvedCreateStatus.status === 'SCHEDULED' && !addForm.finalDate?.trim() && !addForm.preferredDate?.trim())
+      ? 'PENDING'
+      : resolvedCreateStatus.status
     const createPayload = {
       title: addForm.title,
       description: addForm.description || addForm.remarksUpdate || '',
@@ -1854,7 +1860,7 @@ export default function Relays() {
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
       images: addForm.images || undefined,
-      status: resolvedCreateStatus.status,
+      status: createStatus,
       branchId: relayBranchId,
     }
 
@@ -2080,7 +2086,12 @@ export default function Relays() {
       // the backend actually accepts before sending (same mapper used at ticket creation and
       // in Schedules/My Tickets saves).
       const resolvedEditStatus = resolveScheduleStatusFields(finalStatus)
-      payload.status = resolvedEditStatus.status
+      // Picking a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/SERVICES)
+      // always resolves to SCHEDULED regardless of whether a date was actually picked — a ticket
+      // with no final date must show PENDING, not SCHEDULED (that implies day-of placement).
+      payload.status = (resolvedEditStatus.status === 'SCHEDULED' && !existingDetails.finalDate?.trim())
+        ? 'PENDING'
+        : resolvedEditStatus.status
       if (resolvedEditStatus.ticketCategory) payload.ticketCategory = resolvedEditStatus.ticketCategory
     }
     payload.customerName = draft.customerName || null
