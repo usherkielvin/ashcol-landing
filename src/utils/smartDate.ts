@@ -8,8 +8,10 @@ const MON_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 
 function pad(n: number) { return n < 10 ? `0${n}` : String(n) }
 
+const FULL_MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+
 function fmt(d: Date): string {
-  return `${pad(d.getDate())}-${MON_LABELS[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`
+  return `${FULL_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
 }
 
 /** Try to parse a loosely typed date string into DD-Mon-YY.

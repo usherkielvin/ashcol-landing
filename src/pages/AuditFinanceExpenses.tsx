@@ -81,6 +81,7 @@ export default function AuditFinanceExpenses() {
     newExpense: AuditExpense;
   } | null>(null)
   const [detailRow, setDetailRow] = useState<AuditExpense | null>(null)
+  const [actionMenuRow, setActionMenuRow] = useState<AuditExpense | null>(null)
   const [isEditingInModal, setIsEditingInModal] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const activeAccent = editing ? editAccent : accent
@@ -263,7 +264,10 @@ export default function AuditFinanceExpenses() {
       }
       
       return false
-    })
+    }).map(e => ({
+      ...e,
+      date: parseSmartDate(e.date) || e.date
+    }))
   }, [expenses, branchId])
 
   // Suggestions derived from past expenses (limited to current branch)
@@ -293,27 +297,14 @@ export default function AuditFinanceExpenses() {
     }
     let targetDate = new Date()
     if (maxDateStr) {
-      const parts = maxDateStr.split('-')
-      if (parts.length === 3) {
-        const d = parseInt(parts[0])
-        const mStr = parts[1].toLowerCase()
-        const y = parseInt(parts[2])
-        const fullYear = y < 100 ? 2000 + y : y
-        const monthNames: Record<string, number> = {
-          jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-          jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-        }
-        const mIdx = monthNames[mStr]
-        if (mIdx !== undefined) {
-          targetDate = new Date(fullYear, mIdx, d)
-        }
-      }
+      const parsed = new Date(maxDateStr)
+      if (!isNaN(parsed.getTime())) targetDate = parsed
     }
     return targetDate.toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
       year: 'numeric'
-    })
+    }).toUpperCase()
   }, [branchExpenses])
 
   const loadBranches = useCallback(async () => {
@@ -483,20 +474,17 @@ export default function AuditFinanceExpenses() {
 
   const availableMonths = useMemo(() => {
     const months = new Set<string>()
-    // Always include current month
-    const parts = formatTodayReceiptDate().split('-')
-    if (parts.length === 3) months.add(`${parts[1]} 20${parts[2]}`)
+    const now = new Date()
+    months.add(now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
     
     for (const e of branchExpenses) {
       if (!e.date) continue
-      const p = e.date.split('-')
-      if (p.length === 3) months.add(`${p[1]} 20${p[2]}`)
+      const d = new Date(e.date)
+      if (!isNaN(d.getTime())) {
+        months.add(d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
+      }
     }
-    return Array.from(months).sort((a, b) => {
-      const timeA = new Date(`01 ${a}`).getTime()
-      const timeB = new Date(`01 ${b}`).getTime()
-      return timeB - timeA
-    })
+    return Array.from(months).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
   }, [branchExpenses])
 
   const filtered = useMemo(() => {
@@ -505,9 +493,10 @@ export default function AuditFinanceExpenses() {
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
-        const parts = e.date.split('-')
-        if (parts.length === 3) {
-          return `${parts[1]} 20${parts[2]}` === filterMonth
+        if (!e.date) return false
+        const d = new Date(e.date)
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase() === filterMonth
         }
         return false
       })
@@ -1573,7 +1562,7 @@ export default function AuditFinanceExpenses() {
                     style={{ borderTop: `1px solid ${border}` }}
                   >
                     {/* Main content — tappable */}
-                    <div className="flex-1 min-w-0" onClick={() => openDetails(row)}>
+                    <div className="flex-1 min-w-0" onClick={() => setActionMenuRow(row)}>
                       {/* Row 1: Company + Amount */}
                       <div className="flex items-start justify-between gap-3">
                         <span className="text-sm font-bold leading-tight truncate" style={{ color: textPrimary }}>
@@ -1913,7 +1902,7 @@ export default function AuditFinanceExpenses() {
               <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
 
                 {/* ── Info Grid ── */}
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                   {[
                     { label: 'Submitted By', value: formatDisplayUserLabel(detailRow.inputBy), isPerson: true },
                     { label: 'Incurred By', value: detailRow.incurredBy || '—', isPerson: true },
@@ -1932,7 +1921,7 @@ export default function AuditFinanceExpenses() {
                   ))}
 
                   {/* Description spans full width */}
-                  <div className="col-span-2 rounded-xl px-3.5 py-3"
+                  <div className="col-span-1 sm:col-span-2 rounded-xl px-3.5 py-3"
                     style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
                     <span className="text-[10px] font-bold uppercase tracking-widest block mb-1" style={{ color: textMuted }}>Description</span>
                     <span className="text-sm font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '—'}</span>
@@ -2248,6 +2237,19 @@ export default function AuditFinanceExpenses() {
         document.body
       )}
 
+      {actionMenuRow && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="sm:hidden fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" onClick={() => setActionMenuRow(null)} />
+          <div className="sm:hidden fixed inset-x-0 bottom-0 z-[100] p-4 flex flex-col gap-2 pb-8" style={{ animation: 'slideUp 0.2s ease-out' }}>
+            <div className="rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ backgroundColor: cardBg }}>
+              <button type="button" onClick={() => { openDetails(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>View Details</button>
+              <button type="button" onClick={() => { startEdit(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>Edit Record</button>
+              <button type="button" onClick={() => { void handleDeleteRecord(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold transition-colors active:bg-black/5" style={{ color: danger }}>Delete Record</button>
+            </div>
+            <button type="button" onClick={() => setActionMenuRow(null)} className="w-full px-5 py-4 text-center text-sm font-bold rounded-2xl shadow-2xl transition-colors active:bg-black/5 mt-1" style={{ backgroundColor: cardBg, color: textMuted }}>Cancel</button>
+          </div>
+        </>, document.body
+      )}
 
     </div>
   )
