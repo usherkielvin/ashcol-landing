@@ -3376,15 +3376,24 @@ export default function Relays() {
                         {displayUpper(negotiator)}
                       </span>
                     ) },
-                    // SCHEDULED DATE (read-only — set by negotiator when scheduling)
+                    // SCHEDULED DATE — click to open edit drawer and set/change date
                     { value: (
-                      <span
-                        className="whitespace-nowrap block w-full font-bold"
-                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
-                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openDrawer(ticket) }}
+                        className="whitespace-nowrap block w-full font-bold text-left cursor-pointer"
+                        style={{
+                          color: finalDateLabel ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
+                          background: 'none', border: 'none', padding: 0,
+                        }}
+                        title={finalDateLabel ? `Scheduled: ${finalDateLabel} — click to edit` : 'Click to add schedule date'}
                       >
-                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
-                      </span>
+                        {finalDateLabel ? displayUpper(finalDateLabel) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.7 }}>
+                            <span style={{ fontSize: '0.85em' }}>+</span> ADD DATE
+                          </span>
+                        )}
+                      </button>
                     ) },
                     // REMARKS
                     { value: (
@@ -3433,13 +3442,22 @@ export default function Relays() {
                       </span>
                     ) },
                     { value: (
-                      <span
-                        className="whitespace-nowrap block w-full font-bold"
-                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
-                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openDrawer(ticket) }}
+                        className="whitespace-nowrap block w-full font-bold text-left cursor-pointer"
+                        style={{
+                          color: finalDateLabel ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
+                          background: 'none', border: 'none', padding: 0,
+                        }}
+                        title={finalDateLabel ? `Scheduled: ${finalDateLabel} — click to edit` : 'Click to add schedule date'}
                       >
-                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
-                      </span>
+                        {finalDateLabel ? displayUpper(finalDateLabel) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.7 }}>
+                            <span style={{ fontSize: '0.85em' }}>+</span> ADD DATE
+                          </span>
+                        )}
+                      </button>
                     ) },
                     { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{(lastUpdate || '—').toUpperCase()}</span> },
                   ]

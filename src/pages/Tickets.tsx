@@ -1164,7 +1164,20 @@ function getScheduleUpdateDisplay(ticket: Ticket): string {
   if (getScheduleStatusValue(ticket) === 'RESCHED' && isReschedulePending(ticket)) {
     return base || 'PENDING'
   }
-  return dedupeMovedToRemark(base)
+  const deduped = dedupeMovedToRemark(base)
+  // If the remark is "Moved to [date]" but the ticket is already on that date, suppress it.
+  if (isMovedToRescheduleRemark(deduped)) {
+    const finalDateKey = getFinalDateKey(ticket)
+    if (finalDateKey) {
+      const formattedFinalDate = formatDateKeyLabel(finalDateKey)
+      // Extract the date portion from "Moved to [DATE]"
+      const movedToDate = deduped.replace(/^Moved to\s+/i, '').trim()
+      if (formattedFinalDate && movedToDate.toLowerCase() === formattedFinalDate.toLowerCase()) {
+        return ''
+      }
+    }
+  }
+  return deduped
 }
 
 /** Collapse "Moved to X · Moved to X" from legacy ghost-row display or double saves. */
@@ -7046,28 +7059,32 @@ export default function Tickets() {
           title={statusTitle}
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
-          {canEdit && <ChevronDown className="w-2.5 h-2.5 shrink-0 opacity-70" />}
+
         </span>
       )
     }
 
     if (label === 'TICKET NO') {
-      const prefix = idx !== undefined ? `${idx + 1}. ` : ''
-      const displayVal = val ? `${prefix}${val}` : `${prefix}${EMPTY_CELL}`
+      const rawVal = val || EMPTY_CELL
       const isRowSaving = savingTicketIds.has(ticket.id)
       return withEditPencil(
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
-          <span style={{ ...truncStyle, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }} title={displayVal}>
-            {displayVal}
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }} title={rawVal}>
+          {idx !== undefined && (
+            <span style={{ color: isLight ? '#94a3b8' : '#64748b', marginRight: 6, flexShrink: 0, fontWeight: 600, fontSize: '0.7rem' }}>
+              {idx + 1}.
+            </span>
+          )}
+          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: textPrimary }}>
+            {rawVal}
           </span>
           {isRowSaving && (
             <Loader2
               className="w-3 h-3 shrink-0 animate-spin"
-              style={{ color: green }}
+              style={{ color: green, marginLeft: 4 }}
               aria-label="Saving"
             />
           )}
-        </span>,
+        </div>,
         ticket, label, rowGhost, rowIndex,
       )
     }
@@ -9688,46 +9705,61 @@ export default function Tickets() {
             commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
             assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
             assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || '',
+            installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
           }}
         />
       )}
 
       {editModalOpen && editTicket && activeTab !== 'overview' && (
-        <ScheduleEditTicketModal
-          form={editForm}
-          onChange={patchScheduleEditForm}
-          editOriginalDate={editOriginalDate}
+        <RelayEditTicketModal
+          ticket={editTicket}
+          ticketNumberLabel={editTicket.ticketNumber || editTicket.ticket_number || editTicket.id}
+          surface={isMyTickets ? 'my-tickets' : 'schedules'}
+          isAdmin={isAdmin}
           isLight={isLight}
-          isTaguigServices={isTaguigServices}
-          canEdit={canEdit}
-          saving={editSaving}
           cardBg={cardBg}
           border={border}
           textPrimary={textPrimary}
           textMuted={textMuted}
           inputBg={inputBg}
           inputBorder={inputBorder}
-          green={green}
+          compactInput="w-full border rounded-xl px-3.5 py-2.5 sm:py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case"
           branches={branches}
-          negotiators={editModalNegotiators}
+          relayCustomStores={relayCustomStores}
+          onPersistCustomStores={handlePersistCustomStores}
+          dealers={dealers}
+          onDealersChanged={fetchDealers}
+          parseStoreVendor={parseStoreVendor}
+          resolveBranch={resolveBranch}
+          negotiatorsForBranch={negotiatorsForBranch}
+          saving={editSaving}
+          showDelete={canEdit}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
-          dealerOptions={relayCustomStores}
-          onAddDealer={(name) => handlePersistCustomStores([...relayCustomStores, name])}
-          formatBranchLabel={formatAssignedBranchLabel}
-          formatNegotiatorLabel={formatNegotiatorLabel}
-          formatDateLabel={formatDateKeyLabel}
-          getStatusLabel={getScheduleStatusLabel}
-          getStatusBadgeStyle={getScheduleStatusBadgeStyle}
-          ticketHasPaymentInfo={ticketHasPaymentInfo}
-          qualifiesForInstallComplete={(form) => qualifiesForInstallComplete(form, { remarksUpdate: form.remarks, remarks: form.remarks, installationCharges: form.installationCharges, modeOfPayment: form.modeOfPayment })}
-          onOpenStatusPicker={(anchor) => {
-            const formTicket = (tickets.find(t => t.id === editForm.id) || editTicket) as Ticket
-            openStatusPicker(formTicket, 'edit-form', anchor)
-          }}
+          isTaguigServices={isTaguigServices}
+          editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
           onClose={requestCloseEditModal}
           onDelete={canEdit ? () => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } } : undefined}
-          onSave={promptSaveEditTicket}
+          onSave={handleUnifiedEditSave}
+          getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
+          parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
+          draftExtensions={{
+            ticketNumber: editForm.ticketNumber || editTicket.ticketNumber || editTicket.ticket_number || '',
+            ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
+            scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
+            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
+            serviceDriver: editForm.serviceDriver || getTicketVehicleDisplay(editTicket),
+            driverName: editForm.driverName || getTicketDriverDisplay(editTicket),
+            installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
+            reschedulePending: Boolean(editForm.reschedulePending),
+            remarks: editForm.remarks || editTicket.remarks || editTicket.remarksUpdate || '',
+            commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
+            assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
+            assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || '',
+            installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
+          }}
         />
       )}
 
