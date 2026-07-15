@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   ClipboardList, Search, CheckCircle2, 
-  Loader2, Building2, Check, Eye, X, ChevronDown, Pencil, Calendar
+  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -226,6 +226,7 @@ export default function ForCollections() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
+  const isDark = theme === 'dark'
 
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
   const border      = isLight ? '#e2e8f0'  : '#1E2D48'
@@ -245,7 +246,6 @@ export default function ForCollections() {
   // true only on the very first load; subsequent refetches show stale data
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
-  const [resolvingId, setResolvingId] = useState<string | null>(null)
   const hasFetchedOnce = useRef(false)
 
   // Filters
@@ -422,7 +422,6 @@ export default function ForCollections() {
   }, [fetchCollections])
 
   const handleResolve = async (item: CollectionItem, amountPaid?: number, datePaid?: string, referenceNumber?: string, whoPaid?: string, customerName?: string) => {
-    setResolvingId(item.id)
     // Optimistic update — mark resolved immediately in UI
     const now = new Date().toISOString()
     setItems(prev => prev.map(it =>
@@ -454,8 +453,6 @@ export default function ForCollections() {
       }
     } catch {
       setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false } : it))
-    } finally {
-      setResolvingId(null)
     }
   }
 

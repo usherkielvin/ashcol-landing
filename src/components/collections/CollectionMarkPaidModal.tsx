@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, Camera, Save, Loader2 } from 'lucide-react'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL } from '../../utils/api'
 
 interface CollectionMarkPaidModalProps {
   isOpen: boolean
