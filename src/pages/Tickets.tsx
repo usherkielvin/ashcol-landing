@@ -3395,6 +3395,26 @@ export default function Tickets() {
 
   const currentNegotiatorOption = useMemo((): BranchStaffOption | null => {
     if (!user?.id) return null
+    // Prefer the employee-directory record (matched by email) over the raw JWT user id —
+    // if the two diverge (e.g. account recreated in the directory after the token was
+    // issued), selecting "self" would produce a negotiatorId that branchEmployees.find()
+    // can never match, and Save fails with "Selected negotiator was not found for this
+    // branch" even though the same person is clearly assigned. Falls back to the JWT
+    // fields only when no directory match exists.
+    const userEmail = (user.email || '').trim().toLowerCase()
+    const directoryMatch = userEmail
+      ? branchEmployees.find(emp => (emp.email || '').trim().toLowerCase() === userEmail)
+      : undefined
+    if (directoryMatch) {
+      return {
+        id: directoryMatch.id,
+        name: directoryMatch.name || user.name,
+        branchId: directoryMatch.branchId || user.branchId,
+        email: directoryMatch.email || user.email,
+        role: directoryMatch.role || user.role,
+        jobTitle: directoryMatch.jobTitle || user.jobTitle,
+      }
+    }
     return {
       id: user.id,
       name: user.name,
@@ -3403,7 +3423,7 @@ export default function Tickets() {
       role: user.role,
       jobTitle: user.jobTitle,
     }
-  }, [user?.id, user?.name, user?.branchId, user?.email, user?.role, user?.jobTitle])
+  }, [user?.id, user?.name, user?.branchId, user?.email, user?.role, user?.jobTitle, branchEmployees])
 
   /** Negotiators assigned to a branch only (no cross-branch / global fallback). */
   const negotiatorsForBranch = useCallback((branchId?: string | null) => {
@@ -7452,7 +7472,7 @@ export default function Tickets() {
                       type="button"
                       key={tab.key}
                       onClick={() => handleDateFilterChange(tab.key)}
-                      className="h-7 px-2.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
                       style={{
                         backgroundColor: isActive ? green : inputBg,
                         borderColor: isActive ? green : inputBorder,
@@ -7469,7 +7489,7 @@ export default function Tickets() {
                   <button
                     type="button"
                     onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                    className="h-7 px-2.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
+                    className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
                     style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
                   >
                     {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
@@ -7479,11 +7499,11 @@ export default function Tickets() {
                 <button
                   type="button"
                   onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                  className="w-7 h-7 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
+                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
                   style={{ borderColor: inputBorder, backgroundColor: inputBg }}
                   title="Pick date"
                 >
-                  <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+                  <CalendarDays className="w-4 h-4 md:w-4.5 md:h-4.5" style={{ color: green }} />
                 </button>
 
                 <input
@@ -7506,7 +7526,7 @@ export default function Tickets() {
                     persistSchedulesSnapshot()
                     setShowcaseOpen(true)
                   }}
-                  className="flex items-center gap-1.5 h-7 px-3 rounded-full text-[11px] font-bold transition-all shrink-0 active:scale-95"
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
                   style={{
                     backgroundColor: showcaseOpen ? 'transparent' : green,
                     border: `1.5px solid ${green}`,
@@ -7515,7 +7535,7 @@ export default function Tickets() {
                   }}
                   title="Open fullscreen schedule showcase for print / PDF"
                 >
-                  <Maximize2 className="w-3 h-3" />
+                  <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
                 </button>
               )}
@@ -7524,22 +7544,22 @@ export default function Tickets() {
 
           {/* ── Row 2: Full-width search bar ─────────────────────── */}
           {activeTab === 'schedules' && (
-            <div className="flex items-center gap-2.5 w-full h-9 px-3 rounded-xl border transition-all"
+            <div className="flex items-center gap-2.5 w-full h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
               style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
                 placeholder="Search name, area, technician…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
+                className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
                 style={{ color: textPrimary }}
                 onClick={e => e.stopPropagation()}
               />
               {searchQuery && (
                 <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                  className="shrink-0 p-0.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                  <X className="w-3 h-3" />
+                  className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                  <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 </button>
               )}
             </div>

@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, MapPin,
-  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, CalendarDays,
+  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
   Store, UserRound, Wind, MessageSquare, Users, Settings
 } from 'lucide-react'
@@ -22,9 +22,8 @@ import {
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
-import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
-import * as XLSX from 'xlsx'
+import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { DealerSelect } from '../components/DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
@@ -132,34 +131,6 @@ interface Ticket {
   promodiser_commission?: number | string
 }
 
-interface ParsedVoucher {
-  customerName?: string
-  contactPhone?: string
-  location?: string
-  dealer?: string
-  sourceVendor?: string
-  unitType?: string
-  serviceType?: string
-  description?: string
-  priorityTag?: string
-  district?: string
-  commitType?: string
-  installerName?: string
-  serviceVehicle?: string
-  remarksUpdate?: string
-  installationCharges?: number
-  modeOfPayment?: string
-  controlNumber?: string
-  landmarks?: string
-  brand?: string
-  capacity?: string
-  sku?: string
-  serialNumber?: string
-  imagePath?: string
-  preferredDate?: string
-  relayedDate?: string
-  finalDate?: string
-}
 
 type DealerCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
 
@@ -884,6 +855,7 @@ export default function Relays() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const pageBg = isLight ? '#f1f5f9' : '#060B18'
+  const hoverBg = isLight ? '#f1f5f9' : '#0F1A2E'
   const compactInput = `w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15`
 
   // State
@@ -939,8 +911,6 @@ export default function Relays() {
 
   const [loading, setLoading] = useState(true)
   const [lastUpdatedTicketId, setLastUpdatedTicketId] = useState<string | null>(null)
-  const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false)
-  const createDropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (lastUpdatedTicketId) {
       const timer = setTimeout(() => {
@@ -977,10 +947,9 @@ export default function Relays() {
     return isPriv ? 'ALL_PENDING' : 'MY_TICKETS'
   })
   const [isStoreFilterOpen, setIsStoreFilterOpen] = useState(false)
-  const [toolbarStoreDraft, setToolbarStoreDraft] = useState('')
-  const storeFilterRef = useRef<HTMLDivElement>(null)
+
   const [isBranchFilterOpen, setIsBranchFilterOpen] = useState(false)
-  const branchFilterRef = useRef<HTMLDivElement>(null)
+  const [isMonthFilterOpen, setIsMonthFilterOpen] = useState(false)
 
   useEffect(() => {
     const handleTabCacheUpdate = (e: Event) => {
@@ -999,14 +968,16 @@ export default function Relays() {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
-        setIsCreateDropdownOpen(false)
-      }
-      if (storeFilterRef.current && !storeFilterRef.current.contains(event.target as Node)) {
+      const target = event.target as HTMLElement
+      if (!target) return
+      if (!target.closest('[data-dropdown-id="store-filter"]') && !target.closest('[data-dropdown-id="store-dropdown"]')) {
         setIsStoreFilterOpen(false)
       }
-      if (branchFilterRef.current && !branchFilterRef.current.contains(event.target as Node)) {
+      if (!target.closest('[data-dropdown-id="branch-filter"]') && !target.closest('[data-dropdown-id="branch-dropdown"]')) {
         setIsBranchFilterOpen(false)
+      }
+      if (!target.closest('[data-dropdown-id="month-filter"]') && !target.closest('[data-dropdown-id="month-dropdown"]')) {
+        setIsMonthFilterOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -1044,15 +1015,9 @@ export default function Relays() {
       .finally(() => setLoadingHistory(false))
   }, [selectedPreviewTicket, isViewModalOpen])
 
-  // Scanner State
-  const [scanning, setScanning] = useState(false)
-  const [scanError, setScanError] = useState('')
-  const scanFileInputRef = useRef<HTMLInputElement>(null)
-
   // Excel Bulk Upload State
   const [excelPreview, setExcelPreview] = useState<any[]>([])
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
-  const excelFileInputRef = useRef<HTMLInputElement>(null)
   const [bulkUploading, setBulkUploading] = useState(false)
   const [importTargetBranchId, setImportTargetBranchId] = useState('')
   const [previewView, setPreviewView] = useState<'grid' | 'list'>('grid')
@@ -1349,36 +1314,6 @@ export default function Relays() {
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
-  const handleAddStoreFromToolbar = useCallback(async () => {
-    const name = toolbarStoreDraft.trim().toUpperCase()
-    if (!name) return
-    if (dealers.some(d => d.name.toUpperCase() === name)) {
-      alert('That dealer is already in the list.')
-      return
-    }
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/dealers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ name })
-      })
-      if (res.ok) {
-        setStoreFilter(name)
-        setToolbarStoreDraft('')
-        setIsStoreFilterOpen(false)
-        fetchDealers()
-      } else {
-        const errMsg = await res.text()
-        alert(errMsg || 'Failed to add dealer')
-      }
-    } catch (err) {
-      console.error('Error adding dealer from toolbar:', err)
-    }
-  }, [toolbarStoreDraft, dealers, fetchDealers])
 
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
@@ -1791,249 +1726,6 @@ export default function Relays() {
   }, [ticketScope, user, globalBranchId])
 
   // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
-
-  // File Upload OCR (PDF/Image)
-  const handleVoucherScan = async (file: File) => {
-    setScanning(true)
-    setScanError('')
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch(`${API_BASE_URL}/v1/tickets/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-
-      if (!res.ok) {
-        throw new Error(`Voucher scanning failed (${res.status})`)
-      }
-
-      const parsed: ParsedVoucher = await res.json()
-      if (parsed.customerName) {
-        const locationVal = parsed.location || (parsed as any).address || ''
-        const customerNameVal = parsed.customerName || (parsed as any).name || ''
-        const contactPhoneVal = parsed.contactPhone || (parsed as any).phone || (parsed as any).mobile || (parsed as any).contact || ''
-        const brandVal = parsed.brand || ''
-        const capacityVal = parsed.capacity || ''
-        const skuVal = parsed.sku || (parsed as any).stock || (parsed as any).model || ''
-        const serialNumberVal = parsed.serialNumber || (parsed as any).serial || ''
-
-        const preferredDateRaw = parsed.preferredDate || (parsed as any).preferred_date || ''
-        let preferredDateFormatted = ''
-        if (preferredDateRaw) {
-          try {
-            const d = new Date(preferredDateRaw)
-            if (!isNaN(d.getTime())) {
-              preferredDateFormatted = d.toISOString().split('T')[0]
-            } else {
-              preferredDateFormatted = preferredDateRaw
-            }
-          } catch (e) {}
-        }
-
-        const rawSvc = parsed.serviceType || 'S/I'
-        let mappedSvc = rawSvc
-        const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
-        const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
-        if (isInstall) {
-          mappedSvc = 'S/I'
-        } else if (isSurvey) {
-          mappedSvc = 'SURVEY'
-        }
-
-        const defaultCommit = parsed.commitType || ''
-        const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
-        const parsedStore = parseDealer((parsed as any).dealer || parsed.sourceVendor || '')
-        const scannedDealer = parsedStore.store === 'Other' && parsedStore.customStore
-          ? parsedStore.customStore
-          : parsedStore.store
-        if (parsedStore.store === 'Other' && parsedStore.customStore) {
-          const name = parsedStore.customStore.trim()
-          handlePersistCustomStores([...relayCustomStores, name])
-        }
-
-        const scannedPhones = [contactPhoneVal, (parsed as any).alternatePhone || '']
-          .flatMap(p => String(p || '').split(','))
-          .map(p => p.trim())
-          .filter(Boolean)
-          .map(formatPhilippinePhoneInput)
-        setAddPhoneNumbers(scannedPhones.length ? scannedPhones : [''])
-
-        setAddForm({
-          title: `${mappedSvc} service`,
-          description: parsed.description || 'Voucher scanned via Gemini AI.',
-          serviceType: mappedSvc,
-          customerName: customerNameVal,
-          contactPhone: '',
-          locationRaw: locationVal,
-          dealer: scannedDealer,
-          otherStoreName: '',
-          dealerBranch: parsedStore.branch,
-          unitType: parsed.unitType || (brandVal && capacityVal ? formatBrandCapacityLabel(brandVal, capacityVal) : 'Split AC'),
-          preferredDate: preferredDateFormatted,
-          slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
-          priorityTag: parsed.priorityTag || '',
-          district: parsed.district || guessDistrict(locationVal) || '',
-          commitType: defaultCommit,
-          installerName: parsed.installerName || '',
-          serviceVehicle: parsed.serviceVehicle || '',
-          remarksUpdate: parsed.remarksUpdate || '',
-          installationCharges: parsed.installationCharges || 0,
-          modeOfPayment: parsed.modeOfPayment || '',
-          controlNumber: parsed.controlNumber || '',
-          ticketNumber: '',
-          assignedTo: '',
-          landmarks: parsed.landmarks || '',
-          brand: brandVal,
-          capacity: capacityVal,
-          sku: skuVal,
-          serialNumber: serialNumberVal,
-          alternatePhone: '',
-          images: parsed.imagePath || '',
-          status: 'PENDING',
-          branchId: '',
-          relayedDate: defaultRelayedDate,
-          finalDate: ''
-        })
-        setIsAddModalOpen(true)
-      } else {
-        setScanError('Failed to extract client details. Please try uploading another document or input details manually.')
-      }
-    } catch (err: any) {
-      setScanError(err.message || 'Scanning process failed. Ensure server connectivity.')
-    } finally {
-      setScanning(false)
-      if (scanFileInputRef.current) scanFileInputRef.current.value = ''
-    }
-  }
-
-  // Excel Bulk parsing
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result
-        const wb = XLSX.read(bstr, { type: 'binary' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rawRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 })
-
-        if (!rawRows || rawRows.length === 0) {
-          alert('Excel sheet seems to be empty.')
-          return
-        }
-
-        // Find header row (the one containing client identifier keywords)
-        let headerIdx = 0
-        for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
-          const row = rawRows[i]
-          if (row && row.some(cell => /customer|name|destination|contact|brand|dlr/i.test(String(cell)))) {
-            headerIdx = i
-            break
-          }
-        }
-
-        const headers = rawRows[headerIdx].map((h: any) => String(h || '').trim())
-        const dataRows = rawRows.slice(headerIdx + 1)
-
-        // Column indices mapping
-        const colIndices = {
-          priorityTag: 0, // default first column
-          customerName: 1,
-          location: 2,
-          district: 3,
-          contactPhone: 4,
-          unitType: 5,
-          dealer: 6,
-          serviceType: 7,
-          commitType: 8,
-          installerName: 9,
-          serviceVehicle: 10,
-          remarksUpdate: 11,
-          installationCharges: 12,
-          modeOfPayment: 13,
-          controlNumber: 14
-        }
-
-        headers.forEach((header, idx) => {
-          const h = header.toLowerCase()
-          if (/customer/i.test(h) && /name/i.test(h)) colIndices.customerName = idx
-          else if (/destination/i.test(h) || /address/i.test(h)) colIndices.location = idx
-          else if (/district/i.test(h)) colIndices.district = idx
-          else if (/contact/i.test(h) || /phone/i.test(h) || /mobile/i.test(h)) colIndices.contactPhone = idx
-          else if (/brand/i.test(h) || /unit/i.test(h)) colIndices.unitType = idx
-          else if (/dlr/i.test(h) || /dealer/i.test(h) || /vendor/i.test(h)) colIndices.dealer = idx
-          else if (/status/i.test(h)) colIndices.serviceType = idx
-          else if (/commit/i.test(h)) colIndices.commitType = idx
-          else if (/installer/i.test(h)) colIndices.installerName = idx
-          else if (/service/i.test(h)) colIndices.serviceVehicle = idx
-          else if (/update/i.test(h) || /remarks/i.test(h)) colIndices.remarksUpdate = idx
-          else if (/charge/i.test(h) || /cost/i.test(h) || /fee/i.test(h) || /installation.*charge/i.test(h)) colIndices.installationCharges = idx
-          else if (/payment/i.test(h) || /mode/i.test(h)) colIndices.modeOfPayment = idx
-          else if (/control/i.test(h) || /si/i.test(h)) colIndices.controlNumber = idx
-          else if (/priority/i.test(h) || /tag/i.test(h)) colIndices.priorityTag = idx
-        })
-
-        const getVal = (row: any[], index: number) => {
-          if (index < 0 || index >= row.length) return ''
-          const val = row[index]
-          return val !== undefined && val !== null ? String(val).trim() : ''
-        }
-
-        const mapped = dataRows
-          .filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== ''))
-          .map((row, idx) => {
-            const chargesStr = getVal(row, colIndices.installationCharges)
-            const cleanCharges = chargesStr ? parseFloat(chargesStr.replace(/[^0-9.]/g, '')) || 0 : 0
-
-            const rawSvc = getVal(row, colIndices.serviceType) || 'S/I'
-            let mappedSvc = rawSvc
-            const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
-            const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
-            if (isInstall) {
-              mappedSvc = 'S/I'
-            } else if (isSurvey) {
-              mappedSvc = 'SURVEY'
-            }
-            const rawCommit = getVal(row, colIndices.commitType)
-            const defaultCommit = rawCommit
-
-            return {
-              id: `excel-${idx}-${Date.now()}`,
-              priorityTag: getVal(row, colIndices.priorityTag),
-              customerName: getVal(row, colIndices.customerName) || 'Unknown Customer',
-              location: getVal(row, colIndices.location).trim() || 'No Address Provided',
-              district: getVal(row, colIndices.district) || guessDistrict(getVal(row, colIndices.location)) || '',
-              contactPhone: getVal(row, colIndices.contactPhone),
-              unitType: getVal(row, colIndices.unitType) || 'Split AC',
-              dealer: getVal(row, colIndices.dealer) || 'Direct',
-              serviceType: mappedSvc,
-              commitType: defaultCommit,
-              installerName: getVal(row, colIndices.installerName),
-              serviceVehicle: getVal(row, colIndices.serviceVehicle),
-              remarksUpdate: getVal(row, colIndices.remarksUpdate),
-              installationCharges: cleanCharges,
-              modeOfPayment: getVal(row, colIndices.modeOfPayment),
-              controlNumber: getVal(row, colIndices.controlNumber),
-              description: getVal(row, colIndices.remarksUpdate) || 'Bulk Excel Imported Ticket'
-            }
-          })
-
-        setExcelPreview(mapped)
-        setIsExcelModalOpen(true)
-      } catch (err) {
-        console.error(err)
-        alert('Error parsing Excel file. Ensure it contains correct client fields.')
-      }
-    }
-    reader.readAsBinaryString(file)
-    e.target.value = ''
-  }
 
   // Bulk save Excel tickets
   const handleBulkUploadSubmit = async () => {
@@ -2911,7 +2603,7 @@ export default function Relays() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2">
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2 relative">
 
           {/* ── Row 1: Filter chips + Action ───────────────── */}
           <div className="flex items-center gap-2">
@@ -2920,230 +2612,98 @@ export default function Relays() {
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
 
               {/* Branch Chip */}
-              <div className="relative shrink-0" ref={branchFilterRef}>
+              <div>
                 <button
                   type="button"
                   disabled={!isAdmin}
+                  data-dropdown-id="branch-filter"
                   onClick={() => setIsBranchFilterOpen(prev => !prev)}
-                  className={`flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-all ${
-                    branchFilter !== 'ALL'
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : ''
-                  } ${isAdmin ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'opacity-60 cursor-default'}`}
+                  className={`flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all ${
+                    isAdmin ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'opacity-60 cursor-default'
+                  }`}
                   style={{
                     backgroundColor: branchFilter !== 'ALL'
-                      ? (isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)')
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
                       : inputBg,
                     borderColor: branchFilter !== 'ALL' ? '#10B981' : inputBorder,
                     color: branchFilter !== 'ALL' ? '#10B981' : textMuted,
                   }}
                 >
-                  <Building2 className="w-3 h-3 shrink-0" style={{ color: '#10B981' }} />
+                  <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
                   <span>
                     {branchFilter === 'ALL'
                       ? 'Branch'
                       : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
                   </span>
-                  {isAdmin && <ChevronDown className="w-2.5 h-2.5 opacity-50 -mr-0.5" />}
+                  {isAdmin && <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />}
                 </button>
-
-                {isAdmin && isBranchFilterOpen && (
-                  <>
-                    {/* Mobile backdrop */}
-                    <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[99] md:hidden" onClick={() => setIsBranchFilterOpen(false)} />
-                    <div className="fixed bottom-6 inset-x-4 md:absolute md:inset-auto md:left-0 md:top-full md:mt-1.5 w-auto md:w-48 max-w-sm rounded-xl border shadow-lg z-[100] p-2 flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-5 duration-200"
-                      style={{ backgroundColor: cardBg, borderColor: border }}>
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: textMuted }}>Select Branch</span>
-                      <div className="max-h-[30vh] md:max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                        <button
-                          type="button"
-                          onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
-                          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                          style={{
-                            backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
-                            color: branchFilter === 'ALL' ? textPrimary : textMuted
-                          }}
-                        >
-                          <span>All Branches</span>
-                          {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                        </button>
-                        {branches.map(b => {
-                          const isSelected = branchFilter === b.id
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
-                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                              style={{
-                                backgroundColor: isSelected ? hoverBg : 'transparent',
-                                color: isSelected ? textPrimary : textMuted
-                              }}
-                            >
-                              <span>{formatBranchName(b.name)}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
 
-              {/* Store Chip */}
-              <div className="relative shrink-0" ref={storeFilterRef}>
+              {/* Dealer Chip */}
+              <div>
                 <button
                   type="button"
+                  data-dropdown-id="store-filter"
                   onClick={() => setIsStoreFilterOpen(prev => !prev)}
-                  className="flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95"
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95"
                   style={{
                     backgroundColor: storeFilter !== 'ALL'
-                      ? (isLight ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.15)')
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
                       : inputBg,
-                    borderColor: storeFilter !== 'ALL' ? '#3B82F6' : inputBorder,
-                    color: storeFilter !== 'ALL' ? '#3B82F6' : textMuted,
+                    borderColor: storeFilter !== 'ALL' ? '#10B981' : inputBorder,
+                    color: storeFilter !== 'ALL' ? '#10B981' : textMuted,
                   }}
                 >
-                  <Package className="w-3 h-3 shrink-0" style={{ color: '#3B82F6' }} />
-                  <span>{storeFilter === 'ALL' ? 'Store' : storeFilter === 'Direct' ? 'Direct' : storeFilter}</span>
-                  <ChevronDown className="w-2.5 h-2.5 opacity-50 -mr-0.5" />
+                  <Package className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
+                  <span>{storeFilter === 'ALL' ? 'Dealer' : storeFilter}</span>
+                  <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
                 </button>
-
-                {isStoreFilterOpen && (
-                  <>
-                    {/* Mobile backdrop */}
-                    <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[99] md:hidden" onClick={() => setIsStoreFilterOpen(false)} />
-                    <div className="fixed bottom-6 inset-x-4 md:absolute md:inset-auto md:left-0 md:top-full md:mt-1.5 w-auto md:w-48 max-w-sm rounded-xl border shadow-lg z-[100] p-2 flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-5 duration-200"
-                      style={{ backgroundColor: cardBg, borderColor: border }}>
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: textMuted }}>Filter by Store</span>
-                      <div className="max-h-[30vh] md:max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                        <button
-                          type="button"
-                          onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
-                          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                          style={{
-                            backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
-                            color: storeFilter === 'ALL' ? textPrimary : textMuted
-                          }}
-                        >
-                          <span>All Stores</span>
-                          {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                        </button>
-                        {['Robinsons', 'Abenson', 'Direct'].map(st => {
-                          const isSelected = storeFilter === st
-                          return (
-                            <button
-                              key={st}
-                              type="button"
-                              onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                              style={{
-                                backgroundColor: isSelected ? hoverBg : 'transparent',
-                                color: isSelected ? textPrimary : textMuted
-                              }}
-                            >
-                              <span>{st === 'Direct' ? 'Direct Store' : st}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                            </button>
-                          )
-                        })}
-                        {relayCustomStores.map(st => {
-                          if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
-                          const isSelected = storeFilter === st
-                          return (
-                            <button
-                              key={st}
-                              type="button"
-                              onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                              style={{
-                                backgroundColor: isSelected ? hoverBg : 'transparent',
-                                color: isSelected ? textPrimary : textMuted
-                              }}
-                            >
-                              <span>{st}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      <div className="border-t pt-2 mt-1" style={{ borderColor: border }}>
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 block mb-1" style={{ color: textMuted }}>Add New Store</span>
-                        <div className="flex gap-1.5 px-1">
-                          <input
-                            type="text"
-                            value={toolbarStoreDraft}
-                            onChange={e => setToolbarStoreDraft(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                handleAddStoreFromToolbar()
-                              }
-                            }}
-                            placeholder="Store name..."
-                            className="w-full border rounded-lg px-2 py-1 text-[11px] outline-none focus:border-emerald-500"
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={handleAddStoreFromToolbar}
-                            className="px-2.5 rounded-lg text-[10px] font-bold text-white shrink-0 hover:opacity-90 active:scale-95 transition-all"
-                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
 
               {/* Month Chip */}
-              <div className="flex items-center gap-1 h-7 pl-2 pr-1.5 rounded-full border text-[11px] font-semibold shrink-0"
-                style={{ backgroundColor: monthFilter !== 'all' ? (isLight ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.12)') : inputBg,
-                         borderColor: monthFilter !== 'all' ? '#F59E0B' : inputBorder,
-                         color: monthFilter !== 'all' ? '#D97706' : textMuted }}>
-                <CalendarDays className="w-3 h-3 shrink-0" style={{ color: '#F59E0B' }} />
-                <select
-                  value={monthFilter}
-                  onChange={e => setMonthFilter(e.target.value)}
-                  className="bg-transparent outline-none cursor-pointer font-semibold text-[11px] pr-1"
-                  style={{ color: monthFilter !== 'all' ? '#D97706' : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}
+              <div>
+                <button
+                  type="button"
+                  data-dropdown-id="month-filter"
+                  onClick={() => setIsMonthFilterOpen(prev => !prev)}
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95 shrink-0"
+                  style={{
+                    backgroundColor: monthFilter !== 'all'
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
+                      : inputBg,
+                    borderColor: monthFilter !== 'all' ? '#10B981' : inputBorder,
+                    color: monthFilter !== 'all' ? '#10B981' : textMuted,
+                  }}
                 >
-                  <option value="all" style={{ backgroundColor: cardBg, color: textPrimary }}>Month</option>
-                  {monthOptions.map(ym => (
-                    <option key={ym} value={ym} style={{ backgroundColor: cardBg, color: textPrimary }}>
-                      {monthLabel(ym)}
-                    </option>
-                  ))}
-                </select>
+                  <CalendarDays className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
+                  <span>{monthFilter === 'all' ? 'Month' : monthLabel(monthFilter)}</span>
+                  <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
+                </button>
               </div>
 
             </div>
 
             {/* Action buttons — right side */}
             {isAdmin && (
-              <div className="flex items-center gap-1.5 shrink-0 relative" ref={createDropdownRef}>
+              <div className="flex items-center gap-1.5 shrink-0 relative">
                 {/* Settings icon */}
                 <button
                   type="button"
                   onClick={() => setIsSettingsModalOpen(true)}
-                  className="w-7 h-7 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
+                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
                   title="Manage Dealer Settings"
                 >
-                  <Settings className="w-3.5 h-3.5" />
+                  <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
                 </button>
                 {/* Create Ticket Button */}
                 <button
                   type="button"
                   onClick={openAddModal}
-                  className="flex items-center gap-1.5 h-7 px-3 rounded-full font-bold text-[11px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full font-bold text-[12px] md:text-[14px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
                   style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   <span>New Ticket</span>
                 </button>
               </div>
@@ -3151,23 +2711,144 @@ export default function Relays() {
           </div>
 
           {/* ── Row 2: Search bar ────────────────────────────── */}
-          <div className="flex items-center gap-2.5 w-full h-9 px-3 rounded-xl border transition-all"
+          <div className="flex items-center gap-2.5 w-full h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
               placeholder="Search client, phone, SI #…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
+              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
               style={{ color: textPrimary }}
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="shrink-0 p-0.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                <X className="w-3 h-3" />
+              <button onClick={() => setSearchQuery('')} className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
               </button>
             )}
           </div>
+
+          {/* ── Absolute Dropdowns (placed here to prevent scroll-clipping) ── */}
+
+          {/* Branch Dropdown */}
+          {isAdmin && isBranchFilterOpen && (
+            <div data-dropdown-id="branch-dropdown" className="absolute left-3 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Select Branch</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
+                    color: branchFilter === 'ALL' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Branches</span>
+                  {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {branches.map(b => {
+                  const isSelected = branchFilter === b.id
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
+                    >
+                      <span>{formatBranchName(b.name)}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Dealer Dropdown */}
+          {isStoreFilterOpen && (
+            <div data-dropdown-id="store-dropdown" className="absolute left-3 md:left-20 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Dealer</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
+                    color: storeFilter === 'ALL' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Dealers</span>
+                  {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {['ABENSONS', 'ROBINSONS APPLIANCES'].map(dealerName => {
+                  const isSelected = storeFilter === dealerName
+                  return (
+                    <button
+                      key={dealerName}
+                      type="button"
+                      onClick={() => { setStoreFilter(dealerName); setIsStoreFilterOpen(false); }}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
+                    >
+                      <span>{dealerName}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* Month Dropdown */}
+          {isMonthFilterOpen && (
+            <div data-dropdown-id="month-dropdown" className="absolute left-3 md:left-40 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Month</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setMonthFilter('all'); setIsMonthFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: monthFilter === 'all' ? hoverBg : 'transparent',
+                    color: monthFilter === 'all' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Months</span>
+                  {monthFilter === 'all' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {monthOptions.map(ym => {
+                  const isSelected = monthFilter === ym
+                  return (
+                    <button
+                      key={ym}
+                      type="button"
+                      onClick={() => { setMonthFilter(ym); setIsMonthFilterOpen(false); }}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
+                    >
+                      <span>{monthLabel(ym)}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
