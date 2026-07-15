@@ -484,7 +484,18 @@ export function SchedulesShowcase({
       })
     } catch (err) {
       console.error('Schedules PDF export failed', err)
-      alert('Could not export PDF. Try Print instead.')
+      const message = err instanceof Error ? err.message : String(err)
+      // Vite/Rollup hashes chunk URLs per deploy — a portal tab left open across a new deploy
+      // still references the old jspdf/jspdf-autotable chunk URLs, which 404 on the CDN. That
+      // surfaces as a network/import error, not a PDF-generation bug, and only a reload fixes it.
+      const isStaleChunk = /dynamically imported module|Importing a module script failed|Failed to fetch/i.test(message)
+      if (isStaleChunk) {
+        if (window.confirm('This page was loaded before the latest update and can\'t load the PDF exporter. Reload now to try again?')) {
+          window.location.reload()
+        }
+      } else {
+        alert(`Could not export PDF (${message || 'unknown error'}). Try Print instead.`)
+      }
     } finally {
       setExportingPdf(false)
     }

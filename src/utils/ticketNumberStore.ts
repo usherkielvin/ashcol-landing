@@ -5,6 +5,34 @@ const DATE_INDEX_PREFIX = 'ashcol-schedule-date-index:'
 const memory = new Map<string, Record<string, unknown>>()
 const dateIndexMemory = new Map<string, string[]>()
 
+// Every distinct ticket number / schedule date ever viewed used to get its own permanent
+// localStorage key with no cap or TTL — months of daily use silently accumulates thousands of
+// them until the origin's storage quota is exhausted (see main.tsx's QuotaExceededError
+// interceptor). Trim the oldest entries back to a cap every so often instead of letting either
+// prefix grow forever.
+const MAX_CACHED_TICKETS = 1200
+let ticketWriteCount = 0
+
+function pruneOldestByPrefix(prefix: string, max: number): void {
+  const entries: Array<{ key: string; savedAt: number }> = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (!k || !k.startsWith(prefix)) continue
+    try {
+      const parsed = JSON.parse(localStorage.getItem(k) || '{}') as { savedAt?: number }
+      entries.push({ key: k, savedAt: parsed.savedAt || 0 })
+    } catch {
+      entries.push({ key: k, savedAt: 0 })
+    }
+  }
+  if (entries.length <= max) return
+  entries.sort((a, b) => a.savedAt - b.savedAt)
+  const excess = entries.length - max
+  for (let i = 0; i < excess; i++) {
+    localStorage.removeItem(entries[i].key)
+  }
+}
+
 export function normalizeTicketNumberKey(ticketNumber?: string | null): string {
   return (ticketNumber || '').trim().toUpperCase()
 }
@@ -22,6 +50,10 @@ export function cacheTicketByNumber(ticket: Record<string, unknown>): void {
   memory.set(key, normalized)
   try {
     localStorage.setItem(`${PREFIX}${key}`, JSON.stringify({ ticket: normalized, savedAt: Date.now() }))
+    // Full-scan prune is O(localStorage size) — only worth paying for occasionally, not on
+    // every single ticket in a bulk list load.
+    ticketWriteCount += 1
+    if (ticketWriteCount % 200 === 0) pruneOldestByPrefix(PREFIX, MAX_CACHED_TICKETS)
   } catch {
     /* ignore quota */
   }
@@ -69,6 +101,9 @@ export function getTicketsByNumbers(ticketNumbers: string[]): Record<string, unk
   return out
 }
 
+const MAX_CACHED_SCHEDULE_DATES = 180
+let dateIndexWriteCount = 0
+
 export function writeScheduleDateTicketNumbers(dateKey: string, ticketNumbers: string[]): void {
   const key = dateKey.trim()
   if (!key) return
@@ -76,6 +111,8 @@ export function writeScheduleDateTicketNumbers(dateKey: string, ticketNumbers: s
   dateIndexMemory.set(key, normalized)
   try {
     localStorage.setItem(`${DATE_INDEX_PREFIX}${key}`, JSON.stringify({ ticketNumbers: normalized, savedAt: Date.now() }))
+    dateIndexWriteCount += 1
+    if (dateIndexWriteCount % 20 === 0) pruneOldestByPrefix(DATE_INDEX_PREFIX, MAX_CACHED_SCHEDULE_DATES)
   } catch {
     /* ignore */
   }
