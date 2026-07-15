@@ -1876,6 +1876,14 @@ function getInstallerSortKey(
 }
 
 function formatRelayTicketTypeShort(ticket: Ticket): string {
+  // schedulePhase is the authoritative signal for CHECKUP/BACKJOB — the generic serviceType/
+  // title text (e.g. "Service service") that a saved schedule status leaves behind can't tell
+  // CHECKUP/BACKJOB apart from plain SERVICE, and worse, a stale pre-patch title still
+  // containing "Install" would wrongly win the regex checks below. Check it first.
+  const phase = String(parseAcMeta(ticket).schedulePhase || '').toUpperCase().replace(/\s+/g, '_')
+  if (phase === 'CHECKUP') return 'CHECKUP'
+  if (phase === 'BACKJOB') return 'BACKJOB'
+
   const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
   if (/collect/.test(raw)) return 'COLLECTION'
   if (/install|s\/i|\bsi\b|survey\s*&\s*install/.test(raw)) return 'SURVEY & INSTALL'
@@ -4512,6 +4520,14 @@ export default function Tickets() {
       } else {
         const statusPatch = applyScheduleStatusPatch((originalTicket || activeForm) as Ticket, scheduleVal)
         Object.assign(body, statusPatch)
+        // The status patch can correct ticketCategory (e.g. picking CHECKUP/BACKJOB resolves to
+        // SERVICES) after `titleVal` above was already built from the pre-patch category — left
+        // alone, body.title keeps saying "Survey & Install service" while ticketCategory says
+        // SERVICES, and anything that infers ticket type from title text (formatRelayTicketTypeShort,
+        // Relays' getCategoryLabel) shows the stale "SURVEY & INSTALL" instead of the real type.
+        if (typeof statusPatch.ticketCategory === 'string' && statusPatch.ticketCategory !== category) {
+          body.title = `${categoryDefaultServiceType(statusPatch.ticketCategory as TicketCategoryValue)} service`
+        }
         // Status patch auto-clears stale "Moved to…"/PENDING placeholder remarks — but only
         // apply that when the user didn't just type fresh remarks in this save, otherwise it
         // silently discards what they typed (e.g. any ticket whose remark was left as "PENDING").
@@ -4552,6 +4568,12 @@ export default function Tickets() {
         if (!isReschedStatus && ['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
           body.status = 'SCHEDULED'
         }
+      } else if (!isReschedStatus && !hadScheduleDate && String(body.status || '').toUpperCase() === 'SCHEDULED') {
+        // Picking a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/SERVICES)
+        // always resolves body.status to SCHEDULED regardless of whether a date was actually
+        // picked — a ticket that never had a final date has no business showing SCHEDULED (that
+        // implies day-of Schedules placement). Keep it ASSIGNED until a real date is chosen.
+        body.status = 'ASSIGNED'
       }
 
       const schedulePlacementDate = finalDateKey || newDateKey

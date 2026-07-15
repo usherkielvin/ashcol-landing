@@ -2510,6 +2510,13 @@ export default function Relays() {
   }
 
   const getCategoryLabel = (ticket: Ticket) => {
+    // schedulePhase is authoritative for CHECKUP/BACKJOB — the generic serviceType/title text a
+    // saved schedule status leaves behind ("Service") can't distinguish them from plain SERVICE,
+    // and a stale pre-patch title still containing "Install" would otherwise win below. Check first.
+    const phase = String(parseAcDetails(ticket).schedulePhase || '').trim().toUpperCase().replace(/\s+/g, '_')
+    if (phase === 'CHECKUP') return 'CHECKUP'
+    if (phase === 'BACKJOB') return 'BACKJOB'
+
     const svc = (ticket.serviceType || '').trim().toUpperCase()
     if (/S\/I|\bSI\b|INSTALL|SURVEY\s*&\s*INSTALL/.test(svc)) return 'SURVEY & INSTALL'
     if (svc.includes('SURVEY')) return 'SURVEY'

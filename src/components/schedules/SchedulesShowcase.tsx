@@ -59,6 +59,22 @@ function chunkRows<T>(rows: T[], size: number): T[][] {
   return chunks
 }
 
+function getRowBgColor(status: string): string | undefined {
+  const s = (status || '').toUpperCase()
+  if (s.includes('SURVEY')) return '#f0fdf4'
+  if (s.includes('BACKJOB')) return '#fef2f2'
+  if (s.includes('CLEANING')) return '#eff6ff'
+  return undefined
+}
+
+function getRowPdfBgColor(status: string): [number, number, number] | undefined {
+  const s = (status || '').toUpperCase()
+  if (s.includes('SURVEY')) return [240, 253, 244]
+  if (s.includes('BACKJOB')) return [254, 242, 242]
+  if (s.includes('CLEANING')) return [239, 246, 255]
+  return undefined
+}
+
 function showcaseCellText(value: string): string {
   const trimmed = (value || '').trim()
   if (!trimmed || trimmed === '—') return '—'
@@ -367,6 +383,15 @@ async function exportShowcasePdfDocument(options: {
       showHead: 'everyPage',
       ...PDF_BW_TABLE,
       columnStyles: INSTALLER_COLUMN_STYLES,
+      didParseCell: (data) => {
+        if (data.row.section === 'body') {
+          const statusText = data.row.raw[6]
+          if (typeof statusText === 'string') {
+            const bg = getRowPdfBgColor(statusText)
+            if (bg) data.cell.styles.fillColor = bg
+          }
+        }
+      },
       didDrawPage: () => drawFooter(globalPage),
     })
   })
@@ -388,6 +413,15 @@ async function exportShowcasePdfDocument(options: {
         ...PDF_BW_TABLE,
         styles: { ...PDF_BW_TABLE.styles, fontSize: 7, minCellHeight: 7 },
         columnStyles: DRIVER_COLUMN_STYLES,
+        didParseCell: (data) => {
+          if (data.row.section === 'body') {
+            const statusText = data.row.raw[5]
+            if (typeof statusText === 'string') {
+              const bg = getRowPdfBgColor(statusText)
+              if (bg) data.cell.styles.fillColor = bg
+            }
+          }
+        },
         didDrawPage: () => drawFooter(globalPage),
       })
     })
@@ -521,7 +555,7 @@ export function SchedulesShowcase({
           ) : pageRows.map(row => {
             const cells = installerRowToCells(row, paymentByRowId)
             return (
-              <tr key={`inst-${row.index}-${row.id}`}>
+              <tr key={`inst-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
                 {cells.map((value, cellIdx) => (
                   <td
                     key={cellIdx}
@@ -576,7 +610,7 @@ export function SchedulesShowcase({
           ) : pageRows.map(row => {
             const cells = driverRowToCells(row)
             return (
-              <tr key={`drv-${row.index}-${row.id}`}>
+              <tr key={`drv-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
                 {cells.map((value, cellIdx) => (
                   <td
                     key={cellIdx}

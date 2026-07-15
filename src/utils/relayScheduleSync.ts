@@ -88,7 +88,7 @@ export function hasRelayLeftQueue(ticket: RelayScheduleTicket): boolean {
   if (outcome.startsWith('DONE_')) return true
 
   const phase = String(details.schedulePhase || '').trim().toUpperCase().replace(/\s+/g, '_')
-  if (['SURVEY', 'INSTALLATION', 'CLEANING', 'SERVICES', 'SERVICE'].includes(phase)) return true
+  if (['SURVEY', 'INSTALLATION', 'CLEANING', 'SERVICES', 'SERVICE', 'CHECKUP', 'BACKJOB'].includes(phase)) return true
 
   const stat = String(ticket.status || '').toUpperCase()
   if (['SURVEY', 'FOR_APPROVAL', 'FOR_QUOTATION', 'RESCHED'].includes(stat)) return true
