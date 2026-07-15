@@ -385,7 +385,7 @@ async function exportShowcasePdfDocument(options: {
       columnStyles: INSTALLER_COLUMN_STYLES,
       didParseCell: (data) => {
         if (data.row.section === 'body') {
-          const statusText = data.row.raw[6]
+          const statusText = (data.row.raw as unknown as unknown[])[6]
           if (typeof statusText === 'string') {
             const bg = getRowPdfBgColor(statusText)
             if (bg) data.cell.styles.fillColor = bg
@@ -415,7 +415,7 @@ async function exportShowcasePdfDocument(options: {
         columnStyles: DRIVER_COLUMN_STYLES,
         didParseCell: (data) => {
           if (data.row.section === 'body') {
-            const statusText = data.row.raw[5]
+            const statusText = (data.row.raw as unknown as unknown[])[5]
             if (typeof statusText === 'string') {
               const bg = getRowPdfBgColor(statusText)
               if (bg) data.cell.styles.fillColor = bg
