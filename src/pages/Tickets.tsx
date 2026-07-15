@@ -7990,15 +7990,15 @@ export default function Tickets() {
                                <span className="font-semibold truncate" style={{color: textPrimary}}>{ticket.ticketNumber || ticket.controlNumber || '—'}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-right justify-end">
-                               <span className="truncate">{ticket.branchId ? (branches.find(b => b.id === ticket.branchId)?.name || formatBranchName(ticket.branchId)) : (ticket.district || '—')}</span>
+                               <span className="truncate">{ticket.branchId ? (resolveBranch(ticket.branchId)?.name || ticket.branchId) : (ticket.district || '—')}</span>
                             </div>
                             <div className="flex items-center gap-1.5 col-span-2">
                                <MapPin className="w-3 h-3 shrink-0" />
                                <span className="truncate">{ticket.district || '—'} • {ticket.acDetails || '—'}</span>
                             </div>
                             <div className="flex items-center gap-1.5 col-span-2">
-                               <span className="font-medium" style={{color: (ticket.assignedTo || ticket.assignedEmployeeName) ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
-                                 {ticket.assignedEmployeeName || ticket.assignedTo || ticket.technician || 'Unassigned'}
+                               <span className="font-medium" style={{color: getInstallerDisplay(ticket, branchEmployees, activeBranchId) ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
+                                 {getInstallerDisplay(ticket, branchEmployees, activeBranchId) || 'Unassigned'}
                                </span>
                             </div>
                           </div>

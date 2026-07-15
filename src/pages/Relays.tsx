@@ -2948,31 +2948,46 @@ export default function Relays() {
                 </button>
 
                 {isAdmin && isBranchFilterOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2 animate-in fade-in-50 zoom-in-95 duration-150"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <span className="text-[10px] font-black uppercase tracking-widest px-1.5" style={{ color: textMuted }}>Select Branch</span>
-                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                      <button
-                        type="button"
-                        onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === 'ALL' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
-                      >
-                        <span>All Branches</span>
-                        {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                      </button>
-                      {branches.map(b => (
+                  <>
+                    {/* Mobile backdrop */}
+                    <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[99] md:hidden" onClick={() => setIsBranchFilterOpen(false)} />
+                    <div className="fixed bottom-6 inset-x-4 md:absolute md:inset-auto md:left-0 md:top-full md:mt-1.5 w-auto md:w-48 max-w-sm rounded-xl border shadow-lg z-[100] p-2 flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-5 duration-200"
+                      style={{ backgroundColor: cardBg, borderColor: border }}>
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: textMuted }}>Select Branch</span>
+                      <div className="max-h-[30vh] md:max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
                         <button
-                          key={b.id}
                           type="button"
-                          onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
-                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                          onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                          style={{
+                            backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
+                            color: branchFilter === 'ALL' ? textPrimary : textMuted
+                          }}
                         >
-                          <span>{formatBranchName(b.name)}</span>
-                          {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                          <span>All Branches</span>
+                          {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
                         </button>
-                      ))}
+                        {branches.map(b => {
+                          const isSelected = branchFilter === b.id
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
+                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                              style={{
+                                backgroundColor: isSelected ? hoverBg : 'transparent',
+                                color: isSelected ? textPrimary : textMuted
+                              }}
+                            >
+                              <span>{formatBranchName(b.name)}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -2996,72 +3011,92 @@ export default function Relays() {
                 </button>
 
                 {isStoreFilterOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2 animate-in fade-in-50 zoom-in-95 duration-150"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <span className="text-[10px] font-black uppercase tracking-widest px-1.5" style={{ color: textMuted }}>Filter by Store</span>
-                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                      <button
-                        type="button"
-                        onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === 'ALL' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                      >
-                        <span>All Stores</span>
-                        {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                      </button>
-                      {['Robinsons', 'Abenson', 'Direct'].map(st => (
+                  <>
+                    {/* Mobile backdrop */}
+                    <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[99] md:hidden" onClick={() => setIsStoreFilterOpen(false)} />
+                    <div className="fixed bottom-6 inset-x-4 md:absolute md:inset-auto md:left-0 md:top-full md:mt-1.5 w-auto md:w-48 max-w-sm rounded-xl border shadow-lg z-[100] p-2 flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-5 duration-200"
+                      style={{ backgroundColor: cardBg, borderColor: border }}>
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1" style={{ color: textMuted }}>Filter by Store</span>
+                      <div className="max-h-[30vh] md:max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
                         <button
-                          key={st}
                           type="button"
-                          onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                        >
-                          <span>{st === 'Direct' ? 'Direct Store' : st}</span>
-                          {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                        </button>
-                      ))}
-                      {relayCustomStores.map(st => {
-                        if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
-                        return (
-                          <button
-                            key={st}
-                            type="button"
-                            onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                          >
-                            <span>{st}</span>
-                            {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <div className="border-t pt-2" style={{ borderColor: border }}>
-                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 block mb-1.5" style={{ color: textMuted }}>Add New Store</span>
-                      <div className="flex gap-1.5 px-0.5">
-                        <input
-                          type="text"
-                          value={toolbarStoreDraft}
-                          onChange={e => setToolbarStoreDraft(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              handleAddStoreFromToolbar()
-                            }
+                          onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                          style={{
+                            backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
+                            color: storeFilter === 'ALL' ? textPrimary : textMuted
                           }}
-                          placeholder="e.g. S&R, ANSON'S"
-                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
-                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddStoreFromToolbar}
-                          className="px-3 rounded-lg text-xs font-bold text-white shrink-0 hover:opacity-90 transition-all"
-                          style={{ background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)' }}
                         >
-                          Add
+                          <span>All Stores</span>
+                          {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
                         </button>
+                        {['Robinsons', 'Abenson', 'Direct'].map(st => {
+                          const isSelected = storeFilter === st
+                          return (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                              style={{
+                                backgroundColor: isSelected ? hoverBg : 'transparent',
+                                color: isSelected ? textPrimary : textMuted
+                              }}
+                            >
+                              <span>{st === 'Direct' ? 'Direct Store' : st}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                            </button>
+                          )
+                        })}
+                        {relayCustomStores.map(st => {
+                          if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
+                          const isSelected = storeFilter === st
+                          return (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                              className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                              style={{
+                                backgroundColor: isSelected ? hoverBg : 'transparent',
+                                color: isSelected ? textPrimary : textMuted
+                              }}
+                            >
+                              <span>{st}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="border-t pt-2 mt-1" style={{ borderColor: border }}>
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 block mb-1" style={{ color: textMuted }}>Add New Store</span>
+                        <div className="flex gap-1.5 px-1">
+                          <input
+                            type="text"
+                            value={toolbarStoreDraft}
+                            onChange={e => setToolbarStoreDraft(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleAddStoreFromToolbar()
+                              }
+                            }}
+                            placeholder="Store name..."
+                            className="w-full border rounded-lg px-2 py-1 text-[11px] outline-none focus:border-emerald-500"
+                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddStoreFromToolbar}
+                            className="px-2.5 rounded-lg text-[10px] font-bold text-white shrink-0 hover:opacity-90 active:scale-95 transition-all"
+                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                          >
+                            Add
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -3101,58 +3136,16 @@ export default function Relays() {
                 >
                   <Settings className="w-3.5 h-3.5" />
                 </button>
-
-                {/* Create Ticket split button */}
-                <div className="flex items-center rounded-full overflow-hidden shadow-md"
-                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-                  <button
-                    type="button"
-                    onClick={openAddModal}
-                    disabled={scanning}
-                    className="flex items-center gap-1.5 h-7 pl-3 pr-2.5 font-bold text-[11px] text-white hover:opacity-90 active:scale-95 disabled:opacity-60 transition-all shrink-0 border-r"
-                    style={{ borderColor: 'rgba(255,255,255,0.2)' }}
-                  >
-                    {scanning ? (
-                      <><Loader2 className="w-3 h-3 animate-spin" /><span>Scanning…</span></>
-                    ) : (
-                      <><Plus className="w-3 h-3" /><span>New</span></>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateDropdownOpen(prev => !prev)}
-                    disabled={scanning}
-                    className="flex items-center justify-center h-7 px-2 text-white hover:opacity-90 active:scale-95 disabled:opacity-60 transition-all shrink-0"
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Dropdown */}
-                {isCreateDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 z-50 w-44 rounded-2xl shadow-2xl overflow-hidden py-1.5 border animate-in fade-in-50 zoom-in-95 duration-150"
-                    style={{ backgroundColor: cardBg, borderColor: border }}>
-                    <button
-                      type="button"
-                      disabled={scanning}
-                      onClick={() => { setIsCreateDropdownOpen(false); scanFileInputRef.current?.click() }}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-60"
-                      style={{ color: textPrimary }}
-                    >
-                      {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" /> : <FileUp className="w-3.5 h-3.5 text-emerald-500" />}
-                      <span>{scanning ? 'Scanning...' : 'Scan PDF'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setIsCreateDropdownOpen(false); excelFileInputRef.current?.click() }}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                      style={{ color: textPrimary }}
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Import Excel</span>
-                    </button>
-                  </div>
-                )}
+                {/* Create Ticket Button */}
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  className="flex items-center gap-1.5 h-7 px-3 rounded-full font-bold text-[11px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>New Ticket</span>
+                </button>
               </div>
             )}
           </div>
@@ -3176,27 +3169,8 @@ export default function Relays() {
             )}
           </div>
 
-          {/* Hidden file inputs */}
-          <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-            onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
-          <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
-
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
-      )}
-
-      {/* ── Scan Error Banner ──────────────────────────────────── */}
-      {scanError && (
-        <div className="mx-3 mt-2 p-3 rounded-lg border flex items-center justify-between gap-3"
-          style={{ backgroundColor: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
-          <div className="flex items-center gap-2 text-xs font-semibold text-red-500">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>{scanError}</span>
-          </div>
-          <button onClick={() => setScanError('')} className="p-1 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
       )}
 
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
@@ -3559,7 +3533,7 @@ export default function Relays() {
                   <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
                 </div>
               ) : (
-                filtered.map((ticket, idx) => {
+                filtered.map((ticket) => {
                   const storeStyle = getDealerStyle(ticket.dealer || ticket.sourceVendor)
                   const branchName = formatBranchTableLabel(ticket.branchId, ticket)
                   const negotiator = resolveRelayNegotiatorName(ticket, employees)
