@@ -7458,13 +7458,12 @@ export default function Tickets() {
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2">
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
-          {/* ── Row 1: Date chips + Showcase button ─────────────── */}
-          {activeTab === 'schedules' && (
-            <div className="flex items-center gap-2">
-              {/* Date day chips — horizontally scrollable */}
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5">
+          {/* ── Left Side: Date Chips & Search ── */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
+            {activeTab === 'schedules' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                 {weeklyTabs.map(tab => {
                   const isActive = dateFilter === tab.key
                   return (
@@ -7516,55 +7515,56 @@ export default function Tickets() {
                   aria-label="Ticket date filter"
                 />
               </div>
+            )}
 
-              {/* Showcase button — compact pill */}
-              {!isMyTickets && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    persistSchedulesSnapshot()
-                    setShowcaseOpen(true)
-                  }}
-                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
-                  style={{
-                    backgroundColor: showcaseOpen ? 'transparent' : green,
-                    border: `1.5px solid ${green}`,
-                    color: showcaseOpen ? green : '#ffffff',
-                    boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
-                  }}
-                  title="Open fullscreen schedule showcase for print / PDF"
-                >
-                  <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
-                </button>
-              )}
+            {/* ── Search bar (Next to Date Chips on Desktop) ── */}
+            {activeTab === 'schedules' && (
+              <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+                <input
+                  type="text"
+                  placeholder="Search names, phone…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+                  style={{ color: textPrimary }}
+                  onClick={e => e.stopPropagation()}
+                />
+                {searchQuery && (
+                  <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                    className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                    <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Right: Showcase button ─────────────── */}
+          {activeTab === 'schedules' && !isMyTickets && (
+            <div className="flex items-center gap-1.5 shrink-0 relative justify-end hidden md:flex">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  persistSchedulesSnapshot()
+                  setShowcaseOpen(true)
+                }}
+                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
+                style={{
+                  backgroundColor: showcaseOpen ? 'transparent' : green,
+                  border: `1.5px solid ${green}`,
+                  color: showcaseOpen ? green : '#ffffff',
+                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
+                }}
+                title="Open fullscreen schedule showcase for print / PDF"
+              >
+                <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
+              </button>
             </div>
           )}
-
-          {/* ── Row 2: Full-width search bar ─────────────────────── */}
-          {activeTab === 'schedules' && (
-            <div className="flex items-center gap-2.5 w-full md:max-w-sm h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
-              <input
-                type="text"
-                placeholder="Search name, area, technician…"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
-                style={{ color: textPrimary }}
-                onClick={e => e.stopPropagation()}
-              />
-              {searchQuery && (
-                <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                  className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                  <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                </button>
-              )}
-            </div>
-          )}
-
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}

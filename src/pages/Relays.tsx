@@ -1824,7 +1824,7 @@ export default function Relays() {
     const createBrandHp = formatBrandCapacityLabel(addForm.brand, addForm.capacity)
     const createPayload = {
       title: addForm.title,
-      description: addForm.description || addForm.remarksUpdate || 'Manual client ticket',
+      description: addForm.description || addForm.remarksUpdate || '',
       customerName: addForm.customerName,
       serviceType: addForm.serviceType,
       unitType: createBrandHp || addForm.unitType,
@@ -2603,14 +2603,13 @@ export default function Relays() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2 relative">
-
-          {/* ── Row 1: Filter chips + Action ───────────────── */}
-          <div className="flex items-center gap-2">
-
-            {/* Filter chips row — scrollable on mobile */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
-
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative">
+          
+          {/* ── Left Side: Filters & Search ── */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
+            
+            {/* Filter chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
               {/* Branch Chip */}
               <div>
                 <button
@@ -2680,54 +2679,53 @@ export default function Relays() {
                   <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
                 </button>
               </div>
-
             </div>
 
-            {/* Action buttons — right side */}
-            {isAdmin && (
-              <div className="flex items-center gap-1.5 shrink-0 relative">
-                {/* Settings icon */}
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsModalOpen(true)}
-                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-                  title="Manage Dealer Settings"
-                >
-                  <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
+            {/* Search bar (Next to Month Chip on Desktop) */}
+            <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search names, phone…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+                style={{ color: textPrimary }}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                  <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 </button>
-                {/* Create Ticket Button */}
-                <button
-                  type="button"
-                  onClick={openAddModal}
-                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full font-bold text-[12px] md:text-[14px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
-                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                >
-                  <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  <span>New Ticket</span>
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* ── Row 2: Search bar ────────────────────────────── */}
-          <div className="flex items-center gap-2.5 w-full md:max-w-sm h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search client, phone, SI #…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
-              style={{ color: textPrimary }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+          {/* Right: Action buttons */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 shrink-0 relative justify-end md:justify-end">
+              {/* Settings icon */}
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+                title="Manage Dealer Settings"
+              >
+                <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
               </button>
-            )}
-          </div>
+              {/* Create Ticket Button */}
+              <button
+                type="button"
+                onClick={openAddModal}
+                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full font-bold text-[12px] md:text-[14px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span>New Ticket</span>
+              </button>
+            </div>
+          )}
 
           {/* ── Absolute Dropdowns (placed here to prevent scroll-clipping) ── */}
 
