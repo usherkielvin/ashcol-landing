@@ -580,11 +580,16 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   const status = (ticket.status || '').toUpperCase()
   const finalDate = resolveRelayFinalDate(ticket)
   const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+  const details = parseAcDetails(ticket)
+  const hasScheduledDate = Boolean(details.scheduledDate?.trim() || details.scheduleIntake || status === 'SCHEDULED')
+  
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || status === 'INSTALLED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+  
   // finalDate / schedule phase = on Schedules tab, not relay assigned queue
-  if (finalDate || hasRelayLeftQueue(ticket)) return 'Scheduled'
+  if (finalDate || hasRelayLeftQueue(ticket) || hasScheduledDate) return 'Scheduled'
+  
   // Check specific backend lifecycle statuses before the generic "has a negotiator" fallback below,
   // otherwise every assigned ticket collapses to "Assigned" regardless of its real stage.
   if (status === 'SURVEY') return 'Survey'
@@ -592,13 +597,15 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (status === 'CONTINUATION') return 'Continuation'
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
+  
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
-    || status === 'SCHEDULED'
     || status === 'RESCHED'
     || ticket.assignedTo
     || negotiatorId
+    || ticket.negotiatorName?.trim()
+    || ticket.assignedEmployeeName?.trim()
   ) {
     return 'Assigned'
   }
@@ -1802,6 +1809,13 @@ export default function Relays() {
 
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const cleanedPhones = addPhoneNumbers.map(p => p.trim()).filter(Boolean)
+    // addForm.status carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+    // DONE_CHECKUP, ...) which Ticket.Status has no enum constant for — resolve to a value the
+    // backend actually accepts before sending, same mapper used by Schedules/My Tickets saves.
+    // schedulePhase/scheduleOutcome carry the finer sub-type (e.g. BACKJOB vs plain SERVICES)
+    // that rows/labels read (getCategoryLabel, formatRelayTicketTypeShort) — must be in acDetails
+    // from the start, or a new BACKJOB/CHECKUP ticket shows the wrong type from row one.
+    const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
     const acDetailsObj = {
       landmarks: addForm.landmarks || '',
       brand: addForm.brand || '',
@@ -1811,6 +1825,8 @@ export default function Relays() {
       alternatePhone: cleanedPhones.slice(1).join(', '),
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
       finalDate: addForm.finalDate || '',
+      ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
+      ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
     }
     const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
     const writeBranchId = resolvePortalWriteBranchId(
@@ -1824,10 +1840,6 @@ export default function Relays() {
       : addForm.ticketNumber?.trim()) || undefined
 
     const createBrandHp = formatBrandCapacityLabel(addForm.brand, addForm.capacity)
-    // addForm.status carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
-    // DONE_CHECKUP, ...) which Ticket.Status has no enum constant for — resolve to a value the
-    // backend actually accepts before sending, same mapper used by Schedules/My Tickets saves.
-    const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
     // Same as edits: a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/
     // SERVICES) resolves to SCHEDULED regardless of whether a date was picked — with no date
     // yet, the new ticket must show PENDING, not SCHEDULED.
@@ -2049,6 +2061,13 @@ export default function Relays() {
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
     const isUnassignedPending = finalStatus === 'PENDING' && !keepPendingAssignment
 
+    // finalStatus carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+    // DONE_CHECKUP, ...) — Ticket.Status has no enum constant for those; resolve to what the
+    // backend actually accepts before sending (same mapper used at ticket creation and in
+    // Schedules/My Tickets saves). schedulePhase/scheduleOutcome carry the finer sub-type that
+    // status can't (e.g. BACKJOB vs plain SERVICES) — merged into acDetailsObj below.
+    const resolvedEditStatus = resolveScheduleStatusFields(finalStatus)
+
     const payload: Record<string, any> = {}
     let branchId = ''
     let assignedTo = ''
@@ -2081,11 +2100,6 @@ export default function Relays() {
 
       payload.branchId = branchId
       payload.assignedTo = assignedTo
-      // finalStatus carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
-      // DONE_CHECKUP, ...) — Ticket.Status has no enum constant for those; resolve to what
-      // the backend actually accepts before sending (same mapper used at ticket creation and
-      // in Schedules/My Tickets saves).
-      const resolvedEditStatus = resolveScheduleStatusFields(finalStatus)
       // Picking a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/SERVICES)
       // always resolves to SCHEDULED regardless of whether a date was actually picked — a ticket
       // with no final date must show PENDING, not SCHEDULED (that implies day-of placement).
@@ -2118,9 +2132,15 @@ export default function Relays() {
     payload.controlNumber = draft.controlNumber || null
     const acDetailsObj = {
       // Start from the ticket's existing acDetails so keys this modal doesn't expose
-      // (scheduleOutcome, schedulePhase, negotiatorName, destination, etc. set by the
-      // Schedules/My Tickets edit path) survive a save from the Relays drawer.
+      // (negotiatorName, destination, etc. set by the Schedules/My Tickets edit path) survive
+      // a save from the Relays drawer.
       ...existingDetails,
+      // schedulePhase/scheduleOutcome must follow whatever status button was just picked here —
+      // without this, they keep whatever value existingDetails had before (e.g. still SURVEY &
+      // INSTALL from before), so rows/labels reading schedulePhase (getCategoryLabel,
+      // formatRelayTicketTypeShort) keep showing the OLD type after switching to BACKJOB/CHECKUP.
+      ...(resolvedEditStatus.schedulePhase !== undefined ? { schedulePhase: resolvedEditStatus.schedulePhase } : {}),
+      ...(resolvedEditStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedEditStatus.scheduleOutcome } : {}),
       landmarks: draft.landmarks || '',
       brand: draft.brand || '',
       capacity: draft.capacity || '',
@@ -2980,8 +3000,11 @@ export default function Relays() {
                   const relayedDate = formatRelayDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
                   const lastUpdate = ticket.remarksUpdate || ticket.description || '—'
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const isBackjob = categoryLabel === 'BACKJOB'
                   const categoryTint = !isSelected
-                    ? category === 'Survey'
+                    ? isBackjob
+                      ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.1)')
+                      : category === 'Survey'
                       ? (isLight ? 'rgba(234,179,8,0.07)' : 'rgba(234,179,8,0.06)')
                       : category === 'Survey & Install' ? (isLight ? '#f0fdf9' : 'rgba(16,185,129,0.06)')
                       : null
@@ -2992,7 +3015,9 @@ export default function Relays() {
                     : isSelected
                       ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
                       : categoryTint || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
-                  const rowHoverBg = category === 'Survey'
+                  const rowHoverBg = isBackjob
+                    ? (isLight ? 'rgba(239,68,68,0.14)' : 'rgba(239,68,68,0.16)')
+                    : category === 'Survey'
                     ? (isLight ? 'rgba(234,179,8,0.13)' : 'rgba(234,179,8,0.11)')
                     : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
                     : (isLight ? '#f1f5f9' : '#0f1e36')
