@@ -3,8 +3,7 @@ import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, Tag, User,
-  ChevronDown, ChevronUp,
+  Camera, Calendar, User,
   Loader2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -12,6 +11,13 @@ import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+
+function formatDisplayDate(dateStr?: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Employee {
@@ -168,10 +174,7 @@ const formatJobTitleLabel = (title: string) => {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
-const formatRoleLevelLabel = (level: string) => {
-  if (!level?.trim() || level === '—') return '—'
-  return formatJobTitleLabel(level.replace(/_/g, ' '))
-}
+
 
 const CREATE_STEPS = [
   { id: 1 as const, label: 'Account', hint: 'Name and login details' },
@@ -241,9 +244,6 @@ export default function Employees() {
 
   // Custom Job Titles / Role Levels (localStorage)
   const [customJobTitles, setCustomJobTitles] = useState<string[]>([])
-  const [showRoleManager, setShowRoleManager] = useState(false)
-  const [newRoleInput, setNewRoleInput] = useState('')
-
   // Drawer details panel state
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -338,26 +338,7 @@ export default function Employees() {
     }
   }, [])
 
-  const handleAddCustomRole = (e: React.FormEvent) => {
-    e.preventDefault()
-    const clean = newRoleInput.trim().toUpperCase()
-    if (!clean) return
-    const combined = [...DEFAULT_JOB_TITLES, ...customJobTitles]
-    if (combined.includes(clean)) {
-      alert('Role title already exists.')
-      return
-    }
-    const updated = [...customJobTitles, clean]
-    setCustomJobTitles(updated)
-    localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(updated))
-    setNewRoleInput('')
-  }
 
-  const handleRemoveCustomRole = (roleTitle: string) => {
-    const updated = customJobTitles.filter(t => t !== roleTitle)
-    setCustomJobTitles(updated)
-    localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(updated))
-  }
 
   const allJobTitles = [...DEFAULT_JOB_TITLES, ...customJobTitles]
 
