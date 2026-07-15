@@ -413,10 +413,22 @@ export default function DashboardLayout() {
     const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup'].some(p => 
       location.pathname === p || location.pathname.startsWith(p + '/')
     )
-    if (isTablePage) {
+    if (isTablePage && window.innerWidth >= 768) {
       setSidebarCollapsed(true)
     }
   }, [location.pathname])
+
+  // Prevent minimized state on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && sidebarCollapsed) {
+        setSidebarCollapsed(false)
+      }
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [sidebarCollapsed])
 
   const toggleAccordion = (title: string) => {
     setOpenAccordion(prev => (prev === title ? null : title))
@@ -867,7 +879,7 @@ export default function DashboardLayout() {
               <button
                 onClick={toggleTheme}
                 title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
+                className="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
                 style={{
                   color: textMuted,
                   backgroundColor: hoverBg,

@@ -7438,11 +7438,13 @@ export default function Tickets() {
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <div className="flex flex-wrap items-center gap-2 w-full">
-            {/* Weekly Date Tabs Picker */}
-            {activeTab === 'schedules' && (
-              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2">
+
+          {/* ── Row 1: Date chips + Showcase button ─────────────── */}
+          {activeTab === 'schedules' && (
+            <div className="flex items-center gap-2">
+              {/* Date day chips — horizontally scrollable */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5">
                 {weeklyTabs.map(tab => {
                   const isActive = dateFilter === tab.key
                   return (
@@ -7450,11 +7452,12 @@ export default function Tickets() {
                       type="button"
                       key={tab.key}
                       onClick={() => handleDateFilterChange(tab.key)}
-                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      className="h-7 px-2.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
                       style={{
-                        backgroundColor: isActive ? green : 'transparent',
+                        backgroundColor: isActive ? green : inputBg,
                         borderColor: isActive ? green : inputBorder,
                         color: isActive ? '#ffffff' : textMuted,
+                        boxShadow: isActive ? `0 2px 8px rgba(16,185,129,0.35)` : 'none',
                       }}
                     >
                       {tab.dayName} {tab.dateLabel}
@@ -7466,8 +7469,8 @@ export default function Tickets() {
                   <button
                     type="button"
                     onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                    className="h-7 px-2.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
+                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
                   >
                     {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                   </button>
@@ -7476,8 +7479,8 @@ export default function Tickets() {
                 <button
                   type="button"
                   onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}
+                  className="w-7 h-7 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
+                  style={{ borderColor: inputBorder, backgroundColor: inputBg }}
                   title="Pick date"
                 >
                   <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
@@ -7492,56 +7495,56 @@ export default function Tickets() {
                   className="absolute opacity-0 pointer-events-none w-0 h-0"
                   aria-label="Ticket date filter"
                 />
-
               </div>
-            )}
 
-            {/* Search bar */}
-            {activeTab === 'schedules' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-transparent outline-none text-xs flex-1 min-w-0"
-                  style={{ color: textPrimary }}
-                  onClick={e => e.stopPropagation()}
-                />
-                {searchQuery && (
-                  <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            )}
+              {/* Showcase button — compact pill */}
+              {!isMyTickets && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    persistSchedulesSnapshot()
+                    setShowcaseOpen(true)
+                  }}
+                  className="flex items-center gap-1.5 h-7 px-3 rounded-full text-[11px] font-bold transition-all shrink-0 active:scale-95"
+                  style={{
+                    backgroundColor: showcaseOpen ? 'transparent' : green,
+                    border: `1.5px solid ${green}`,
+                    color: showcaseOpen ? green : '#ffffff',
+                    boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
+                  }}
+                  title="Open fullscreen schedule showcase for print / PDF"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                </button>
+              )}
+            </div>
+          )}
 
-            {activeTab === 'schedules' && !isMyTickets && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  persistSchedulesSnapshot()
-                  setShowcaseOpen(true)
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0"
-                style={{
-                  backgroundColor: showcaseOpen ? 'transparent' : green,
-                  border: `2px solid ${green}`,
-                  color: showcaseOpen ? green : '#ffffff',
-                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
-                }}
-                title="Open fullscreen schedule showcase for print / PDF"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                {showcaseOpen ? 'In Showcase' : 'Showcase'}
-              </button>
-            )}
+          {/* ── Row 2: Full-width search bar ─────────────────────── */}
+          {activeTab === 'schedules' && (
+            <div className="flex items-center gap-2.5 w-full h-9 px-3 rounded-xl border transition-all"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search name, area, technician…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
+                style={{ color: textPrimary }}
+                onClick={e => e.stopPropagation()}
+              />
+              {searchQuery && (
+                <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                  className="shrink-0 p-0.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
 
-
-          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -7693,7 +7696,7 @@ export default function Tickets() {
                   paddingBottom: activeCellOverlay ? 72 : 12,
                 }}
               >
-                <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                <table key={dateFilter || 'all'} className="text-xs w-full hidden md:table" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                   <colgroup>
                     {columns.map(col => (
                       <col key={col.label} style={{ width: col.w }} />
@@ -7940,6 +7943,70 @@ export default function Tickets() {
                       }))}
                   </tbody>
                 </table>
+                {/* Mobile Card View */}
+                <div className="flex flex-col md:hidden p-3 gap-3">
+                  {visible.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12">
+                      <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                        No records found
+                      </p>
+                    </div>
+                  ) : (
+                    visible.map((ticket, idx) => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
+                      const isGhost = Boolean(ghostKind)
+                      const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
+                      const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                      const isInstalled = isInstalledWorkflowStatus(ticket.status) || ['DONE_INSTALLED', 'DONE_CLEANING'].includes(ticket.status || '')
+                      
+                      return (
+                        <div
+                          key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                          onClick={() => setDetailTicket(ticket)}
+                          className="w-full rounded-xl p-3 flex flex-col gap-2 shadow-sm border transition-transform active:scale-[0.98] cursor-pointer"
+                          style={{
+                            backgroundColor: rowColors.baseBg,
+                            borderColor: tableBorder,
+                            borderLeft: rowColors.accent ? `4px solid ${rowColors.accent}` : undefined,
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-bold text-sm truncate mr-2" style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}>
+                              {getCustomerDisplayName(ticket)}
+                            </h4>
+                            {ticket.status && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0" style={{
+                                backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)',
+                                color: isInstalled ? (isLight ? '#059669' : '#34d399') : (isLight ? '#0284c7' : '#38bdf8')
+                              }}>
+                                {ticket.status}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
+                            <div className="flex items-center gap-1.5">
+                               <Copy className="w-3 h-3 shrink-0" />
+                               <span className="font-semibold truncate" style={{color: textPrimary}}>{ticket.ticketNumber || ticket.controlNumber || '—'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-right justify-end">
+                               <span className="truncate">{ticket.branchId ? (branches.find(b => b.id === ticket.branchId)?.name || formatBranchName(ticket.branchId)) : (ticket.district || '—')}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 col-span-2">
+                               <MapPin className="w-3 h-3 shrink-0" />
+                               <span className="truncate">{ticket.district || '—'} • {ticket.acDetails || '—'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 col-span-2">
+                               <span className="font-medium" style={{color: (ticket.assignedTo || ticket.assignedEmployeeName) ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
+                                 {ticket.assignedEmployeeName || ticket.assignedTo || ticket.technician || 'Unassigned'}
+                               </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
               </div>
             </div>
           )) : (

@@ -58,6 +58,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('ashcol-theme', theme)
   }, [theme])
 
+  // Listen to OS theme changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = (e: MediaQueryListEvent) => {
+      setTheme(e.matches ? 'dark' : 'light')
+    }
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
+
   const toggleTheme = () => {
     const root = document.documentElement
     // Add transitioning class to enable smooth CSS transitions

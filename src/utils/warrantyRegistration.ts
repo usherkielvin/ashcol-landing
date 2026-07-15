@@ -190,20 +190,6 @@ export async function refreshWarrantyRegistrations(
   return result
 }
 
-export async function createWarrantyRegistration(
-  token: string,
-  body: { parentTicketId?: string; serviceReportId?: string },
-): Promise<WarrantyTicket> {
-  const res = await fetch(`${API_BASE_URL}/tickets/warranty-registrations`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(await readApiError(res))
-  const payload = await res.json()
-  return payload?.data || payload
-}
-
 export async function markWarrantyRegistered(token: string, ticketId: string): Promise<WarrantyTicket> {
   const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
     method: 'PATCH',

@@ -2911,180 +2911,266 @@ export default function Relays() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-          {/* Enhanced Branch Filter */}
-          <div className="relative shrink-0" ref={branchFilterRef}>
-            <button
-              type="button"
-              disabled={!isAdmin}
-              onClick={() => setIsBranchFilterOpen(prev => !prev)}
-              className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all ${
-                isAdmin ? 'hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer' : 'cursor-not-allowed opacity-80'
-              }`}
-              style={{
-                backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'),
-                borderColor: inputBorder,
-                color: isAdmin ? textPrimary : textMuted
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
-                <span>
-                  {branchFilter === 'ALL'
-                    ? 'All Branches'
-                    : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
-                </span>
-              </div>
-              {isAdmin && <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />}
-            </button>
-            
-            {isAdmin && isBranchFilterOpen && (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
-                style={{ backgroundColor: cardBg, borderColor: border }}>
-                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Select Branch</span>
-                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
-                  <button
-                    type="button"
-                    onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === 'ALL' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
-                  >
-                    <span>All Branches</span>
-                    {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                  </button>
-                  {branches.map(b => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
-                    >
-                      <span>{formatBranchName(b.name)}</span>
-                      {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col gap-2">
 
-          {/* Enhanced Store Filter */}
-          <div className="relative shrink-0" ref={storeFilterRef}>
-            <button
-              type="button"
-              onClick={() => setIsStoreFilterOpen(prev => !prev)}
-              className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-blue-500 shrink-0" />
-                <span>{storeFilter === 'ALL' ? 'All Stores' : storeFilter === 'Direct' ? 'Direct Store' : storeFilter}</span>
+          {/* ── Row 1: Filter chips + Action ───────────────── */}
+          <div className="flex items-center gap-2">
+
+            {/* Filter chips row — scrollable on mobile */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
+
+              {/* Branch Chip */}
+              <div className="relative shrink-0" ref={branchFilterRef}>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => setIsBranchFilterOpen(prev => !prev)}
+                  className={`flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-all ${
+                    branchFilter !== 'ALL'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : ''
+                  } ${isAdmin ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'opacity-60 cursor-default'}`}
+                  style={{
+                    backgroundColor: branchFilter !== 'ALL'
+                      ? (isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)')
+                      : inputBg,
+                    borderColor: branchFilter !== 'ALL' ? '#10B981' : inputBorder,
+                    color: branchFilter !== 'ALL' ? '#10B981' : textMuted,
+                  }}
+                >
+                  <Building2 className="w-3 h-3 shrink-0" style={{ color: '#10B981' }} />
+                  <span>
+                    {branchFilter === 'ALL'
+                      ? 'Branch'
+                      : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
+                  </span>
+                  {isAdmin && <ChevronDown className="w-2.5 h-2.5 opacity-50 -mr-0.5" />}
+                </button>
+
+                {isAdmin && isBranchFilterOpen && (
+                  <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2 animate-in fade-in-50 zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
+                    <span className="text-[10px] font-black uppercase tracking-widest px-1.5" style={{ color: textMuted }}>Select Branch</span>
+                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === 'ALL' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                      >
+                        <span>All Branches</span>
+                        {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                      </button>
+                      {branches.map(b => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                        >
+                          <span>{formatBranchName(b.name)}</span>
+                          {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />
-            </button>
-            
-            {isStoreFilterOpen && (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
-                style={{ backgroundColor: cardBg, borderColor: border }}>
-                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Filter by Store</span>
-                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
+
+              {/* Store Chip */}
+              <div className="relative shrink-0" ref={storeFilterRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsStoreFilterOpen(prev => !prev)}
+                  className="flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full border text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95"
+                  style={{
+                    backgroundColor: storeFilter !== 'ALL'
+                      ? (isLight ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.15)')
+                      : inputBg,
+                    borderColor: storeFilter !== 'ALL' ? '#3B82F6' : inputBorder,
+                    color: storeFilter !== 'ALL' ? '#3B82F6' : textMuted,
+                  }}
+                >
+                  <Package className="w-3 h-3 shrink-0" style={{ color: '#3B82F6' }} />
+                  <span>{storeFilter === 'ALL' ? 'Store' : storeFilter === 'Direct' ? 'Direct' : storeFilter}</span>
+                  <ChevronDown className="w-2.5 h-2.5 opacity-50 -mr-0.5" />
+                </button>
+
+                {isStoreFilterOpen && (
+                  <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2 animate-in fade-in-50 zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
+                    <span className="text-[10px] font-black uppercase tracking-widest px-1.5" style={{ color: textMuted }}>Filter by Store</span>
+                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === 'ALL' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                      >
+                        <span>All Stores</span>
+                        {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                      </button>
+                      {['Robinsons', 'Abenson', 'Direct'].map(st => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                        >
+                          <span>{st === 'Direct' ? 'Direct Store' : st}</span>
+                          {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                        </button>
+                      ))}
+                      {relayCustomStores.map(st => {
+                        if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                          >
+                            <span>{st}</span>
+                            {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="border-t pt-2" style={{ borderColor: border }}>
+                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 block mb-1.5" style={{ color: textMuted }}>Add New Store</span>
+                      <div className="flex gap-1.5 px-0.5">
+                        <input
+                          type="text"
+                          value={toolbarStoreDraft}
+                          onChange={e => setToolbarStoreDraft(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleAddStoreFromToolbar()
+                            }
+                          }}
+                          placeholder="e.g. S&R, ANSON'S"
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddStoreFromToolbar}
+                          className="px-3 rounded-lg text-xs font-bold text-white shrink-0 hover:opacity-90 transition-all"
+                          style={{ background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)' }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Month Chip */}
+              <div className="flex items-center gap-1 h-7 pl-2 pr-1.5 rounded-full border text-[11px] font-semibold shrink-0"
+                style={{ backgroundColor: monthFilter !== 'all' ? (isLight ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.12)') : inputBg,
+                         borderColor: monthFilter !== 'all' ? '#F59E0B' : inputBorder,
+                         color: monthFilter !== 'all' ? '#D97706' : textMuted }}>
+                <CalendarDays className="w-3 h-3 shrink-0" style={{ color: '#F59E0B' }} />
+                <select
+                  value={monthFilter}
+                  onChange={e => setMonthFilter(e.target.value)}
+                  className="bg-transparent outline-none cursor-pointer font-semibold text-[11px] pr-1"
+                  style={{ color: monthFilter !== 'all' ? '#D97706' : textMuted, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}
+                >
+                  <option value="all" style={{ backgroundColor: cardBg, color: textPrimary }}>Month</option>
+                  {monthOptions.map(ym => (
+                    <option key={ym} value={ym} style={{ backgroundColor: cardBg, color: textPrimary }}>
+                      {monthLabel(ym)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+            </div>
+
+            {/* Action buttons — right side */}
+            {isAdmin && (
+              <div className="flex items-center gap-1.5 shrink-0 relative" ref={createDropdownRef}>
+                {/* Settings icon */}
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+                  title="Manage Dealer Settings"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Create Ticket split button */}
+                <div className="flex items-center rounded-full overflow-hidden shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
                   <button
                     type="button"
-                    onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === 'ALL' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
+                    onClick={openAddModal}
+                    disabled={scanning}
+                    className="flex items-center gap-1.5 h-7 pl-3 pr-2.5 font-bold text-[11px] text-white hover:opacity-90 active:scale-95 disabled:opacity-60 transition-all shrink-0 border-r"
+                    style={{ borderColor: 'rgba(255,255,255,0.2)' }}
                   >
-                    <span>All Stores</span>
-                    {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                    {scanning ? (
+                      <><Loader2 className="w-3 h-3 animate-spin" /><span>Scanning…</span></>
+                    ) : (
+                      <><Plus className="w-3 h-3" /><span>New</span></>
+                    )}
                   </button>
-                  {['Robinsons', 'Abenson', 'Direct'].map(st => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                    >
-                      <span>{st === 'Direct' ? 'Direct Store' : st}</span>
-                      {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                    </button>
-                  ))}
-                  {/* Custom Stores */}
-                  {relayCustomStores.map(st => {
-                    if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
-                    return (
-                      <button
-                        key={st}
-                        type="button"
-                        onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                      >
-                        <span>{st}</span>
-                        {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                      </button>
-                    )
-                  })}
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateDropdownOpen(prev => !prev)}
+                    disabled={scanning}
+                    className="flex items-center justify-center h-7 px-2 text-white hover:opacity-90 active:scale-95 disabled:opacity-60 transition-all shrink-0"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
                 </div>
-                
-                {/* Add Custom Store directly in filter */}
-                <div className="border-t pt-2.5" style={{ borderColor: border }}>
-                  <span className="text-[9px] font-bold uppercase tracking-wide px-2 block mb-1.5" style={{ color: textMuted }}>Add New Store</span>
-                  <div className="flex gap-1.5 px-1">
-                    <input
-                      type="text"
-                      value={toolbarStoreDraft}
-                      onChange={e => setToolbarStoreDraft(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          handleAddStoreFromToolbar()
-                        }
-                      }}
-                      placeholder="e.g. S&R, ANSON'S"
-                      className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                    />
+
+                {/* Dropdown */}
+                {isCreateDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-44 rounded-2xl shadow-2xl overflow-hidden py-1.5 border animate-in fade-in-50 zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
                     <button
                       type="button"
-                      onClick={handleAddStoreFromToolbar}
-                      className="px-3 rounded-lg text-xs font-bold text-white shrink-0 hover:opacity-90 transition-all"
-                      style={{ background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)' }}
+                      disabled={scanning}
+                      onClick={() => { setIsCreateDropdownOpen(false); scanFileInputRef.current?.click() }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-60"
+                      style={{ color: textPrimary }}
                     >
-                      Add
+                      {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" /> : <FileUp className="w-3.5 h-3.5 text-emerald-500" />}
+                      <span>{scanning ? 'Scanning...' : 'Scan PDF'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsCreateDropdownOpen(false); excelFileInputRef.current?.click() }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                      style={{ color: textPrimary }}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Import Excel</span>
                     </button>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Month Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold shadow-sm shrink-0"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-4 h-4 shrink-0 text-amber-500" />
-            <select
-              value={monthFilter}
-              onChange={e => setMonthFilter(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-            >
-              <option value="all" style={{ backgroundColor: cardBg, color: textPrimary }}>All Months</option>
-              {monthOptions.map(ym => (
-                <option key={ym} value={ym} style={{ backgroundColor: cardBg, color: textPrimary }}>
-                  {monthLabel(ym)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none opacity-60" style={{ color: textMuted }} />
-          </div>
-
-          {/* Search */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
+          {/* ── Row 2: Search bar ────────────────────────────── */}
+          <div className="flex items-center gap-2.5 w-full h-9 px-3 rounded-xl border transition-all"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input type="text" placeholder="Search client, phone, SI #..." value={searchQuery}
+            <input
+              type="text"
+              placeholder="Search client, phone, SI #…"
+              value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1" style={{ color: textPrimary }} />
+              className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
+              style={{ color: textPrimary }}
+            />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="shrink-0" style={{ color: textMuted }}>
+              <button onClick={() => setSearchQuery('')} className="shrink-0 p-0.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
                 <X className="w-3 h-3" />
               </button>
             )}
@@ -3095,94 +3181,6 @@ export default function Relays() {
             onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
           <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
 
-          {/* Action buttons wrapper with right alignment */}
-          {isAdmin && (
-            <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={createDropdownRef}>
-              {/* Settings button */}
-              <button
-                type="button"
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="flex items-center justify-center p-2 rounded-lg border shadow-sm transition-all text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                title="Manage Dealer Settings"
-              >
-                <Settings className="w-4 h-4 shrink-0" />
-              </button>
-
-
-              <div className="flex items-center rounded-lg overflow-hidden shadow-sm border transition-all"
-                style={{
-                  borderColor: isLight ? '#059669' : '#10B981',
-                  background: 'linear-gradient(135deg, #10B981, #059669)'
-                }}>
-                <button
-                  type="button"
-                  onClick={openAddModal}
-                  disabled={scanning}
-                  className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0 border-r"
-                  style={{ borderColor: 'rgba(255,255,255,0.15)' }}
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Scanning...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create Ticket</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateDropdownOpen(prev => !prev)}
-                  disabled={scanning}
-                  className="flex items-center justify-center px-2.5 py-1.5 text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Dropdown Menu */}
-              {isCreateDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl shadow-2xl overflow-hidden py-1 border transition-all animate-fade-in"
-                  style={{ backgroundColor: cardBg, borderColor: border }}>
-                  <button
-                    type="button"
-                    disabled={scanning}
-                    onClick={() => {
-                      setIsCreateDropdownOpen(false)
-                      scanFileInputRef.current?.click()
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-60"
-                    style={{ color: textPrimary }}
-                  >
-                    {scanning ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                    ) : (
-                      <FileUp className="w-3.5 h-3.5 text-emerald-500" />
-                    )}
-                    <span>{scanning ? 'Scanning...' : 'Scan PDF'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreateDropdownOpen(false)
-                      excelFileInputRef.current?.click()
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Import Excel</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -3205,7 +3203,7 @@ export default function Relays() {
           <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto" data-ticket-table-scroll>
           <table
             key={activeTab}
-            className="w-full"
+            className="w-full hidden md:table"
             style={{
               width: '100%',
               tableLayout: 'fixed',
@@ -3546,6 +3544,92 @@ export default function Relays() {
               )}
             </tbody>
           </table>
+
+          {/* Mobile Card View */}
+          <div className="flex flex-col md:hidden p-3 gap-3 w-full">
+             {loading && tickets.length === 0 ? (
+                <div className="py-20 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#10B981]" />
+                  <p className="text-sm font-semibold" style={{ color: textMuted }}>Loading masterlist...</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="py-20 text-center">
+                  <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
+                  <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
+                  <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
+                </div>
+              ) : (
+                filtered.map((ticket, idx) => {
+                  const storeStyle = getDealerStyle(ticket.dealer || ticket.sourceVendor)
+                  const branchName = formatBranchTableLabel(ticket.branchId, ticket)
+                  const negotiator = resolveRelayNegotiatorName(ticket, employees)
+                  const district = (() => {
+                    if (ticket.district?.trim()) return ticket.district.trim()
+                    const loc = ticket.location || ''
+                    const paren = loc.match(/\(([^)]+)\)\s*$/)
+                    if (paren?.[1]?.trim()) return paren[1].trim()
+                    return guessDistrict(loc) || '—'
+                  })()
+                  
+                  const ticketNo = getTicketNumber(ticket)
+                  const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
+                  const relayStatus = getRelayStatusShort(ticket)
+                  const relayStatusLabel = getRelayStatusLabel(ticket)
+                  const statusIsAssigned = relayStatusLabel === 'Assigned'
+                  const statusIsScheduled = relayStatusLabel === 'Scheduled' || relayStatus === 'SCHEDULED'
+                  
+                  const isHighlighted = ticket.id === lastUpdatedTicketId
+                  const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const rowBaseBg = isHighlighted
+                    ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.25)')
+                    : isSelected
+                      ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
+                      : (isLight ? '#ffffff' : '#060B18')
+
+                  return (
+                    <div
+                      key={`card-${ticket.id}`}
+                      onClick={() => setSelectedPreviewTicket(ticket)}
+                      className="w-full rounded-xl p-3 flex flex-col gap-2 shadow-sm border transition-transform active:scale-[0.98] cursor-pointer"
+                      style={{
+                        backgroundColor: rowBaseBg,
+                        borderColor: tableRowBorder,
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-sm truncate mr-2" style={{ color: textPrimary }}>
+                          {displayUpper(ticket.customerName || 'Direct Client')}
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0" style={{
+                          backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)',
+                          color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
+                        }}>
+                          {relayStatus}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
+                        <div className="flex items-center gap-1.5">
+                           <FileText className="w-3 h-3 shrink-0" />
+                           <span className="font-semibold truncate" style={{color: textPrimary}}>{displayUpper(cleanTicketNo)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-right justify-end">
+                           <span className="truncate">{displayUpper(branchName)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 col-span-2">
+                           <span className="truncate">{displayUpper(district)} • {displayUpper(storeStyle.label)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 col-span-2">
+                           <span className="font-medium" style={{color: negotiator ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
+                             {displayUpper(negotiator || 'Unassigned')}
+                           </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+          </div>
         </div>
 
         {/* ── Combined Stats Counter & Danger Zone Footer Strip ─────────────────────────────── */}

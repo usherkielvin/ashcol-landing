@@ -1,17 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
   Scan, Loader2, ClipboardPaste, Save,
-  Check, ChevronDown, Tag, ShieldCheck,
+  Check, ChevronDown, Tag,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
-import { createWarrantyRegistration } from '../utils/warrantyRegistration'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -226,7 +224,6 @@ function getRowBrand(row: ServiceRow): string {
 export default function DailyServiceReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
-  const navigate = useNavigate()
   const isLight = theme === 'light'
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
@@ -285,7 +282,6 @@ export default function DailyServiceReport() {
   }, [rows])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
-  const [creatingWarrantyFor, setCreatingWarrantyFor] = useState<string | null>(null)
 
   // Inline editing states
   const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
@@ -1596,27 +1592,6 @@ export default function DailyServiceReport() {
     }
   }
 
-  const handleCreateWarrantyRegistration = async (row: ServiceRow) => {
-    setContextMenu(null)
-    if (creatingWarrantyFor) return
-    setCreatingWarrantyFor(row.id)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const created = await createWarrantyRegistration(token, {
-        parentTicketId: row.ticketId || undefined,
-        serviceReportId: row.id,
-      })
-      const label = created.ticketNumber || created.id?.slice(0, 8) || 'ticket'
-      if (window.confirm(`Warranty registration ticket ${label} created.\n\nOpen Registration tab now?`)) {
-        navigate('/warranty-registration')
-      }
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Could not create warranty registration ticket')
-    } finally {
-      setCreatingWarrantyFor(null)
-    }
-  }
-
   const handleClearAll = async () => {
     if (!isAdmin) {
       alert('Access denied: Only administrator accounts can clear all records.')
@@ -2075,17 +2050,6 @@ export default function DailyServiceReport() {
                 onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
                 onClick={() => { startEdit(contextMenu.row, columns[0].label); setContextMenu(null) }}>
                 <Edit3 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Edit row
-              </button>
-            )}
-            {isAdmin && contextMenu.row.statusCode?.toUpperCase() === 'I' && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors disabled:opacity-50"
-                style={{ color: textPrimary }}
-                disabled={creatingWarrantyFor === contextMenu.row.id}
-                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
-                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
-                onClick={() => void handleCreateWarrantyRegistration(contextMenu.row)}>
-                <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#16A34A' }} />
-                {creatingWarrantyFor === contextMenu.row.id ? 'Creating…' : 'Warranty registration ticket'}
               </button>
             )}
             {canDelete && (
