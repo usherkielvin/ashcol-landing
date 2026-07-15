@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
+import { Upload, Receipt, ReceiptText, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
@@ -1182,7 +1182,7 @@ export default function AuditFinanceExpenses() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full pt-2 sm:pt-0">
             <div className="flex items-center justify-between w-full sm:w-auto">
               <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: textPrimary }}>
-                <div className="rounded-lg p-2" style={{ backgroundColor: `${activeAccent}22` }}><Receipt size={18} style={{ color: activeAccent }} /></div>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${activeAccent}22` }}><ReceiptText size={18} style={{ color: activeAccent }} /></div>
                 {editing ? (
                   <span className="flex items-center gap-2 tracking-wide uppercase">
                     EDIT RECEIPT
@@ -2046,7 +2046,7 @@ export default function AuditFinanceExpenses() {
         </div>
       )}
 
-      {duplicateModal && (
+      {duplicateModal && typeof document !== 'undefined' && createPortal(
         <div style={{
           position: 'fixed',
           top: 0,
@@ -2244,7 +2244,8 @@ export default function AuditFinanceExpenses() {
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
 
