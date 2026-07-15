@@ -44,6 +44,7 @@ import {
   categoryDefaultServiceType,
   inferCategoryFromTicket,
   isFieldCategory,
+  resolveScheduleStatusFields,
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
@@ -163,7 +164,7 @@ function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP'
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB'
 type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -173,6 +174,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'SURVEY', label: 'SURVEY', group: 'pending' },
   { value: 'CLEANING', label: 'CLEANING', group: 'pending' },
   { value: 'CHECKUP', label: 'CHECKUP', group: 'pending' },
+  { value: 'BACKJOB', label: 'BACKJOB', group: 'pending' },
   { value: 'INSTALLATION', label: 'INSTALLATION', group: 'pending' },
   { value: 'SERVICES', label: 'SERVICE', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
@@ -183,12 +185,13 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'DONE_CLEANING', label: 'DONE CLEANING', group: 'closing' },
   { value: 'DONE_SURVEY', label: 'DONE SURVEY', group: 'closing' },
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
+  { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
 
 const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
-const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP'])
+const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB'])
 const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
 
@@ -198,7 +201,7 @@ function statusShowsScheduleDetails(statusVal: string): boolean {
 
 function getScheduleTicketKind(ticket: Ticket): string {
   const kind = inferCategoryFromTicket(ticket) as string
-  if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'SURVEY & INSTALL' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP') return kind
+  if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'SURVEY & INSTALL' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP' || kind === 'BACKJOB') return kind
   return 'INSTALLATION'
 }
 
@@ -212,6 +215,9 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   }
   if (normalized === 'CHECKUP') {
     return { color: isLight ? '#0ea5e9' : '#38bdf8', backgroundColor: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#bae6fd' : 'rgba(14,165,233,0.35)' }
+  }
+  if (normalized === 'BACKJOB') {
+    return { color: isLight ? '#c2410c' : '#fdba74', backgroundColor: isLight ? '#ffedd5' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
   }
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
@@ -233,7 +239,8 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
-    normalized === 'DONE_CHECKUP'
+    normalized === 'DONE_CHECKUP' ||
+    normalized === 'DONE_BACKJOB'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
@@ -249,7 +256,7 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
 function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   const meta = parseAcMeta(ticket as Ticket)
   const explicit = String(meta.scheduleOutcome || '').toUpperCase()
-  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY' || explicit === 'DONE_CHECKUP') {
+  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY' || explicit === 'DONE_CHECKUP' || explicit === 'DONE_BACKJOB') {
     return explicit
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
@@ -257,6 +264,7 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   if (isInstalledWorkflowStatus(stat)) {
     if (/clean/i.test(remarks)) return 'DONE_CLEANING'
     if (/checkup|check-up/i.test(remarks)) return 'DONE_CHECKUP'
+    if (/backjob|back-job|back job/i.test(remarks)) return 'DONE_BACKJOB'
     if (/survey/i.test(remarks)) return 'DONE_SURVEY'
     if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
   }
@@ -274,6 +282,8 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SURVEY') return 'SURVEY'
   if (phase === 'INSTALLATION') return 'INSTALLATION'
   if (phase === 'SERVICES' || phase === 'SERVICE') return 'SERVICES'
+  if (phase === 'CHECKUP') return 'CHECKUP'
+  if (phase === 'BACKJOB') return 'BACKJOB'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -295,6 +305,7 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (kind === 'INSTALL') return 'INSTALL'
   if (kind === 'CLEANING') return 'CLEANING'
   if (kind === 'CHECKUP') return 'CHECKUP'
+  if (kind === 'BACKJOB') return 'BACKJOB'
   return 'INSTALLATION'
 }
 
@@ -491,6 +502,8 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     setClosing('DONE_CLEANING')
   } else if (val === 'DONE_CHECKUP') {
     setClosing('DONE_CHECKUP')
+  } else if (val === 'DONE_BACKJOB') {
+    setClosing('DONE_BACKJOB')
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'INSTALLED'
     body.scheduleOutcome = 'DONE_INSTALLED'
@@ -507,7 +520,19 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     body.serviceType = categoryDefaultServiceType('SERVICES')
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'CLEANING'
-  } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI') {
+  } else if (val === 'CHECKUP') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = categoryDefaultServiceType('SERVICES')
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'CHECKUP'
+  } else if (val === 'BACKJOB') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = categoryDefaultServiceType('SERVICES')
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'BACKJOB'
+  } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI' || val === 'INSTALL') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'INSTALLATION'
     body.serviceType = categoryDefaultServiceType('INSTALLATION')
@@ -538,8 +563,15 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     body.status = 'CANCELLED'
     acUpdates.scheduleOutcome = ''
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
-    body.status = val
-    acUpdates.scheduleOutcome = ''
+    // Safety net for any pending/closing option added to SCHEDULE_STATUS_OPTS without an
+    // explicit branch above — resolve through the shared mapper instead of sending the raw
+    // button value straight through (that crashes with "No enum constant Ticket.Status.X").
+    const resolved = resolveScheduleStatusFields(val)
+    body.status = resolved.status
+    if (resolved.ticketCategory) body.ticketCategory = resolved.ticketCategory
+    if (resolved.serviceType) body.serviceType = resolved.serviceType
+    acUpdates.scheduleOutcome = resolved.scheduleOutcome ?? ''
+    if (resolved.schedulePhase !== undefined) acUpdates.schedulePhase = resolved.schedulePhase
   }
 
   // Leaving RESCHED Ã¢â€ â€™ active status: drop ghost on old date and "Moved toÃ¢â‚¬Â¦" remarks
@@ -811,7 +843,7 @@ function getScheduleRowColors(
         accent: '#8B5CF6',
       }
     }
-    if (outcome === 'DONE_CHECKUP') {
+    if (outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') {
       return {
         baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
         accent: '#3B82F6',
@@ -851,7 +883,7 @@ function getScheduleRowColors(
     }
   }
 
-  if (outcome === 'DONE_CHECKUP') {
+  if (outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') {
     return {
       baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
       accent: '#3B82F6',
@@ -871,7 +903,7 @@ function getScheduleRowColors(
       accent: '#8B5CF6',
     }
   }
-  if (statusVal === 'CLEANING') {
+  if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
     return {
       baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.1)',
       accent: '#0EA5E9',
@@ -903,7 +935,7 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
     ...body,
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   } as Ticket)
-  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP') return false
+  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') return false
   if (outcome === 'DONE_INSTALLED') return true
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
@@ -1039,6 +1071,7 @@ function getRelayQueueLabel(ticket: Ticket): string {
   if (status === 'CANCELLED') return 'CANCELLED'
   const outcome = getScheduleOutcome(ticket)
   if (outcome === 'DONE_CHECKUP') return 'DONE CHECKUP'
+  if (outcome === 'DONE_BACKJOB') return 'DONE BACKJOB'
   if (outcome === 'DONE_CLEANING') return 'DONE CLEANING'
   if (outcome === 'DONE_SURVEY') return 'DONE SURVEY'
   if (outcome === 'DONE_INSTALLED') return 'DONE INSTALL'
@@ -4255,7 +4288,7 @@ export default function Tickets() {
     if (!form.location?.trim()) return 'Destination/Address is required'
 
     const targetStatus = (form.status || '').toUpperCase().replace(/\s+/g, '_')
-    const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
+    const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
     if (isClosing) {
       const missing = getEmptyRequiredColumnsForClose(form, branchEmployees, activeBranchId)
       if (missing.length > 0) {
@@ -5799,7 +5832,7 @@ export default function Tickets() {
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
-      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP'
+      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
       return isInstallation || isCleaning || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
@@ -5940,7 +5973,7 @@ export default function Tickets() {
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
         driver: getTicketDriverName(live) || formatServiceDriver(live) || '',
-        service: formatRelayTicketTypeShort(live) || getF(live, 'serviceType', 'service_type') || '',
+        service: getTicketVehicleDisplay(live) || '',
       }
     })
   }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter])
@@ -7011,6 +7044,13 @@ export default function Tickets() {
               </span>
             )
           }
+          if (outcome === 'DONE_BACKJOB') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#c2410c' : '#fdba74' }} title="Done Backjob">
+                DONE BACKJOB
+              </span>
+            )
+          }
           return (
             <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${EMPTY_CELL} see Archives tab`}>
               INSTALLED
@@ -7042,7 +7082,7 @@ export default function Tickets() {
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
       return (
         <span
-          className="inline-flex items-center gap-0.5 text-[9.5px] font-bold uppercase tracking-normal cursor-pointer select-none"
+          className="inline-flex items-center gap-0.5 font-bold uppercase tracking-normal cursor-pointer select-none"
           style={{ ...truncStyle, color: badgeStyle.color, maxWidth: '100%' }}
           title={statusTitle}
         >
@@ -7141,7 +7181,7 @@ export default function Tickets() {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide transition-all hover:opacity-80"
             style={{
               color: isLight ? '#16a34a' : '#4ade80',
               backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)',
@@ -7154,7 +7194,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span
-          className="block w-full text-center font-bold text-[10px] tracking-wide uppercase leading-tight"
+          className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
           style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
           title={driverName}
         >
@@ -7177,7 +7217,7 @@ export default function Tickets() {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide transition-all hover:opacity-80"
             style={{
               color: isLight ? '#2563eb' : '#60a5fa',
               backgroundColor: isLight ? '#dbeafe' : 'rgba(37,99,235,0.15)',
@@ -7190,7 +7230,7 @@ export default function Tickets() {
       }
       return withEditPencil(
         <span
-          className="block w-full text-center font-bold text-[10px] tracking-wide uppercase leading-tight"
+          className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
           style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
           title={vehicleCode}
         >
@@ -8370,7 +8410,7 @@ export default function Tickets() {
         const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
         const installedDate = formatDateKeyLabel(getInstalledDateKey(t))
         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(custName))
-        const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP'
+        const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP' || scheduleStatusValue === 'DONE_BACKJOB'
           ? (isLight ? '#1d4ed8' : '#93c5fd')
           : green
         const branchName = formatAssignedBranchLabel(t.branchId || t.branch_id)
@@ -8708,7 +8748,7 @@ export default function Tickets() {
             setEditForm(prev => ({ ...prev, status: value }))
             return
           }
-          const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
+          const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
           if (isClosing) {
             const missing = getEmptyRequiredColumnsForClose(pickerTicket, branchEmployees, activeBranchId)
             if (missing.length > 0) {

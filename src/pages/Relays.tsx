@@ -1494,6 +1494,7 @@ export default function Relays() {
   const columns = useMemo(() => {
     const rawCols = activeTab === 'MY_TICKETS' ? [
       { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'CATEGORY',         weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: false },
       { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
@@ -2980,6 +2981,12 @@ export default function Relays() {
                           {displayUpper(cleanTicketNo)}
                         </span>
                       </div>
+                    ) },
+                    // CATEGORY
+                    { value: (
+                      <span className="truncate block w-full font-bold" style={{ color: textPrimary }} title={categoryLabel}>
+                        {categoryLabel}
+                      </span>
                     ) },
                     // STATUS
                     { value: (
