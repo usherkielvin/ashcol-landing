@@ -3,7 +3,7 @@ import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, ChevronDown, Loader2, Pencil, Clock, Moon, Sun,
+  Eye, Loader2, Pencil, Clock, Moon, Sun,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -47,7 +47,6 @@ import {
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
-import { ScheduleEditTicketModal } from '../components/schedules/ScheduleEditTicketModal'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -4199,28 +4198,6 @@ export default function Tickets() {
     closeEditModal()
   }, [closeEditModal, editForm, editFormSnapshot])
 
-  const patchScheduleEditForm = useCallback((patch: Partial<typeof editForm>) => {
-    setEditForm(prev => {
-      const next = { ...prev, ...patch }
-      if (patch.branchId !== undefined) {
-        next.branchId = resolveBranch(patch.branchId)?.id || patch.branchId
-      }
-      if (patch.negotiatorId !== undefined) {
-        const foundEmp = editModalNegotiators.find(emp => emp.id === patch.negotiatorId)
-        const negoBranchId = foundEmp?.branchId
-          ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId)
-          : prev.branchId
-        if (negoBranchId) next.branchId = negoBranchId
-      }
-      if (patch.branchId !== undefined && patch.negotiatorId === '') {
-        next.negotiatorId = ''
-      }
-      return next
-    })
-  }, [editModalNegotiators, resolveBranch])
-
-
-
   const isAddFormDirty = () => JSON.stringify(addForm) !== addFormSnapshot
 
   const requestCloseAddModal = () => {
@@ -4716,15 +4693,6 @@ export default function Tickets() {
     } finally {
       setEditSaving(false)
     }
-  }
-
-  const promptSaveEditTicket = () => {
-    const error = validateEditFormFor(editForm)
-    if (error) {
-      alert(error)
-      return
-    }
-    void commitSaveEditTicket()
   }
 
   const resolveImportBranchId = useCallback((ticketBranchId?: string) => {

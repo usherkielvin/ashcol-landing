@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import CollectionMarkPaidModal from '../components/collections/CollectionMarkPaidModal'
 
 interface CollectionItem {
   id: string
@@ -420,13 +421,13 @@ export default function ForCollections() {
     fetchCollections()
   }, [fetchCollections])
 
-  const handleResolve = async (item: CollectionItem) => {
+  const handleResolve = async (item: CollectionItem, amountPaid?: number, datePaid?: string, referenceNumber?: string, whoPaid?: string, customerName?: string) => {
     setResolvingId(item.id)
     // Optimistic update — mark resolved immediately in UI
     const now = new Date().toISOString()
     setItems(prev => prev.map(it =>
       it.id === item.id
-        ? { ...it, collectionResolved: true, collectionResolvedBy: user?.name || '', collectionResolvedAt: now }
+        ? { ...it, collectionResolved: true, collectionResolvedBy: user?.name || '', collectionResolvedAt: now, customer: customerName || it.customer }
         : it
     ))
     setConfirmItem(null)
@@ -435,7 +436,14 @@ export default function ForCollections() {
       const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${item.id}/resolve`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: item.id === selectedRow?.id ? notesText : '' })
+        body: JSON.stringify({ 
+          notes: item.id === selectedRow?.id ? notesText : '',
+          amountPaid,
+          datePaid,
+          referenceNumber,
+          whoPaid,
+          customerName
+        })
       })
       if (!res.ok) {
         // Rollback on failure
@@ -1493,54 +1501,18 @@ export default function ForCollections() {
         )
       })()}
 
-      {/* Confirmation Modal */}
-      {confirmItem && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setConfirmItem(null)}
-        >
-          <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-md flex flex-col p-6 cursor-default"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 text-emerald-500 mb-4">
-              <CheckCircle2 size={24} />
-              <h4 className="font-black text-base" style={{ color: textPrimary }}>Resolve {tc.singularCap}</h4>
-            </div>
-
-            <p className="text-xs mb-5" style={{ color: textMuted }}>
-              Are you sure you want to mark the {tc.singular} of <strong style={{ color: textPrimary }}>₱{peso(activeTab === 'rebates' ? confirmItem.amount * (confirmItem.units || 1) : confirmItem.amount)}</strong> {activeTab === 'collections' ? `from ${confirmItem.customer || '—'}` : activeTab === 'rebates' ? `for ${confirmItem.company || confirmItem.description.split('|')[1] || '—'}` : `for ${confirmItem.description.split('|')[1] || confirmItem.customer || '—'}`} as <strong style={{ color: '#10B981' }}>{tc.resolvedLabel.toUpperCase()}</strong>?
-            </p>
-
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={() => setConfirmItem(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold transition-all border"
-                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={resolvingId === confirmItem.id}
-                onClick={() => handleResolve(confirmItem)}
-                className="px-5 py-2 rounded-xl text-xs font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center gap-2"
-                style={{ border: 'none' }}
-              >
-                {resolvingId === confirmItem.id ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                {tc.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Mark as Paid / Scanner Modal */}
+      <CollectionMarkPaidModal
+        isOpen={Boolean(confirmItem)}
+        onClose={() => setConfirmItem(null)}
+        item={confirmItem}
+        isDark={isDark}
+        onSave={async (amount, datePaid, refNo, whoPaid, customerName) => {
+          if (confirmItem) {
+            await handleResolve(confirmItem, amount, datePaid, refNo, whoPaid, customerName)
+          }
+        }}
+      />
     </div>
   )
 }
