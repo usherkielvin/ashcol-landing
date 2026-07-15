@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import ReactDOM from 'react-dom'
 import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck } from 'lucide-react'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
-import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
+import { FIELD_TICKET_CATEGORIES, resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import { DealerSelect, type DealerOption } from '../DealerSelect'
@@ -270,7 +270,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                                
                                // Sync serviceType & ticketCategory
                                updates.serviceType = st.value
-                               updates.ticketCategory = st.value.includes('CLEANING') ? 'SERVICES' : st.value.includes('SURVEY') ? 'SURVEY' : 'INSTALLATION'
+                               updates.ticketCategory = resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION'
                                
                                patch(updates)
                             }
@@ -304,6 +304,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'SURVEY', label: 'SURVEY' },
                           { value: 'CLEANING', label: 'CLEANING' },
                           { value: 'CHECKUP', label: 'CHECKUP' },
+                          { value: 'BACKJOB', label: 'BACKJOB' },
                           { value: 'SERVICE', label: 'SERVICE' },
                           { value: 'RESCHED', label: 'RESCHED' },
                           { value: 'CONTINUATION', label: 'CONTINUATION' },
@@ -319,6 +320,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
                           { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                           { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
+                          { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
                           { value: 'CANCELLED', label: 'CANCELLED' }
                         ].map(renderStatusButton)}
                       </div>

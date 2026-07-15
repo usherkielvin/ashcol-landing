@@ -4183,6 +4183,7 @@ export default function Tickets() {
           'done cleaning', 'done_cleaning',
           'done survey', 'done_survey',
           'done checkup', 'done_checkup',
+          'done backjob', 'done_backjob',
           'installed', 'completed', 'cancelled',
         ])
         const raw = (ticket.remarks || ticket.remarksUpdate || '').trim()

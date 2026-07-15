@@ -21,6 +21,7 @@ import {
 } from '../utils/relayScheduleSync'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
+import { resolveScheduleStatusFields } from '../constants/ticketCategories'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
@@ -1823,11 +1824,16 @@ export default function Relays() {
       : addForm.ticketNumber?.trim()) || undefined
 
     const createBrandHp = formatBrandCapacityLabel(addForm.brand, addForm.capacity)
+    // addForm.status carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+    // DONE_CHECKUP, ...) which Ticket.Status has no enum constant for — resolve to a value the
+    // backend actually accepts before sending, same mapper used by Schedules/My Tickets saves.
+    const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
     const createPayload = {
       title: addForm.title,
       description: addForm.description || addForm.remarksUpdate || '',
       customerName: addForm.customerName,
       serviceType: addForm.serviceType,
+      ticketCategory: resolvedCreateStatus.ticketCategory,
       unitType: createBrandHp || addForm.unitType,
       contactPhone: cleanedPhones[0] || undefined,
       location: addForm.locationRaw?.trim() || 'No Address Provided',
@@ -1848,7 +1854,7 @@ export default function Relays() {
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
       images: addForm.images || undefined,
-      status: addForm.status,
+      status: resolvedCreateStatus.status,
       branchId: relayBranchId,
     }
 
@@ -2069,7 +2075,13 @@ export default function Relays() {
 
       payload.branchId = branchId
       payload.assignedTo = assignedTo
-      payload.status = finalStatus
+      // finalStatus carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+      // DONE_CHECKUP, ...) — Ticket.Status has no enum constant for those; resolve to what
+      // the backend actually accepts before sending (same mapper used at ticket creation and
+      // in Schedules/My Tickets saves).
+      const resolvedEditStatus = resolveScheduleStatusFields(finalStatus)
+      payload.status = resolvedEditStatus.status
+      if (resolvedEditStatus.ticketCategory) payload.ticketCategory = resolvedEditStatus.ticketCategory
     }
     payload.customerName = draft.customerName || null
     payload.location = draft.location || null
@@ -2517,6 +2529,7 @@ export default function Relays() {
     'SURVEY': 'SURVEY',
     'CLEANING': 'CLEANING',
     'CHECKUP': 'CHECKUP',
+    'BACKJOB': 'BACKJOB',
     'SERVICE': 'SERVICE',
     'RESCHED': 'RESCHED',
     'CONTINUATION': 'CONTINUATION',
@@ -2525,6 +2538,7 @@ export default function Relays() {
     'DONE_CLEANING': 'DONE CLEANING',
     'DONE_SURVEY': 'DONE SURVEY',
     'DONE_CHECKUP': 'DONE CHECKUP',
+    'DONE_BACKJOB': 'DONE BACKJOB',
   }
 
   const getRelayStatusShort = (ticket: Ticket) => {
@@ -3422,7 +3436,7 @@ export default function Relays() {
                                      ...prev,
                                      status: st.value,
                                      serviceType: st.value,
-                                     ticketCategory: st.value.includes('CLEANING') ? 'SERVICES' : st.value.includes('SURVEY') ? 'SURVEY' : 'INSTALLATION'
+                                     ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION'
                                    }))
                                  }
                                }
@@ -3455,6 +3469,7 @@ export default function Relays() {
                                 { value: 'SURVEY', label: 'SURVEY' },
                                 { value: 'CLEANING', label: 'CLEANING' },
                                 { value: 'CHECKUP', label: 'CHECKUP' },
+                                { value: 'BACKJOB', label: 'BACKJOB' },
                                 { value: 'SERVICE', label: 'SERVICE' },
                                 { value: 'RESCHED', label: 'RESCHED' },
                                 { value: 'CONTINUATION', label: 'CONTINUATION' },
@@ -3470,6 +3485,7 @@ export default function Relays() {
                                 { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
                                 { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                                 { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
+                                { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
                                 { value: 'CANCELLED', label: 'CANCELLED' }
                               ].map(renderStatusButton)}
                             </div>
