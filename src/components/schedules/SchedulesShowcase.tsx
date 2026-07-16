@@ -48,7 +48,7 @@ const PDF_MARGIN_X = 8
 /** Installer schedule sheet — max rows per A4 page */
 const INSTALLER_ROWS_PER_PAGE = 15
 /** Driver list sheet — max rows per A4 page */
-const DRIVER_ROWS_PER_PAGE = 13
+const DRIVER_ROWS_PER_PAGE = 18
 
 function chunkRows<T>(rows: T[], size: number): T[][] {
   if (rows.length === 0) return [[]]
@@ -290,13 +290,13 @@ const INSTALLER_COLUMN_STYLES = {
 
 const DRIVER_COLUMN_STYLES = {
   0: { halign: 'center' as const, cellWidth: 10 },
-  1: { halign: 'center' as const, cellWidth: 22 },
-  2: { cellWidth: 40 },
-  3: { cellWidth: 55 },
-  4: { cellWidth: 28 },
-  5: { halign: 'center' as const, cellWidth: 28 },
-  6: { halign: 'center' as const, cellWidth: 32 },
-  7: { halign: 'center' as const, cellWidth: 26 },
+  1: { halign: 'center' as const, cellWidth: 24 },
+  2: { cellWidth: 45 },
+  3: { cellWidth: 62 },
+  4: { cellWidth: 30 },
+  5: { halign: 'center' as const, cellWidth: 34 },
+  6: { halign: 'center' as const, cellWidth: 36 },
+  7: { halign: 'center' as const, cellWidth: 28 },
 }
 
 function drawPdfDateTable(
@@ -411,7 +411,8 @@ async function exportShowcasePdfDocument(options: {
         body,
         showHead: 'everyPage',
         ...PDF_BW_TABLE,
-        styles: { ...PDF_BW_TABLE.styles, fontSize: 7, minCellHeight: 7 },
+        styles: { ...PDF_BW_TABLE.styles, fontSize: 10, cellPadding: 2, minCellHeight: 13 },
+        headStyles: { ...PDF_BW_TABLE.headStyles, fontSize: 8.5, minCellHeight: 8, cellPadding: 1.5 },
         columnStyles: DRIVER_COLUMN_STYLES,
         didParseCell: (data) => {
           if (data.row.section === 'body') {
@@ -625,8 +626,10 @@ export function SchedulesShowcase({
                     style={{
                       ...tdStyle,
                       textAlign: [0, 1, 5, 6, 7].includes(cellIdx) ? 'center' : 'left',
-                      fontWeight: cellIdx === 5 ? 600 : 500,
-                      fontSize: '9px',
+                      fontWeight: cellIdx === 5 ? 700 : 500,
+                      fontSize: '11px',
+                      lineHeight: '1.4',
+                      padding: '5px 4px',
                     }}
                   >
                     {value}
