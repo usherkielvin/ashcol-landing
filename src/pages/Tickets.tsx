@@ -5,7 +5,7 @@ import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../compo
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -18,6 +18,7 @@ import { notifyArchiveUpdated } from '../utils/ticketArchive'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import {
   FIELD_TICKET_CATEGORIES,
   categoryDefaultServiceType,
@@ -403,6 +404,12 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     const cleared = sv == null || sv === ''
     merged.serviceVehicle = cleared ? undefined : String(sv)
     merged.service_vehicle = merged.serviceVehicle
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'driverName')) {
+    const dn = body.driverName
+    const cleared = dn == null || dn === ''
+    merged.driverName = cleared ? undefined : String(dn)
+    merged.driver_name = merged.driverName
   }
   return merged
 }
@@ -1013,6 +1020,16 @@ function formatCombinedPayment(ticket: Ticket): string {
   return ''
 }
 
+/** Returns payment display text for a ticket. Blanks out for rescheduled ghosts. */
+function getSchedulePaymentDisplay(
+  ticket: Ticket,
+  _dateKey?: string,
+  ghostKind?: 'completed' | 'resched' | null,
+): string {
+  if (ghostKind === 'resched') return ''
+  return formatCombinedPayment(ticket)
+}
+
 function getPaymentMode(ticket: Ticket): string {
   return getF(ticket, 'modeOfPayment', 'mode_of_payment')
 }
@@ -1393,6 +1410,11 @@ function formatServiceDriver(ticket: Ticket): string {
   return getTicketDriverName(ticket)
 }
 
+/** Vehicle code — serviceVehicle column only, never guessed/split from driverName. Blank means "+ Add". */
+function getTicketVehicleDisplay(ticket: Ticket): string {
+  return getF(ticket, 'serviceVehicle', 'service_vehicle')
+}
+
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
 function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
@@ -1441,7 +1463,8 @@ function ticketColumnText(
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
-    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+    case 'VEHICLE': return getF(ticket, 'serviceVehicle', 'service_vehicle')
+    case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getF(ticket, 'driverName', 'driver_name')
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -1472,7 +1495,7 @@ function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name:
 
 const INLINE_EDIT_COLUMNS = new Set([
   'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
-  'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
+  'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
 const DEFAULT_SCHEDULE_SORT = { column: 'INSTALLER', direction: 'asc' as const }
@@ -1951,15 +1974,20 @@ function buildCellPatchBody(
       body.installerName = v
       body.acDetails = mergeAcMeta(acBase, { installerName: v, installer: v, technicianName: v })
       break
+    case 'VEHICLE': {
+      const vehicle = v.toUpperCase()
+      body.serviceVehicle = vehicle || undefined
+      body.acDetails = mergeAcMeta(acBase, {
+        serviceVehicle: vehicle,
+        service_vehicle: vehicle,
+      })
+      break
+    }
     case 'SERVICE': {
-      const category = inferCategoryFromTicket(ticket)
       const driver = normalizeDriverInput(v)
-      const { serviceType } = parseServiceDriverValue('', category)
-      body.serviceType = serviceType
-      body.serviceVehicle = driver
+      body.driverName = driver || undefined
       body.acDetails = mergeAcMeta(acBase, {
         driverName: driver,
-        serviceVehicle: driver,
         driver_name: driver,
       })
       break
@@ -2048,6 +2076,8 @@ export default function Tickets() {
 
   // ── Bulk Assign modal state ─────────────────────────────────────────────────
   const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
+  // ── Showcase state ────────────────────────────────────────────────────────
+  const [showcaseOpen, setShowcaseOpen] = useState(false)
   const [bulkAssignInstaller, setBulkAssignInstaller] = useState('')
   const [bulkAssignDriver, setBulkAssignDriver] = useState('')
   const [bulkAssignVehicle, setBulkAssignVehicle] = useState('')
@@ -4125,7 +4155,8 @@ export default function Tickets() {
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'VEHICLE', display: "VEHICLE", weight: 7, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'SERVICE', display: "DRIVER", weight: 8, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
@@ -4356,7 +4387,9 @@ export default function Tickets() {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
         list = list.filter(t => {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
-          if (!b) return false
+          // If no branch can be resolved (no installer assigned yet), show the ticket —
+          // it's a newly scheduled ticket waiting to be assigned.
+          if (!b) return true
           if (!branchScopesMatch(b, effectiveBranch, user?.email) && !isBranchMatch(b, effectiveBranch)) return false
           if (isTaguigBranchRef(effectiveBranch)) {
             const wantServices = isTaguigServicesScope(effectiveBranch, user?.email)
@@ -4490,6 +4523,54 @@ export default function Tickets() {
     }
   }, [visible, dateFilter])
 
+  // ── Showcase data ──────────────────────────────────────────────────────────
+  const showcaseDateLabel = useMemo(
+    () => (dateFilter ? formatDateKeyLabel(dateFilter) : 'All Dates'),
+    [dateFilter],
+  )
+
+  const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
+    if (isMyTickets) return []
+    return visible.map((ticket, index) => {
+      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      return {
+        id: String(live.id ?? index),
+        index: index + 1,
+        ticketNumber: getTicketNumberDisplay(live) || '',
+        name: getF(live, 'customerName', 'customer_name') || live.title || '',
+        destination: formatAddress(live.location),
+        district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
+        contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+        brand: parseBrand(live),
+        dealer: getF(live, 'dealer', 'sourceVendor', 'source_vendor') || '',
+        status: getScheduleStatusLabel(getScheduleStatusValue(live)),
+        commit: getF(live, 'commitType', 'commitTerms', 'description'),
+        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+        update: getScheduleUpdateDisplay(live),
+        payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
+        driver: getF(live, 'driverName', 'driver_name') || getTicketDriverName(live) || '',
+        service: getTicketVehicleDisplay(live) || '',
+      }
+    })
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter])
+
+  const showcasePaymentByRowId = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const ticket of visible) {
+      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const payment = getSchedulePaymentDisplay(
+        live,
+        dateFilter,
+        dateFilter ? getScheduleGhostKind(live, dateFilter) : null,
+      )
+      if (!payment) continue
+      const ticketNo = getTicketNumberDisplay(live)
+      if (ticketNo) map[ticketNo] = payment
+      if (live.id) map[String(live.id)] = payment
+    }
+    return map
+  }, [visible, tickets, dateFilter])
+
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
@@ -4510,7 +4591,8 @@ export default function Tickets() {
       case 'INSTALLER': return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
       case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
       case 'NOTE': return ticket.note || ''
-      case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket)
+      case 'VEHICLE': return getF(ticket, 'serviceVehicle', 'service_vehicle')
+      case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : getF(ticket, 'driverName', 'driver_name')
       case 'UPDATE': return getScheduleUpdateDisplay(ticket)
       default: return ''
     }
@@ -5304,6 +5386,15 @@ export default function Tickets() {
       )
     }
 
+    if (label === 'VEHICLE') {
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 600, color: val ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }} title={val}>
+          {val || '—'}
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
+
     if (label === 'SERVICE') {
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
@@ -5484,6 +5575,7 @@ export default function Tickets() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) commitCellEdit()
@@ -5631,82 +5723,26 @@ export default function Tickets() {
               </button>
             )}
 
-            {/* Action Button: Add Schedule */}
-            {activeTab === 'schedules' && canEdit && !isMyTickets && (
-              <div className="relative shrink-0 ml-auto">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setAddMenuOpen(!addMenuOpen)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: green, color: '#ffffff' }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Schedule
-                  <ChevronDown className="w-3 h-3 opacity-80" />
-                </button>
-
-                {addMenuOpen && (
-                  <div
-                    className="absolute right-0 mt-1.5 rounded-xl shadow-xl overflow-hidden z-[100] w-48 border"
-                    style={{ backgroundColor: cardBg, borderColor: border }}
-                    onClick={() => setAddMenuOpen(false)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddMenuOpen(false)
-                        openAddModal()
-                      }}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                      style={{ color: textPrimary }}
-                    >
-                      <Plus className="w-3.5 h-3.5" style={{ color: green }} />
-                      Manual Add
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => scanFileInputRef.current?.click()}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                      style={{ color: textPrimary }}
-                    >
-                      <Camera className="w-3.5 h-3.5 text-emerald-500" />
-                      Scan Schedule Sheet
-                    </button>
-                    <button
-                      type="button"
-                      disabled={importing}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
-                      style={{ color: textPrimary }}
-                    >
-                      <Upload className="w-3.5 h-3.5 text-amber-500" />
-                      Import Excel
-                    </button>
-                    {canEdit && (
-                      <>
-                        <div className="h-px mx-2" style={{ backgroundColor: border }} />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false)
-                            promptClearAllVisible()
-                          }}
-                          disabled={visible.length === 0 || saving}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-red-500/10 disabled:opacity-40"
-                          style={{ color: '#EF4444' }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Clear All Visible
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+            {/* Showcase button */}
+            {activeTab === 'schedules' && !isMyTickets && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowcaseOpen(true) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 active:scale-95 ml-auto"
+                style={{
+                  backgroundColor: showcaseOpen ? 'transparent' : green,
+                  border: `1.5px solid ${green}`,
+                  color: showcaseOpen ? green : '#ffffff',
+                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
+                }}
+                title="Open fullscreen schedule showcase for print / PDF"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
+              </button>
             )}
+
+            {/* Action Button: Add Schedule — removed, replaced by Showcase */}
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
@@ -8144,7 +8180,14 @@ export default function Tickets() {
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
                 <datalist id="bulk-assign-driver-list">
+                  {/* API-sourced driver names */}
                   {driverOnlyNames.map(name => <option key={name} value={name} />)}
+                  {/* Also include driver names already on visible tickets (fallback) */}
+                  {[...new Set(
+                    visible
+                      .map(t => (t.driverName || t.driver_name || '').trim())
+                      .filter(n => n && !driverOnlyNames.includes(n))
+                  )].map(name => <option key={`t-${name}`} value={name} />)}
                 </datalist>
               </label>
 
@@ -8156,12 +8199,20 @@ export default function Tickets() {
                 <input
                   id="bulk-assign-vehicle"
                   type="text"
+                  list="bulk-assign-vehicle-list"
                   value={bulkAssignVehicle}
                   onChange={e => setBulkAssignVehicle(e.target.value)}
                   placeholder="e.g. FB19 or T2"
                   className="rounded-lg px-3 py-2 text-xs font-semibold outline-none"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
+                <datalist id="bulk-assign-vehicle-list">
+                  {[...new Set(
+                    visible
+                      .map(t => (t.serviceVehicle || t.service_vehicle || '').trim())
+                      .filter(Boolean)
+                  )].sort().map(name => <option key={name} value={name} />)}
+                </datalist>
               </label>
             </form>
 
@@ -8190,6 +8241,21 @@ export default function Tickets() {
         document.body
       )}
     </div>
+
+    {/* ── Schedules Showcase (print / PDF view) ──────────────────────── */}
+    {!isMyTickets && (
+      <SchedulesShowcase
+        open={showcaseOpen}
+        onClose={() => setShowcaseOpen(false)}
+        branchLabel={activeBranchLabel}
+        dateLabel={showcaseDateLabel}
+        dateKey={dateFilter || ''}
+        isTaguigServices={isTaguigServices}
+        rows={showcaseRows}
+        paymentByRowId={showcasePaymentByRowId}
+      />
+    )}
+    </>
   )
 }
 
