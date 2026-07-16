@@ -7644,7 +7644,7 @@ export default function Tickets() {
       {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
         <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
           <span className="text-xs font-semibold text-red-600 dark:text-red-400">
-            <strong>Showcase Mode:</strong> Full-screen print view Ã¢â‚¬â€ use Print or Export PDF, then Exit Showcase.
+             Full-screen view &mdash; click <em>Export PDF to Print</em>, then Exit Showcase.
           </span>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
+import { ArrowLeft, FileDown, Loader2, X } from 'lucide-react'
 
 export type ScheduleShowcaseRow = {
   id: string
@@ -463,9 +463,6 @@ export function SchedulesShowcase({
     }
   }, [open, onClose])
 
-  const handlePrint = useCallback(() => {
-    window.print()
-  }, [])
 
   const handleExportPdf = useCallback(async () => {
     if (exportingPdf) return
@@ -494,7 +491,7 @@ export function SchedulesShowcase({
           window.location.reload()
         }
       } else {
-        alert(`Could not export PDF (${message || 'unknown error'}). Try Print instead.`)
+        alert(`Could not export PDF (${message || 'unknown error'}). Please try again.`)
       }
     } finally {
       setExportingPdf(false)
@@ -727,21 +724,13 @@ export function SchedulesShowcase({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={handlePrint}
-                className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold text-slate-700 bg-white border border-slate-300"
-              >
-                <Printer className="w-4 h-4" />
-                Print
-              </button>
-              <button
-                type="button"
                 onClick={() => void handleExportPdf()}
                 disabled={exportingPdf || rows.length === 0}
                 className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold text-white disabled:opacity-50"
                 style={{ backgroundColor: HEADER_GREEN, border: `1px solid ${HEADER_GREEN_DARK}` }}
               >
                 {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                Export PDF
+                Export PDF to Print
               </button>
               <button
                 type="button"
