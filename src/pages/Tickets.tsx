@@ -2233,7 +2233,7 @@ function compareTicketsByColumn(
 ): number {
   const av = ticketColumnText(a, colLabel, options)
   const bv = ticketColumnText(b, colLabel, options)
-  if (colLabel === 'INSTALLER' || colLabel === 'SERVICE') {
+  if (colLabel === 'INSTALLER' || colLabel === 'SERVICE' || colLabel === 'VEHICLE') {
     return compareNameSiteStrings(av, bv)
   }
   return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
@@ -2253,7 +2253,7 @@ const INLINE_EDIT_COLUMNS = new Set([
   'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
-const DEFAULT_SCHEDULE_SORT = { column: 'INSTALLER', direction: 'asc' as const }
+const DEFAULT_SCHEDULE_SORT = { column: 'SERVICE', direction: 'asc' as const }
 
 function defaultSortForSchedulesView(isMyTickets: boolean) {
   return isMyTickets ? DEFAULT_MY_TICKETS_SORT : DEFAULT_SCHEDULE_SORT
@@ -5899,15 +5899,23 @@ export default function Tickets() {
     let list = filtered
     const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId }
     list = [...list].sort((a, b) => {
-      // Schedules: always group rows by installer/technician name first.
+      // Schedules: always group rows by driver/vehicle first — that's the actual dispatch
+      // unit (one driver + vehicle runs a sequence of jobs), so it must stay contiguous even
+      // though the same driver may work under different installers across the day. Vehicle
+      // codes (e.g. "T2-1", "T2-2") are grouped by base name then ordered numerically by site.
       if (!isMyTickets) {
-        const byInstaller = compareTicketsByColumn(a, b, 'INSTALLER', cmpOpts)
-        if (byInstaller !== 0) {
-          const desc = sortConfig.column === 'INSTALLER' && sortConfig.direction === 'desc'
-          return desc ? -byInstaller : byInstaller
+        const byDriver = compareTicketsByColumn(a, b, 'SERVICE', cmpOpts)
+        if (byDriver !== 0) {
+          const desc = sortConfig.column === 'SERVICE' && sortConfig.direction === 'desc'
+          return desc ? -byDriver : byDriver
+        }
+        const byVehicle = compareTicketsByColumn(a, b, 'VEHICLE', cmpOpts)
+        if (byVehicle !== 0) {
+          const desc = sortConfig.column === 'VEHICLE' && sortConfig.direction === 'desc'
+          return desc ? -byVehicle : byVehicle
         }
       }
-      if (isMyTickets || sortConfig.column !== 'INSTALLER') {
+      if (isMyTickets || (sortConfig.column !== 'SERVICE' && sortConfig.column !== 'VEHICLE')) {
         const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
         if (cmp !== 0) return sortConfig.direction === 'desc' ? -cmp : cmp
       }
