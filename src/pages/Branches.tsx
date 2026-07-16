@@ -59,6 +59,7 @@ interface Branch {
   email: string
   isActive: boolean
   managerId?: string
+  targetDailyQuota?: number
   tag?: string
   color?: string
   phones?: string[]
@@ -187,7 +188,8 @@ export default function Branches() {
     phone: '',
     email: '',
     managerId: '',
-    isActive: true
+    isActive: true,
+    targetDailyQuota: ''
   })
   const [editRoster, setEditRoster] = useState<BranchRoster>({ drivers: [], installers: [] })
   const [newDriverName, setNewDriverName] = useState('')
@@ -575,7 +577,8 @@ export default function Branches() {
       phone: branch.phone || '',
       email: branch.email || '',
       managerId: branch.managerId || '',
-      isActive: branch.isActive
+      isActive: branch.isActive,
+      targetDailyQuota: branch.targetDailyQuota != null ? String(branch.targetDailyQuota) : ''
     })
     setEditRoster({
       drivers: [...branch.drivers],
@@ -637,6 +640,7 @@ export default function Branches() {
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
       const apiBranchId = resolveBranchApiId(editingBranch.id)
       
+      const quotaNum = parseFloat(editForm.targetDailyQuota)
       const payload = {
         name: editForm.name,
         location: editForm.location,
@@ -644,7 +648,8 @@ export default function Branches() {
         phone: editForm.phone,
         email: editForm.email,
         managerId: editForm.managerId || null,
-        isActive: editForm.isActive
+        isActive: editForm.isActive,
+        targetDailyQuota: !isNaN(quotaNum) && quotaNum >= 0 ? quotaNum : null
       }
       
       const res = await fetch(`${apiUrl}/branches/${apiBranchId}`, {
@@ -782,6 +787,11 @@ export default function Branches() {
                 <Phone className="w-4 h-4 text-emerald-500" />
                 <span>{myBranch.phone}</span>
               </div>
+            )}
+            {myBranch.targetDailyQuota != null && myBranch.targetDailyQuota > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.08)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
+                Daily Quota: ₱{(myBranch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             )}
           </div>
 
@@ -921,17 +931,24 @@ export default function Branches() {
                         {getConciseLocationTag(branch)}
                       </p>
                     </div>
-                    <span 
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0"
-                      style={{ 
-                        backgroundColor: branch.isActive ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', 
-                        color: branch.isActive ? '#10B981' : '#EF4444',
-                        borderColor: branch.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'
-                      }}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${branch.isActive ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
-                      {branch.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                        style={{ 
+                          backgroundColor: branch.isActive ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', 
+                          color: branch.isActive ? '#10B981' : '#EF4444',
+                          borderColor: branch.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'
+                        }}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${branch.isActive ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
+                        {branch.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                      {branch.targetDailyQuota != null && branch.targetDailyQuota > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.07)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
+                          ₱{(branch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} / day quota
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Core details layout split into address/contacts and roster */}
@@ -1107,13 +1124,20 @@ export default function Branches() {
               <div className="px-8 py-6">
                 <div className="flex items-center justify-between mb-5">
                   <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Daily Performance Report</span>
-                  {branchPerfData && (
-                    <span className="text-[10px]" style={{ color: textMuted }}>
-                      {branchPerfData.timeUploaded
-                        ? `Uploaded at ${new Date(branchPerfData.timeUploaded).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
-                        : 'Upload time not recorded'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {selectedBranch?.targetDailyQuota != null && selectedBranch.targetDailyQuota > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.08)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
+                        Target Quota: ₱{(selectedBranch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / day
+                      </span>
+                    )}
+                    {branchPerfData && (
+                      <span className="text-[10px]" style={{ color: textMuted }}>
+                        {branchPerfData.timeUploaded
+                          ? `Uploaded at ${new Date(branchPerfData.timeUploaded).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                          : 'Upload time not recorded'}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {branchPerfLoading ? (
@@ -1515,6 +1539,23 @@ export default function Branches() {
                   className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
                   disabled={saving}
                   placeholder="e.g. ashcolcalauan@gmail.com"
+                />
+              </div>
+
+              {/* Daily Quota */}
+              <div className="flex flex-col gap-1 p-4 rounded-xl border" style={{ borderColor: 'rgba(139,92,246,0.25)', backgroundColor: 'rgba(139,92,246,0.04)' }}>
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#8B5CF6' }}>Daily Sales Quota (₱)</label>
+                <p className="text-[10px]" style={{ color: textMuted }}>Setting this will update the branch's daily target quota for all future DTR reports.</p>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={editForm.targetDailyQuota}
+                  onChange={e => setEditForm(prev => ({ ...prev, targetDailyQuota: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: 'rgba(139,92,246,0.3)', color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#8B5CF6] w-full mt-1 font-bold"
+                  disabled={saving}
+                  placeholder="e.g. 50000"
                 />
               </div>
 

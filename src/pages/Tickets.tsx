@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -1613,8 +1613,6 @@ function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
 
 function getEmptyRequiredColumnsForClose(
   ticketOrForm: Partial<Ticket> & { serviceDriver?: string; ticketCategory?: any },
-  employees: any[],
-  branchId: string | null
 ): string[] {
   const missing: string[] = []
 
@@ -1654,10 +1652,12 @@ function getEmptyRequiredColumnsForClose(
   const negotiator = (ticketOrForm.negotiatorId || (ticketOrForm as any).negotiator_id || (ticketOrForm as any).assignedTo || '').trim()
   if (!negotiator) missing.push('Negotiator')
 
-  // 8. Installer
+  // 8. Installer — check the raw stored/typed value, not getInstallerDisplay(): that helper
+  // also suppresses names that match the negotiator (a display de-dup for stale legacy data)
+  // and would wrongly report "empty" for a real installer who is also this ticket's negotiator.
   const installer = (
     ticketOrForm.id
-      ? getInstallerDisplay(ticketOrForm as Ticket, employees, branchId)
+      ? resolveInstallerFieldRaw(ticketOrForm as Ticket)
       : (ticketOrForm.installerName || '')
   ).trim()
   if (!installer) missing.push('Installer')
@@ -1796,6 +1796,16 @@ function namesMatchLoosely(a: string, b: string): boolean {
   return fa.length >= 2 && fb.length >= 2 && fa === fb
 }
 
+/** Exact (whitespace/case-normalized) match only — deliberately not `namesMatchLoosely`'s
+ * substring/first-name fuzz, which false-positives whenever an installer and negotiator
+ * happen to share a first name or one name contains the other (e.g. small-branch staff who
+ * both negotiate and install). Used where a false match would wrongly blank a real field. */
+function namesMatchExactly(a: string, b: string): boolean {
+  const na = a.trim().toLowerCase().replace(/\s+/g, ' ')
+  const nb = b.trim().toLowerCase().replace(/\s+/g, ' ')
+  return !!na && na === nb
+}
+
 function isTicketAssigneeNegotiator(
   ticket: Ticket,
   employees?: BranchStaffOption[],
@@ -1810,12 +1820,13 @@ function isTicketAssigneeNegotiator(
   return false
 }
 
-/** True when a name belongs to this ticket's negotiator or any branch negotiator (e.g. Jane Martos on Sales). */
+/** True when a name is an exact match for this ticket's own negotiator (stale-data guard only —
+ * a real installer who happens to share a name with staff elsewhere must not be suppressed). */
 function isNegotiatorInstallerName(
   ticket: Ticket,
   installer: string,
   employees?: BranchStaffOption[],
-  branchId?: string | null,
+  _branchId?: string | null,
 ): boolean {
   const val = installer.trim()
   if (!val) return false
@@ -1827,18 +1838,17 @@ function isNegotiatorInstallerName(
   ].filter(Boolean)
 
   for (const candidate of ticketNegotiatorNames) {
-    if (namesMatchLoosely(val, candidate)) return true
+    if (namesMatchExactly(val, candidate)) return true
   }
 
   const shortNeg = getTicketNegotiatorName(ticket, employees)
-  if (shortNeg && namesMatchLoosely(val, shortNeg)) return true
+  if (shortNeg && namesMatchExactly(val, shortNeg)) return true
 
-  if (employees?.length) {
-    const negotiators = filterBranchNegotiators(employees, branchId)
-    for (const n of negotiators) {
-      if (n.name?.trim() && namesMatchLoosely(val, n.name)) return true
-    }
-  }
+  // Branch-wide negotiator fallback intentionally omitted: `filterBranchNegotiators` falls
+  // back to the whole company's staff list when no negotiator matches the branch, which
+  // would make an exact-match check here fire on unrelated same-named staff elsewhere.
+  // Matching this ticket's own negotiator (above) is enough to catch the stale-data case
+  // this function exists for.
 
   return false
 }
@@ -1853,12 +1863,10 @@ function resolveInstallerFieldRaw(ticket: Ticket): string {
 /** Explicit installer/technician field only Ã¢â‚¬â€ never negotiator or assigned sales staff. */
 function getInstallerDisplay(
   ticket: Ticket,
-  employees?: BranchStaffOption[],
-  branchId?: string | null,
+  _employees?: BranchStaffOption[],
+  _branchId?: string | null,
 ): string {
-  const installer = resolveInstallerFieldRaw(ticket)
-  if (installer && !isNegotiatorInstallerName(ticket, installer, employees, branchId)) return installer
-  return ''
+  return resolveInstallerFieldRaw(ticket)
 }
 
 /** Sort key Ã¢â‚¬â€ may fall back to assigned field tech when installer column is empty. */
@@ -1867,7 +1875,7 @@ function getInstallerSortKey(
   employees?: BranchStaffOption[],
   branchId?: string | null,
 ): string {
-  const fromField = getInstallerDisplay(ticket, employees, branchId)
+  const fromField = getInstallerDisplay(ticket)
   if (fromField) return fromField
   if (isTicketAssigneeNegotiator(ticket, employees)) return ''
   const assigned = (ticket.assignedEmployeeName || ticket.assigned_employee_name || '').trim()
@@ -4299,7 +4307,7 @@ export default function Tickets() {
     const targetStatus = (form.status || '').toUpperCase().replace(/\s+/g, '_')
     const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
     if (isClosing) {
-      const missing = getEmptyRequiredColumnsForClose(form, branchEmployees, activeBranchId)
+      const missing = getEmptyRequiredColumnsForClose(form)
       if (missing.length > 0) {
         return `Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`
       }
@@ -8774,7 +8782,7 @@ export default function Tickets() {
           }
           const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
           if (isClosing) {
-            const missing = getEmptyRequiredColumnsForClose(pickerTicket, branchEmployees, activeBranchId)
+            const missing = getEmptyRequiredColumnsForClose(pickerTicket)
             if (missing.length > 0) {
               alert(`Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`)
               return
