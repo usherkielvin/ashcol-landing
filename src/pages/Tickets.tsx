@@ -4431,14 +4431,13 @@ export default function Tickets() {
         || (originalTicket && ticketHadScheduleDate(originalTicket)),
       )
 
+      // A plain Final Date edit in this modal moves the ticket in place — it must not inject an
+      // auto-generated "Scheduled moved from X" remark; the remarks field stays exactly what the
+      // user typed. An explicit RESCHED status change still stamps "Moved to X" since that's a
+      // distinct, deliberate reschedule action (not a routine date edit).
       let remarksVal = activeForm.remarks?.trim() ?? ''
-      if (isDateMove) {
-        const reschedMsg = isReschedStatus && newDateKey
-          ? `Moved to ${formatDateKeyLabel(newDateKey)}`
-          : `Scheduled moved from ${formatDateKeyLabel(oldDateKey)}`
-        remarksVal = isReschedStatus && newDateKey
-          ? reschedMsg
-          : (remarksVal ? `${remarksVal} (${reschedMsg})` : reschedMsg)
+      if (isDateMove && isReschedStatus && newDateKey) {
+        remarksVal = `Moved to ${formatDateKeyLabel(newDateKey)}`
         activeForm.remarks = remarksVal
       }
 
