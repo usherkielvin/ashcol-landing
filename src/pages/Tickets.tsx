@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -2969,10 +2969,16 @@ export default function Tickets() {
   }, [])
 
   const activeBranchId = (() => {
-    if (globalBranchId && globalBranchId !== 'ALL_BRANCHES') return globalBranchId
-    if (isAdmin) {
-      const fromSidebar = getActivePortalBranchId(user)
-      if (fromSidebar && fromSidebar !== 'ALL_BRANCHES') return fromSidebar
+    // Only branch-switcher-capable roles honor the shared global branch
+    // selection — plain employees must always stay scoped to their own
+    // branch, otherwise a stale selection left by another user on the same
+    // device silently overrides their Schedules/My Tickets branch.
+    if (isAdmin || isCoordinatorOrOicUser(user)) {
+      if (globalBranchId && globalBranchId !== 'ALL_BRANCHES') return globalBranchId
+      if (isAdmin) {
+        const fromSidebar = getActivePortalBranchId(user)
+        if (fromSidebar && fromSidebar !== 'ALL_BRANCHES') return fromSidebar
+      }
     }
     return user?.branchId || ''
   })()

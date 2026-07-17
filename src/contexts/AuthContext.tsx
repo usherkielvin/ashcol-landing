@@ -91,14 +91,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // logout only clears storage and state — navigation is handled by callers
   // via React Router navigate('/login', { replace: true }) for instant SPA navigation
+  // Wipes every ashcol-* key (session, global branch selection, directory/ticket
+  // caches, etc.) so nothing from this account leaks into the next login on the
+  // same device/browser — e.g. a stale admin branch selection previously caused
+  // the next user's Schedules/My Tickets to load someone else's branch.
+  const clearAshcolStorage = (storage: Storage) => {
+    const staleKeys: string[] = []
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i)
+      if (k && k.startsWith('ashcol')) staleKeys.push(k)
+    }
+    staleKeys.forEach((k) => storage.removeItem(k))
+  }
+
   const logout = () => {
     window.dispatchEvent(new CustomEvent(SCHEDULES_PERSIST_LOCAL))
     clearSchedulesSessionMarkers()
     setUser(null)
-    sessionStorage.removeItem(SESSION_KEY)
-    sessionStorage.removeItem('ashcol-token')
-    localStorage.removeItem('ashcol-token')
-    localStorage.removeItem(SESSION_KEY)
+    clearAshcolStorage(sessionStorage)
+    clearAshcolStorage(localStorage)
+    window.dispatchEvent(new CustomEvent('ashcol-global-branch-change'))
   }
 
   const refreshProfile = useCallback(async () => {
