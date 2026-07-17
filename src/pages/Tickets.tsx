@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom'
 import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Upload, ChevronDown, Camera, Loader2, Pencil, Clock,
+  Eye, ChevronDown, Loader2, Pencil, Clock, Car,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -2082,6 +2082,7 @@ export default function Tickets() {
   const [bulkAssignDriver, setBulkAssignDriver] = useState('')
   const [bulkAssignVehicle, setBulkAssignVehicle] = useState('')
   const [bulkAssignTrip, setBulkAssignTrip] = useState<string>('1')
+  void bulkAssignTrip
   const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
 
   const fetchOverviewTickets = useCallback(async (query: string) => {
@@ -2526,8 +2527,10 @@ export default function Tickets() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  void addMenuOpen
   const [scanning, setScanning] = useState(false)
   const [importing, setImporting] = useState(false)
+  void importing
   const [importResults, setImportResults] = useState<{
     isOpen: boolean
     fileName: string
@@ -3149,6 +3152,7 @@ export default function Tickets() {
     setEditModalOpen(false)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const openAddModal = () => {
     const form = {
       preferredDate: dateFilter || todayDateKey(),
@@ -3172,6 +3176,7 @@ export default function Tickets() {
     setAddFormSnapshot(JSON.stringify(form))
     setAddModalOpen(true)
   }
+  void openAddModal
 
   const isAddFormDirty = () => JSON.stringify(addForm) !== addFormSnapshot
 
@@ -4231,7 +4236,10 @@ export default function Tickets() {
       return merged
     }
 
-    if (options?.soft && !options?.force && cacheFresh && hasCache) {
+    // Never soft-skip on an empty cache — that pins a blank Schedules day for up to 24h
+    // after a failed/bootstrapping fetch (e.g. backend restart), even once rows exist in DB.
+    const cachedCount = Array.isArray(cached?.tickets) ? cached!.tickets!.length : 0
+    if (options?.soft && !options?.force && cacheFresh && hasCache && cachedCount > 0) {
       setTickets(applyOptimisticOverlay(cached!.tickets as Ticket[]))
       hasLoadedOnceRef.current = true
       setHasHydratedOnce(true)
@@ -4488,40 +4496,7 @@ export default function Tickets() {
     )
   }, [visible])
 
-  const counts = useMemo(() => {
-    let installation = 0
-    let survey = 0
-    let resched = 0
-    let forApproval = 0
-
-    visible.forEach(t => {
-      if (dateFilter && isScheduleGhostOnDate(t, dateFilter)) return
-      const scheduleValue = getScheduleStatusValue(t)
-      if (scheduleValue === 'RESCHED') {
-        resched++
-      } else if (scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY') {
-        survey++
-      } else if (scheduleValue === 'FOR_APPROVAL') {
-        forApproval++
-      } else if (
-        scheduleValue === 'INSTALLATION'
-        || scheduleValue === 'SERVICES'
-        || scheduleValue === 'CLEANING'
-        || scheduleValue === 'DONE_INSTALLED'
-        || scheduleValue === 'DONE_CLEANING'
-        || scheduleValue === 'DONE_CHECKUP'
-      ) {
-        installation++
-      }
-    })
-
-    return {
-      installation,
-      survey,
-      resched,
-      forApproval,
-    }
-  }, [visible, dateFilter])
+  // counts removed — stats bar removed from UI
 
   // ── Showcase data ──────────────────────────────────────────────────────────
   const showcaseDateLabel = useMemo(
@@ -5010,6 +4985,7 @@ export default function Tickets() {
     })()
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const promptClearAllVisible = () => {
     if (!canEdit || visible.length === 0) return
     const count = visible.length
@@ -5028,6 +5004,7 @@ export default function Tickets() {
       onConfirm: () => void commitClearAllVisible(),
     })
   }
+  void promptClearAllVisible
 
   const commitClearAllVisible = async () => {
     if (!canEdit || visible.length === 0) return
@@ -5708,18 +5685,23 @@ export default function Tickets() {
               </div>
             )}
 
-            {/* Bulk Assign button */}
+            {/* Assign Drivers button */}
             {activeTab === 'schedules' && canEdit && !isMyTickets && (
               <button
                 type="button"
                 id="bulk-assign-driver-btn"
                 onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors hover:bg-slate-500/10 shrink-0"
-                style={{ borderColor: inputBorder, color: textPrimary }}
-                title="Bulk assign driver and vehicle to an installer's tickets"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black tracking-wide shrink-0 transition-all hover:opacity-90 active:scale-95"
+                style={{
+                  background: 'linear-gradient(135deg, #2563EB, #1d4ed8)',
+                  color: '#ffffff',
+                  boxShadow: '0 2px 12px rgba(37,99,235,0.45)',
+                  border: '1.5px solid rgba(255,255,255,0.12)',
+                }}
+                title="Assign driver and vehicle to an installer's tickets"
               >
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                Bulk Assign
+                <Car className="w-4 h-4" />
+                Assign Drivers
               </button>
             )}
 
@@ -5748,37 +5730,18 @@ export default function Tickets() {
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
-      {/* Stats bar */}
-      {!isMyTickets && activeTab === 'schedules' && (hasHydratedOnce || tickets.length > 0) && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
+      {/* Sort reset strip — replaces the old stats bar */}
+      {!isMyTickets && activeTab === 'schedules' && sortDiffersFromDefault && (
+        <div className="flex items-center justify-end px-4 py-1.5 border-b shrink-0"
           style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Installation</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.installation}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Survey</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8B5CF6' }}>{counts.survey}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Resched</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#d97706' }}>{counts.resched}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>For Approval</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forApproval}</span>
-          </div>
-          {sortDiffersFromDefault && (
-            <button
-              type="button"
-              onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
-              className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
-              style={{ color: green }}
-            >
-              Reset sort
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
+            className="text-[10px] font-bold uppercase tracking-wide hover:underline"
+            style={{ color: green }}
+          >
+            Reset sort
+          </button>
         </div>
       )}
 
@@ -8043,23 +8006,37 @@ export default function Tickets() {
         )
       })()}
 
-      {/* ── Bulk Assign Driver Modal ─────────────────────────────────── */}
+      {/* ── Assign Drivers Modal ──────────────────────────────────────── */}
       {bulkAssignOpen && ReactDOM.createPortal(
         <div
           className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
           onClick={() => setBulkAssignOpen(false)}
         >
           <div
             className="rounded-2xl shadow-2xl w-full max-w-sm border overflow-hidden"
-            style={{ backgroundColor: cardBg, borderColor: border }}
+            style={{ backgroundColor: cardBg, borderColor: 'rgba(37,99,235,0.35)' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: border }}>
-              <span className="text-sm font-black tracking-wide" style={{ color: textPrimary }}>
-                Bulk Assign Driver / Vehicle
-              </span>
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{
+                borderColor: 'rgba(37,99,235,0.2)',
+                background: isLight
+                  ? 'linear-gradient(135deg, #eff6ff, #dbeafe)'
+                  : 'linear-gradient(135deg, rgba(37,99,235,0.18), rgba(29,78,216,0.12))',
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 rounded-xl" style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 2px 8px rgba(37,99,235,0.4)' }}>
+                  <Car className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <div className="text-sm font-black tracking-wide" style={{ color: textPrimary }}>Assign Drivers</div>
+                  <div className="text-[10px] font-semibold" style={{ color: textMuted }}>Bulk update driver &amp; vehicle for an installer</div>
+                </div>
+              </div>
               <button type="button" onClick={() => setBulkAssignOpen(false)} style={{ color: textMuted }}>
                 <X className="w-4 h-4" />
               </button>
@@ -8086,7 +8063,6 @@ export default function Tickets() {
                       driverName: bulkAssignDriver.trim() || undefined,
                       serviceVehicle: bulkAssignVehicle.trim() || undefined,
                       scheduleDate: dateFilter || todayDateKey(),
-                      tripNumber: bulkAssignTrip ? parseInt(bulkAssignTrip, 10) : undefined,
                       branchId: activeBranchId || undefined,
                     }),
                   })
@@ -8095,10 +8071,12 @@ export default function Tickets() {
                   const count: number = data?.data?.updatedCount ?? 0
                   // Optimistically update local tickets state
                   setTickets(prev => prev.map(t => {
-                    const tInstaller = (t.installerName || '').trim().toLowerCase()
+                    const rawInstaller = (t.installerName || '').trim().toLowerCase()
+                    const cleanInstaller = rawInstaller.split(/\s*[-–—]\s*|\s+\d+/)[0].trim()
+                    const targetInstaller = bulkAssignInstaller.trim().toLowerCase()
                     const tDate = t.preferredDate || t.preferred_date || ''
                     const targetDate = dateFilter || todayDateKey()
-                    if (tInstaller !== bulkAssignInstaller.trim().toLowerCase()) return t
+                    if (cleanInstaller !== targetInstaller) return t
                     if (tDate && !tDate.startsWith(targetDate)) return t
                     return {
                       ...t,
@@ -8137,30 +8115,11 @@ export default function Tickets() {
                   <option value="">— Select installer —</option>
                   {[...new Set(
                     visible
-                      .map(t => (t.installerName || '').trim())
+                      .map(t => (t.installerName || '').split(/\s*[-–—]\s*|\s+\d+/)[0].trim())
                       .filter(Boolean)
                   )].sort().map(name => (
                     <option key={name} value={name}>{name}</option>
                   ))}
-                </select>
-              </label>
-
-              {/* Trip number */}
-              <label className="flex flex-col gap-1">
-                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: textMuted }}>
-                  Trip # (1 = first site, 2 = second)
-                </span>
-                <select
-                  id="bulk-assign-trip"
-                  value={bulkAssignTrip}
-                  onChange={e => setBulkAssignTrip(e.target.value)}
-                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                >
-                  <option value="">All trips</option>
-                  <option value="1">Trip 1</option>
-                  <option value="2">Trip 2</option>
-                  <option value="3">Trip 3</option>
                 </select>
               </label>
 
@@ -8217,7 +8176,7 @@ export default function Tickets() {
             </form>
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 px-5 py-4 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#060C18' }}>
+            <div className="flex justify-end gap-3 px-5 py-4 border-t" style={{ borderColor: 'rgba(37,99,235,0.2)', backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.06)' }}>
               <button
                 type="button"
                 onClick={() => setBulkAssignOpen(false)}
@@ -8230,10 +8189,14 @@ export default function Tickets() {
                 type="submit"
                 form="bulk-assign-form"
                 disabled={bulkAssignSaving}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 active:scale-95 shadow-lg disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 3px 14px rgba(37,99,235,0.5)' }}
               >
-                {bulkAssignSaving ? 'Saving…' : 'Apply to All Tickets'}
+                {bulkAssignSaving ? (
+                  <>⏳ Saving&hellip;</>
+                ) : (
+                  <><Car className="w-4 h-4" /> Assign Drivers</>
+                )}
               </button>
             </div>
           </div>

@@ -14,7 +14,7 @@ export const TAB_CACHE_TTL_MS = 5 * 60 * 1000
 /** Background re-fetch interval; cached rows are always shown instantly regardless of age. */
 export const SCHEDULES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-const VERSION = 2
+const VERSION = 3
 
 type PortalUserLike = { role?: string | null; branchId?: string | null } | null | undefined
 

@@ -3349,6 +3349,8 @@ export default function Relays() {
               )}
             </tbody>
           </table>
+          </div>
+
           {/* Mobile Card View */}
           <div className="flex flex-col md:hidden p-3 gap-3 w-full">
              {loading && tickets.length === 0 ? (
